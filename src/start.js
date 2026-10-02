@@ -7,6 +7,8 @@ import { createGoogleAdapter } from './calendar/google-adapter.js';
 import { createKonfiguration } from './calendar/konfiguration.js';
 import { createSnapshot } from './calendar/snapshot.js';
 import { codeErzeugen } from './calendar/setup.js';
+import { CONFIG } from './calendar/config.js';
+import { createPush, erkenneUmgebung } from './push/client.js';
 import { fuelle, h } from './ui/dom.js';
 import { startShell } from './shell.js';
 import { zeigeWillkommen } from './ui/willkommen-screen.js';
@@ -72,6 +74,10 @@ export async function starte({ wurzel, speicher = globalThis.localStorage ?? nul
       // bleibt beim gespeicherten Stand; das Banner bietet „Verbinden“ an
     }
   }
+  const push =
+    speicher && fenster && globalThis.navigator
+      ? createPush({ store, adapter, config: CONFIG.push, fetch: (...argumente) => globalThis.fetch(...argumente), navigator: globalThis.navigator, Notification: globalThis.Notification, speicher, umgebung: erkenneUmgebung(globalThis.navigator, fenster), jetzt })
+      : null;
   const konto = {
     modus: 'google',
     rolle: konfig.rolle,
@@ -83,5 +89,5 @@ export async function starte({ wurzel, speicher = globalThis.localStorage ?? nul
       neustart();
     },
   };
-  return startShell({ wurzel, store, auth, snapshot, konto, fenster });
+  return startShell({ wurzel, store, auth, snapshot, konto, push, fenster });
 }

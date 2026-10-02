@@ -87,7 +87,7 @@ export function mehrScreen({ store, ui }) {
       zeitFeld('Hinbringen um', settings.bringzeit, (w) => speichern({ bringzeit: w })),
       zeitFeld('Heimholen um', settings.abholzeit, (w) => speichern({ abholzeit: w })),
     ),
-    ui.konto?.modus === 'google' ? erinnerungenKarte({ store }) : null,
+    ui.konto?.modus === 'google' ? erinnerungenKarte({ store, ui }) : null,
     ...konto.oben,
     demo
       ? h(

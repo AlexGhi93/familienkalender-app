@@ -1,6 +1,7 @@
 import { fuelle, h } from './dom.js';
 import { toast } from './components.js';
 import { erinnerungenAnleitung } from './anleitung.js';
+import { pushAbschnitt } from './push-abschnitt.js';
 
 const MELDUNG_ANMELDEN = 'Bitte zuerst neu anmelden (Mehr → Konto → Neu anmelden).';
 
@@ -11,7 +12,7 @@ function fehlerText(fehler) {
 }
 
 /** „Mehr“: Erinnerungen prüfen und reparieren, Test-Erinnerung auslösen, Hilfe für Android und iPhone. Nur im Google-Modus. */
-export function erinnerungenKarte({ store }) {
+export function erinnerungenKarte({ store, ui = null }) {
   const ergebnis = h('div', { class: 'pruefergebnis', 'aria-live': 'polite' });
   const testBox = h('div', { class: 'pruefergebnis', 'aria-live': 'polite' });
 
@@ -92,7 +93,7 @@ export function erinnerungenKarte({ store }) {
     'article',
     { class: 'karte' },
     h('h3', {}, '🔔 Erinnerungen'),
-    h('p', { class: 'leise' }, 'Die Erinnerungen (1 Tag und 1 Stunde vorher) schickt Google Kalender auf dem Telefon, nicht diese App. Hier prüfst du, ob bei deinem Konto alles stimmt, und kannst sie testen.'),
+    h('p', { class: 'leise' }, 'Google Kalender erinnert auf dem Telefon (1 Tag und 1 Stunde vorher). Hier prüfst du, ob bei deinem Konto alles stimmt, und kannst es testen. Die App selbst kann zusätzlich Benachrichtigungen schicken (weiter unten).'),
     h(
       'div',
       { class: 'knopfzeile' },
@@ -101,6 +102,7 @@ export function erinnerungenKarte({ store }) {
     ),
     ergebnis,
     testBox,
+    ui?.push ? pushAbschnitt({ push: ui.push }) : null,
     erinnerungenAnleitung(),
   );
 }

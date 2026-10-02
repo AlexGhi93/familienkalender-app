@@ -7,6 +7,7 @@ import { dayEventId } from '../domain/ids.js';
 import { FAMILIE_SYMBOLE, FUER, TAGES_TYPEN, TYPES } from '../domain/types.js';
 import { buildDayTitle, needsTimeResync, ohneKlammer, parseKitaSacheLabel, parseTerminTitle, withTime } from '../domain/titles.js';
 import { notizAusBeschreibung } from '../domain/notiz.js';
+import { normalisiereRegister, registerText } from '../push/geraete.js';
 import { classifyEvent } from '../domain/classify.js';
 import { zeitAusDateTime } from '../domain/format.js';
 import { DEFAULT_SETTINGS, normalizeSettings } from '../domain/settings.js';
@@ -14,6 +15,7 @@ import { terminAnzeige } from '../app/views/gemeinsam.js';
 import { CONFIG } from './config.js';
 
 export const EINSTELLUNGEN_ID = 'fkeinstellungen';
+export const GERAETE_ID = 'fkgeraete'; // Register der Telefone für Push-Erinnerungen (siehe push/geraete.js)
 export const TEST_ID = 'fktest'; // „🔔 Test-Erinnerung“ aus Mehr → Erinnerungen: für die App unsichtbar
 export const MAX_EINSTELLUNGEN_ZEICHEN = 6000; // Google kürzt `description` still bei 8192 Zeichen (Vertragsprobe C11b)
 const TERMIN_MINUTEN = 30;
@@ -128,6 +130,35 @@ export function einstellungenZuEreignis(settings) {
   };
 }
 
+/** Geräte-Register als verstecktes Ereignis (JSON in `description`, wie die Einstellungen am 2000-01-01 in „Anwesenheit“). */
+export function geraeteZuEreignis(register) {
+  return {
+    kalender: 'anwesenheit',
+    id: GERAETE_ID,
+    body: {
+      id: GERAETE_ID,
+      summary: '📲 fk Geräte (nicht löschen)',
+      description: registerText(register),
+      start: { date: '2000-01-01' },
+      end: { date: '2000-01-02' },
+      transparency: 'transparent',
+      reminders: { useDefault: false, overrides: [] },
+      extendedProperties: { private: versteckt('geraete') },
+    },
+  };
+}
+
+/** Liest das Register; unbrauchbares JSON ergibt `register: null` (nichts wird gelöscht oder erraten). */
+export function geraeteAusEreignis(event) {
+  const text = event?.description;
+  if (typeof text !== 'string' || text.trim() === '') return { register: null };
+  try {
+    return { register: normalisiereRegister(JSON.parse(text)) };
+  } catch {
+    return { register: null, warnung: 'JSON' };
+  }
+}
+
 /** Liest die Einstellungen; Fehlendes oder Ungültiges wird zum Standardwert, mit Liste der betroffenen Felder (`warnungen`). */
 export function einstellungenAusEreignis(event) {
   const standard = normalizeSettings();
@@ -167,7 +198,7 @@ export function einstellungenAusEreignis(event) {
 export function ereignisZuEintrag(event, kalender, settings) {
   if (event.status === 'cancelled' || !event.start) return { art: 'ignorieren' };
   if (event.id === EINSTELLUNGEN_ID) return { art: 'einstellungen', ...einstellungenAusEreignis(event) };
-  if (event.id === TEST_ID) return { art: 'ignorieren' };
+  if (event.id === TEST_ID || event.id === GERAETE_ID) return { art: 'ignorieren' };
 
   const { typ, subtyp, quelle } = classifyEvent(event, kalender);
   if (TAGES_TYPEN.includes(typ)) return { art: 'tag', id: event.id, typ, tage: spanDays(eventSpan(event)), quelle };

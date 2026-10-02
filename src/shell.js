@@ -35,9 +35,9 @@ const SNAPSHOT_VERZOEGERUNG_MS = 1000;
 
 /**
  * `auth` und `snapshot` gibt es nur im Google-Modus; `konto` bündelt, was „Mehr“ dafür braucht
- * ({ rolle, kalenderCode, zuruecksetzen }). Im Demo-Modus sind alle drei null.
+ * ({ rolle, kalenderCode, zuruecksetzen }); `push` = Push-Erinnerungen dieses Telefons (src/push/client.js). Im Demo-Modus sind alle null.
  */
-export function startShell({ wurzel, store, auth = null, snapshot = null, konto = null, fenster = window }) {
+export function startShell({ wurzel, store, auth = null, snapshot = null, konto = null, push = null, fenster = window }) {
   const banner = h('div', { id: 'banner' });
   const fortschritt = h('div', { id: 'fortschritt-box' });
   const inhalt = h('main', { id: 'inhalt', tabindex: '-1' });
@@ -73,6 +73,7 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
     store,
     auth,
     konto,
+    push,
     verbinden,
     monat: jetztMonat(),
     neu: { auswahl: null },
@@ -163,10 +164,18 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
 
   let letzterFehler = null;
   let speicherZeitgeber = null;
+  let pushTermine = null;
+  let pushSettings = null;
   store.subscribe((state) => {
     if (state.fehler && state.fehler !== letzterFehler) toast(state.fehler, { art: 'fehler', dauer: 6000 });
     else if (!state.fehler && letzterFehler) entferneFehlerToast();
     letzterFehler = state.fehler;
+    // Push-Plan abgleichen, sobald frisch aus Google geladen wurde und sich Termine oder Einstellungen geändert haben (nie aus dem gespeicherten Stand)
+    if (push && state.geladen && !state.nurSnapshot && (state.termine !== pushTermine || state.settings !== pushSettings)) {
+      pushTermine = state.termine;
+      pushSettings = state.settings;
+      push.anstossen();
+    }
     ui.rendern();
     if (snapshot && state.geladen && !state.nurSnapshot) {
       clearTimeout(speicherZeitgeber);

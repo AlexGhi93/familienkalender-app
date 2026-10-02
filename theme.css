@@ -1209,3 +1209,20 @@ small.notiz {
 .anleitung h4 {
   margin: 10px 0 2px;
 }
+
+.push-abschnitt {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1.5px dashed var(--linie);
+}
+
+.push-abschnitt[hidden] {
+  display: none;
+}
+
+.push-abschnitt h4 {
+  margin: 0;
+}

@@ -4,7 +4,7 @@ import { addDays, todayVienna } from '../domain/dates.js';
 import { kindergartenjahr } from '../domain/urlaub.js';
 import { normalizeSettings } from '../domain/settings.js';
 import { beendeTestErinnerung, pruefeErinnerungen, repariereErinnerungen, starteTestErinnerung } from './erinnerungen.js';
-import { EINSTELLUNGEN_ID, einstellungenAusEreignis, einstellungenZuEreignis, tagZuEreignis, terminZuEreignis, urlaubZuEreignis } from './mapping.js';
+import { EINSTELLUNGEN_ID, GERAETE_ID, einstellungenAusEreignis, einstellungenZuEreignis, geraeteAusEreignis, geraeteZuEreignis, tagZuEreignis, terminZuEreignis, urlaubZuEreignis } from './mapping.js';
 import { ereignisseZuZustand } from './zustand.js';
 
 const TAGE_ZURUECK = 31;
@@ -107,6 +107,41 @@ export function createGoogleAdapter({ api, kalender, jetzt = () => new Date(), a
 
     async loescheTermin(id) {
       await api.ereignisse.loeschen(kalender.termine, id);
+    },
+
+    /** Register der Push-Telefone (verstecktes Ereignis „fkgeraete“): { register | null }. */
+    async leseGeraete() {
+      const e = await api.ereignisse.holen(kalender.anwesenheit, GERAETE_ID);
+      return !e || e.status === 'cancelled' ? { register: null } : geraeteAusEreignis(e);
+    },
+
+    /**
+     * Ändert das Register: `aenderung(register | null)` gibt das neue Register zurück (oder null = nichts tun). Gibt es noch keins, wird es angelegt;
+     * legen zwei Telefone gleichzeitig an, gewinnt eines (409), das andere liest und ergänzt. Sonst Lesen–Ändern–Schreiben mit If-Match.
+     */
+    async aendereGeraete(aenderung) {
+      for (let versuch = 0; versuch < 3; versuch += 1) {
+        const e = await api.ereignisse.holen(kalender.anwesenheit, GERAETE_ID);
+        if (!e || e.status === 'cancelled') {
+          const neu = aenderung(null);
+          if (!neu) return null;
+          const body = geraeteZuEreignis(neu).body;
+          if (e) {
+            await api.ereignisse.schreibe(kalender.anwesenheit, body); // gelöscht war es nur, wenn jemand es von Hand entfernt hat
+            return neu;
+          }
+          const r = await api.ereignisse.einfuegen(kalender.anwesenheit, body);
+          if (!r.bereitsVorhanden) return neu;
+          continue; // jemand war schneller: lesen und ergänzen
+        }
+        let ergebnis = null;
+        await api.ereignisse.aendere(kalender.anwesenheit, GERAETE_ID, (aktuell) => {
+          ergebnis = aenderung(geraeteAusEreignis(aktuell).register);
+          return ergebnis ? { description: geraeteZuEreignis(ergebnis).body.description } : null;
+        });
+        return ergebnis;
+      }
+      throw new Error('Das Geräte-Register konnte nicht gespeichert werden. Bitte noch einmal versuchen.');
     },
 
     /** Erinnerungen dieses Kontos prüfen/reparieren und eine Test-Erinnerung auslösen (siehe erinnerungen.js). */

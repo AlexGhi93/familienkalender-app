@@ -8,4 +8,6 @@ export const CONFIG = Object.freeze({
   ]),
   apiBasis: 'https://www.googleapis.com/calendar/v3',
   zeitzone: 'Europe/Vienna',
+  // Push-Dienst (Cloudflare Worker): Adresse und öffentlicher VAPID-Schlüssel, beides öffentlich. Leer = „noch nicht eingerichtet“.
+  push: Object.freeze({ dienst: 'https://familienkalender-push.fk-h2vq8eei.workers.dev', vapidPublic: 'BOTDTS3msWMWwaqZiZE-pMoyZD56AMvnJw17RqGIXBhExZZmbGWj5QvJklUzbvLwJZv2lRx-QtxrAlZOt5P8Sws' }),
 });
