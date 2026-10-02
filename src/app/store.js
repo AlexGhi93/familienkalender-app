@@ -368,6 +368,12 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       await aendere({ settings }, () => adapter.speichereSettings(teil));
     },
 
+    /** Erinnerungen (nur mit Google): prüfen, reparieren, Test-Erinnerung starten/beenden. Fehler der Anmeldung laufen nach oben. */
+    erinnerungenPruefen: () => adapter.pruefeErinnerungen(),
+    erinnerungenReparieren: () => adapter.repariereErinnerungen(),
+    erinnerungenTestStarten: () => adapter.starteTestErinnerung(),
+    erinnerungenTestBeenden: () => adapter.beendeTestErinnerung(),
+
     async zuruecksetzen() {
       const daten = await adapter.zuruecksetzen();
       state = { ...state, ...daten, geladen: true, fehler: null };

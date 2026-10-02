@@ -14,9 +14,10 @@ import { terminAnzeige } from '../app/views/gemeinsam.js';
 import { CONFIG } from './config.js';
 
 export const EINSTELLUNGEN_ID = 'fkeinstellungen';
+export const TEST_ID = 'fktest'; // „🔔 Test-Erinnerung“ aus Mehr → Erinnerungen: für die App unsichtbar
 export const MAX_EINSTELLUNGEN_ZEICHEN = 6000; // Google kürzt `description` still bei 8192 Zeichen (Vertragsprobe C11b)
 const TERMIN_MINUTEN = 30;
-const ERINNERUNG_VORHER = [{ method: 'popup', minutes: 1440 }, { method: 'popup', minutes: 60 }]; // 1 Tag und 1 Stunde vorher
+export const ERINNERUNG_VORHER = [{ method: 'popup', minutes: 1440 }, { method: 'popup', minutes: 60 }]; // 1 Tag und 1 Stunde vorher
 const ERINNERUNG_GANZTAG = [{ method: 'popup', minutes: 900 }]; // 09:00 am Vortag
 
 const pad2 = (n) => String(n).padStart(2, '0');
@@ -166,6 +167,7 @@ export function einstellungenAusEreignis(event) {
 export function ereignisZuEintrag(event, kalender, settings) {
   if (event.status === 'cancelled' || !event.start) return { art: 'ignorieren' };
   if (event.id === EINSTELLUNGEN_ID) return { art: 'einstellungen', ...einstellungenAusEreignis(event) };
+  if (event.id === TEST_ID) return { art: 'ignorieren' };
 
   const { typ, subtyp, quelle } = classifyEvent(event, kalender);
   if (TAGES_TYPEN.includes(typ)) return { art: 'tag', id: event.id, typ, tage: spanDays(eventSpan(event)), quelle };

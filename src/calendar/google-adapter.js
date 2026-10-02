@@ -3,6 +3,7 @@
 import { addDays, todayVienna } from '../domain/dates.js';
 import { kindergartenjahr } from '../domain/urlaub.js';
 import { normalizeSettings } from '../domain/settings.js';
+import { beendeTestErinnerung, pruefeErinnerungen, repariereErinnerungen, starteTestErinnerung } from './erinnerungen.js';
 import { EINSTELLUNGEN_ID, einstellungenAusEreignis, einstellungenZuEreignis, tagZuEreignis, terminZuEreignis, urlaubZuEreignis } from './mapping.js';
 import { ereignisseZuZustand } from './zustand.js';
 
@@ -107,6 +108,12 @@ export function createGoogleAdapter({ api, kalender, jetzt = () => new Date(), a
     async loescheTermin(id) {
       await api.ereignisse.loeschen(kalender.termine, id);
     },
+
+    /** Erinnerungen dieses Kontos prüfen/reparieren und eine Test-Erinnerung auslösen (siehe erinnerungen.js). */
+    pruefeErinnerungen: () => pruefeErinnerungen(api, kalender),
+    repariereErinnerungen: () => repariereErinnerungen(api, kalender),
+    starteTestErinnerung: () => starteTestErinnerung(api, kalender, jetzt),
+    beendeTestErinnerung: () => beendeTestErinnerung(api, kalender),
 
     /** Schreibt nur die geänderten Felder auf den aktuellen Stand im Kalender (Änderungen des anderen Telefons gehen nicht verloren). */
     async speichereSettings(teil) {

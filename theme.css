@@ -1179,3 +1179,33 @@ small.notiz {
 .banner .knopf {
   flex: none;
 }
+
+/* ---------- Erinnerungen ---------- */
+
+.pruefergebnis:empty {
+  display: none;
+}
+
+.pruefergebnis {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.pruefliste {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pruefliste li.warn {
+  font-weight: 700;
+}
+
+.anleitung h4 {
+  margin: 10px 0 2px;
+}

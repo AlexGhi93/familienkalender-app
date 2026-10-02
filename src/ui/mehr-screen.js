@@ -3,6 +3,7 @@ import { bestaetigen, chip, toast } from './components.js';
 import { WOCHENTAGE_KURZ } from '../app/format-de.js';
 import { VERSION } from '../app/version.js';
 import { kontoKarten } from './konto-karte.js';
+import { erinnerungenKarte } from './erinnerungen-karte.js';
 
 export function mehrScreen({ store, ui }) {
   const settings = store.getState().settings;
@@ -86,6 +87,7 @@ export function mehrScreen({ store, ui }) {
       zeitFeld('Hinbringen um', settings.bringzeit, (w) => speichern({ bringzeit: w })),
       zeitFeld('Heimholen um', settings.abholzeit, (w) => speichern({ abholzeit: w })),
     ),
+    ui.konto?.modus === 'google' ? erinnerungenKarte({ store }) : null,
     ...konto.oben,
     demo
       ? h(

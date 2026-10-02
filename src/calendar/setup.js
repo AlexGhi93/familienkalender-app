@@ -7,7 +7,7 @@ import { CONFIG } from './config.js';
 export const KALENDER_SCHLUESSEL = Object.freeze(['termine', 'abwesenheit', 'anwesenheit']);
 
 /** Sichtbarkeit und Standard-Erinnerungen je Kalender (Design §2): Termine mit 1 Tag + 1 Stunde, Anwesenheit versteckt. */
-const EINSTELLUNG = Object.freeze({
+export const EINSTELLUNG = Object.freeze({
   termine: { selected: true, defaultReminders: [{ method: 'popup', minutes: 1440 }, { method: 'popup', minutes: 60 }] },
   abwesenheit: { selected: true, defaultReminders: [] },
   anwesenheit: { selected: false, defaultReminders: [] },
