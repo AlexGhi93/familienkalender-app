@@ -1,4 +1,4 @@
-import { addDays, isValidDate } from '../domain/dates.js';
+import { addDays, isValidDate, istZeitumstellungsLuecke } from '../domain/dates.js';
 import { ARZT_SUBTYPEN, KITA_RICHTUNGEN } from '../domain/types.js';
 import { mitnehmenFor, normalizeSettings } from '../domain/settings.js';
 import { SEP, TITLE_LIMIT, titleLength } from '../domain/titles.js';
@@ -74,6 +74,7 @@ export function normalisiereTermin(roh) {
 
   const zeit = roh.time == null || roh.time === '' ? null : roh.time;
   if (zeit !== null && !ZEIT.test(zeit)) throw new Error('Die Uhrzeit ist ungültig.');
+  if (zeit !== null && istZeitumstellungsLuecke(roh.date, zeit)) throw new Error('Diese Uhrzeit gibt es am Tag der Zeitumstellung nicht (02:00 bis 03:00).');
   if (roh.typ === 'kita_sache') return normalisiereSache(roh, zeit);
 
   const gemeinsam = { typ: roh.typ, date: roh.date, time: zeit, mitnehmen: pruefeMitnehmen(roh.mitnehmen ?? []), kosten: pruefeKosten(roh.kosten) };

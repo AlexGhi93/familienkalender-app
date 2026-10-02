@@ -5,6 +5,7 @@ import { datumKurz } from '../app/format-de.js';
 import { werktageText } from '../domain/format.js';
 import { TYPES } from '../domain/types.js';
 import { sacheErledigt } from './sachen-aktionen.js';
+import { zeigeRueckgaengig } from './fortschritt.js';
 
 function knopf(emoji, titel, untertitel, farbeHex, beiKlick) {
   return h(
@@ -102,8 +103,8 @@ function offeneTageKarte(m, store, ui) {
               text: `${n} ${n === 1 ? 'Tag wird' : 'Tage werden'} als „${m.einrichtung} · Mittagessen“ eingetragen.`,
               ja: 'Bestätigen',
               beiJa: async () => {
-                await store.setTage(m.offeneTage, 'kita_essen');
-                toast(`${n} ${n === 1 ? 'Tag' : 'Tage'} bestätigt ✓`);
+                const { rueckgaengig } = await store.setTage(m.offeneTage, 'kita_essen');
+                zeigeRueckgaengig(`${n} ${n === 1 ? 'Tag' : 'Tage'} bestätigt ✓`, rueckgaengig);
               },
             }),
         },

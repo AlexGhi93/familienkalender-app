@@ -44,3 +44,16 @@ export function gruss(stunde) {
   if (stunde < 18) return { text: 'Guten Tag!', emoji: '🌤️' };
   return { text: 'Guten Abend!', emoji: '🌙' };
 }
+
+/** '2026-10-01T18:05:00.000Z' -> 'Do 1. Okt., 20:05' (Wiener Zeit); leer bei ungültigem Wert. */
+export function standText(iso) {
+  const zeit = Date.parse(iso);
+  if (Number.isNaN(zeit)) return '';
+  const teile = Object.fromEntries(
+    new Intl.DateTimeFormat('de-AT', { timeZone: 'Europe/Vienna', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+      .formatToParts(new Date(zeit))
+      .map((t) => [t.type, t.value]),
+  );
+  const datum = `${teile.year}-${teile.month}-${teile.day}`;
+  return `${datumKurz(datum)}, ${teile.hour}:${teile.minute}`;
+}

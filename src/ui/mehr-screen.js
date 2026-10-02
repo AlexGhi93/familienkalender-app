@@ -2,9 +2,12 @@ import { h } from './dom.js';
 import { bestaetigen, chip, toast } from './components.js';
 import { WOCHENTAGE_KURZ } from '../app/format-de.js';
 import { VERSION } from '../app/version.js';
+import { kontoKarten } from './konto-karte.js';
 
-export function mehrScreen({ store }) {
+export function mehrScreen({ store, ui }) {
   const settings = store.getState().settings;
+  const konto = kontoKarten({ store, ui });
+  const demo = ui.konto?.modus === 'demo';
 
   async function speichern(teil, text = 'Gespeichert ✓') {
     try {
@@ -60,35 +63,39 @@ export function mehrScreen({ store }) {
       zeitFeld('Hinbringen um', settings.bringzeit, (w) => speichern({ bringzeit: w })),
       zeitFeld('Heimholen um', settings.abholzeit, (w) => speichern({ abholzeit: w })),
     ),
-    h(
-      'article',
-      { class: 'karte' },
-      h('h3', {}, 'Demo-Modus'),
-      h('p', { class: 'leise' }, 'Du siehst Beispieldaten. Sie bleiben nur auf diesem Gerät und kommen nirgendwohin.'),
-      h(
-        'div',
-        { class: 'knopfzeile' },
+    ...konto.oben,
+    demo
+      ? h(
+        'article',
+        { class: 'karte' },
+        h('h3', {}, 'Demo-Modus'),
+        h('p', { class: 'leise' }, 'Du siehst Beispieldaten. Sie bleiben nur auf diesem Gerät und kommen nirgendwohin.'),
         h(
-          'button',
-          {
-            class: 'knopf klein',
-            type: 'button',
-            onClick: () =>
-              bestaetigen({
-                titel: 'Demo zurücksetzen?',
-                text: 'Alle Änderungen in der Demo gehen verloren und die Beispieldaten kommen frisch zurück.',
-                ja: 'Zurücksetzen',
-                gefahr: true,
-                beiJa: async () => {
-                  await store.zuruecksetzen();
-                  toast('Demo zurückgesetzt');
-                },
-              }),
-          },
-          'Demo zurücksetzen',
+          'div',
+          { class: 'knopfzeile' },
+          h(
+            'button',
+            {
+              class: 'knopf klein',
+              type: 'button',
+              onClick: () =>
+                bestaetigen({
+                  titel: 'Demo zurücksetzen?',
+                  text: 'Alle Änderungen in der Demo gehen verloren und die Beispieldaten kommen frisch zurück.',
+                  ja: 'Zurücksetzen',
+                  gefahr: true,
+                  beiJa: async () => {
+                    await store.zuruecksetzen();
+                    toast('Demo zurückgesetzt');
+                  },
+                }),
+            },
+            'Demo zurücksetzen',
+          ),
         ),
-      ),
-    ),
+      )
+      : null,
+    ...konto.unten,
     h('p', { class: 'version' }, `Familienkalender ${VERSION}`),
   );
 }

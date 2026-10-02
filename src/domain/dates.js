@@ -73,3 +73,21 @@ export function todayVienna(now = new Date()) {
   const parts = Object.fromEntries(VIENNA.formatToParts(now).map((p) => [p.type, p.value]));
   return `${parts.year}-${parts.month}-${parts.day}`;
 }
+
+/** Letzter Sonntag eines Monats (Tag im Monat), z. B. für die Zeitumstellung. */
+export function letzterSonntag(jahr, monat) {
+  const letzter = new Date(Date.UTC(jahr, monat, 0)).getUTCDate();
+  for (let tag = letzter; tag > letzter - 7; tag -= 1) {
+    if (weekday(`${jahr}-${String(monat).padStart(2, '0')}-${String(tag).padStart(2, '0')}`) === 6) return tag;
+  }
+  throw new Error('unreachable');
+}
+
+/**
+ * True, wenn `time` ('HH:MM') am Tag `date` in Wien nicht existiert: am letzten Märzsonntag springt die Uhr von 02:00 auf 03:00.
+ * Google lehnt solche Uhrzeiten mit 400 ab (Vertragsprobe C14).
+ */
+export function istZeitumstellungsLuecke(date, time) {
+  const { y, m, d } = parseDate(date);
+  return m === 3 && d === letzterSonntag(y, 3) && time.slice(0, 2) === '02';
+}

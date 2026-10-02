@@ -86,12 +86,14 @@ export function wochenStepper({ wert, min, max, beschriftung, beiAenderung }) {
 
 let toastZeitgeber = null;
 /** Kurze Meldung unten; mit `aktion` ({ text, beiKlick }) bleibt sie 10 Sekunden und bietet z. B. „Rückgängig“ an. */
-export function toast(text, { aktion = null, dauer = aktion ? 10000 : 2600 } = {}) {
+export function toast(text, { aktion = null, dauer = aktion ? 10000 : 2600, art = '' } = {}) {
+  // Eine Fehlermeldung wird nicht von einer „Gespeichert ✓“-Meldung derselben Aktion überdeckt.
+  if (art !== 'fehler' && document.querySelector('.toast.fehler')) return;
   document.querySelector('.toast')?.remove();
   clearTimeout(toastZeitgeber);
   const el = h(
     'div',
-    { class: 'toast', role: 'status' },
+    { class: `toast ${art}`.trim(), role: art === 'fehler' ? 'alert' : 'status' },
     h('span', {}, text),
     aktion
       ? h(
@@ -115,6 +117,11 @@ export function toast(text, { aktion = null, dauer = aktion ? 10000 : 2600 } = {
     el.classList.remove('auf');
     setTimeout(() => el.remove(), 200);
   }, dauer);
+}
+
+/** Entfernt eine angezeigte Fehlermeldung (z. B. wenn die nächste Aktion beginnt). */
+export function entferneFehlerToast() {
+  document.querySelector('.toast.fehler')?.remove();
 }
 
 /** Rückfrage als Blatt; ruft `beiJa` nur nach Bestätigung auf. */

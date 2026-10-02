@@ -4,6 +4,7 @@ import { neuKacheln, urlaubVorschau, werktageImBereich } from '../app/views/neu-
 import { werktageText } from '../domain/format.js';
 import { terminFormular } from './termin-formular.js';
 import { sachenFormular } from './sachen-formular.js';
+import { zeigeRueckgaengig } from './fortschritt.js';
 
 function auswahlAnsicht({ ui }, kacheln) {
   return h(
@@ -89,8 +90,8 @@ function formularAnsicht({ store, ui }, kachel) {
         toast('In diesem Zeitraum gibt es keine Werktage.');
         return;
       }
-      await store.setTage(tage, kachel.id);
-      toast(`${tage.length} ${tage.length === 1 ? 'Tag' : 'Tage'} gespeichert ✓`);
+      const { rueckgaengig } = await store.setTage(tage, kachel.id);
+      zeigeRueckgaengig(`${tage.length} ${tage.length === 1 ? 'Tag' : 'Tage'} gespeichert ✓`, rueckgaengig);
       const ziel = n.von;
       ui.neuZuruecksetzen();
       ui.gehZuMonat(ziel);
@@ -99,7 +100,7 @@ function formularAnsicht({ store, ui }, kachel) {
     const vorschau = urlaubVorschau(store.getState(), { start: n.von, end: n.bis }, heute);
     const anlegen = async () => {
       const r = await store.urlaubHinzufuegen({ start: n.von, end: n.bis });
-      toast(r.umgewandelt > 0 ? `Urlaub gespeichert, ${r.umgewandelt} Betreuungstage umgewandelt ✓` : 'Urlaub gespeichert ✓');
+      zeigeRueckgaengig(r.umgewandelt > 0 ? `Urlaub gespeichert, ${r.umgewandelt} Betreuungstage umgewandelt ✓` : 'Urlaub gespeichert ✓', r.rueckgaengig);
       ui.neuZuruecksetzen();
       ui.gehZu('urlaub');
     };

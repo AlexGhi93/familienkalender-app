@@ -967,3 +967,179 @@ button.chip {
   min-height: 44px;
   padding: 0 4px;
 }
+
+/* ---------- Verbindung, Fortschritt, Willkommen, Einrichtung ---------- */
+
+#banner,
+#fortschritt-box {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+}
+
+.banner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 10px 16px;
+  padding-top: calc(env(safe-area-inset-top, 0px) + 10px);
+  background: color-mix(in srgb, var(--abwesend) 22%, var(--karte));
+  border-bottom: 1.5px solid color-mix(in srgb, var(--abwesend) 55%, transparent);
+}
+
+.banner p {
+  flex: 1;
+  min-width: 180px;
+  font-weight: 700;
+  font-size: 0.92rem;
+}
+
+.fortschritt {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 16px;
+  background: var(--karte);
+  border-bottom: 1.5px solid var(--linie);
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.fortschritt .balken {
+  height: 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--akzent) 20%, var(--karte));
+  overflow: hidden;
+}
+
+.fortschritt .fuellung {
+  height: 100%;
+  background: var(--akzent);
+  transition: width 0.15s ease;
+}
+
+.willkommen {
+  align-items: stretch;
+  padding-top: calc(env(safe-area-inset-top, 0px) + 40px);
+  padding-bottom: 40px;
+}
+
+.willkommen .logo {
+  font-size: 3.4rem;
+  text-align: center;
+}
+
+.willkommen .gruss,
+.willkommen .datum {
+  text-align: center;
+}
+
+.willkommen-knopf {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 14px;
+  align-items: center;
+  text-align: left;
+  width: 100%;
+  padding: 16px;
+  background: var(--karte);
+  border: 2px solid var(--linie);
+  border-radius: var(--radius);
+  box-shadow: var(--schatten);
+}
+
+.willkommen-knopf.primaer {
+  background: color-mix(in srgb, var(--akzent) 16%, var(--karte));
+  border-color: var(--akzent);
+}
+
+.willkommen-knopf .e {
+  grid-row: 1 / span 2;
+  font-size: 2rem;
+}
+
+.willkommen-knopf small {
+  color: var(--ink-2);
+  font-weight: 600;
+}
+
+.einrichtung .code,
+.code-box .code {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.95rem;
+  padding: 12px;
+  border-radius: var(--radius-klein);
+  background: color-mix(in srgb, var(--akzent) 10%, var(--karte));
+  border: 1.5px dashed var(--akzent);
+  word-break: break-all;
+  user-select: all;
+}
+
+.code-box {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.einrichtung textarea,
+.einrichtung input[type='email'] {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: var(--radius-klein);
+  border: 1.5px solid var(--linie);
+  background: var(--karte);
+  min-height: 46px;
+}
+
+.fehlertext {
+  color: var(--gefahr);
+  font-weight: 700;
+}
+
+.hinweis-text {
+  font-weight: 700;
+}
+
+.anleitung {
+  border: 1.5px solid var(--linie);
+  border-radius: var(--radius-klein);
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--karte) 70%, transparent);
+}
+
+.anleitung summary {
+  cursor: pointer;
+  font-weight: 800;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+}
+
+.anleitung ol {
+  margin: 6px 0;
+  padding-left: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.adresse {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 1.05rem;
+  word-break: break-all;
+}
+
+.gefahrenzone {
+  border-color: color-mix(in srgb, var(--gefahr) 55%, transparent);
+}
+
+.toast.fehler {
+  background: var(--gefahr);
+  color: #fff;
+}
+
+.banner .knopf {
+  flex: none;
+}
