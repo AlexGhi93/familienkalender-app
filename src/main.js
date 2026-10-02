@@ -73,7 +73,7 @@ const ui = {
   },
   tagesblatt: (date) => oeffneTagesblatt({ store, ui }, date),
   neuTerminStarten(art, termin = null) {
-    ui.neu = terminEntwurf(art, { settings: store.getState().settings, heute: store.heute(), termin });
+    ui.neu = terminEntwurf(art, { settings: store.getState().settings, heute: store.heute(), termin, state: store.getState() });
     ui.gehZu('neu');
   },
   terminBearbeiten(id) {

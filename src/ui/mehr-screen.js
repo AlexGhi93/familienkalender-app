@@ -36,6 +36,9 @@ export function mehrScreen({ store }) {
       hinweis ? h('small', { class: 'leise' }, hinweis) : null,
     );
 
+  const zeitFeld = (beschriftung, wert, beiAenderung) =>
+    h('label', { class: 'feld' }, h('span', {}, beschriftung), h('input', { type: 'time', value: wert, required: true, onChange: (e) => beiAenderung(e.target.value) }));
+
   return h(
     'section',
     { class: 'screen' },
@@ -48,6 +51,14 @@ export function mehrScreen({ store }) {
       tage,
       datumsFeld('Erfassung ab', settings.erfassungAb, (w) => speichern({ erfassungAb: w }), 'Ab diesem Tag zählt die App „offene“ Tage.'),
       datumsFeld('Wechsel zum Kindergarten ab', settings.wechseldatum, (w) => speichern({ wechseldatum: w }), 'Ab diesem Tag heißt es „Kindergarten“ statt „Krabbelstube“.'),
+    ),
+    h(
+      'article',
+      { class: 'karte' },
+      h('h3', {}, 'Zeiten für Sachen'),
+      h('p', { class: 'leise' }, 'Zu dieser Uhrzeit meldet sich die Erinnerung (einen Tag und eine Stunde vorher).'),
+      zeitFeld('Hinbringen um', settings.bringzeit, (w) => speichern({ bringzeit: w })),
+      zeitFeld('Heimholen um', settings.abholzeit, (w) => speichern({ abholzeit: w })),
     ),
     h(
       'article',

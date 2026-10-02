@@ -1,4 +1,4 @@
-import { TYPES, ARZT_SUBTYPEN } from './types.js';
+import { TYPES, ARZT_SUBTYPEN, KITA_RICHTUNGEN } from './types.js';
 import { einrichtungFor } from './modus.js';
 import { euroText, werktageText, kurzDatum, zeitAusDateTime } from './format.js';
 
@@ -48,6 +48,23 @@ export function buildArztTitle({ subtyp, time, mitnehmen = [], kosten = null }) 
 
 export function buildFamilieTitle({ text, time = null, mitnehmen = [], kosten = null }) {
   return buildTerminTitle({ emoji: TYPES.familie.emoji, label: text, time, mitnehmen, kosten });
+}
+
+/** Sachen für Krabbelstube/Kindergarten: '👕 Krabbelstube hinbringen 07:30 · 🎒 Pyjamas' bzw. '👕 Von Krabbelstube heimholen 15:30 · 🎒 …'. */
+export function buildKitaSacheTitle({ richtung, einrichtung, time, mitnehmen = [] }) {
+  const r = KITA_RICHTUNGEN[richtung];
+  if (!r) throw new Error(`Unbekannte Richtung: ${richtung}`);
+  const label = richtung === 'heim' ? `Von ${einrichtung} ${r.verb}` : `${einrichtung} ${r.verb}`;
+  return buildTerminTitle({ emoji: TYPES.kita_sache.emoji, label, time, mitnehmen });
+}
+
+/** Liest Richtung und Einrichtung aus dem Beschriftungs-Segment; null, wenn es keine Kita-Sache ist. */
+export function parseKitaSacheLabel(label) {
+  const m = /^(?:(Von) )?(Krabbelstube|Kindergarten) (hinbringen|heimholen)$/.exec(label);
+  if (!m) return null;
+  const richtung = m[3] === 'heimholen' ? 'heim' : 'hin';
+  if ((richtung === 'heim') !== (m[1] === 'Von')) return null;
+  return { richtung, einrichtung: m[2] };
 }
 
 export function buildUrlaubCheckTitle({ offen, stand }) {

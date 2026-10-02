@@ -73,17 +73,48 @@ export function blatt({ titel, render, beimSchliessen = () => {} }) {
   return { schliessen, neuZeichnen };
 }
 
+/** Zähler mit − und +: `beiAenderung(neuerWert)` wird nur innerhalb von min…max aufgerufen. */
+export function wochenStepper({ wert, min, max, beschriftung, beiAenderung }) {
+  return h(
+    'div',
+    { class: 'stepper' },
+    h('button', { class: 'rund', type: 'button', 'aria-label': `${beschriftung} weniger`, disabled: wert <= min, onClick: () => beiAenderung(wert - 1) }, '−'),
+    h('span', { class: 'stepper-wert' }, `${wert} ${beschriftung}`),
+    h('button', { class: 'rund', type: 'button', 'aria-label': `${beschriftung} mehr`, disabled: wert >= max, onClick: () => beiAenderung(wert + 1) }, '+'),
+  );
+}
+
 let toastZeitgeber = null;
-export function toast(text) {
+/** Kurze Meldung unten; mit `aktion` ({ text, beiKlick }) bleibt sie 10 Sekunden und bietet z. B. „Rückgängig“ an. */
+export function toast(text, { aktion = null, dauer = aktion ? 10000 : 2600 } = {}) {
   document.querySelector('.toast')?.remove();
-  const el = h('div', { class: 'toast', role: 'status' }, text);
+  clearTimeout(toastZeitgeber);
+  const el = h(
+    'div',
+    { class: 'toast', role: 'status' },
+    h('span', {}, text),
+    aktion
+      ? h(
+          'button',
+          {
+            class: 'toast-aktion',
+            type: 'button',
+            onClick: async () => {
+              clearTimeout(toastZeitgeber);
+              el.remove();
+              await aktion.beiKlick();
+            },
+          },
+          aktion.text,
+        )
+      : null,
+  );
   document.body.append(el);
   requestAnimationFrame(() => el.classList.add('auf'));
-  clearTimeout(toastZeitgeber);
   toastZeitgeber = setTimeout(() => {
     el.classList.remove('auf');
     setTimeout(() => el.remove(), 200);
-  }, 2600);
+  }, dauer);
 }
 
 /** Rückfrage als Blatt; ruft `beiJa` nur nach Bestätigung auf. */

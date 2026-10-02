@@ -4,6 +4,7 @@ import { heuteModel } from '../app/views/heute-model.js';
 import { datumKurz } from '../app/format-de.js';
 import { werktageText } from '../domain/format.js';
 import { TYPES } from '../domain/types.js';
+import { sacheErledigt } from './sachen-aktionen.js';
 
 function knopf(emoji, titel, untertitel, farbeHex, beiKlick) {
   return h(
@@ -112,6 +113,34 @@ function offeneTageKarte(m, store, ui) {
   );
 }
 
+const TAG_TEXT = { ueberfaellig: 'Überfällig', heute: 'Heute', morgen: 'Morgen', spaeter: '' };
+
+function sachenKarte(m, store, ui) {
+  const sachen = m.sachen;
+  const zeile = (e) =>
+    h(
+      'div',
+      { class: `sache ${e.tag}` },
+      h('span', { class: 'emoji' }, e.emoji),
+      h(
+        'div',
+        { class: 'karte-text' },
+        h('b', {}, `${e.richtungText}: ${e.mitnehmen.join(', ')}`),
+        h('small', {}, `${e.datumText} · ${e.time}`),
+      ),
+      TAG_TEXT[e.tag] ? h('span', { class: `tag-marke ${e.tag}` }, TAG_TEXT[e.tag]) : null,
+      h('button', { class: 'knopf klein', type: 'button', onClick: () => sacheErledigt(store, e.id) }, 'Erledigt ✓'),
+    );
+  return h(
+    'article',
+    { class: 'karte tint sachen', style: farbe(TYPES.kita_sache.farbe) },
+    sachen.eintraege.length > 0
+      ? h('div', { class: 'liste' }, sachen.eintraege.map(zeile))
+      : h('div', { class: 'karte-zeile' }, h('span', { class: 'emoji' }, '🧺'), h('div', { class: 'karte-text' }, h('b', {}, 'Nichts vorzubereiten 🎉'), h('small', {}, 'Pyjamas, Windeln, Winteranzug … hier merkst du dir alles.'))),
+    h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein', type: 'button', onClick: () => ui.neuTerminStarten('kita_sache') }, '＋ Sachen eintragen')),
+  );
+}
+
 function urlaubKarte(m) {
   const u = m.urlaub;
   const wochenZiel = u.durchgehend.ziel / 5;
@@ -144,6 +173,7 @@ export function heuteScreen({ store, ui }) {
     h('h1', { class: 'gruss' }, `${m.gruss.text} ${m.gruss.emoji}`),
     h('p', { class: 'datum' }, m.datumText),
     abschnitt('Heute', statusKarte(m, store, ui), offeneTageKarte(m, store, ui)),
+    abschnitt(`Sachen für ${m.einrichtung}`, sachenKarte(m, store, ui)),
     m.termineHeute.length > 0 ? abschnitt('Termine heute', m.termineHeute.map(terminKarte)) : null,
     m.termineMorgen.length > 0 ? abschnitt('Morgen', m.termineMorgen.map(terminKarte)) : null,
     m.termineDemnaechst.length > 0 ? abschnitt('Demnächst', m.termineDemnaechst.map(terminKarte)) : null,

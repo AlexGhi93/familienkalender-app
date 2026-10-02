@@ -5,6 +5,7 @@ import { TYPES } from '../../domain/types.js';
 import { offeneTage } from '../../domain/offen.js';
 import { urlaubStatus, naechsterUrlaub } from '../../domain/urlaub.js';
 import { datumLang, gruss, stundeInWien } from '../format-de.js';
+import { sachenModel } from './sachen-model.js';
 import {
   ABWESENHEIT,
   BETREUUNG,
@@ -18,6 +19,8 @@ import {
   typText,
   urlaubTageSet,
 } from './gemeinsam.js';
+
+const keineSache = (t) => t.typ !== 'kita_sache';
 
 function statusHeute(state, heute, urlaubSet) {
   const feiertag = feiertagName(heute);
@@ -58,9 +61,10 @@ export function heuteModel(state, now = new Date()) {
     einrichtung: einrichtungFor(heute, settings),
     status: statusHeute(state, heute, urlaubSet),
     offeneTage: offene,
-    termineHeute: termineAm(state, heute),
-    termineMorgen: termineAm(state, addDays(heute, 1)),
+    termineHeute: termineAm(state, heute).filter(keineSache),
+    termineMorgen: termineAm(state, addDays(heute, 1)).filter(keineSache),
     termineDemnaechst: naechsteTermine(state, addDays(heute, 1), 3),
+    sachen: sachenModel(state, heute),
     urlaub: {
       jahrText: `Kindergartenjahr ${jahr.id}/${String(jahr.id + 1).slice(2)}`,
       ziel: status.ziel,

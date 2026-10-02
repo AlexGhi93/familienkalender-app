@@ -19,12 +19,12 @@ function typAusTitel(text, calendar) {
     case CALENDARS.ANWESENHEIT:
       return /ohne\s+essen/.test(text) ? 'kita_ohne' : 'kita_essen';
     case CALENDARS.ABWESENHEIT:
+      if (/urlaub/.test(text)) return 'urlaub';
       if (/krank/.test(text)) return 'krank';
       if (/schlie(ß|ss)tag|geschlossen/.test(text)) return 'schliess';
       return 'abwesend';
     case CALENDARS.TERMINE:
       if (/urlaub-check/.test(text)) return 'urlaub_check';
-      if (/urlaub/.test(text)) return 'urlaub';
       return arztSubtyp(text) ? 'arzt' : 'familie';
     default:
       throw new Error(`Unbekannter Kalender: ${calendar}`);

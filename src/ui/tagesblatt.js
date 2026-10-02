@@ -2,6 +2,7 @@ import { h } from './dom.js';
 import { bestaetigen, blatt, chip, farbe, toast } from './components.js';
 import { tagModel } from '../app/views/tag-model.js';
 import { datumLang } from '../app/format-de.js';
+import { sacheErledigt, sacheLoeschen } from './sachen-aktionen.js';
 
 function eintragZeile(e, { store, ui }, schliessen) {
   // Der Titel beginnt schon mit dem Emoji der Zeile; es steht links und nicht doppelt im Text.
@@ -11,7 +12,27 @@ function eintragZeile(e, { store, ui }, schliessen) {
     { class: `zeile ${e.farbe ? 'tint' : ''}`.trim(), style: e.farbe ? farbe(e.farbe) : null },
     h('span', { class: 'emoji' }, e.emoji),
     h('div', { class: 'zeile-text' }, h('b', {}, text)),
-    e.art === 'termin'
+    e.art === 'termin' && e.typ === 'kita_sache'
+      ? h(
+          'div',
+          { class: 'knopfspalte' },
+          h('button', { class: 'knopf klein primaer', type: 'button', onClick: () => sacheErledigt(store, e.id) }, 'Erledigt ✓'),
+          h(
+            'button',
+            {
+              class: 'knopf klein',
+              type: 'button',
+              onClick: () => {
+                schliessen();
+                ui.terminBearbeiten(e.id);
+              },
+            },
+            'Ändern',
+          ),
+          h('button', { class: 'knopf klein', type: 'button', onClick: () => sacheLoeschen(store, e) }, 'Löschen'),
+        )
+      : null,
+    e.art === 'termin' && e.typ !== 'kita_sache'
       ? h(
           'div',
           { class: 'knopfspalte' },

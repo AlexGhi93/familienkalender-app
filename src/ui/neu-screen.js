@@ -3,6 +3,7 @@ import { bestaetigen, farbe, toast } from './components.js';
 import { neuKacheln, urlaubVorschau, werktageImBereich } from '../app/views/neu-model.js';
 import { werktageText } from '../domain/format.js';
 import { terminFormular } from './termin-formular.js';
+import { sachenFormular } from './sachen-formular.js';
 
 function auswahlAnsicht({ ui }, kacheln) {
   return h(
@@ -129,5 +130,6 @@ export function neuScreen(ctx) {
   const kacheln = neuKacheln(store.heute(), store.getState().settings);
   const kachel = ui.neu.auswahl ? kacheln.find((k) => k.id === ui.neu.auswahl) : null;
   if (!kachel) return auswahlAnsicht(ctx, kacheln);
-  return kachel.art === 'termin' ? terminFormular(ctx, kachel) : formularAnsicht(ctx, kachel);
+  if (kachel.art !== 'termin') return formularAnsicht(ctx, kachel);
+  return kachel.id === 'kita_sache' ? sachenFormular(ctx, kachel) : terminFormular(ctx, kachel);
 }

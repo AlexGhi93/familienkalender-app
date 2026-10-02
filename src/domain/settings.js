@@ -10,10 +10,19 @@ export const DEFAULT_SETTINGS = Object.freeze({
   durchgehendWochen: 2,
   schliessZaehlenAlsUrlaub: false,
   mitnehmen: {}, // eigene Mitnehmen-Listen je Arzt-Untertyp
+  bringzeit: '07:30', // Standard-Uhrzeit für „Sachen hinbringen“
+  abholzeit: '15:30', // Standard-Uhrzeit für „Sachen heimholen“
 });
 
 function fehler(feld) {
   return new Error(`Ungültige Einstellung: ${feld}`);
+}
+
+const ZEIT = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+function pruefeZeit(wert, feld) {
+  if (typeof wert !== 'string' || !ZEIT.test(wert)) throw fehler(feld);
+  return wert;
 }
 
 function pruefeDatumOderNull(wert, feld) {
@@ -62,6 +71,9 @@ export function normalizeSettings(gespeichert = {}) {
     }
   }
 
+  const bringzeit = pruefeZeit(s.bringzeit, 'bringzeit');
+  const abholzeit = pruefeZeit(s.abholzeit, 'abholzeit');
+
   return {
     wechseldatum,
     erwartung,
@@ -71,6 +83,8 @@ export function normalizeSettings(gespeichert = {}) {
     durchgehendWochen: s.durchgehendWochen,
     schliessZaehlenAlsUrlaub: s.schliessZaehlenAlsUrlaub,
     mitnehmen: { ...s.mitnehmen },
+    bringzeit,
+    abholzeit,
   };
 }
 

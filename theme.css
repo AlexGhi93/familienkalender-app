@@ -815,3 +815,155 @@ button.chip {
     transition: none !important;
   }
 }
+
+/* ---------- Sachen für Krabbelstube/Kindergarten ---------- */
+
+:root {
+  --sache: #e8789f;
+}
+
+.zelle .punkt.links {
+  right: auto;
+  left: 3px;
+}
+
+.kacheln .kachel:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+  min-height: 84px;
+}
+
+.sachen .sache {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-klein);
+  background: color-mix(in srgb, var(--karte) 70%, transparent);
+  border: 1.5px solid color-mix(in srgb, var(--sache) 30%, transparent);
+}
+
+.sachen .sache .karte-text {
+  min-width: 140px;
+}
+
+.sachen .sache.ueberfaellig {
+  border-color: var(--krank);
+  background: color-mix(in srgb, var(--krank) 12%, var(--karte));
+}
+
+.sachen .sache.heute {
+  border-width: 2px;
+  border-color: var(--sache);
+}
+
+.tag-marke {
+  font-size: 0.75rem;
+  font-weight: 800;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--sache) 30%, var(--karte));
+  border: 1.5px solid var(--sache);
+}
+
+.tag-marke.ueberfaellig {
+  background: color-mix(in srgb, var(--krank) 30%, var(--karte));
+  border-color: var(--krank);
+}
+
+.knopf.schnellstart {
+  --c: var(--sache);
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 12px;
+  align-items: center;
+  text-align: left;
+  width: 100%;
+  padding: 12px 14px;
+  background: color-mix(in srgb, var(--sache) 20%, var(--karte));
+  border: 2px solid color-mix(in srgb, var(--sache) 55%, transparent);
+  border-radius: 18px;
+}
+
+.knopf.schnellstart .e {
+  grid-row: 1 / span 2;
+  font-size: 1.8rem;
+}
+
+.knopf.schnellstart small {
+  color: var(--ink-2);
+  font-weight: 600;
+}
+
+.pyjamas {
+  gap: 12px;
+}
+
+.gruppen {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gruppen details {
+  border: 1.5px solid color-mix(in srgb, var(--sache) 35%, transparent);
+  border-radius: var(--radius-klein);
+  padding: 8px 10px;
+  background: color-mix(in srgb, var(--karte) 60%, transparent);
+}
+
+.gruppen summary {
+  cursor: pointer;
+  font-weight: 800;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+}
+
+.gruppen details > .chip-reihe {
+  margin-top: 6px;
+}
+
+.gruppe-offen {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.stepper-wert {
+  min-width: 90px;
+  text-align: center;
+  font-weight: 800;
+}
+
+.rund:disabled {
+  opacity: 0.4;
+}
+
+.knopfspalte.breit {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.toast-aktion {
+  background: none;
+  border: 0;
+  color: inherit;
+  font-weight: 800;
+  text-decoration: underline;
+  min-height: 44px;
+  padding: 0 4px;
+}

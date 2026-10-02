@@ -1,5 +1,6 @@
 import { TYPES, ARZT_SUBTYPEN } from '../../domain/types.js';
-import { buildDayTitle, buildArztTitle, buildFamilieTitle } from '../../domain/titles.js';
+import { buildDayTitle, buildArztTitle, buildFamilieTitle, buildKitaSacheTitle } from '../../domain/titles.js';
+import { einrichtungFor } from '../../domain/modus.js';
 import { spanDays } from '../../domain/span.js';
 import { euroText } from '../../domain/format.js';
 
@@ -39,23 +40,32 @@ export function kostenText(kosten) {
 }
 
 /** Termin für die Anzeige: Emoji, Beschriftung, Uhrzeit, Mitnehmen, Kosten und der Titel, wie er im Kalender steht. */
-export function terminAnzeige(t) {
+export function terminAnzeige(t, settings) {
+  const gemeinsam = { id: t.id, typ: t.typ, date: t.date, time: t.time ?? null, mitnehmen: t.mitnehmen ?? [], kosten: kostenText(t.kosten), farbe: TYPES[t.typ].farbe };
+  if (t.typ === 'kita_sache') {
+    const einrichtung = einrichtungFor(t.date, settings);
+    return {
+      ...gemeinsam,
+      subtyp: null,
+      emoji: TYPES.kita_sache.emoji,
+      label: t.richtung === 'heim' ? `Von ${einrichtung} heimholen` : `${einrichtung} hinbringen`,
+      richtung: t.richtung,
+      serie: t.serie ?? null,
+      titel: buildKitaSacheTitle({ richtung: t.richtung, einrichtung, time: t.time, mitnehmen: t.mitnehmen }),
+    };
+  }
   const sub = t.typ === 'arzt' ? ARZT_SUBTYPEN[t.subtyp] : null;
   const titel =
     t.typ === 'arzt'
       ? buildArztTitle({ subtyp: t.subtyp, time: t.time, mitnehmen: t.mitnehmen, kosten: t.kosten })
       : buildFamilieTitle({ text: t.label, time: t.time, mitnehmen: t.mitnehmen, kosten: t.kosten });
   return {
-    id: t.id,
-    typ: t.typ,
+    ...gemeinsam,
     subtyp: t.subtyp ?? null,
     emoji: sub ? sub.emoji : TYPES.familie.emoji,
     label: sub ? sub.label : t.label,
-    date: t.date,
-    time: t.time ?? null,
-    mitnehmen: t.mitnehmen ?? [],
-    kosten: kostenText(t.kosten),
-    farbe: TYPES[t.typ].farbe,
+    richtung: null,
+    serie: null,
     titel,
   };
 }
@@ -64,14 +74,14 @@ export function termineAm(state, date) {
   return state.termine
     .filter((t) => t.date === date)
     .sort((a, b) => (a.time ?? '').localeCompare(b.time ?? ''))
-    .map(terminAnzeige);
+    .map((t) => terminAnzeige(t, state.settings));
 }
 
-/** Die nächsten Termine nach `ab` (ausschließlich), nach Datum und Uhrzeit sortiert. */
+/** Die nächsten Termine nach `ab` (ausschließlich), nach Datum und Uhrzeit sortiert; Sachen für die Einrichtung zählen nicht dazu. */
 export function naechsteTermine(state, ab, anzahl) {
   return state.termine
-    .filter((t) => t.date > ab)
+    .filter((t) => t.date > ab && t.typ !== 'kita_sache')
     .sort((a, b) => a.date.localeCompare(b.date) || (a.time ?? '').localeCompare(b.time ?? ''))
     .slice(0, anzahl)
-    .map(terminAnzeige);
+    .map((t) => terminAnzeige(t, state.settings));
 }

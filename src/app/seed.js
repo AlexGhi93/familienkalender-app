@@ -2,6 +2,7 @@ import { addDays, eachDay, isWerktag, weekday } from '../domain/dates.js';
 import { isFeiertag } from '../domain/feiertage.js';
 import { normalizeSettings } from '../domain/settings.js';
 import { ARZT_SUBTYPEN } from '../domain/types.js';
+import { naechsterKitaTag, wochenSerie } from './serie.js';
 
 const MUSTER = ['kita_essen', 'kita_essen', 'kita_essen', 'kita_ohne', 'kita_essen', 'kita_essen', 'kita_essen', 'kita_essen'];
 
@@ -78,5 +79,23 @@ export function seedDemo(heute) {
     },
   ];
 
-  return { settings, tage, urlaub, termine };
+  return { settings, tage, urlaub, termine: [...termine, ...sachenDemo({ settings, tage, urlaub }, heute)] };
+}
+
+/** Sachen für die Krabbelstube: Hinbringen in der nächsten Woche, Heimholen am Freitag danach, später Windeln und Socken. */
+function sachenDemo(state, heute) {
+  const hin = naechsterKitaTag(state, addDays(heute, 2));
+  const sachen = [
+    { id: 'demo-s1', typ: 'kita_sache', richtung: 'hin', date: hin, time: state.settings.bringzeit, mitnehmen: ['Pyjamas', 'Hausschuhe'], kosten: null },
+  ];
+  const freitag = addDays(hin, 4 - weekday(hin));
+  for (let i = freitag === hin ? 1 : 0; i < 8; i += 1) {
+    const eintrag = wochenSerie(state, { start: addDays(freitag, 7 * i), wochen: 1, richtung: 'heim', heute }).eintraege[0];
+    if (eintrag) {
+      sachen.push({ id: 'demo-s2', typ: 'kita_sache', richtung: 'heim', date: eintrag.date, time: state.settings.abholzeit, mitnehmen: ['Pyjamas'], kosten: null });
+      break;
+    }
+  }
+  sachen.push({ id: 'demo-s3', typ: 'kita_sache', richtung: 'hin', date: naechsterKitaTag(state, addDays(heute, 11)), time: state.settings.bringzeit, mitnehmen: ['Windeln', 'Socken'], kosten: null });
+  return sachen;
 }

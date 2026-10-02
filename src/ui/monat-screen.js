@@ -13,12 +13,13 @@ function zelle(z, ui) {
       class: klassen.filter(Boolean).join(' '),
       type: 'button',
       style: z.farbe ? farbe(z.farbe) : null,
-      'aria-label': `${datumLang(z.date)}${z.feiertag ? `, ${z.feiertag}` : ''}`,
+      'aria-label': `${datumLang(z.date)}${z.feiertag ? `, ${z.feiertag}` : ''}${z.sache ? ', Sachen für die Einrichtung' : ''}`,
       onClick: () => ui.tagesblatt(z.date),
     },
     h('span', { class: 'nr' }, z.tag),
     z.emoji ? h('i', {}, z.emoji) : null,
     z.arzt ? h('span', { class: 'punkt', 'aria-hidden': 'true' }, '🩺') : null,
+    z.sache ? h('span', { class: 'punkt links', 'aria-hidden': 'true' }, '👕') : null,
   );
 }
 
@@ -28,6 +29,7 @@ const LEGENDE = [
   ['Krank', TYPES.krank.farbe],
   ['Urlaub', TYPES.urlaub.farbe],
   ['Arzttermin', TYPES.arzt.farbe],
+  ['Sachen', TYPES.kita_sache.farbe],
   ['Feiertag', FEIERTAG_FARBE],
 ];
 
