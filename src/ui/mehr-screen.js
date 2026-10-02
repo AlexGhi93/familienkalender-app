@@ -39,6 +39,28 @@ export function mehrScreen({ store, ui }) {
       hinweis ? h('small', { class: 'leise' }, hinweis) : null,
     );
 
+  const kindnameFeld = h(
+    'label',
+    { class: 'feld' },
+    h('span', {}, 'Name des Kindes'),
+    h('input', {
+      type: 'text',
+      maxlength: '20',
+      autocomplete: 'off',
+      placeholder: 'Vorname eingeben',
+      value: settings.kindname,
+      onChange: (e) => {
+        const name = e.target.value.trim();
+        if (/[(),]| · /.test(name)) {
+          toast('Bitte ohne Klammern, Kommas und „ · “.');
+          return;
+        }
+        speichern({ kindname: name });
+      },
+    }),
+    h('small', { class: 'leise' }, 'Erscheint bei „Für wen“ und in neuen Terminen, z. B. „Kinderarzt (Vorname)“. Du kannst ihn jederzeit ändern.'),
+  );
+
   const zeitFeld = (beschriftung, wert, beiAenderung) =>
     h('label', { class: 'feld' }, h('span', {}, beschriftung), h('input', { type: 'time', value: wert, required: true, onChange: (e) => beiAenderung(e.target.value) }));
 
@@ -55,6 +77,7 @@ export function mehrScreen({ store, ui }) {
       datumsFeld('Erfassung ab', settings.erfassungAb, (w) => speichern({ erfassungAb: w }), 'Ab diesem Tag zählt die App „offene“ Tage.'),
       datumsFeld('Wechsel zum Kindergarten ab', settings.wechseldatum, (w) => speichern({ wechseldatum: w }), 'Ab diesem Tag heißt es „Kindergarten“ statt „Krabbelstube“.'),
     ),
+    h('article', { class: 'karte' }, h('h3', {}, 'Familie'), kindnameFeld),
     h(
       'article',
       { class: 'karte' },

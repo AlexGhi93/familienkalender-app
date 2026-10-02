@@ -36,6 +36,17 @@ export const ARZT_SUBTYPEN = Object.freeze({
   sonstiger_arzt: { id: 'sonstiger_arzt', emoji: '🩺', label: 'Arzt', mitnehmen: ['e-card'] },
 });
 
+/** Für wen ein Termin ist. „Alle“ ist der Normalfall und wird nicht gespeichert; der Name des Kindes kommt aus den Einstellungen. */
+export const FUER = Object.freeze({
+  kind: { id: 'kind', emoji: '🧒', label: 'Kind' },
+  mama: { id: 'mama', emoji: '👩', label: 'Mama' },
+  papa: { id: 'papa', emoji: '👨', label: 'Papa' },
+});
+export const FUER_ALLE = Object.freeze({ id: 'alle', emoji: '👪', label: 'Alle' });
+
+/** Symbole für „Termin“ (Behörde, Friseur, Auto …); 🎈 war das bisherige Standard-Symbol. */
+export const FAMILIE_SYMBOLE = Object.freeze(['📌', '🏛️', '✂️', '🚗', '🎈', '🛒', '🏠', '💼', '🎂', '🔧']);
+
 /** Richtung einer Kita-Sache: hin = zur Einrichtung bringen, heim = mit nach Hause nehmen (z. B. Wäsche). */
 export const KITA_RICHTUNGEN = Object.freeze({
   hin: { id: 'hin', label: 'Hinbringen', verb: 'hinbringen' },

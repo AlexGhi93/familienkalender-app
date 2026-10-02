@@ -5,6 +5,8 @@ export * from './format.js';
 export * from './types.js';
 export * from './settings.js';
 export * from './modus.js';
+export * from './fuer.js';
+export * from './notiz.js';
 export * from './titles.js';
 export * from './classify.js';
 export * from './konflikt.js';

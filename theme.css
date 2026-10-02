@@ -553,6 +553,36 @@ button.chip {
   width: 100%;
 }
 
+.feld textarea {
+  width: 100%;
+  min-height: 74px;
+  padding: 10px 12px;
+  border-radius: var(--radius-klein);
+  border: 1.5px solid var(--linie);
+  background: var(--karte);
+  font: inherit;
+  resize: vertical;
+}
+
+.chip.symbol {
+  min-width: 44px;
+  min-height: 44px;
+  justify-content: center;
+  font-size: 1.25rem;
+  padding: 4px 8px;
+}
+
+.notiz {
+  margin: 6px 0 0;
+  font-size: 0.9rem;
+  color: var(--ink-2);
+  white-space: pre-line;
+}
+
+small.notiz {
+  display: block;
+}
+
 .zeile-eingabe {
   display: flex;
   gap: 8px;
@@ -825,6 +855,12 @@ button.chip {
 .zelle .punkt.links {
   right: auto;
   left: 3px;
+}
+
+.zelle .punkt.mitte {
+  right: auto;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 .kacheln .kachel:last-child:nth-child(odd) {

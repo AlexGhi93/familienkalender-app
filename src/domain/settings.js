@@ -12,6 +12,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   mitnehmen: {}, // eigene Mitnehmen-Listen je Arzt-Untertyp
   bringzeit: '07:30', // Standard-Uhrzeit für „Sachen hinbringen“
   abholzeit: '15:30', // Standard-Uhrzeit für „Sachen heimholen“
+  kindname: '', // Vorname des Kindes für „Für wen“; leer = „Kind“ (steht nicht im Programmtext)
 });
 
 function fehler(feld) {
@@ -23,6 +24,15 @@ const ZEIT = /^([01]\d|2[0-3]):[0-5]\d$/;
 function pruefeZeit(wert, feld) {
   if (typeof wert !== 'string' || !ZEIT.test(wert)) throw fehler(feld);
   return wert;
+}
+
+const MAX_KINDNAME = 20;
+
+function pruefeKindname(wert) {
+  if (typeof wert !== 'string') throw fehler('kindname');
+  const name = wert.trim();
+  if (name.length > MAX_KINDNAME || /[(),]| · /.test(name)) throw fehler('kindname');
+  return name;
 }
 
 function pruefeDatumOderNull(wert, feld) {
@@ -73,6 +83,7 @@ export function normalizeSettings(gespeichert = {}) {
 
   const bringzeit = pruefeZeit(s.bringzeit, 'bringzeit');
   const abholzeit = pruefeZeit(s.abholzeit, 'abholzeit');
+  const kindname = pruefeKindname(s.kindname);
 
   return {
     wechseldatum,
@@ -85,6 +96,7 @@ export function normalizeSettings(gespeichert = {}) {
     mitnehmen: { ...s.mitnehmen },
     bringzeit,
     abholzeit,
+    kindname,
   };
 }
 

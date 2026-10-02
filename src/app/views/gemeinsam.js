@@ -1,4 +1,5 @@
-import { TYPES, ARZT_SUBTYPEN } from '../../domain/types.js';
+import { TYPES, ARZT_SUBTYPEN, FUER } from '../../domain/types.js';
+import { fuerName } from '../../domain/fuer.js';
 import { buildDayTitle, buildArztTitle, buildFamilieTitle, buildKitaSacheTitle } from '../../domain/titles.js';
 import { einrichtungFor } from '../../domain/modus.js';
 import { spanDays } from '../../domain/span.js';
@@ -47,6 +48,10 @@ export function terminAnzeige(t, settings) {
     return {
       ...gemeinsam,
       subtyp: null,
+      fuer: null,
+      fuerText: null,
+      fuerEmoji: null,
+      notiz: null,
       emoji: TYPES.kita_sache.emoji,
       label: t.richtung === 'heim' ? `Von ${einrichtung} heimholen` : `${einrichtung} hinbringen`,
       richtung: t.richtung,
@@ -55,14 +60,20 @@ export function terminAnzeige(t, settings) {
     };
   }
   const sub = t.typ === 'arzt' ? ARZT_SUBTYPEN[t.subtyp] : null;
+  const fuer = t.fuer && FUER[t.fuer] ? t.fuer : null;
+  const fuerText = fuerName(fuer, settings);
   const titel =
     t.typ === 'arzt'
-      ? buildArztTitle({ subtyp: t.subtyp, time: t.time, mitnehmen: t.mitnehmen, kosten: t.kosten })
-      : buildFamilieTitle({ text: t.label, time: t.time, mitnehmen: t.mitnehmen, kosten: t.kosten });
+      ? buildArztTitle({ subtyp: t.subtyp, fuer: fuerText, time: t.time, mitnehmen: t.mitnehmen, kosten: t.kosten })
+      : buildFamilieTitle({ text: t.label, symbol: t.symbol, fuer: fuerText, time: t.time, mitnehmen: t.mitnehmen, kosten: t.kosten });
   return {
     ...gemeinsam,
     subtyp: t.subtyp ?? null,
-    emoji: sub ? sub.emoji : TYPES.familie.emoji,
+    fuer,
+    fuerText,
+    fuerEmoji: fuer ? FUER[fuer].emoji : null,
+    notiz: t.notiz ?? null,
+    emoji: sub ? sub.emoji : t.symbol || TYPES.familie.emoji,
     label: sub ? sub.label : t.label,
     richtung: null,
     serie: null,

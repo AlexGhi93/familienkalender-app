@@ -1,5 +1,6 @@
 import { TYPES, ARZT_SUBTYPEN, KITA_RICHTUNGEN } from './types.js';
 import { einrichtungFor } from './modus.js';
+import { fuerAusText } from './fuer.js';
 import { euroText, werktageText, kurzDatum, zeitAusDateTime } from './format.js';
 
 export const SEP = ' · ';
@@ -31,23 +32,30 @@ function bereinigt(text) {
   return text.replaceAll(SEP, ' - ').replace(/\s+/g, ' ').trim();
 }
 
-/** '<emoji> <label> <HH:MM> · 🎒 <mitnehmen> · 💶 <kosten>' */
-export function buildTerminTitle({ emoji, label, time = null, mitnehmen = [], kosten = null }) {
-  const teile = [[emoji, bereinigt(label), time].filter(Boolean).join(' ')];
+/** Name für „Für wen“ in der Klammer: ohne Klammern und Trenner, damit der Titel eindeutig lesbar bleibt. */
+function klammerName(name) {
+  return bereinigt(String(name).replaceAll(SEP, ' - ').replace(/[()]/g, ' '));
+}
+
+/** '<emoji> <label> (<für wen>) <HH:MM> · 🎒 <mitnehmen> · 💶 <kosten>' */
+export function buildTerminTitle({ emoji, label, fuer = null, time = null, mitnehmen = [], kosten = null }) {
+  const name = fuer ? klammerName(fuer) : '';
+  const bezeichnung = name ? `${bereinigt(label)} (${name})` : bereinigt(label);
+  const teile = [[emoji, bezeichnung, time].filter(Boolean).join(' ')];
   const eintraege = mitnehmen.map((x) => bereinigt(x.replaceAll(',', ' '))).filter(Boolean);
   if (eintraege.length > 0) teile.push(`🎒 ${eintraege.join(', ')}`);
   if (kosten) teile.push(`💶 ${kosten.kostenlos ? 'kostenlos' : euroText(kosten.betrag)}`);
   return teile.join(SEP);
 }
 
-export function buildArztTitle({ subtyp, time, mitnehmen = [], kosten = null }) {
+export function buildArztTitle({ subtyp, fuer = null, time, mitnehmen = [], kosten = null }) {
   const s = ARZT_SUBTYPEN[subtyp];
   if (!s) throw new Error(`Unbekannter Arzt-Untertyp: ${subtyp}`);
-  return buildTerminTitle({ emoji: s.emoji, label: s.label, time, mitnehmen, kosten });
+  return buildTerminTitle({ emoji: s.emoji, label: s.label, fuer, time, mitnehmen, kosten });
 }
 
-export function buildFamilieTitle({ text, time = null, mitnehmen = [], kosten = null }) {
-  return buildTerminTitle({ emoji: TYPES.familie.emoji, label: text, time, mitnehmen, kosten });
+export function buildFamilieTitle({ text, symbol = null, fuer = null, time = null, mitnehmen = [], kosten = null }) {
+  return buildTerminTitle({ emoji: symbol || TYPES.familie.emoji, label: text, fuer, time, mitnehmen, kosten });
 }
 
 /** Sachen für Krabbelstube/Kindergarten: '👕 Krabbelstube hinbringen 07:30 · 🎒 Pyjamas' bzw. '👕 Von Krabbelstube heimholen 15:30 · 🎒 …'. */
@@ -77,8 +85,8 @@ function parseKosten(text) {
   return m ? { betrag: Number(m[1].replace(',', '.')) } : null;
 }
 
-/** Liest oben genannte Segmente zurück; unbekannte Segmente werden ignoriert. */
-export function parseTerminTitle(title) {
+/** Liest oben genannte Segmente zurück; unbekannte Segmente werden ignoriert. `fuer`/`fuerSchluessel` gibt es nur bei einem bekannten Namen. */
+export function parseTerminTitle(title, { kindname = '' } = {}) {
   const [kopf, ...rest] = title.split(SEP);
   const ersteLuecke = kopf.indexOf(' ');
   const hatEmoji = ersteLuecke !== -1 && !/^[\p{L}\p{N}]/u.test(kopf);
@@ -89,6 +97,17 @@ export function parseTerminTitle(title) {
   if (zeit) {
     label = zeit[1];
     time = zeit[2];
+  }
+  let fuer;
+  let fuerSchluessel;
+  const klammer = /^(.*\S) \(([^()]+)\)$/.exec(label);
+  if (klammer) {
+    const schluessel = fuerAusText(klammer[2], { kindname });
+    if (schluessel) {
+      label = klammer[1];
+      fuer = klammer[2].trim();
+      fuerSchluessel = schluessel;
+    }
   }
   let mitnehmen = [];
   let kosten = null;
@@ -103,7 +122,12 @@ export function parseTerminTitle(title) {
       kosten = parseKosten(segment.slice(3).trim());
     }
   }
-  return { emoji, label, time, mitnehmen, kosten };
+  return { emoji, label, time, mitnehmen, kosten, ...(fuerSchluessel ? { fuer, fuerSchluessel } : {}) };
+}
+
+/** Entfernt eine angehängte Klammer „(…)“ von der Bezeichnung (wenn das versteckte Feld die Zuordnung hält). */
+export function ohneKlammer(label) {
+  return label.replace(/ \([^()]+\)$/, '');
 }
 
 const segmenter = new Intl.Segmenter('de', { granularity: 'grapheme' });

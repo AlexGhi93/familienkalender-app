@@ -1,5 +1,6 @@
 import { addDays, isValidDate, istZeitumstellungsLuecke } from '../domain/dates.js';
-import { ARZT_SUBTYPEN, KITA_RICHTUNGEN } from '../domain/types.js';
+import { ARZT_SUBTYPEN, FAMILIE_SYMBOLE, FUER, KITA_RICHTUNGEN, TYPES } from '../domain/types.js';
+import { MAX_NOTIZ, bereinigeNotiz } from '../domain/notiz.js';
 import { mitnehmenFor, normalizeSettings } from '../domain/settings.js';
 import { SEP, TITLE_LIMIT, titleLength } from '../domain/titles.js';
 import { terminAnzeige } from './views/gemeinsam.js';
@@ -9,6 +10,8 @@ export const MAX_TITEL = 30;
 export const MAX_MITNEHMEN_EINTRAG = 30;
 export const MAX_MITNEHMEN = 8;
 export const MAX_BETRAG = 9999;
+
+export { MAX_NOTIZ };
 
 const ZEIT = /^([01]\d|2[0-3]):[0-5]\d$/;
 const SERIE = /^[0-9a-v]{5,40}$/;
@@ -49,6 +52,28 @@ function pruefeMitnehmen(liste) {
   return sauber;
 }
 
+/** „Für wen“: Kind, Mama, Papa; Alle (leer) wird nicht gespeichert. */
+function pruefeFuer(wert) {
+  if (wert == null || wert === '' || wert === 'alle') return null;
+  if (!FUER[wert]) throw new Error('Bitte bei „Für wen“ Kind, Mama, Papa oder Alle wählen.');
+  return wert;
+}
+
+function pruefeNotiz(wert) {
+  if (wert == null) return null;
+  if (typeof wert !== 'string') throw new Error('Die Notiz ist ungültig.');
+  const text = bereinigeNotiz(wert);
+  if (text === '') return null;
+  if (text.length > MAX_NOTIZ) throw new Error(`Die Notiz ist zu lang (höchstens ${MAX_NOTIZ} Zeichen).`);
+  return text;
+}
+
+function pruefeSymbol(wert) {
+  if (wert == null || wert === '') return null;
+  if (!FAMILIE_SYMBOLE.includes(wert)) throw new Error('Bitte ein Symbol aus der Liste wählen.');
+  return wert;
+}
+
 /** Sachen für Krabbelstube/Kindergarten: Richtung, Uhrzeit und mindestens eine Sache sind Pflicht; Kosten gibt es nicht. */
 function normalisiereSache(roh, zeit) {
   if (!KITA_RICHTUNGEN[roh.richtung]) throw new Error('Bitte die Richtung wählen (Hinbringen oder Heimholen).');
@@ -66,7 +91,8 @@ function normalisiereSache(roh, zeit) {
 /**
  * Prüft und bereinigt einen Termin aus dem Formular. Wirft einen Error mit deutscher Meldung,
  * die direkt angezeigt werden kann. Ergebnis hat immer die Felder: typ, date, time, mitnehmen, kosten
- * und je nach Typ subtyp (arzt) oder label (familie). Die `id` kommt vom Aufrufer.
+ * und je nach Typ subtyp (arzt) oder label (familie); dazu optional fuer (kind, mama, papa), notiz und, bei „Termin“, symbol.
+ * Die `id` kommt vom Aufrufer.
  */
 export function normalisiereTermin(roh) {
   if (!roh || !['arzt', 'familie', 'kita_sache'].includes(roh.typ)) throw new Error('Unbekannte Art von Termin.');
@@ -77,7 +103,9 @@ export function normalisiereTermin(roh) {
   if (zeit !== null && istZeitumstellungsLuecke(roh.date, zeit)) throw new Error('Diese Uhrzeit gibt es am Tag der Zeitumstellung nicht (02:00 bis 03:00).');
   if (roh.typ === 'kita_sache') return normalisiereSache(roh, zeit);
 
-  const gemeinsam = { typ: roh.typ, date: roh.date, time: zeit, mitnehmen: pruefeMitnehmen(roh.mitnehmen ?? []), kosten: pruefeKosten(roh.kosten) };
+  const fuer = pruefeFuer(roh.fuer);
+  const notiz = pruefeNotiz(roh.notiz);
+  const gemeinsam = { typ: roh.typ, date: roh.date, time: zeit, mitnehmen: pruefeMitnehmen(roh.mitnehmen ?? []), kosten: pruefeKosten(roh.kosten), ...(fuer ? { fuer } : {}), ...(notiz ? { notiz } : {}) };
 
   if (roh.typ === 'arzt') {
     if (!ARZT_SUBTYPEN[roh.subtyp]) throw new Error('Bitte die Art des Arzttermins wählen.');
@@ -87,7 +115,8 @@ export function normalisiereTermin(roh) {
   const label = String(roh.label ?? '').replaceAll(SEP, ' - ').replace(/\s+/g, ' ').trim();
   if (label === '') throw new Error('Bitte einen Titel eingeben.');
   if (label.length > MAX_TITEL) throw new Error(`Der Titel ist zu lang (höchstens ${MAX_TITEL} Zeichen).`);
-  return { ...gemeinsam, label };
+  const symbol = pruefeSymbol(roh.symbol);
+  return { ...gemeinsam, label, ...(symbol ? { symbol } : {}) };
 }
 
 /** Ausgangszustand des Formulars: neuer Termin der Art `art` oder ein vorhandener `termin` zum Bearbeiten. */
@@ -99,6 +128,9 @@ export function terminEntwurf(art, { settings, heute, termin = null, state = nul
       bearbeiten: termin.id,
       subtyp: termin.subtyp ?? 'kinderarzt',
       label: termin.label ?? '',
+      fuer: termin.fuer ?? 'alle',
+      notiz: termin.notiz ?? '',
+      symbol: termin.symbol ?? TYPES.familie.emoji,
       date: termin.date,
       time: termin.time ?? '',
       mitnehmen: [...termin.mitnehmen],
@@ -136,6 +168,9 @@ export function terminEntwurf(art, { settings, heute, termin = null, state = nul
     bearbeiten: null,
     subtyp: 'kinderarzt',
     label: '',
+    fuer: art === 'arzt' ? 'kind' : 'alle',
+    notiz: '',
+    symbol: FAMILIE_SYMBOLE[0],
     date: heute,
     time: art === 'arzt' ? '09:00' : '',
     mitnehmen: art === 'arzt' ? [...mitnehmenFor('kinderarzt', settings)] : [],
@@ -163,8 +198,8 @@ export function terminAusEntwurf(e) {
     if (betrag === null) throw new Error('Bitte den Betrag eingeben.');
     kosten = { betrag }; // NaN wird von normalisiereTermin als ungültig abgelehnt
   }
-  const roh = { typ: e.auswahl, date: e.date, time: e.time, mitnehmen: e.mitnehmen, kosten };
-  return e.auswahl === 'arzt' ? { ...roh, subtyp: e.subtyp } : { ...roh, label: e.label };
+  const roh = { typ: e.auswahl, date: e.date, time: e.time, mitnehmen: e.mitnehmen, kosten, fuer: e.fuer, notiz: e.notiz };
+  return e.auswahl === 'arzt' ? { ...roh, subtyp: e.subtyp } : { ...roh, symbol: e.symbol, label: e.label };
 }
 
 /** Live-Vorschau: so steht der Termin im Kalender und in der Benachrichtigung. */

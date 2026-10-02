@@ -11,7 +11,7 @@ function eintragZeile(e, { store, ui }, schliessen) {
     'div',
     { class: `zeile ${e.farbe ? 'tint' : ''}`.trim(), style: e.farbe ? farbe(e.farbe) : null },
     h('span', { class: 'emoji' }, e.emoji),
-    h('div', { class: 'zeile-text' }, h('b', {}, text)),
+    h('div', { class: 'zeile-text' }, h('b', {}, text), e.art === 'termin' && e.notiz ? h('small', { class: 'notiz' }, `📝 ${e.notiz}`) : null),
     e.art === 'termin' && e.typ === 'kita_sache'
       ? h(
           'div',

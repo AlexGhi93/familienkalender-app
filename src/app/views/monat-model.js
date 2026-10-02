@@ -70,6 +70,7 @@ export function monatModel(state, jahr, monat, heute) {
       farbe: anzeigeTyp ? TYPES[anzeigeTyp].farbe : feiertag ? FEIERTAG_FARBE : null,
       arzt: termine.some((t) => t.typ === 'arzt'),
       sache: termine.some((t) => t.typ === 'kita_sache'),
+      termin: termine.find((t) => t.typ === 'familie')?.emoji ?? null, // Symbol des ersten „Termins“ (alles außer Arzt und Sachen)
       termine: termine.length,
     };
   });

@@ -4,8 +4,9 @@
 import { addDays } from '../domain/dates.js';
 import { eventSpan, spanDays, toGoogleAllDay } from '../domain/span.js';
 import { dayEventId } from '../domain/ids.js';
-import { TAGES_TYPEN, TYPES } from '../domain/types.js';
-import { buildDayTitle, needsTimeResync, parseKitaSacheLabel, parseTerminTitle, withTime } from '../domain/titles.js';
+import { FAMILIE_SYMBOLE, FUER, TAGES_TYPEN, TYPES } from '../domain/types.js';
+import { buildDayTitle, needsTimeResync, ohneKlammer, parseKitaSacheLabel, parseTerminTitle, withTime } from '../domain/titles.js';
+import { notizAusBeschreibung } from '../domain/notiz.js';
 import { classifyEvent } from '../domain/classify.js';
 import { zeitAusDateTime } from '../domain/format.js';
 import { DEFAULT_SETTINGS, normalizeSettings } from '../domain/settings.js';
@@ -23,6 +24,9 @@ const pad2 = (n) => String(n).padStart(2, '0');
 function versteckt(typ, zusatz = {}) {
   return { fk: '1', typ, v: '1', ...zusatz };
 }
+
+/** Arzt und Termin: „Für wen“ steht im Titel und zusätzlich im versteckten Feld `w` (kind, mama, papa oder alle); so bleibt es auch nach einer Namensänderung eindeutig. */
+const MIT_FUER = ['arzt', 'familie'];
 
 /** Endzeit auf bürgerlicher Uhr (ohne Zeitzonenrechnung): { date, time } nach `minuten`, auch über Mitternacht. */
 export function endeAus(date, time, minuten) {
@@ -73,7 +77,8 @@ export function terminZuEreignis(termin, settings) {
     id: termin.id,
     summary: terminAnzeige(termin, settings).titel,
     colorId: TYPES[termin.typ].colorId,
-    extendedProperties: { private: versteckt(termin.typ, termin.serie ? { s: termin.serie } : {}) },
+    extendedProperties: { private: versteckt(termin.typ, { ...(termin.serie ? { s: termin.serie } : {}), ...(MIT_FUER.includes(termin.typ) ? { w: termin.fuer ?? 'alle' } : {}) }) },
+    ...(MIT_FUER.includes(termin.typ) ? { description: termin.notiz ?? '' } : {}),
   };
   if (termin.time) {
     const ende = endeAus(termin.date, termin.time, TERMIN_MINUTEN);
@@ -171,18 +176,26 @@ export function ereignisZuEintrag(event, kalender, settings) {
   if (typ === 'urlaub_check') return { art: 'ignorieren' };
 
   const titel = event.summary ?? '';
-  const geparst = parseTerminTitle(titel);
+  const geparst = parseTerminTitle(titel, { kindname: settings?.kindname ?? '' });
   const date = eventSpan(event).start;
   const echteZeit = event.start.dateTime ? zeitAusDateTime(event.start.dateTime) : null;
   const resync = echteZeit && needsTimeResync(titel, event.start.dateTime) ? { id: event.id, kalender, summary: withTime(titel, echteZeit) } : null;
   const basis = { id: event.id, typ, date, time: echteZeit, mitnehmen: geparst.mitnehmen, kosten: geparst.kosten };
 
-  if (typ === 'arzt') return { art: 'termin', termin: { ...basis, subtyp }, resync };
+  // „Für wen“: das versteckte Feld gilt zuerst, sonst der Name im Titel (nativ geschriebene Titel)
+  const w = event.extendedProperties?.private?.w;
+  const fuer = FUER[w] ? w : w === 'alle' ? null : (geparst.fuerSchluessel ?? null);
+  const notiz = notizAusBeschreibung(event.description);
+  const zusatz = { ...(fuer ? { fuer } : {}), ...(notiz ? { notiz } : {}) };
+
+  if (typ === 'arzt') return { art: 'termin', termin: { ...basis, subtyp, ...zusatz }, resync };
   if (typ === 'kita_sache') {
     const richtung = parseKitaSacheLabel(geparst.label)?.richtung ?? 'hin';
     const serie = event.extendedProperties?.private?.s;
     const zeit = echteZeit ?? (richtung === 'heim' ? settings.abholzeit : settings.bringzeit);
     return { art: 'termin', termin: { ...basis, time: zeit, kosten: null, richtung, ...(serie ? { serie } : {}) }, resync };
   }
-  return { art: 'termin', termin: { ...basis, label: geparst.label }, resync };
+  const label = FUER[w] && !geparst.fuerSchluessel ? ohneKlammer(geparst.label) : geparst.label;
+  const symbol = geparst.emoji !== TYPES.familie.emoji && FAMILIE_SYMBOLE.includes(geparst.emoji) ? geparst.emoji : null;
+  return { art: 'termin', termin: { ...basis, label, ...zusatz, ...(symbol ? { symbol } : {}) }, resync };
 }

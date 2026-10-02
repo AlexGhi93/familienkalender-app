@@ -28,15 +28,17 @@ function terminKarte(t) {
       h('span', { class: 'emoji' }, t.emoji),
       h('div', { class: 'karte-text' }, h('b', {}, t.label, t.time ? ` · ${t.time}` : ''), h('small', {}, datumKurz(t.date))),
     ),
-    t.mitnehmen.length > 0 || t.kosten
+    t.fuerText || t.mitnehmen.length > 0 || t.kosten
       ? h(
           'div',
           { class: 'chips' },
+          t.fuerText ? chip(`${t.fuerEmoji} ${t.fuerText}`) : null,
           erstes ? chip(`🎒 ${erstes}`) : null,
           rest.map((x) => chip(x)),
           t.kosten ? chip(`💶 ${t.kosten}`) : null,
         )
       : null,
+    t.notiz ? h('p', { class: 'notiz' }, `📝 ${t.notiz}`) : null,
   );
 }
 

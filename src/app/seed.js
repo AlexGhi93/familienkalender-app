@@ -21,7 +21,7 @@ function werktagAb(datum) {
  */
 export function seedDemo(heute) {
   const start = addDays(heute, -28);
-  const settings = normalizeSettings({ erfassungAb: start });
+  const settings = normalizeSettings({ erfassungAb: start }); // ohne Namen des Kindes: „Für wen“ zeigt „Kind“
 
   const vergangenerUrlaubStart = montag(addDays(heute, -21));
   const kuenftigerUrlaubStart = addDays(montag(heute), 21);
@@ -45,6 +45,7 @@ export function seedDemo(heute) {
       id: 'demo-t1',
       typ: 'arzt',
       subtyp: 'kinderarzt',
+      fuer: 'kind',
       date: werktagAb(addDays(heute, 1)),
       time: '10:00',
       mitnehmen: [...ARZT_SUBTYPEN.kinderarzt.mitnehmen],
@@ -54,6 +55,7 @@ export function seedDemo(heute) {
       id: 'demo-t2',
       typ: 'arzt',
       subtyp: 'impfung',
+      fuer: 'kind',
       date: werktagAb(addDays(heute, 8)),
       time: '09:15',
       mitnehmen: [...ARZT_SUBTYPEN.impfung.mitnehmen],
@@ -66,6 +68,18 @@ export function seedDemo(heute) {
       date: addDays(heute, 12),
       time: '15:00',
       mitnehmen: ['Geschenk'],
+      kosten: null,
+    },
+    {
+      id: 'demo-t5',
+      typ: 'familie',
+      label: 'Finanzamt',
+      symbol: '🏛️',
+      fuer: 'mama',
+      notiz: 'Arbeitnehmerveranlagung, 2. Stock',
+      date: werktagAb(addDays(heute, 5)),
+      time: '14:00',
+      mitnehmen: ['Ausweis', 'Lohnzettel'],
       kosten: null,
     },
     {
