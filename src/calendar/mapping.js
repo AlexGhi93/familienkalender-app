@@ -3,7 +3,7 @@
 // und das Verhalten der API ist in docs/spike/CONTRACT.md belegt.
 import { addDays } from '../domain/dates.js';
 import { eventSpan, spanDays, toGoogleAllDay } from '../domain/span.js';
-import { dayEventId } from '../domain/ids.js';
+import { dayEventId, istUrlaubCheckId, urlaubCheckEventId } from '../domain/ids.js';
 import { FAMILIE_SYMBOLE, FUER, TAGES_TYPEN, TYPES } from '../domain/types.js';
 import { buildDayTitle, needsTimeResync, ohneKlammer, parseKitaSacheLabel, parseTerminTitle, withTime } from '../domain/titles.js';
 import { notizAusBeschreibung } from '../domain/notiz.js';
@@ -72,6 +72,25 @@ export function urlaubZuEreignis({ id, start, end }, settings) {
       transparency: 'transparent',
       reminders: { useDefault: false, overrides: [] },
       extendedProperties: { private: versteckt('urlaub') },
+    },
+  };
+}
+
+/** Urlaub-Check: Ereignis in „Termine“ um 09:00 (Ortszeit Wien) mit „1 Tag und 1 Stunde vorher“; feste ID `fkc<JJJJMMTT>`. */
+export function urlaubCheckZuEreignis({ date, title }) {
+  const id = urlaubCheckEventId(date);
+  const ende = endeAus(date, '09:00', TERMIN_MINUTEN);
+  return {
+    kalender: TYPES.urlaub_check.calendar,
+    id,
+    body: {
+      id,
+      summary: title,
+      colorId: TYPES.urlaub_check.colorId,
+      start: { dateTime: `${date}T09:00:00`, timeZone: CONFIG.zeitzone },
+      end: { dateTime: `${ende.date}T${ende.time}:00`, timeZone: CONFIG.zeitzone },
+      reminders: { useDefault: false, overrides: ERINNERUNG_VORHER },
+      extendedProperties: { private: versteckt('urlaub_check') },
     },
   };
 }
@@ -217,7 +236,7 @@ export function einstellungenAusEreignis(event) {
 
 /**
  * Übersetzt ein Google-Ereignis in einen Eintrag der App:
- * { art: 'tag' | 'urlaub' | 'termin' | 'einstellungen' | 'ignorieren', … }.
+ * { art: 'tag' | 'urlaub' | 'termin' | 'einstellungen' | 'urlaubcheck' | 'ignorieren', … }.
  * Bei Terminen gilt die echte Startzeit; weicht der Titel ab, liefert `resync` die Korrektur des Titels.
  */
 export function ereignisZuEintrag(event, kalender, settings) {
@@ -231,7 +250,10 @@ export function ereignisZuEintrag(event, kalender, settings) {
     const span = eventSpan(event);
     return { art: 'urlaub', id: event.id, start: span.start, end: span.end };
   }
-  if (typ === 'urlaub_check') return { art: 'ignorieren' };
+  if (typ === 'urlaub_check') {
+    // nur die selbst angelegten (feste ID) werden verwaltet; ein von Hand getippter „Urlaub-Check“ bleibt unbeachtet
+    return istUrlaubCheckId(event.id) ? { art: 'urlaubcheck', id: event.id, date: eventSpan(event).start, titel: event.summary ?? '' } : { art: 'ignorieren' };
+  }
 
   const titel = event.summary ?? '';
   const geparst = parseTerminTitle(titel, { kindname: settings?.kindname ?? '' });

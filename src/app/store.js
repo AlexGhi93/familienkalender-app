@@ -3,7 +3,9 @@ import { normalizeSettings } from '../domain/settings.js';
 import { spanDays } from '../domain/span.js';
 import { planUmwandlung } from '../domain/umwandlung.js';
 import { entfernen as artikelEntfernen, erledigteEntfernen, hinzufuegen as artikelHinzufuegen, leereListe, normalisiereListe, umschalten as artikelUmschalten, wiederherstellen } from '../domain/einkauf.js';
+import { urlaubCheckEventId } from '../domain/ids.js';
 import { normalisiereTermin } from './termin.js';
+import { urlaubChecksAbgleich, urlaubChecksWunsch } from './urlaub-check.js';
 import { MAX_SERIEN_WOCHEN, naechsterWochentag, wochenSerie } from './serie.js';
 
 const KITA_TYPEN = ['kita_essen', 'kita_ohne'];
@@ -27,6 +29,7 @@ function ladeFelder(daten, state) {
     urlaub: daten.urlaub ?? [],
     termine: daten.termine ?? [],
     einkauf: daten.einkauf ? normalisiereListe(daten.einkauf) : (state.einkauf ?? leereListe()),
+    urlaubChecks: daten.urlaubChecks ?? state.urlaubChecks ?? [],
     ...(daten.konflikte ? { konflikte: daten.konflikte } : {}),
     ...(daten.warnungen ? { warnungen: daten.warnungen } : {}),
     ...(daten.fenster ? { fenster: daten.fenster } : {}),
@@ -47,6 +50,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
   const geladeneBereiche = [];
   const ladendeBereiche = new Set();
   let letzteLadung = 0;
+  let checksLaufen = false;
   const melden = () => {
     for (const h of hoerer) h(state);
   };
@@ -256,6 +260,30 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     async sicherungsDaten() {
       const roh = adapter.ladeAlles ? await adapter.ladeAlles() : state;
       return { settings: state.settings, tage: roh.tage, urlaub: roh.urlaub, termine: roh.termine, einkauf: state.einkauf };
+    },
+
+    /**
+     * Gleicht die Urlaub-Checks im Kalender mit dem Stand des Urlaubs ab (am 1.3., 1.5., 1.7. um 09:00, solange noch Urlaub offen ist).
+     * Nur mit Google und frisch geladenen Daten; Fehler (z. B. abgelaufene Anmeldung) sind kein Problem: beim nächsten Öffnen erneut.
+     * Ergebnis: true, wenn etwas geschrieben wurde.
+     */
+    async urlaubChecksAbgleichen() {
+      if (!adapter.gleicheUrlaubChecksAb || !state.geladen || state.nurSnapshot || checksLaufen) return false;
+      const heute = todayVienna(jetzt());
+      const { schreiben, loeschen } = urlaubChecksAbgleich({ wunsch: urlaubChecksWunsch(state, heute), vorhanden: state.urlaubChecks ?? [], heute });
+      if (schreiben.length === 0 && loeschen.length === 0) return false;
+      checksLaufen = true;
+      try {
+        await adapter.gleicheUrlaubChecksAb({ schreiben, loeschen });
+      } catch {
+        return false;
+      } finally {
+        checksLaufen = false;
+      }
+      const weg = new Set([...loeschen, ...schreiben.map((c) => urlaubCheckEventId(c.date))]);
+      const neu = schreiben.map((c) => ({ id: urlaubCheckEventId(c.date), date: c.date, titel: c.title }));
+      state = { ...state, urlaubChecks: [...(state.urlaubChecks ?? []).filter((c) => !weg.has(c.id)), ...neu].sort((a, b) => a.date.localeCompare(b.date)) };
+      return true;
     },
 
     setTag: (date, typ) => store.setTage([date], typ),

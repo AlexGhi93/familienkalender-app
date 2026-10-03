@@ -4,7 +4,8 @@ import { addDays, todayVienna } from '../domain/dates.js';
 import { kindergartenjahr } from '../domain/urlaub.js';
 import { normalizeSettings } from '../domain/settings.js';
 import { beendeTestErinnerung, pruefeErinnerungen, repariereErinnerungen, starteTestErinnerung } from './erinnerungen.js';
-import { EINKAUF_ID, EINSTELLUNGEN_ID, GERAETE_ID, einkaufAusEreignis, einkaufZuEreignis, einstellungenAusEreignis, einstellungenZuEreignis, geraeteAusEreignis, geraeteZuEreignis, tagZuEreignis, terminZuEreignis, urlaubZuEreignis } from './mapping.js';
+import { EINKAUF_ID, EINSTELLUNGEN_ID, GERAETE_ID, einkaufAusEreignis, einkaufZuEreignis, einstellungenAusEreignis, einstellungenZuEreignis, geraeteAusEreignis, geraeteZuEreignis, tagZuEreignis, terminZuEreignis, urlaubCheckZuEreignis, urlaubZuEreignis } from './mapping.js';
+import { istUrlaubCheckId } from '../domain/ids.js';
 import { ereignisseZuZustand } from './zustand.js';
 
 const TAGE_ZURUECK = 31;
@@ -94,7 +95,16 @@ export function createGoogleAdapter({ api, kalender, jetzt = () => new Date(), a
       const z = ereignisseZuZustand({ ereignisse: await ereignisseLesen(von, bis), settings });
       await titelKorrigieren(z.resync);
       const einkauf = (await this.leseEinkauf()).liste;
-      return { settings, tage: z.tage, urlaub: z.urlaub, termine: z.termine, konflikte: z.konflikte, warnungen: gelesen.warnungen, fenster: { von, bis }, einkauf };
+      return { settings, tage: z.tage, urlaub: z.urlaub, termine: z.termine, konflikte: z.konflikte, warnungen: gelesen.warnungen, fenster: { von, bis }, einkauf, urlaubChecks: z.urlaubChecks };
+    },
+
+    /** Urlaub-Checks im Kalender „Termine“ anlegen/aktualisieren (`schreiben`) und löschen (`loeschen`); nur eigene IDs (`fkc…`), Fremdes bleibt unberührt. */
+    async gleicheUrlaubChecksAb({ schreiben = [], loeschen = [] }) {
+      for (const check of schreiben) {
+        const r = urlaubCheckZuEreignis(check);
+        await api.ereignisse.schreibe(kalender[r.kalender], r.body);
+      }
+      for (const id of loeschen) if (istUrlaubCheckId(id)) await api.ereignisse.loeschen(kalender.termine, id);
     },
 
     /** Der gesamte Verlauf (für die Sicherung): Tage, Urlaub und Termine aus allen drei Kalendern; die Seitenfenster und der App-Zustand bleiben unberührt. */

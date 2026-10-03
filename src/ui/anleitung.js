@@ -17,13 +17,15 @@ export function erinnerungenAnleitung() {
       h('li', {}, 'Android-Einstellungen → Apps → Kalender → Benachrichtigungen: alle an; „Wecker & Erinnerungen“ erlauben; Akku: „Nicht eingeschränkt“.'),
     ),
     h('h4', {}, 'iPhone'),
+    h('p', { class: 'leise' }, 'Auf dem iPhone kommen die Erinnerungen dieser App selbst auf den Sperrbildschirm (Benachrichtigungen aktivieren, die App vom Home-Bildschirm öffnen). Google Kalender ist die zweite Absicherung:'),
     h(
       'ol',
       {},
-      h('li', {}, 'Am einfachsten: die App „Google Kalender“ aus dem App Store installieren und mit dem eigenen Google-Konto anmelden. Beim ersten Start „Erlauben“ bei den Mitteilungen wählen.'),
+      h('li', {}, 'Die App „Google Kalender“ aus dem App Store installieren und mit dem eigenen Google-Konto anmelden. Beim ersten Start „Erlauben“ bei den Mitteilungen wählen.'),
       h('li', {}, 'In Google Kalender: Menü ☰ öffnen und „Familie · Termine“ anhaken.'),
-      h('li', {}, 'iPhone-Einstellungen → Mitteilungen → Google Kalender: „Mitteilungen erlauben“, Banner und Töne an. Kein Fokus- oder „Nicht stören“-Modus.'),
-      h('li', {}, 'Wer lieber den Apple-Kalender nutzt: Einstellungen → Kalender → Accounts → Google-Konto hinzufügen, und auf calendar.google.com/calendar/syncselect „Familie · Termine“ anhaken.'),
+      h('li', {}, 'Menü ☰ → Einstellungen → „Familie · Termine“: Bei den Standard-Benachrichtigungen müssen „1 Tag vorher“ und „1 Stunde vorher“ stehen (sonst hinzufügen).'),
+      h('li', {}, 'iPhone-Einstellungen → Mitteilungen → Google Kalender: „Mitteilungen erlauben“, Banner und Töne an. Einstellungen → Allgemein → Hintergrundaktualisierung: Google Kalender an. Kein Fokus- oder „Nicht stören“-Modus, Stromsparmodus aus.'),
+      h('li', {}, 'Klingelt Google Kalender trotzdem nicht, hilft der Apple-Kalender als Reserve: Einstellungen → Kalender → Accounts → Account hinzufügen → Google. Danach in Safari calendar.google.com/calendar/syncselect öffnen und „Familie · Termine“ anhaken.'),
     ),
     h('p', { class: 'leise' }, 'Danach „Test-Erinnerung starten“ drücken: Es muss auf beiden Telefonen klingeln.'),
   );

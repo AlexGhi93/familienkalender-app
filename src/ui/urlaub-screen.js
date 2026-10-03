@@ -60,6 +60,7 @@ export function urlaubScreen({ store, ui }) {
       h('div', { class: 'ring-text' }, h('b', {}, u.offen === 0 ? 'Alles eingetragen 🎉' : `Noch ${werktageText(u.offen)} offen`), h('small', {}, `Genommen: ${werktageText(u.genommen)}`), h('small', {}, `Geplant: ${werktageText(u.geplant)}`), wochenZiel > 0 ? h('small', {}, `${u.durchgehend.erfuellt ? '✅' : '❗'} ${wochenZiel} Wochen am Stück${u.durchgehend.erfuellt ? '' : ' noch offen'}`) : null),
     ),
     h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein primaer', type: 'button', onClick: () => ui.neuStarten('urlaub') }, 'Urlaub planen')),
+    u.istAktuell && u.offen > 0 ? h('p', { class: 'leise' }, '🏖️ Solange noch Urlaub offen ist, erinnert die App am 1. März, 1. Mai und 1. Juli um 09:00 („Urlaub-Check“) daran, wie viel noch fehlt.') : null,
     h('h2', { class: 'abschnitt-titel' }, `Eingetragen in ${u.kurz}`),
     zeitraeume.length > 0 ? h('div', { class: 'liste' }, zeitraeume.map((z) => zeitraumZeile(z, store.heute(), store))) : h('p', { class: 'leise' }, u.istAktuell ? 'Noch kein Urlaub eingetragen.' : 'In diesem Jahr ist noch kein Urlaub eingetragen.'),
   );

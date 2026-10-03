@@ -1,11 +1,12 @@
 // Welche Push-Erinnerungen es für die nächsten Tage geben soll: reine Berechnung aus dem Zustand der App (ohne Netz, ohne Verschlüsselung).
 // Regeln wie bei Google Kalender: Termin mit Uhrzeit = 1 Tag und 1 Stunde vorher; ohne Uhrzeit = am Vortag um 09:00.
-import { addDays } from '../domain/dates.js';
+import { addDays, todayVienna } from '../domain/dates.js';
 import { wienZuInstant } from '../domain/instant.js';
 import { terminAnzeige } from '../app/views/gemeinsam.js';
+import { urlaubChecksWunsch } from '../app/urlaub-check.js';
 import { bytesZuB64u } from './base64url.js';
 
-const TYPEN = ['arzt', 'familie', 'kita_sache'];
+const TYPEN = ['arzt', 'familie', 'kita_sache', 'urlaub_check'];
 const STUNDE = 3600_000;
 // Sekunden, die der Push-Server von Google/Apple die Nachricht für ein Telefon ohne Netz aufhebt: kommt es rechtzeitig wieder ins Netz, wird sie noch zugestellt
 // („1 Stunde vorher“ nur bis kurz vor dem Termin, danach wäre sie sinnlos).
@@ -24,9 +25,11 @@ export async function planeErinnerungen(state, { jetzt = new Date(), tage = 60 }
   const von = jetzt.getTime();
   const bis = von + tage * 24 * STUNDE;
   const plan = [];
-  for (const t of state.termine ?? []) {
+  // Urlaub-Checks (1.3., 1.5., 1.7. um 09:00, solange Urlaub offen ist) laufen wie Termine; sie stehen nicht in `termine`, sondern ergeben sich aus dem Urlaubsstand
+  const checks = state.urlaub && state.settings ? urlaubChecksWunsch(state, todayVienna(jetzt)).map((c) => ({ id: c.id, typ: 'urlaub_check', date: c.date, time: '09:00', titel: c.title })) : [];
+  for (const t of [...(state.termine ?? []), ...checks]) {
     if (!TYPEN.includes(t.typ)) continue;
-    const { titel } = terminAnzeige(t, state.settings);
+    const titel = t.typ === 'urlaub_check' ? t.titel : terminAnzeige(t, state.settings).titel;
     const kandidaten = [];
     try {
       if (t.time) {

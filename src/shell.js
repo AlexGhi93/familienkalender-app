@@ -39,6 +39,7 @@ const TABS = [
 
 const BANNER_INTERVALL_MS = 30_000;
 const SNAPSHOT_VERZOEGERUNG_MS = 1000;
+const CHECKS_VERZOEGERUNG_MS = 2500; // Urlaub-Checks erst abgleichen, wenn sich der Urlaub kurz nicht mehr ändert
 
 /**
  * `auth` und `snapshot` gibt es nur im Google-Modus; `konto` bündelt, was „Mehr“ dafür braucht
@@ -191,15 +192,29 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
   let speicherZeitgeber = null;
   let pushTermine = null;
   let pushSettings = null;
+  let pushUrlaub = null;
+  let checksUrlaub = null;
+  let checksTage = null;
+  let checksSettings = null;
+  let checksZeitgeber = null;
   store.subscribe((state) => {
     if (state.fehler && state.fehler !== letzterFehler) toast(state.fehler, { art: 'fehler', dauer: 6000 });
     else if (!state.fehler && letzterFehler) entferneFehlerToast();
     letzterFehler = state.fehler;
     // Push-Plan abgleichen, sobald frisch aus Google geladen wurde und sich Termine oder Einstellungen geändert haben (nie aus dem gespeicherten Stand)
-    if (push && state.geladen && !state.nurSnapshot && (state.termine !== pushTermine || state.settings !== pushSettings)) {
+    if (push && state.geladen && !state.nurSnapshot && (state.termine !== pushTermine || state.settings !== pushSettings || state.urlaub !== pushUrlaub)) {
       pushTermine = state.termine;
       pushSettings = state.settings;
+      pushUrlaub = state.urlaub; // der Urlaubsstand bestimmt auch die Urlaub-Check-Erinnerungen
       push.anstossen();
+    }
+    // Urlaub-Checks im Kalender (1.3., 1.5., 1.7.) beim Öffnen und nach Änderungen am Urlaub abgleichen; nur mit Google, nie aus dem gespeicherten Stand
+    if (auth && state.geladen && !state.nurSnapshot && (state.urlaub !== checksUrlaub || state.tage !== checksTage || state.settings !== checksSettings)) {
+      checksUrlaub = state.urlaub;
+      checksTage = state.tage;
+      checksSettings = state.settings;
+      clearTimeout(checksZeitgeber);
+      checksZeitgeber = setTimeout(() => store.urlaubChecksAbgleichen(), CHECKS_VERZOEGERUNG_MS);
     }
     ui.rendern();
     if (snapshot && state.geladen && !state.nurSnapshot) {

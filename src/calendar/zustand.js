@@ -4,7 +4,7 @@ import { ereignisZuEintrag } from './mapping.js';
 
 /**
  * `ereignisse` = [{ kalender, event }] (Google-Ereignisse, beliebig gemischt, auch doppelt).
- * Ergebnis: { tage, urlaub, termine, einstellungen, resync, konflikte }.
+ * Ergebnis: { tage, urlaub, termine, einstellungen, resync, konflikte, urlaubChecks }.
  * `tage[date] = { typ, konflikt?, andere? }`: bei mehreren Tagestypen am selben Datum gewinnt der stärkere, `konflikt` markiert es, `andere` nennt die verdrängten.
  */
 export function ereignisseZuZustand({ ereignisse, settings }) {
@@ -12,6 +12,7 @@ export function ereignisseZuZustand({ ereignisse, settings }) {
   const urlaub = new Map();
   const termine = new Map();
   const resync = new Map();
+  const urlaubChecks = new Map();
   let einstellungen = null;
   const gesehen = new Set();
 
@@ -30,6 +31,9 @@ export function ereignisseZuZustand({ ereignisse, settings }) {
       case 'termin':
         termine.set(eintrag.termin.id, eintrag.termin);
         if (eintrag.resync) resync.set(eintrag.resync.id, eintrag.resync);
+        break;
+      case 'urlaubcheck':
+        urlaubChecks.set(eintrag.id, { id: eintrag.id, date: eintrag.date, titel: eintrag.titel });
         break;
       case 'einstellungen':
         einstellungen = { settings: eintrag.settings, warnungen: eintrag.warnungen };
@@ -53,6 +57,7 @@ export function ereignisseZuZustand({ ereignisse, settings }) {
     termine: [...termine.values()].sort((a, b) => a.date.localeCompare(b.date) || (a.time ?? '').localeCompare(b.time ?? '')),
     einstellungen,
     resync: [...resync.values()],
+    urlaubChecks: [...urlaubChecks.values()].sort((a, b) => a.date.localeCompare(b.date)),
     konflikte,
   };
 }
