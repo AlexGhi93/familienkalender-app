@@ -6,6 +6,7 @@ export * from './types.js';
 export * from './settings.js';
 export * from './modus.js';
 export * from './fuer.js';
+export * from './einkauf.js';
 export * from './notiz.js';
 export * from './titles.js';
 export * from './classify.js';

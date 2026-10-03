@@ -9,7 +9,7 @@ const TYPEN = ['arzt', 'familie', 'kita_sache'];
 const STUNDE = 3600_000;
 // Sekunden, die der Push-Server von Google/Apple die Nachricht für ein Telefon ohne Netz aufhebt: kommt es rechtzeitig wieder ins Netz, wird sie noch zugestellt
 // („1 Stunde vorher“ nur bis kurz vor dem Termin, danach wäre sie sinnlos).
-const TTL = { tag: 21600, stunde: 3300, vortag: 21600 };
+const TTL = { tag: 21600, stunde: 3300, vortag: 21600, abend: 14400 };
 
 async function kennung(terminId, art) {
   const hash = new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${terminId}|${art}`)));
@@ -17,7 +17,7 @@ async function kennung(terminId, art) {
 }
 
 /**
- * Plan der nächsten `tage` Tage: [{ id, um (ms), art: 'tag'|'stunde'|'vortag', titel, text, ttl }], sortiert nach Zeitpunkt.
+ * Plan der nächsten `tage` Tage: [{ id, um (ms), art: 'tag'|'stunde'|'vortag'|'abend', titel, text, ttl }], sortiert nach Zeitpunkt.
  * Die `id` hängt nur an Termin und Art (nicht am Zeitpunkt), damit zwei Telefone denselben Plan ohne Doppelungen schicken.
  */
 export async function planeErinnerungen(state, { jetzt = new Date(), tage = 60 } = {}) {
@@ -31,7 +31,12 @@ export async function planeErinnerungen(state, { jetzt = new Date(), tage = 60 }
     try {
       if (t.time) {
         const beginn = wienZuInstant(t.date, t.time);
-        kandidaten.push({ art: 'tag', um: beginn - 24 * STUNDE, text: `Morgen um ${t.time}` });
+        // Sachen zum Hinbringen: am Vorabend erinnern (zum Einpacken), statt „1 Tag vorher“ zur Uhrzeit des Hinbringens
+        if (t.typ === 'kita_sache' && t.richtung === 'hin' && state.settings?.vorabend) {
+          kandidaten.push({ art: 'abend', um: wienZuInstant(addDays(t.date, -1), state.settings.vorabend), text: `Heute Abend vorbereiten (morgen ${t.time} hinbringen)` });
+        } else {
+          kandidaten.push({ art: 'tag', um: beginn - 24 * STUNDE, text: `Morgen um ${t.time}` });
+        }
         kandidaten.push({ art: 'stunde', um: beginn - STUNDE, text: `In 1 Stunde (${t.time} Uhr)` });
       } else {
         kandidaten.push({ art: 'vortag', um: wienZuInstant(addDays(t.date, -1), '09:00'), text: 'Morgen, ganztägig' });

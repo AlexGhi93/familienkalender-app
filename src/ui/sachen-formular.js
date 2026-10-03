@@ -1,4 +1,5 @@
 import { fuelle, h } from './dom.js';
+import { datumFeld as datumEingabe, zeitFeld as zeitEingabe } from './eingabefelder.js';
 import { chip, farbe, toast, wochenStepper } from './components.js';
 import { KITA_RICHTUNGEN, KITA_VORSCHLAEGE, TYPES } from '../domain/types.js';
 import { addDays } from '../domain/dates.js';
@@ -33,21 +34,19 @@ export function sachenFormular({ store, ui }, kachel) {
   pyjamasBox.hidden = true;
   const vorschlagChips = new Map(); // Text -> alle Buttons dazu (Gruppen und „Zuletzt benutzt“)
 
-  const datumFeld = h('input', {
-    type: 'date',
-    value: n.date,
-    required: true,
-    onInput: (e) => {
-      n.date = e.target.value;
+  const datumFeld = datumEingabe({
+    wert: n.date,
+    heute,
+    beiAenderung: (w) => {
+      n.date = w;
       zeichnePlan();
       zeichneVorschau();
     },
   });
-  const zeitFeld = h('input', {
-    type: 'time',
-    value: n.time,
-    onInput: (e) => {
-      n.time = e.target.value;
+  const zeitFeld = zeitEingabe({
+    wert: n.time,
+    beiAenderung: (w) => {
+      n.time = w;
       n.zeitGeaendert = true;
       zeichneVorschau();
     },
@@ -73,7 +72,7 @@ export function sachenFormular({ store, ui }, kachel) {
           farbeHex: TYPES.kita_sache.farbe,
           onClick: () => {
             Object.assign(n, mitRichtung(n, r.id, settings));
-            zeitFeld.value = n.time;
+            zeitFeld.setzeWert(n.time);
             zeichneRichtung();
             zeichnePlan();
             zeichneVorschau();

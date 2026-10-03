@@ -147,9 +147,12 @@ export function createApi({ fetch = globalThis.fetch, token, sleep = (ms) => new
       return { geloescht: true };
     },
 
-    /** Lesen, ändern, mit If-Match schreiben; bei 412 einmal neu lesen und wiederholen, sonst Konflikt. `aenderung(aktuell)` gibt den PATCH-Body oder null zurück. */
-    async aendere(kalenderId, id, aenderung) {
-      for (let versuch = 0; versuch < 2; versuch += 1) {
+    /**
+     * Lesen, ändern, mit If-Match schreiben; bei 412 neu lesen und wiederholen (`versuche` Mal, sonst Konflikt).
+     * `aenderung(aktuell)` gibt den PATCH-Body oder null zurück.
+     */
+    async aendere(kalenderId, id, aenderung, { versuche = 2 } = {}) {
+      for (let versuch = 0; versuch < versuche; versuch += 1) {
         const aktuell = await ereignisse.holen(kalenderId, id);
         if (aktuell === null) throw new ApiFehler('Das Ereignis gibt es nicht (mehr).', 404);
         const body = aenderung(aktuell);

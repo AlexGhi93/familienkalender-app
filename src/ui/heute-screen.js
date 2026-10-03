@@ -6,6 +6,7 @@ import { werktageText } from '../domain/format.js';
 import { TYPES } from '../domain/types.js';
 import { sacheErledigt } from './sachen-aktionen.js';
 import { zeigeRueckgaengig } from './fortschritt.js';
+import { EINKAUF_FARBE } from '../app/views/einkauf-model.js';
 
 function knopf(emoji, titel, untertitel, farbeHex, beiKlick) {
   return h(
@@ -29,6 +30,33 @@ function terminKarte(t) {
       h('div', { class: 'karte-text' }, h('b', {}, t.label, t.time ? ` · ${t.time}` : ''), h('small', {}, datumKurz(t.date))),
     ),
     t.fuerText || t.mitnehmen.length > 0 || t.kosten
+      ? h(
+          'div',
+          { class: 'chips' },
+          t.fuerText ? chip(`${t.fuerEmoji} ${t.fuerText}`) : null,
+          erstes ? chip(`🎒 ${erstes}`) : null,
+          rest.map((x) => chip(x)),
+          t.kosten ? chip(`💶 ${t.kosten}`) : null,
+        )
+      : null,
+    t.notiz ? h('p', { class: 'notiz' }, `📝 ${t.notiz}`) : null,
+  );
+}
+
+/** Programmierung von HEUTE: groß, mit Uhrzeit, Farbband, Stand („in 2 Std 15 Min“) und – beim nächsten – einem pulsierenden Punkt. */
+function terminHeuteKarte(t) {
+  const [erstes, ...rest] = t.mitnehmen;
+  const hatChips = t.fuerText || t.mitnehmen.length > 0 || t.kosten;
+  return h(
+    'article',
+    { class: `karte termin-heute ${t.zeitStatus}${t.naechster ? ' naechster' : ''}`, style: farbe(t.farbe), 'aria-label': `${t.label}, ${t.time ?? 'ganztägig'}, ${t.inText}` },
+    h(
+      'div',
+      { class: 'th-kopf' },
+      h('div', { class: `th-zeit${t.time ? '' : ' ganztags'}` }, t.time ?? 'ganztägig'),
+      h('div', { class: 'th-text' }, h('b', {}, `${t.emoji} ${t.label}`), h('span', { class: `th-marke ${t.zeitStatus}` }, t.naechster ? h('i', { class: 'puls', 'aria-hidden': 'true' }) : null, t.inText)),
+    ),
+    hatChips
       ? h(
           'div',
           { class: 'chips' },
@@ -144,6 +172,19 @@ function sachenKarte(m, store, ui) {
   );
 }
 
+/** Einkaufsliste in Kürze (die ersten Artikel), mit Weg zur ganzen Liste. */
+function einkaufKarte(m, ui) {
+  const e = m.einkauf;
+  return h(
+    'article',
+    { class: 'karte tint einkauf-karte', style: farbe(EINKAUF_FARBE) },
+    e.anzahlOffen > 0
+      ? h('div', { class: 'chips' }, e.vorschau.map((name) => chip(name)), e.mehr > 0 ? chip(`+ ${e.mehr} weitere`) : null)
+      : h('div', { class: 'karte-zeile' }, h('span', { class: 'emoji' }, '🛒'), h('div', { class: 'karte-text' }, h('b', {}, 'Nichts zu kaufen 🎉'), h('small', {}, 'Schreib auf, was fehlt – dann vergisst es niemand.'))),
+    h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein', type: 'button', onClick: () => ui.gehZu('einkauf') }, e.anzahlOffen > 0 ? 'Liste öffnen' : '＋ Eintragen')),
+  );
+}
+
 function urlaubKarte(m) {
   const u = m.urlaub;
   const wochenZiel = u.durchgehend.ziel / 5;
@@ -175,9 +216,10 @@ export function heuteScreen({ store, ui }) {
     h('header', { class: 'kopf' }, h('span', { class: 'marke' }, `🌸 ${ui.titel()}`), h('span', { class: 'pille' }, m.einrichtung)),
     h('h1', { class: 'gruss' }, `${m.gruss.text} ${m.gruss.emoji}`),
     h('p', { class: 'datum' }, m.datumText),
+    m.termineHeute.length > 0 ? abschnitt(`📌 Heute steht an · ${m.termineHeute.length}`, m.termineHeute.map(terminHeuteKarte)) : null,
+    abschnitt(m.einkauf.anzahlOffen > 0 ? `🛒 Einkauf · ${m.einkauf.anzahlOffen}` : '🛒 Einkauf', einkaufKarte(m, ui)),
     abschnitt('Heute', statusKarte(m, store, ui), offeneTageKarte(m, store, ui)),
     abschnitt(`Sachen für ${m.einrichtung}`, sachenKarte(m, store, ui)),
-    m.termineHeute.length > 0 ? abschnitt('Termine heute', m.termineHeute.map(terminKarte)) : null,
     m.termineMorgen.length > 0 ? abschnitt('Morgen', m.termineMorgen.map(terminKarte)) : null,
     m.termineDemnaechst.length > 0 ? abschnitt('Demnächst', m.termineDemnaechst.map(terminKarte)) : null,
     abschnitt('Urlaub im Kindergartenjahr', urlaubKarte(m)),

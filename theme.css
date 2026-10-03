@@ -28,7 +28,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme='light']) {
     --bg: #1f1b2e;
     --karte: #2a2540;
     --ink: #f3eefb;
@@ -40,6 +40,23 @@
     --schatten: 0 1px 0 rgba(0, 0, 0, 0.2), 0 8px 22px rgba(0, 0, 0, 0.3);
     color-scheme: dark;
   }
+}
+
+:root[data-theme='dark'] {
+  --bg: #1f1b2e;
+  --karte: #2a2540;
+  --ink: #f3eefb;
+  --ink-2: #b3adc9;
+  --linie: #3a3456;
+  --akzent: #a68cff;
+  --akzent-ink: #1f1b2e;
+  --gefahr: #ff7b7b;
+  --schatten: 0 1px 0 rgba(0, 0, 0, 0.2), 0 8px 22px rgba(0, 0, 0, 0.3);
+  color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
 }
 
 [hidden] {
@@ -544,7 +561,7 @@ button.chip {
 
 .feld-paar {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
   gap: 10px;
 }
 
@@ -761,6 +778,7 @@ small.notiz {
   left: 50%;
   bottom: calc(var(--tabs-hoehe) + env(safe-area-inset-bottom, 0px) + 26px);
   transform: translate(-50%, 12px);
+  width: max-content; /* sonst bricht der Text bei left: 50% in eine schmale Blase um */
   max-width: min(92vw, 420px);
   padding: 12px 18px;
   border-radius: 999px;
@@ -1225,4 +1243,278 @@ small.notiz {
 
 .push-abschnitt h4 {
   margin: 0;
+}
+
+/* ---------- Eingabefelder für Uhrzeit und Datum (Zifferntastatur + Auswahl-Knopf) ---------- */
+
+.eingabe-feld {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.eingabe-zeile {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.eingabe-zeile > input[type='text'] {
+  flex: 1;
+  min-width: 0;
+  min-height: 46px;
+  padding: 8px 10px;
+  border-radius: var(--radius-klein);
+  border: 1.5px solid var(--linie);
+  background: var(--karte);
+  font: inherit;
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.eingabe-zeile > input[type='text'][aria-invalid='true'] {
+  border-color: var(--gefahr);
+  background: color-mix(in srgb, var(--gefahr) 8%, var(--karte));
+}
+
+.picker-knopf {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  min-height: 46px;
+  border-radius: var(--radius-klein);
+  border: 1.5px solid var(--linie);
+  background: var(--karte);
+  font-size: 1.15rem;
+  overflow: hidden;
+}
+
+.picker-unsichtbar {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  border: 0;
+  padding: 0;
+}
+
+.eingabe-hinweis {
+  min-height: 1.2em;
+}
+
+/* ---------- Heute: Termine von heute, groß und unübersehbar ---------- */
+
+.abschnitt:has(.termin-heute) > h2 {
+  color: var(--akzent);
+  font-size: 0.95rem;
+}
+
+.termin-heute {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 2.5px solid var(--c);
+  background: color-mix(in srgb, var(--c) 14%, var(--karte));
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--c) 18%, transparent), var(--schatten);
+}
+
+.termin-heute.naechster {
+  border-width: 3px;
+  background: color-mix(in srgb, var(--c) 22%, var(--karte));
+}
+
+.termin-heute.vorbei {
+  opacity: 0.55;
+  border-style: dashed;
+  box-shadow: var(--schatten);
+}
+
+.th-kopf {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.th-zeit {
+  min-width: 4.4ch;
+  font-size: 2.1rem;
+  font-weight: 900;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.th-zeit.ganztags {
+  min-width: 0;
+  font-size: 1.1rem;
+}
+
+.th-text {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.th-text b {
+  font-size: 1.15rem;
+  line-height: 1.2;
+}
+
+.th-marke {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1.5px solid var(--c);
+  background: color-mix(in srgb, var(--c) 20%, var(--karte));
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+.th-marke.gleich,
+.th-marke.laeuft {
+  background: color-mix(in srgb, var(--c) 55%, var(--karte));
+}
+
+.puls {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--c);
+  animation: puls 1.4s ease-in-out infinite;
+}
+
+@keyframes puls {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.5);
+    opacity: 0.5;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .puls {
+    animation: none;
+  }
+}
+
+
+/* ---------- Einkaufsliste ---------- */
+
+:root {
+  --einkauf: #e08a3c;
+}
+
+.ek-eingabe {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 92px 48px;
+  gap: 8px;
+}
+
+.ek-eingabe input {
+  min-width: 0;
+  min-height: 48px;
+  padding: 8px 12px;
+  border-radius: var(--radius-klein);
+  border: 1.5px solid var(--linie);
+  background: var(--karte);
+  color: var(--ink);
+  font-size: 1rem;
+}
+
+.ek-eingabe .ek-plus {
+  min-height: 48px;
+  padding: 0;
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.ek-oft {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ek-oft > small {
+  color: var(--ink-2);
+  font-weight: 800;
+}
+
+.ek-liste {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ek-zeile {
+  display: flex;
+  align-items: stretch;
+  border-radius: var(--radius-klein);
+  border: 1.5px solid var(--linie);
+  background: var(--karte);
+}
+
+.ek-haupt {
+  flex: 1;
+  min-width: 0;
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+}
+
+.ek-haken {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 2.5px solid var(--einkauf);
+  font-size: 0.95rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.ek-zeile.gekauft {
+  background: color-mix(in srgb, var(--karte) 60%, transparent);
+}
+
+.ek-zeile.gekauft .ek-haken {
+  background: var(--einkauf);
+  color: #fff;
+}
+
+.ek-zeile.gekauft .ek-name {
+  text-decoration: line-through;
+  color: var(--ink-2);
+  font-weight: 600;
+}
+
+.ek-weg {
+  flex: none;
+  width: 48px;
+  border: 0;
+  background: none;
+  color: var(--ink-2);
+  font-size: 1.1rem;
 }

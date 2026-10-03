@@ -1,3 +1,4 @@
+import { datumFeld as datumEingabe } from './eingabefelder.js';
 import { h } from './dom.js';
 import { bestaetigen, farbe, toast } from './components.js';
 import { neuKacheln, urlaubVorschau, werktageImBereich } from '../app/views/neu-model.js';
@@ -25,6 +26,10 @@ function auswahlAnsicht({ ui }, kacheln) {
             onClick: () => {
               if (k.art === 'termin') {
                 ui.neuTerminStarten(k.id);
+                return;
+              }
+              if (k.art === 'einkauf') {
+                ui.gehZu('einkauf');
                 return;
               }
               ui.neu = { auswahl: k.id, von: ui.store.heute(), bis: ui.store.heute() };
@@ -63,14 +68,14 @@ function formularAnsicht({ store, ui }, kachel) {
   const aktualisieren = () => info.replaceChildren(...infoZeilen().map((z) => h('p', {}, z)));
 
   function feld(beschriftung, wert, beiAenderung) {
-    const eingabe = h('input', { type: 'date', value: wert, required: true, onInput: (e) => beiAenderung(e.target.value) });
-    return { eingabe, knoten: h('label', { class: 'feld' }, h('span', {}, beschriftung), eingabe) };
+    const eingabe = datumEingabe({ wert, heute, beschriftung, beiAenderung });
+    return { eingabe, knoten: h('div', { class: 'feld' }, h('span', {}, beschriftung), eingabe) };
   }
   const von = feld('Von', n.von, (w) => {
     n.von = w;
     if (n.bis < n.von) {
       n.bis = n.von;
-      bisFeld.eingabe.value = n.bis;
+      bisFeld.eingabe.setzeWert(n.bis);
     }
     aktualisieren();
   });
@@ -130,7 +135,7 @@ export function neuScreen(ctx) {
   const { store, ui } = ctx;
   const kacheln = neuKacheln(store.heute(), store.getState().settings);
   const kachel = ui.neu.auswahl ? kacheln.find((k) => k.id === ui.neu.auswahl) : null;
-  if (!kachel) return auswahlAnsicht(ctx, kacheln);
+  if (!kachel || kachel.art === 'einkauf') return auswahlAnsicht(ctx, kacheln);
   if (kachel.art !== 'termin') return formularAnsicht(ctx, kachel);
   return kachel.id === 'kita_sache' ? sachenFormular(ctx, kachel) : terminFormular(ctx, kachel);
 }

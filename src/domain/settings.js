@@ -12,6 +12,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   mitnehmen: {}, // eigene Mitnehmen-Listen je Arzt-Untertyp
   bringzeit: '07:30', // Standard-Uhrzeit für „Sachen hinbringen“
   abholzeit: '15:30', // Standard-Uhrzeit für „Sachen heimholen“
+  vorabend: '18:00', // Erinnerung am Vorabend für „Sachen hinbringen“ (zum Vorbereiten); '' = aus
   kindname: '', // Vorname des Kindes für „Für wen“; leer = „Kind“ (steht nicht im Programmtext)
 });
 
@@ -83,6 +84,7 @@ export function normalizeSettings(gespeichert = {}) {
 
   const bringzeit = pruefeZeit(s.bringzeit, 'bringzeit');
   const abholzeit = pruefeZeit(s.abholzeit, 'abholzeit');
+  const vorabend = s.vorabend === '' ? '' : pruefeZeit(s.vorabend, 'vorabend');
   const kindname = pruefeKindname(s.kindname);
 
   return {
@@ -96,6 +98,7 @@ export function normalizeSettings(gespeichert = {}) {
     mitnehmen: { ...s.mitnehmen },
     bringzeit,
     abholzeit,
+    vorabend,
     kindname,
   };
 }

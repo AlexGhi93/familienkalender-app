@@ -7,6 +7,7 @@ import { monatScreen } from './ui/monat-screen.js';
 import { neuScreen } from './ui/neu-screen.js';
 import { urlaubScreen } from './ui/urlaub-screen.js';
 import { mehrScreen } from './ui/mehr-screen.js';
+import { einkaufScreen } from './ui/einkauf-screen.js';
 import { oeffneTagesblatt } from './ui/tagesblatt.js';
 import { terminEntwurf } from './app/termin.js';
 import { verbindenKarte, verbindungsBanner, versionsBanner } from './ui/verbindung.js';
@@ -20,6 +21,7 @@ const SEITEN = {
   neu: neuScreen,
   urlaub: urlaubScreen,
   mehr: mehrScreen,
+  einkauf: einkaufScreen, // keine eigene Registerkarte: erreichbar von „Heute“ (Karte) und „Neu“ (Kachel)
 };
 
 const TABS = [
@@ -101,7 +103,7 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
       inhalt.scrollTop = alt;
       fenster.scrollTo(0, scrollY);
       fuelle(leiste, TABS.map(([id, symbol, text]) => tab(id, symbol, text, seite)));
-      document.title = `${ui.titel()} · ${TABS.find(([id]) => id === seite)[2]}`;
+      document.title = `${ui.titel()} · ${(TABS.find(([id]) => id === seite) ?? [null, null, 'Einkauf'])[2]}`;
     },
     /** Lädt den angezeigten Monat (samt Randwochen) nach, falls er außerhalb des geladenen Fensters liegt. */
     monatLaden() {

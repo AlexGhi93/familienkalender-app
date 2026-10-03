@@ -2,6 +2,7 @@ import { todayVienna } from '../domain/dates.js';
 import { normalizeSettings } from '../domain/settings.js';
 import { spanDays } from '../domain/span.js';
 import { planUmwandlung } from '../domain/umwandlung.js';
+import { entfernen as artikelEntfernen, erledigteEntfernen, hinzufuegen as artikelHinzufuegen, leereListe, normalisiereListe, umschalten as artikelUmschalten, wiederherstellen } from '../domain/einkauf.js';
 import { normalisiereTermin } from './termin.js';
 import { MAX_SERIEN_WOCHEN, naechsterWochentag, wochenSerie } from './serie.js';
 
@@ -25,6 +26,7 @@ function ladeFelder(daten, state) {
     tage: daten.tage ?? {},
     urlaub: daten.urlaub ?? [],
     termine: daten.termine ?? [],
+    einkauf: daten.einkauf ? normalisiereListe(daten.einkauf) : (state.einkauf ?? leereListe()),
     ...(daten.konflikte ? { konflikte: daten.konflikte } : {}),
     ...(daten.warnungen ? { warnungen: daten.warnungen } : {}),
     ...(daten.fenster ? { fenster: daten.fenster } : {}),
@@ -39,7 +41,7 @@ function ladeFelder(daten, state) {
  * - Mehr als drei Schreibvorgänge melden ihren Fortschritt (`state.fortschritt`).
  */
 export function createStore(adapter, { jetzt = () => new Date(), neueId = zufaelligeId } = {}) {
-  let state = { geladen: false, settings: normalizeSettings(), tage: {}, urlaub: [], termine: [], fehler: null, fortschritt: null, anmeldungNoetig: false, fenster: null };
+  let state = { geladen: false, settings: normalizeSettings(), tage: {}, urlaub: [], termine: [], einkauf: leereListe(), fehler: null, fortschritt: null, anmeldungNoetig: false, fenster: null };
   const hoerer = new Set();
   const wartend = []; // Schreibvorgänge, die wegen abgelaufener Anmeldung noch fehlen
   const geladeneBereiche = [];
@@ -120,6 +122,21 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       for (const t of neue) {
         await adapter.speichereTermin(t);
         bericht((i += 1), neue.length);
+      }
+    });
+  }
+
+  /**
+   * Ändert die Einkaufsliste: `fn(liste)` → neue Liste. Sofort sichtbar; bei Google wird `fn` auf die NEUESTE Fassung angewendet,
+   * damit zwei Telefone sich nicht überschreiben. Wirft sofort (ohne etwas zu ändern), wenn `fn` die Eingabe ablehnt.
+   */
+  async function einkaufAendern(fn) {
+    const neu = fn(state.einkauf);
+    await aendere({ einkauf: neu }, async () => {
+      const gespeichert = await adapter.aendereEinkauf(fn);
+      if (gespeichert) {
+        state = { ...state, einkauf: gespeichert };
+        melden();
       }
     });
   }
@@ -337,6 +354,26 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     },
 
     /** Löscht diese Sache und, falls sie zu einer Serie gehört, alle folgenden. Gibt die Anzahl gelöschter Sachen zurück. */
+    /** Einkaufsliste: Artikel eintragen (Menge optional), abhaken, löschen, Gekaufte entfernen (mit Rückgängig). */
+    async einkaufHinzufuegen(text, menge = '') {
+      const id = neueId().slice(0, 9);
+      const jetztMs = jetzt().getTime();
+      await einkaufAendern((liste) => artikelHinzufuegen(liste, { text, menge }, { jetzt: jetztMs, id }));
+    },
+    async einkaufUmschalten(id) {
+      const jetztMs = jetzt().getTime();
+      await einkaufAendern((liste) => artikelUmschalten(liste, id, jetztMs));
+    },
+    async einkaufEntfernen(id) {
+      await einkaufAendern((liste) => artikelEntfernen(liste, id));
+    },
+    async einkaufErledigteEntfernen() {
+      const r = erledigteEntfernen(state.einkauf);
+      if (r.entfernt.length === 0) return { anzahl: 0, rueckgaengig: async () => {} };
+      await einkaufAendern((liste) => erledigteEntfernen(liste).liste);
+      return { anzahl: r.entfernt.length, rueckgaengig: () => einkaufAendern((liste) => wiederherstellen(liste, r)) };
+    },
+
     async terminLoeschenAbHier(id) {
       const t = state.termine.find((x) => x.id === id);
       if (!t) return 0;

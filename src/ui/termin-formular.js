@@ -1,4 +1,5 @@
 import { fuelle, h } from './dom.js';
+import { datumFeld as datumEingabe, zeitFeld as zeitEingabe } from './eingabefelder.js';
 import { chip, farbe, toast } from './components.js';
 import { ARZT_SUBTYPEN, FAMILIE_SYMBOLE, TYPES } from '../domain/types.js';
 import { fuerAuswahl } from '../domain/fuer.js';
@@ -200,20 +201,18 @@ export function terminFormular({ store, ui }, kachel) {
     ui.gehZuMonat(ziel);
   }
 
-  const datumFeld = h('input', {
-    type: 'date',
-    value: n.date,
-    required: true,
-    onInput: (e) => {
-      n.date = e.target.value;
+  const datumFeld = datumEingabe({
+    wert: n.date,
+    heute: store.heute(),
+    beiAenderung: (w) => {
+      n.date = w;
       zeichneVorschau();
     },
   });
-  const zeitFeld = h('input', {
-    type: 'time',
-    value: n.time,
-    onInput: (e) => {
-      n.time = e.target.value;
+  const zeitFeld = zeitEingabe({
+    wert: n.time,
+    beiAenderung: (w) => {
+      n.time = w;
       zeichneZeitHinweis();
       zeichneVorschau();
     },

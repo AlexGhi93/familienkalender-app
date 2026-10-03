@@ -4,7 +4,7 @@ import { addDays, todayVienna } from '../domain/dates.js';
 import { kindergartenjahr } from '../domain/urlaub.js';
 import { normalizeSettings } from '../domain/settings.js';
 import { beendeTestErinnerung, pruefeErinnerungen, repariereErinnerungen, starteTestErinnerung } from './erinnerungen.js';
-import { EINSTELLUNGEN_ID, GERAETE_ID, einstellungenAusEreignis, einstellungenZuEreignis, geraeteAusEreignis, geraeteZuEreignis, tagZuEreignis, terminZuEreignis, urlaubZuEreignis } from './mapping.js';
+import { EINKAUF_ID, EINSTELLUNGEN_ID, GERAETE_ID, einkaufAusEreignis, einkaufZuEreignis, einstellungenAusEreignis, einstellungenZuEreignis, geraeteAusEreignis, geraeteZuEreignis, tagZuEreignis, terminZuEreignis, urlaubZuEreignis } from './mapping.js';
 import { ereignisseZuZustand } from './zustand.js';
 
 const TAGE_ZURUECK = 31;
@@ -53,6 +53,36 @@ export function createGoogleAdapter({ api, kalender, jetzt = () => new Date(), a
     return api.ereignisse.loeschen(kalender[k], id); // 404/410 gelten als erledigt
   }
 
+  /**
+   * Gemeinsames Muster für versteckte Ereignisse (Geräte, Einkauf): gibt es das Ereignis noch nicht, wird es angelegt (bei gleichzeitigem Anlegen
+   * gewinnt eines per 409, das andere liest und ergänzt); sonst Lesen–Ändern–Schreiben mit If-Match, bei 412 einmal wiederholt.
+   * `aenderung(alt | null)` muss rein sein (sie kann zweimal laufen) und gibt den neuen Wert zurück, oder null = nichts tun.
+   */
+  async function aendereVersteckt({ id, lesen, bauen, fehler, leer = () => null }, aenderung) {
+    for (let versuch = 0; versuch < 3; versuch += 1) {
+      const e = await api.ereignisse.holen(kalender.anwesenheit, id);
+      if (!e || e.status === 'cancelled') {
+        const neu = aenderung(leer());
+        if (!neu) return null;
+        const body = bauen(neu).body;
+        if (e) {
+          await api.ereignisse.schreibe(kalender.anwesenheit, body); // gelöscht war es nur, wenn jemand es von Hand entfernt hat
+          return neu;
+        }
+        const r = await api.ereignisse.einfuegen(kalender.anwesenheit, body);
+        if (!r.bereitsVorhanden) return neu;
+        continue; // jemand war schneller: lesen und ergänzen
+      }
+      let ergebnis = null;
+      await api.ereignisse.aendere(kalender.anwesenheit, id, (aktuell) => {
+        ergebnis = aenderung(lesen(aktuell));
+        return ergebnis ? { description: bauen(ergebnis).body.description } : null;
+      }, { versuche: 8 }); // mehrere Telefone können gleichzeitig schreiben: jede Änderung wird auf die neueste Fassung neu angewendet
+      return ergebnis;
+    }
+    throw new Error(fehler);
+  }
+
   return {
     async laden() {
       const heute = todayVienna(jetzt());
@@ -61,7 +91,8 @@ export function createGoogleAdapter({ api, kalender, jetzt = () => new Date(), a
       const { von, bis } = ladeFenster(heute, settings);
       const z = ereignisseZuZustand({ ereignisse: await ereignisseLesen(von, bis), settings });
       await titelKorrigieren(z.resync);
-      return { settings, tage: z.tage, urlaub: z.urlaub, termine: z.termine, konflikte: z.konflikte, warnungen: gelesen.warnungen, fenster: { von, bis } };
+      const einkauf = (await this.leseEinkauf()).liste;
+      return { settings, tage: z.tage, urlaub: z.urlaub, termine: z.termine, konflikte: z.konflikte, warnungen: gelesen.warnungen, fenster: { von, bis }, einkauf };
     },
 
     /** Historie und andere Monate: nur Tage, Urlaub und Termine im Zeitfenster [von, bis). */
@@ -115,34 +146,19 @@ export function createGoogleAdapter({ api, kalender, jetzt = () => new Date(), a
       return !e || e.status === 'cancelled' ? { register: null } : geraeteAusEreignis(e);
     },
 
-    /**
-     * Ändert das Register: `aenderung(register | null)` gibt das neue Register zurück (oder null = nichts tun). Gibt es noch keins, wird es angelegt;
-     * legen zwei Telefone gleichzeitig an, gewinnt eines (409), das andere liest und ergänzt. Sonst Lesen–Ändern–Schreiben mit If-Match.
-     */
-    async aendereGeraete(aenderung) {
-      for (let versuch = 0; versuch < 3; versuch += 1) {
-        const e = await api.ereignisse.holen(kalender.anwesenheit, GERAETE_ID);
-        if (!e || e.status === 'cancelled') {
-          const neu = aenderung(null);
-          if (!neu) return null;
-          const body = geraeteZuEreignis(neu).body;
-          if (e) {
-            await api.ereignisse.schreibe(kalender.anwesenheit, body); // gelöscht war es nur, wenn jemand es von Hand entfernt hat
-            return neu;
-          }
-          const r = await api.ereignisse.einfuegen(kalender.anwesenheit, body);
-          if (!r.bereitsVorhanden) return neu;
-          continue; // jemand war schneller: lesen und ergänzen
-        }
-        let ergebnis = null;
-        await api.ereignisse.aendere(kalender.anwesenheit, GERAETE_ID, (aktuell) => {
-          ergebnis = aenderung(geraeteAusEreignis(aktuell).register);
-          return ergebnis ? { description: geraeteZuEreignis(ergebnis).body.description } : null;
-        });
-        return ergebnis;
-      }
-      throw new Error('Das Geräte-Register konnte nicht gespeichert werden. Bitte noch einmal versuchen.');
+    /** Ändert das Register: `aenderung(register | null)` gibt das neue Register zurück (oder null = nichts tun). */
+    aendereGeraete: (aenderung) =>
+      aendereVersteckt({ id: GERAETE_ID, lesen: (e) => geraeteAusEreignis(e).register, bauen: geraeteZuEreignis, fehler: 'Das Geräte-Register konnte nicht gespeichert werden. Bitte noch einmal versuchen.' }, aenderung),
+
+    /** Gemeinsame Einkaufsliste (verstecktes Ereignis „fkeinkauf“): { liste } (leer, wenn es noch keine gibt). */
+    async leseEinkauf() {
+      const e = await api.ereignisse.holen(kalender.anwesenheit, EINKAUF_ID);
+      return !e || e.status === 'cancelled' ? { liste: einkaufAusEreignis(null).liste } : einkaufAusEreignis(e);
     },
+
+    /** Ändert die Einkaufsliste: `aenderung(liste)` → neue Liste, angewendet auf die NEUESTE Fassung bei Google; gibt die gespeicherte Liste zurück. */
+    aendereEinkauf: (aenderung) =>
+      aendereVersteckt({ id: EINKAUF_ID, lesen: (e) => einkaufAusEreignis(e).liste, bauen: einkaufZuEreignis, fehler: 'Die Einkaufsliste konnte nicht gespeichert werden. Bitte noch einmal versuchen.', leer: () => einkaufAusEreignis(null).liste }, aenderung),
 
     /** Erinnerungen dieses Kontos prüfen/reparieren und eine Test-Erinnerung auslösen (siehe erinnerungen.js). */
     pruefeErinnerungen: () => pruefeErinnerungen(api, kalender),

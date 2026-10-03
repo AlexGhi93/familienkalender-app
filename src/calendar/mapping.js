@@ -8,6 +8,7 @@ import { FAMILIE_SYMBOLE, FUER, TAGES_TYPEN, TYPES } from '../domain/types.js';
 import { buildDayTitle, needsTimeResync, ohneKlammer, parseKitaSacheLabel, parseTerminTitle, withTime } from '../domain/titles.js';
 import { notizAusBeschreibung } from '../domain/notiz.js';
 import { normalisiereRegister, registerText } from '../push/geraete.js';
+import { einkaufAusText, einkaufText } from '../domain/einkauf.js';
 import { classifyEvent } from '../domain/classify.js';
 import { zeitAusDateTime } from '../domain/format.js';
 import { DEFAULT_SETTINGS, normalizeSettings } from '../domain/settings.js';
@@ -16,6 +17,7 @@ import { CONFIG } from './config.js';
 
 export const EINSTELLUNGEN_ID = 'fkeinstellungen';
 export const GERAETE_ID = 'fkgeraete'; // Register der Telefone für Push-Erinnerungen (siehe push/geraete.js)
+export const EINKAUF_ID = 'fkeinkauf'; // gemeinsame Einkaufsliste (siehe domain/einkauf.js)
 export const TEST_ID = 'fktest'; // „🔔 Test-Erinnerung“ aus Mehr → Erinnerungen: für die App unsichtbar
 export const MAX_EINSTELLUNGEN_ZEICHEN = 6000; // Google kürzt `description` still bei 8192 Zeichen (Vertragsprobe C11b)
 const TERMIN_MINUTEN = 30;
@@ -148,6 +150,29 @@ export function geraeteZuEreignis(register) {
   };
 }
 
+/** Einkaufsliste als verstecktes Ereignis (JSON in `description`, wie Einstellungen und Geräte am 2000-01-01 in „Anwesenheit“). */
+export function einkaufZuEreignis(liste) {
+  return {
+    kalender: 'anwesenheit',
+    id: EINKAUF_ID,
+    body: {
+      id: EINKAUF_ID,
+      summary: '🛒 fk Einkauf (nicht löschen)',
+      description: einkaufText(liste),
+      start: { date: '2000-01-01' },
+      end: { date: '2000-01-02' },
+      transparency: 'transparent',
+      reminders: { useDefault: false, overrides: [] },
+      extendedProperties: { private: versteckt('einkauf') },
+    },
+  };
+}
+
+/** Liest die Liste; kaputtes oder fehlendes JSON ergibt die leere Liste (nichts wird gelöscht oder erraten). */
+export function einkaufAusEreignis(event) {
+  return { liste: einkaufAusText(event?.description) };
+}
+
 /** Liest das Register; unbrauchbares JSON ergibt `register: null` (nichts wird gelöscht oder erraten). */
 export function geraeteAusEreignis(event) {
   const text = event?.description;
@@ -198,7 +223,7 @@ export function einstellungenAusEreignis(event) {
 export function ereignisZuEintrag(event, kalender, settings) {
   if (event.status === 'cancelled' || !event.start) return { art: 'ignorieren' };
   if (event.id === EINSTELLUNGEN_ID) return { art: 'einstellungen', ...einstellungenAusEreignis(event) };
-  if (event.id === TEST_ID || event.id === GERAETE_ID) return { art: 'ignorieren' };
+  if (event.id === TEST_ID || event.id === GERAETE_ID || event.id === EINKAUF_ID) return { art: 'ignorieren' };
 
   const { typ, subtyp, quelle } = classifyEvent(event, kalender);
   if (TAGES_TYPEN.includes(typ)) return { art: 'tag', id: event.id, typ, tage: spanDays(eventSpan(event)), quelle };

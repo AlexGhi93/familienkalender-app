@@ -93,7 +93,18 @@ export function seedDemo(heute) {
     },
   ];
 
-  return { settings, tage, urlaub, termine: [...termine, ...sachenDemo({ settings, tage, urlaub }, heute)] };
+  const z = Math.floor(Date.parse(`${heute}T00:00:00Z`) / 1000) - 86400; // gestern: neue Artikel stehen in der Demo immer unten
+  const einkauf = {
+    v: 1,
+    e: [
+      { i: 'demo-e1', t: 'Milch', m: '2 L', g: 0, z },
+      { i: 'demo-e2', t: 'Windeln', m: '', g: 0, z: z + 1 },
+      { i: 'demo-e3', t: 'Nudeln', m: '500 g', g: 0, z: z + 2 },
+      { i: 'demo-e4', t: 'Brot', m: '', g: 1, z: z + 3 },
+    ],
+    h: { Joghurt: 4, Äpfel: 3, Eier: 2 },
+  };
+  return { settings, tage, urlaub, termine: [...termine, ...sachenDemo({ settings, tage, urlaub }, heute)], einkauf };
 }
 
 /** Sachen für die Krabbelstube: Hinbringen in der nächsten Woche, Heimholen am Freitag danach, später Windeln und Socken. */

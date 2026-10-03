@@ -1,9 +1,11 @@
-import { h } from './dom.js';
+import { fuelle, h } from './dom.js';
 import { bestaetigen, chip, toast } from './components.js';
 import { WOCHENTAGE_KURZ } from '../app/format-de.js';
 import { VERSION } from '../app/version.js';
 import { kontoKarten } from './konto-karte.js';
 import { erinnerungenKarte } from './erinnerungen-karte.js';
+import { datumFeld as datumEingabe, zeitFeld as zeitEingabe } from './eingabefelder.js';
+import { leseDarstellung, wendeDarstellungAn } from './darstellung.js';
 
 export function mehrScreen({ store, ui }) {
   const settings = store.getState().settings;
@@ -31,12 +33,13 @@ export function mehrScreen({ store, ui }) {
     }),
   );
 
+  // Datum und Uhrzeit schreibt man mit der Zifferntastatur; gespeichert wird erst bei Enter, beim Verlassen des Feldes oder nach der Auswahl.
   const datumsFeld = (beschriftung, wert, beiAenderung, hinweis) =>
     h(
-      'label',
+      'div',
       { class: 'feld' },
       h('span', {}, beschriftung),
-      h('input', { type: 'date', value: wert ?? '', onChange: (e) => beiAenderung(e.target.value || null) }),
+      datumEingabe({ wert: wert ?? '', heute: store.heute(), beschriftung, erstBeiFertig: true, beiAenderung: (w) => beiAenderung(w || null) }),
       hinweis ? h('small', { class: 'leise' }, hinweis) : null,
     );
 
@@ -63,7 +66,31 @@ export function mehrScreen({ store, ui }) {
   );
 
   const zeitFeld = (beschriftung, wert, beiAenderung) =>
-    h('label', { class: 'feld' }, h('span', {}, beschriftung), h('input', { type: 'time', value: wert, required: true, onChange: (e) => beiAenderung(e.target.value) }));
+    h(
+      'div',
+      { class: 'feld' },
+      h('span', {}, beschriftung),
+      zeitEingabe({ wert, beschriftung, erstBeiFertig: true, beiAenderung: (w) => (w ? beiAenderung(w) : toast('Bitte eine Uhrzeit eingeben, z. B. 07:30.')) }),
+    );
+
+  const DARSTELLUNG_TEXTE = [['auto', 'Automatisch'], ['hell', '☀️ Hell'], ['dunkel', '🌙 Dunkel']];
+  const darstellungBox = h('div', { class: 'chip-reihe' });
+  function zeichneDarstellung() {
+    const aktuell = leseDarstellung();
+    fuelle(
+      darstellungBox,
+      ...DARSTELLUNG_TEXTE.map(([wahl, text]) =>
+        chip(text, {
+          art: aktuell === wahl ? 'aktiv' : '',
+          onClick: () => {
+            wendeDarstellungAn(wahl);
+            zeichneDarstellung();
+          },
+        }),
+      ),
+    );
+  }
+  zeichneDarstellung();
 
   return h(
     'section',
@@ -79,6 +106,7 @@ export function mehrScreen({ store, ui }) {
       datumsFeld('Wechsel zum Kindergarten ab', settings.wechseldatum, (w) => speichern({ wechseldatum: w }), 'Ab diesem Tag heißt es „Kindergarten“ statt „Krabbelstube“.'),
     ),
     h('article', { class: 'karte' }, h('h3', {}, 'Familie'), kindnameFeld),
+    h('article', { class: 'karte' }, h('h3', {}, 'Darstellung'), h('p', { class: 'leise' }, 'Automatisch folgt dem Telefon. Die Wahl gilt nur für dieses Telefon.'), darstellungBox),
     h(
       'article',
       { class: 'karte' },
@@ -86,6 +114,13 @@ export function mehrScreen({ store, ui }) {
       h('p', { class: 'leise' }, 'Zu dieser Uhrzeit meldet sich die Erinnerung (einen Tag und eine Stunde vorher).'),
       zeitFeld('Hinbringen um', settings.bringzeit, (w) => speichern({ bringzeit: w })),
       zeitFeld('Heimholen um', settings.abholzeit, (w) => speichern({ abholzeit: w })),
+      h(
+        'div',
+        { class: 'feld' },
+        h('span', {}, 'Erinnerung am Vorabend um (nur Hinbringen)'),
+        zeitEingabe({ wert: settings.vorabend, beschriftung: 'Erinnerung am Vorabend', erstBeiFertig: true, beiAenderung: (w) => speichern({ vorabend: w }) }),
+        h('small', { class: 'leise' }, 'Am Abend davor, zum Einpacken, direkt aus der App. Leer lassen = aus.'),
+      ),
     ),
     ui.konto?.modus === 'google' ? erinnerungenKarte({ store, ui }) : null,
     ...konto.oben,

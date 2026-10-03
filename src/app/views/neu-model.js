@@ -3,9 +3,10 @@ import { isFeiertag } from '../../domain/feiertage.js';
 import { FAMILIE_SYMBOLE, TYPES } from '../../domain/types.js';
 import { kindergartenjahr, urlaubStatus } from '../../domain/urlaub.js';
 import { einrichtungFor } from '../../domain/modus.js';
+import { EINKAUF_FARBE } from './einkauf-model.js';
 import { BETREUUNG, TAGES_TYPEN_REIHENFOLGE, schliessTageListe, typText } from './gemeinsam.js';
 
-/** Kacheln für „Neu“: fünf Tagestypen, Urlaub, Arzttermin, Termin (alles andere) und Sachen für die Einrichtung. */
+/** Kacheln für „Neu“: fünf Tagestypen, Urlaub, Arzttermin, Termin (alles andere), Sachen für die Einrichtung und die Einkaufsliste. */
 export function neuKacheln(heute, settings) {
   const tage = TAGES_TYPEN_REIHENFOLGE.map((typ) => {
     const { emoji, text } = typText(typ, heute, settings);
@@ -17,6 +18,7 @@ export function neuKacheln(heute, settings) {
     { id: 'arzt', emoji: TYPES.arzt.emoji, titel: 'Arzttermin', farbe: TYPES.arzt.farbe, bereit: true, art: 'termin' },
     { id: 'familie', emoji: FAMILIE_SYMBOLE[0], titel: 'Termin', farbe: TYPES.familie.farbe, bereit: true, art: 'termin' },
     { id: 'kita_sache', emoji: TYPES.kita_sache.emoji, titel: `Sachen für ${einrichtungFor(heute, settings)}`, farbe: TYPES.kita_sache.farbe, bereit: true, art: 'termin' },
+    { id: 'einkauf', emoji: '🛒', titel: 'Einkauf', farbe: EINKAUF_FARBE, bereit: true, art: 'einkauf' },
   ];
 }
 

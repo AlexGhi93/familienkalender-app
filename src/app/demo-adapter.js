@@ -1,5 +1,6 @@
 import { todayVienna } from '../domain/dates.js';
 import { normalizeSettings } from '../domain/settings.js';
+import { leereListe, normalisiereListe } from '../domain/einkauf.js';
 import { seedDemo } from './seed.js';
 
 const KEY = 'fk.demo.v1';
@@ -41,6 +42,7 @@ export function createDemoAdapter({ speicher = globalThis.localStorage, jetzt = 
           }
         }
         if (!daten) neuErzeugen();
+        else daten.einkauf = normalisiereListe(daten.einkauf ?? leereListe()); // Demo-Speicher aus einer älteren Version hat noch keine Liste
       }
       return structuredClone(daten);
     },
@@ -67,6 +69,14 @@ export function createDemoAdapter({ speicher = globalThis.localStorage, jetzt = 
     async loescheTermin(id) {
       daten.termine = daten.termine.filter((t) => t.id !== id);
       sichern();
+    },
+    /** Einkaufsliste ändern: `aenderung(liste)` → neue Liste (wie beim Google-Adapter); gibt die gespeicherte Liste zurück. */
+    async aendereEinkauf(aenderung) {
+      const neu = aenderung(daten.einkauf ?? leereListe());
+      if (!neu) return null;
+      daten.einkauf = neu;
+      sichern();
+      return structuredClone(neu);
     },
     async speichereSettings(settings) {
       daten.settings = normalizeSettings({ ...daten.settings, ...settings });
