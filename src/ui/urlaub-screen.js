@@ -1,6 +1,6 @@
 import { h } from './dom.js';
 import { bestaetigen, farbe, toast, urlaubRing } from './components.js';
-import { heuteModel } from '../app/views/heute-model.js';
+import { urlaubModel } from '../app/views/urlaub-model.js';
 import { urlaubstageImZeitraum } from '../app/views/neu-model.js';
 import { datumKurz } from '../app/format-de.js';
 import { werktageText } from '../domain/format.js';
@@ -37,15 +37,22 @@ function zeitraumZeile(u, heute, store) {
 }
 
 export function urlaubScreen({ store, ui }) {
-  const m = heuteModel(store.getState(), store.jetzt());
-  const u = m.urlaub;
-  const zeitraeume = [...store.getState().urlaub].sort((a, b) => a.start.localeCompare(b.start));
+  const u = urlaubModel(store.getState(), store.heute(), ui.urlaubJahr);
+  const zeitraeume = u.zeitraeume;
   const wochenZiel = u.durchgehend.ziel / 5;
+  const rund = (zeichen, beschriftung, schritt, aktiv) =>
+    h('button', { class: 'rund', type: 'button', 'aria-label': beschriftung, disabled: !aktiv, onClick: () => ui.setzeUrlaubJahr(u.jahrOffset + schritt) }, zeichen);
   return h(
     'section',
     { class: 'screen' },
     h('h1', { class: 'gruss' }, 'Urlaub 🏖️'),
-    h('p', { class: 'datum' }, u.jahrText),
+    h(
+      'div',
+      { class: 'monat-kopf jahr-wahl' },
+      rund('‹', 'Vorheriges Kindergartenjahr', -1, u.hatVorher),
+      h('div', { class: 'jahr-titel' }, h('b', {}, u.jahrText), u.istAktuell ? h('small', {}, 'aktuelles Jahr') : h('button', { class: 'knopf klein', type: 'button', onClick: () => ui.setzeUrlaubJahr(0) }, 'Zurück zum aktuellen Jahr')),
+      rund('›', 'Nächstes Kindergartenjahr', 1, u.hatNachher),
+    ),
     h(
       'article',
       { class: 'karte gross-ring' },
@@ -53,7 +60,7 @@ export function urlaubScreen({ store, ui }) {
       h('div', { class: 'ring-text' }, h('b', {}, u.offen === 0 ? 'Alles eingetragen 🎉' : `Noch ${werktageText(u.offen)} offen`), h('small', {}, `Genommen: ${werktageText(u.genommen)}`), h('small', {}, `Geplant: ${werktageText(u.geplant)}`), wochenZiel > 0 ? h('small', {}, `${u.durchgehend.erfuellt ? '✅' : '❗'} ${wochenZiel} Wochen am Stück${u.durchgehend.erfuellt ? '' : ' noch offen'}`) : null),
     ),
     h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein primaer', type: 'button', onClick: () => ui.neuStarten('urlaub') }, 'Urlaub planen')),
-    h('h2', { class: 'abschnitt-titel' }, 'Eingetragen'),
-    zeitraeume.length > 0 ? h('div', { class: 'liste' }, zeitraeume.map((z) => zeitraumZeile(z, store.heute(), store))) : h('p', { class: 'leise' }, 'Noch kein Urlaub eingetragen.'),
+    h('h2', { class: 'abschnitt-titel' }, `Eingetragen in ${u.kurz}`),
+    zeitraeume.length > 0 ? h('div', { class: 'liste' }, zeitraeume.map((z) => zeitraumZeile(z, store.heute(), store))) : h('p', { class: 'leise' }, u.istAktuell ? 'Noch kein Urlaub eingetragen.' : 'In diesem Jahr ist noch kein Urlaub eingetragen.'),
   );
 }

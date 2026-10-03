@@ -1328,6 +1328,11 @@ small.notiz {
   background: color-mix(in srgb, var(--c) 22%, var(--karte));
 }
 
+.termin-heute.morgen {
+  border-width: 2px;
+  box-shadow: var(--schatten);
+}
+
 .termin-heute.vorbei {
   opacity: 0.55;
   border-style: dashed;
@@ -1517,4 +1522,97 @@ small.notiz {
   background: none;
   color: var(--ink-2);
   font-size: 1.1rem;
+}
+
+
+/* ---------- Konflikt: mehrere Einträge am selben Tag ---------- */
+
+.zelle.konflikt {
+  border: 2px dashed var(--gefahr);
+}
+
+.zelle .konflikt-marke {
+  position: absolute;
+  top: -6px;
+  right: -4px;
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+.konflikt-hinweis {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: var(--radius-klein);
+  border: 2px solid var(--gefahr);
+  background: color-mix(in srgb, var(--gefahr) 12%, var(--karte));
+}
+
+.konflikt-hinweis p {
+  font-size: 0.95rem;
+}
+
+
+/* ---------- Urlaub: Kindergartenjahr wählen ---------- */
+
+.jahr-wahl {
+  gap: 10px;
+}
+
+.jahr-titel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-align: center;
+}
+
+.jahr-titel b {
+  font-size: 1.1rem;
+}
+
+.jahr-titel small {
+  color: var(--ink-2);
+}
+
+
+/* ---------- Verlauf ---------- */
+
+.verlauf-suche {
+  min-height: 48px;
+  padding: 8px 12px;
+  border-radius: var(--radius-klein);
+  border: 1.5px solid var(--linie);
+  background: var(--karte);
+  color: var(--ink);
+  font-size: 1rem;
+}
+
+.verlauf-filter,
+.verlauf-liste {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.verlauf-zeile {
+  width: 100%;
+  min-height: 56px;
+  text-align: left;
+  color: inherit;
+}
+
+.verlauf-zeile .pfeil {
+  color: var(--ink-2);
+  font-size: 1.4rem;
+}
+
+.verlauf-aeltere {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0 16px;
 }

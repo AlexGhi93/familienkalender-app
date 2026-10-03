@@ -1,11 +1,11 @@
 // Reine Zusammenfassung: Google-Ereignisse aus allen drei Kalendern -> Zustand der App (Tage, Urlaub, Termine, Einstellungen).
-import { dominanterTyp, hatKonflikt } from '../domain/konflikt.js';
+import { dominanterTyp, hatKonflikt, verdraengteTypen } from '../domain/konflikt.js';
 import { ereignisZuEintrag } from './mapping.js';
 
 /**
  * `ereignisse` = [{ kalender, event }] (Google-Ereignisse, beliebig gemischt, auch doppelt).
  * Ergebnis: { tage, urlaub, termine, einstellungen, resync, konflikte }.
- * `tage[date] = { typ, konflikt? }`: bei mehreren Tagestypen am selben Datum gewinnt der stärkere, `konflikt` markiert es.
+ * `tage[date] = { typ, konflikt?, andere? }`: bei mehreren Tagestypen am selben Datum gewinnt der stärkere, `konflikt` markiert es, `andere` nennt die verdrängten.
  */
 export function ereignisseZuZustand({ ereignisse, settings }) {
   const typenJeTag = new Map();
@@ -43,7 +43,7 @@ export function ereignisseZuZustand({ ereignisse, settings }) {
   const konflikte = [];
   for (const [datum, typen] of [...typenJeTag].sort(([a], [b]) => a.localeCompare(b))) {
     const konflikt = hatKonflikt(typen);
-    tage[datum] = konflikt ? { typ: dominanterTyp(typen), konflikt: true } : { typ: dominanterTyp(typen) };
+    tage[datum] = konflikt ? { typ: dominanterTyp(typen), konflikt: true, andere: verdraengteTypen(typen) } : { typ: dominanterTyp(typen) };
     if (konflikt) konflikte.push(datum);
   }
 

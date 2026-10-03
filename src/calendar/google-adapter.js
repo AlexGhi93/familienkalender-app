@@ -9,6 +9,8 @@ import { ereignisseZuZustand } from './zustand.js';
 
 const TAGE_ZURUECK = 31;
 const TAGE_VORAUS = 540;
+const ALLES_AB = '2020-01-01'; // „Sicherung“: so weit zurück wird alles geholt (vor dem Start der App gibt es nichts)
+const ALLES_TAGE_VORAUS = 3 * 366;
 const KALENDER = ['termine', 'abwesenheit', 'anwesenheit'];
 const ANDERER_TAGESKALENDER = { anwesenheit: 'abwesenheit', abwesenheit: 'anwesenheit' };
 
@@ -93,6 +95,13 @@ export function createGoogleAdapter({ api, kalender, jetzt = () => new Date(), a
       await titelKorrigieren(z.resync);
       const einkauf = (await this.leseEinkauf()).liste;
       return { settings, tage: z.tage, urlaub: z.urlaub, termine: z.termine, konflikte: z.konflikte, warnungen: gelesen.warnungen, fenster: { von, bis }, einkauf };
+    },
+
+    /** Der gesamte Verlauf (für die Sicherung): Tage, Urlaub und Termine aus allen drei Kalendern; die Seitenfenster und der App-Zustand bleiben unberührt. */
+    async ladeAlles() {
+      const bis = addDays(todayVienna(jetzt()), ALLES_TAGE_VORAUS);
+      const z = ereignisseZuZustand({ ereignisse: await ereignisseLesen(ALLES_AB, bis), settings });
+      return { tage: z.tage, urlaub: z.urlaub, termine: z.termine };
     },
 
     /** Historie und andere Monate: nur Tage, Urlaub und Termine im Zeitfenster [von, bis). */

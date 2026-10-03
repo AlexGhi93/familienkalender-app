@@ -107,6 +107,7 @@ export function oeffneTagesblatt(ctx, date) {
         toast('Gespeichert ✓');
       };
       return [
+        m.konflikt ? h('div', { class: 'konflikt-hinweis', role: 'alert' }, h('b', {}, '⚠️ Konflikt'), h('p', {}, m.konflikt.hinweis)) : null,
         m.eintraege.length > 0
           ? h('div', { class: 'liste' }, m.eintraege.map((e) => eintragZeile(e, ctx, schliessen)))
           : h('p', { class: 'leise' }, 'Noch nichts eingetragen.'),

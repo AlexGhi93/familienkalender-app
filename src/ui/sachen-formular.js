@@ -131,7 +131,9 @@ export function sachenFormular({ store, ui }, kachel) {
     return k;
   }
 
-  const gruppen = Object.entries(KITA_VORSCHLAEGE).map(([name, liste], i) =>
+  const eigene = state.settings.sachenEigene ?? [];
+  const vorschlaege = eigene.length > 0 ? { Eigene: eigene, ...KITA_VORSCHLAEGE } : KITA_VORSCHLAEGE; // „Eigene“ (aus Mehr) steht zuerst
+  const gruppen = Object.entries(vorschlaege).map(([name, liste], i) =>
     h('details', { class: 'gruppe', open: i === 0 }, h('summary', {}, name), h('div', { class: 'chip-reihe' }, liste.map(vorschlagButton))),
   );
   const zuletzt = zuletztBenutzt(state);

@@ -3,6 +3,16 @@ import { TYPES } from '../../domain/types.js';
 import { datumLang } from '../format-de.js';
 import { FEIERTAG_EMOJI, TAGES_TYPEN_REIHENFOLGE, termineAm, typText, urlaubTageSet } from './gemeinsam.js';
 
+/** Konflikt-Tag: was gilt, was daneben steht und wie man es auflöst (ein Tipp auf den richtigen Eintrag räumt auf). */
+function konfliktHinweis(eintrag, date, settings) {
+  const info = (typ) => ({ typ, ...typText(typ, date, settings) });
+  const gewinnt = info(eintrag.typ);
+  const andere = (eintrag.andere ?? []).filter((t) => TYPES[t]).map(info);
+  const nenne = (x) => `${x.emoji} ${x.text}`;
+  const stehen = andere.length > 0 ? `„${[gewinnt, ...andere].map(nenne).join('“ und „')}“ stehen am selben Tag` : 'Für diesen Tag gibt es mehrere Einträge';
+  return { gewinnt, andere, hinweis: `${stehen}. Es gilt: ${nenne(gewinnt)}. Tippe unten auf das, was stimmt – dann bleibt nur noch das.` };
+}
+
 /** Inhalt des Tages-Blattes (Monat → Tag antippen): was am Tag eingetragen ist und was man setzen kann. */
 export function tagModel(state, date, heute) {
   const eintraege = [];
@@ -22,7 +32,9 @@ export function tagModel(state, date, heute) {
   for (const t of termineAm(state, date)) eintraege.push({ art: 'termin', ...t });
 
   const aktuell = eintrag?.typ ?? null;
+  const konflikt = eintrag?.konflikt ? konfliktHinweis(eintrag, date, state.settings) : null;
   return {
+    konflikt,
     date,
     titel: datumLang(date),
     zukunft: date > heute,

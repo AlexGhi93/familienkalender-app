@@ -1,5 +1,10 @@
 import { isValidDate } from './dates.js';
+import { SEP } from './titles.js';
 import { ARZT_SUBTYPEN } from './types.js';
+
+export const MAX_LISTEN_EINTRAG = 30; // Zeichen je Eintrag in „Mitnehmen“- und „Eigene Sachen“-Listen
+export const MAX_MITNEHMEN_LISTE = 8; // Einträge je Arzt-Untertyp (wie viele Dinge ein Termin tragen kann)
+export const MAX_SACHEN_EIGENE = 20; // eigene Vorschläge für „Sachen“
 
 export const DEFAULT_SETTINGS = Object.freeze({
   wechseldatum: null, // 'JJJJ-MM-TT' ab dem es „Kindergarten“ heißt
@@ -10,6 +15,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   durchgehendWochen: 2,
   schliessZaehlenAlsUrlaub: false,
   mitnehmen: {}, // eigene Mitnehmen-Listen je Arzt-Untertyp
+  sachenEigene: [], // eigene Vorschläge für „Sachen für Krabbelstube/Kindergarten“ (Gruppe „Eigene“)
   bringzeit: '07:30', // Standard-Uhrzeit für „Sachen hinbringen“
   abholzeit: '15:30', // Standard-Uhrzeit für „Sachen heimholen“
   vorabend: '18:00', // Erinnerung am Vorabend für „Sachen hinbringen“ (zum Vorbereiten); '' = aus
@@ -34,6 +40,28 @@ function pruefeKindname(wert) {
   const name = wert.trim();
   if (name.length > MAX_KINDNAME || /[(),]| · /.test(name)) throw fehler('kindname');
   return name;
+}
+
+/** Entfernt, was beim Zurücklesen aus dem Kalendertitel stören würde (Trenner „ · “ und Kommas), und glättet den Leerraum. */
+export function bereinigeListenEintrag(text) {
+  return String(text ?? '').replaceAll(SEP, ' - ').replaceAll(',', ' ').replace(/\s+/g, ' ').trim();
+}
+
+/** Liste kurzer Texte: bereinigt, ohne Doppelte (Groß/Klein egal), höchstens `max` Einträge; Ungültiges wirft. */
+function pruefeTextListe(wert, feld, max) {
+  if (!Array.isArray(wert) || wert.length > max) throw fehler(feld);
+  const gesehen = new Set();
+  const liste = [];
+  for (const eintrag of wert) {
+    if (typeof eintrag !== 'string') throw fehler(feld);
+    const text = bereinigeListenEintrag(eintrag);
+    if (text === '' || text.length > MAX_LISTEN_EINTRAG) throw fehler(feld);
+    const schluessel = text.toLocaleLowerCase('de');
+    if (gesehen.has(schluessel)) continue;
+    gesehen.add(schluessel);
+    liste.push(text);
+  }
+  return liste;
 }
 
 function pruefeDatumOderNull(wert, feld) {
@@ -76,11 +104,12 @@ export function normalizeSettings(gespeichert = {}) {
   if (typeof s.mitnehmen !== 'object' || s.mitnehmen === null || Array.isArray(s.mitnehmen)) {
     throw fehler('mitnehmen');
   }
+  const mitnehmen = {};
   for (const [subtyp, liste] of Object.entries(s.mitnehmen)) {
-    if (!ARZT_SUBTYPEN[subtyp] || !Array.isArray(liste) || liste.some((x) => typeof x !== 'string')) {
-      throw fehler('mitnehmen');
-    }
+    if (!ARZT_SUBTYPEN[subtyp]) throw fehler('mitnehmen');
+    mitnehmen[subtyp] = pruefeTextListe(liste, 'mitnehmen', MAX_MITNEHMEN_LISTE);
   }
+  const sachenEigene = pruefeTextListe(s.sachenEigene, 'sachenEigene', MAX_SACHEN_EIGENE);
 
   const bringzeit = pruefeZeit(s.bringzeit, 'bringzeit');
   const abholzeit = pruefeZeit(s.abholzeit, 'abholzeit');
@@ -95,7 +124,8 @@ export function normalizeSettings(gespeichert = {}) {
     zielWochen: s.zielWochen,
     durchgehendWochen: s.durchgehendWochen,
     schliessZaehlenAlsUrlaub: s.schliessZaehlenAlsUrlaub,
-    mitnehmen: { ...s.mitnehmen },
+    mitnehmen,
+    sachenEigene,
     bringzeit,
     abholzeit,
     vorabend,

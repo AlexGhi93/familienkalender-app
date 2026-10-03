@@ -215,13 +215,18 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       }
     },
 
-    /** Holt Tage, Urlaub und Termine eines Zeitraums nach (Monat zurückblättern); mehrfaches Anfordern lädt nur einmal. */
+    /**
+     * Holt Tage, Urlaub und Termine eines Zeitraums nach (Monat zurückblättern); mehrfaches Anfordern lädt nur einmal.
+     * Ergebnis: true, wenn der Zeitraum jetzt da ist; false, wenn es nicht möglich war (Demo, Fehler) oder gerade schon geladen wird.
+     */
     async sichereBereich(von, bis) {
-      if (!adapter.ladeBereich || !state.fenster) return;
+      if (!adapter.ladeBereich || !state.fenster) return false;
       const abgedeckt = (b) => b.von <= von && b.bis >= bis;
       const schluessel = `${von}|${bis}`;
-      if (abgedeckt(state.fenster) || geladeneBereiche.some(abgedeckt) || ladendeBereiche.has(schluessel)) return;
+      if (abgedeckt(state.fenster) || geladeneBereiche.some(abgedeckt)) return true;
+      if (ladendeBereiche.has(schluessel)) return false;
       ladendeBereiche.add(schluessel);
+      let erfolg = false;
       try {
         const d = await adapter.ladeBereich(von, bis);
         const tage = { ...state.tage };
@@ -234,12 +239,23 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
           urlaub: [...state.urlaub.filter((u) => !d.urlaub.some((x) => x.id === u.id)), ...d.urlaub],
         };
         geladeneBereiche.push({ von, bis });
+        erfolg = true;
       } catch (fehler) {
         state = istAuthFehler(fehler) ? { ...state, anmeldungNoetig: true } : { ...state, fehler: 'Dieser Zeitraum konnte nicht geladen werden.' };
       } finally {
         ladendeBereiche.delete(schluessel);
       }
       melden();
+      return erfolg;
+    },
+
+    /**
+     * Alle Daten für die Sicherung. Mit Google wird der gesamte Verlauf aus den Kalendern geholt (Anmeldefehler laufen nach oben);
+     * in der Demo steht ohnehin alles im Zustand. Der Zustand der App bleibt dabei unverändert.
+     */
+    async sicherungsDaten() {
+      const roh = adapter.ladeAlles ? await adapter.ladeAlles() : state;
+      return { settings: state.settings, tage: roh.tage, urlaub: roh.urlaub, termine: roh.termine, einkauf: state.einkauf };
     },
 
     setTag: (date, typ) => store.setTage([date], typ),
@@ -353,7 +369,6 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       };
     },
 
-    /** Löscht diese Sache und, falls sie zu einer Serie gehört, alle folgenden. Gibt die Anzahl gelöschter Sachen zurück. */
     /** Einkaufsliste: Artikel eintragen (Menge optional), abhaken, löschen, Gekaufte entfernen (mit Rückgängig). */
     async einkaufHinzufuegen(text, menge = '') {
       const id = neueId().slice(0, 9);
@@ -374,6 +389,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       return { anzahl: r.entfernt.length, rueckgaengig: () => einkaufAendern((liste) => wiederherstellen(liste, r)) };
     },
 
+    /** Löscht diese Sache und, falls sie zu einer Serie gehört, alle folgenden. Gibt die Anzahl gelöschter Sachen zurück. */
     async terminLoeschenAbHier(id) {
       const t = state.termine.find((x) => x.id === id);
       if (!t) return 0;

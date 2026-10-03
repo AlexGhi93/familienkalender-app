@@ -6,8 +6,10 @@ import { heuteScreen } from './ui/heute-screen.js';
 import { monatScreen } from './ui/monat-screen.js';
 import { neuScreen } from './ui/neu-screen.js';
 import { urlaubScreen } from './ui/urlaub-screen.js';
+import { urlaubModel } from './app/views/urlaub-model.js';
 import { mehrScreen } from './ui/mehr-screen.js';
 import { einkaufScreen } from './ui/einkauf-screen.js';
+import { verlaufScreen } from './ui/verlauf-screen.js';
 import { oeffneTagesblatt } from './ui/tagesblatt.js';
 import { terminEntwurf } from './app/termin.js';
 import { verbindenKarte, verbindungsBanner, versionsBanner } from './ui/verbindung.js';
@@ -22,7 +24,10 @@ const SEITEN = {
   urlaub: urlaubScreen,
   mehr: mehrScreen,
   einkauf: einkaufScreen, // keine eigene Registerkarte: erreichbar von „Heute“ (Karte) und „Neu“ (Kachel)
+  verlauf: verlaufScreen, // erreichbar von „Mehr“
 };
+
+const SEITEN_TITEL = { einkauf: 'Einkauf', verlauf: 'Verlauf' }; // Seiten ohne Registerkarte
 
 const TABS = [
   ['heute', '🏠', 'Heute'],
@@ -79,6 +84,8 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
     verbinden,
     monat: jetztMonat(),
     neu: { auswahl: null },
+    urlaubJahr: 0, // gewähltes Kindergartenjahr auf der Urlaub-Seite (0 = aktuelles)
+    verlauf: { typ: 'alle', jahr: null, text: '', von: null, laedt: false }, // Filter und geladener Bereich des Verlaufs
     titel: () => 'Familienkalender',
     seite: () => {
       const name = fenster.location.hash.replace(/^#\/?/, '');
@@ -99,11 +106,13 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
       } else {
         fuelle(inhalt, SEITEN[seite]({ store, ui }));
         if (seite === 'monat') ui.monatLaden();
+        if (seite === 'urlaub') ui.urlaubLaden();
+        if (seite === 'verlauf') ui.verlaufLaden();
       }
       inhalt.scrollTop = alt;
       fenster.scrollTo(0, scrollY);
       fuelle(leiste, TABS.map(([id, symbol, text]) => tab(id, symbol, text, seite)));
-      document.title = `${ui.titel()} · ${(TABS.find(([id]) => id === seite) ?? [null, null, 'Einkauf'])[2]}`;
+      document.title = `${ui.titel()} · ${TABS.find(([id]) => id === seite)?.[2] ?? SEITEN_TITEL[seite]}`;
     },
     /** Lädt den angezeigten Monat (samt Randwochen) nach, falls er außerhalb des geladenen Fensters liegt. */
     monatLaden() {
@@ -111,6 +120,20 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
       const erster = `${jahr}-${String(monat).padStart(2, '0')}-01`;
       const naechster = monat === 12 ? `${jahr + 1}-01-01` : `${jahr}-${String(monat + 1).padStart(2, '0')}-01`;
       store.sichereBereich(addDays(erster, -7), addDays(naechster, 7));
+    },
+    /** Lädt das gewählte Kindergartenjahr nach, falls es außerhalb des geladenen Fensters liegt. */
+    urlaubLaden() {
+      const { jahr } = urlaubModel(store.getState(), store.heute(), ui.urlaubJahr);
+      store.sichereBereich(jahr.start, addDays(jahr.end, 1));
+    },
+    /** Holt den Verlauf bis zum gewählten Beginn nach (nach einem vollständigen Neuladen fehlen die älteren Monate wieder). */
+    verlaufLaden() {
+      const fenster = store.getState().fenster;
+      if (fenster && ui.verlauf.von && ui.verlauf.von < fenster.von) store.sichereBereich(ui.verlauf.von, fenster.von);
+    },
+    setzeUrlaubJahr(offset) {
+      ui.urlaubJahr = urlaubModel(store.getState(), store.heute(), offset).jahrOffset;
+      ui.rendern();
     },
     gehZu(seite) {
       if (ui.seite() === seite) ui.rendern();

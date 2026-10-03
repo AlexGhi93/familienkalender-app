@@ -6,17 +6,18 @@ import { TYPES } from '../domain/types.js';
 import { FEIERTAG_FARBE } from '../app/views/gemeinsam.js';
 
 function zelle(z, ui) {
-  const klassen = ['zelle', z.imMonat ? '' : 'ausserhalb', z.istHeute ? 'heute' : '', z.farbe ? 'getoent' : '', z.wochenende ? 'we' : ''];
+  const klassen = ['zelle', z.imMonat ? '' : 'ausserhalb', z.konflikt ? 'konflikt' : '', z.istHeute ? 'heute' : '', z.farbe ? 'getoent' : '', z.wochenende ? 'we' : ''];
   return h(
     'button',
     {
       class: klassen.filter(Boolean).join(' '),
       type: 'button',
       style: z.farbe ? farbe(z.farbe) : null,
-      'aria-label': `${datumLang(z.date)}${z.feiertag ? `, ${z.feiertag}` : ''}${z.sache ? ', Sachen für die Einrichtung' : ''}${z.termin ? ', Termin' : ''}`,
+      'aria-label': `${datumLang(z.date)}${z.feiertag ? `, ${z.feiertag}` : ''}${z.sache ? ', Sachen für die Einrichtung' : ''}${z.termin ? ', Termin' : ''}${z.konflikt ? ', Konflikt: mehrere Einträge' : ''}`,
       onClick: () => ui.tagesblatt(z.date),
     },
     h('span', { class: 'nr' }, z.tag),
+    z.konflikt ? h('span', { class: 'konflikt-marke', 'aria-hidden': 'true' }, '⚠️') : null,
     z.emoji ? h('i', {}, z.emoji) : null,
     z.arzt ? h('span', { class: 'punkt', 'aria-hidden': 'true' }, '🩺') : null,
     z.sache ? h('span', { class: 'punkt links', 'aria-hidden': 'true' }, '👕') : null,

@@ -66,6 +66,7 @@ export function monatModel(state, jahr, monat, heute) {
       wochenende: !isWerktag(date),
       feiertag,
       typ,
+      konflikt: Boolean(state.tage[date]?.konflikt), // mehrere Einträge am selben Tag (siehe Tagesblatt)
       emoji: anzeigeTyp ? TYPES[anzeigeTyp].emoji : feiertag ? FEIERTAG_EMOJI : '',
       farbe: anzeigeTyp ? TYPES[anzeigeTyp].farbe : feiertag ? FEIERTAG_FARBE : null,
       arzt: termine.some((t) => t.typ === 'arzt'),

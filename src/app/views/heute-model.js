@@ -4,17 +4,16 @@ import { einrichtungFor } from '../../domain/modus.js';
 import { wienZuInstant } from '../../domain/instant.js';
 import { TYPES } from '../../domain/types.js';
 import { offeneTage } from '../../domain/offen.js';
-import { urlaubStatus, naechsterUrlaub } from '../../domain/urlaub.js';
 import { datumLang, gruss, stundeInWien } from '../format-de.js';
 import { einkaufModel } from './einkauf-model.js';
 import { sachenModel } from './sachen-model.js';
+import { urlaubCountdown, urlaubModel } from './urlaub-model.js';
 import {
   ABWESENHEIT,
   BETREUUNG,
   FEIERTAG_EMOJI,
   FEIERTAG_FARBE,
   naechsteTermine,
-  schliessTageListe,
   tageMitTyp,
   tagTyp,
   termineAm,
@@ -74,7 +73,6 @@ export function heuteModel(state, now = new Date()) {
   const { settings } = state;
   const heute = todayVienna(now);
   const urlaubSet = urlaubTageSet(state);
-  const spans = state.urlaub.map(({ start, end }) => ({ start, end }));
 
   const offene = offeneTage({
     erwartung: settings.erwartung,
@@ -85,10 +83,6 @@ export function heuteModel(state, now = new Date()) {
     urlaub: urlaubSet,
   });
 
-  const status = urlaubStatus({ spans, schliessTage: schliessTageListe(state), settings, today: heute });
-  const jahr = status.jahr;
-  const countdown = naechsterUrlaub(spans, heute);
-
   return {
     heute,
     gruss: gruss(stundeInWien(now)),
@@ -97,18 +91,11 @@ export function heuteModel(state, now = new Date()) {
     status: statusHeute(state, heute, urlaubSet),
     offeneTage: offene,
     termineHeute: termineMitStatus(termineAm(state, heute).filter(keineSache), now),
-    termineMorgen: termineAm(state, addDays(heute, 1)).filter(keineSache),
+    // Termine von morgen stehen schon heute oben (einen Tag vorher), in derselben großen Karte; „Demnächst“ beginnt danach
+    termineMorgen: termineAm(state, addDays(heute, 1)).filter(keineSache).map((t) => ({ ...t, zeitStatus: 'morgen', inText: 'morgen', naechster: false })),
     termineDemnaechst: naechsteTermine(state, addDays(heute, 1), 3),
     sachen: sachenModel(state, heute),
     einkauf: einkaufModel(state),
-    urlaub: {
-      jahrText: `Kindergartenjahr ${jahr.id}/${String(jahr.id + 1).slice(2)}`,
-      ziel: status.ziel,
-      genommen: status.genommen,
-      geplant: status.geplant,
-      offen: status.offen,
-      durchgehend: status.durchgehend,
-      countdown,
-    },
+    urlaub: { ...urlaubModel(state, heute, 0), countdown: urlaubCountdown(state, heute) },
   };
 }

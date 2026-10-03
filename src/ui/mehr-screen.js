@@ -6,6 +6,8 @@ import { kontoKarten } from './konto-karte.js';
 import { erinnerungenKarte } from './erinnerungen-karte.js';
 import { datumFeld as datumEingabe, zeitFeld as zeitEingabe } from './eingabefelder.js';
 import { leseDarstellung, wendeDarstellungAn } from './darstellung.js';
+import { mitnehmenKarte, sachenEigeneKarte, schliessTageKarte } from './listen-karten.js';
+import { sichernKarte } from './sichern-karte.js';
 
 export function mehrScreen({ store, ui }) {
   const settings = store.getState().settings;
@@ -122,6 +124,17 @@ export function mehrScreen({ store, ui }) {
         h('small', { class: 'leise' }, 'Am Abend davor, zum Einpacken, direkt aus der App. Leer lassen = aus.'),
       ),
     ),
+    schliessTageKarte({ settings, speichern }),
+    mitnehmenKarte({ settings, speichern }),
+    sachenEigeneKarte({ settings, speichern }),
+    h(
+      'article',
+      { class: 'karte' },
+      h('h3', {}, 'Verlauf'),
+      h('p', { class: 'leise' }, 'Alle Termine, Urlaube und Krank-, Abwesend- und Schließtage in einer Liste, mit Suche und Filtern.'),
+      h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein primaer', type: 'button', onClick: () => ui.gehZu('verlauf') }, 'Verlauf öffnen')),
+    ),
+    sichernKarte({ store }),
     ui.konto?.modus === 'google' ? erinnerungenKarte({ store, ui }) : null,
     ...konto.oben,
     demo
