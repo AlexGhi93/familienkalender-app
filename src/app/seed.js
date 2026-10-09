@@ -112,11 +112,12 @@ export function seedDemo(heute) {
   };
   const papaWerte = [1850000, 1932000, 2014050, 1988000, 2071100];
   const mamaWerte = [900000, 951000, 1010000, 990000, 1100250];
-  const konto = { v: 1, p: { papa: {}, mama: {} } };
+  const konto = { v: 1, p: { papa: {}, mama: {} }, x: [] };
   papaWerte.forEach((cents, i) => {
     konto.p.papa[monatVor(5 - i)] = cents;
     konto.p.mama[monatVor(5 - i)] = mamaWerte[i];
   });
+  konto.x.push({ i: 'demoex01', p: 'mama', m: monatVor(3), c: 60000, t: 'Steuerrückzahlung' }, { i: 'demoex02', p: 'papa', m: monatVor(2), c: -45000, t: 'Autoreparatur' });
   return { settings, tage, urlaub, termine: [...termine, ...sachenDemo({ settings, tage, urlaub }, heute)], einkauf, konto };
 }
 

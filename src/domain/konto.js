@@ -2,18 +2,24 @@
 // Rein, ohne DOM und ohne Netz. Beträge sind GANZE CENT (kein Fließkomma). Die Daten liegen als kleines JSON im geteilten Kalender
 // (verstecktes Ereignis „fkkonto“); jede Änderung ist eine Funktion Konto → Konto, die auf die NEUESTE Fassung angewendet wird.
 //
-// Form: { v: 1, p: { papa: { 'JJJJ-MM': Cent }, mama: { 'JJJJ-MM': Cent } } }
+// Form: { v: 1, p: { papa: { 'JJJJ-MM': Cent }, mama: { 'JJJJ-MM': Cent } }, x: [{ i: Kennung, p: Person, m: 'JJJJ-MM', c: Cent mit Vorzeichen, t: Name }] }
+// x = Sonderbeträge (z. B. Weihnachtsgeld oder eine größere Ausgabe): sie ändern keinen Kontostand, werden aber aus der Ersparnis herausgerechnet („ohne Extra“).
 
 export const PERSONEN = Object.freeze(['papa', 'mama']);
 export const MAX_MONATE = 96; // je Person (ungünstigster Fall ≈ 4 KB)
 export const MAX_CENTS = 999_999_999; // ±9.999.999,99 €
 export const MAX_KONTO_ZEICHEN = 6000; // Google kürzt Beschreibungen still bei 8192 Zeichen (Vertragsprobe C11b)
+export const MAX_EXTRAS = 40; // Sonderbeträge insgesamt
+export const MAX_EXTRA_TEXT = 30; // Zeichen je Bezeichnung
 
 const MONAT = /^\d{4}-(0[1-9]|1[0-2])$/;
+const KENNUNG = /^[A-Za-z0-9_-]{4,16}$/;
 const pad2 = (n) => String(n).padStart(2, '0');
 const istBetrag = (c) => typeof c === 'number' && Number.isInteger(c) && Math.abs(c) <= MAX_CENTS;
 
-export const leeresKonto = () => ({ v: 1, p: { papa: {}, mama: {} } });
+export const leeresKonto = () => ({ v: 1, p: { papa: {}, mama: {} }, x: [] });
+
+const sauber = (text) => String(text ?? '').replace(/\s+/g, ' ').trim();
 
 /** 'JJJJ-MM' → letzter Kalendertag 'JJJJ-MM-TT' (auch Schaltjahre). */
 export function letzterTag(monat) {
@@ -34,16 +40,32 @@ function bereinigeMonate(roh) {
   return Object.fromEntries(monate.slice(-MAX_MONATE).map((m) => [m, roh[m]])); // sollte nie nötig sein: die neuesten bleiben
 }
 
+function bereinigeExtras(roh) {
+  if (!Array.isArray(roh)) return [];
+  const gesehen = new Set();
+  const extras = [];
+  for (const e of roh) {
+    if (!e || typeof e !== 'object') continue;
+    const t = sauber(e.t);
+    const gueltig = typeof e.i === 'string' && KENNUNG.test(e.i) && !gesehen.has(e.i) && PERSONEN.includes(e.p) && MONAT.test(String(e.m)) && istBetrag(e.c) && e.c !== 0 && t !== '' && t.length <= MAX_EXTRA_TEXT;
+    if (!gueltig) continue;
+    gesehen.add(e.i);
+    extras.push({ i: e.i, p: e.p, m: e.m, c: e.c, t });
+    if (extras.length >= MAX_EXTRAS) break;
+  }
+  return extras;
+}
+
 /** Prüft ein gelesenes Konto streng; Ungültiges wird einzeln verworfen, Unbrauchbares ergibt das leere Konto. */
 export function normalisiereKonto(roh) {
   if (!roh || typeof roh !== 'object' || Array.isArray(roh) || roh.v !== 1 || !roh.p || typeof roh.p !== 'object' || Array.isArray(roh.p)) return leeresKonto();
-  return { v: 1, p: { papa: bereinigeMonate(roh.p.papa), mama: bereinigeMonate(roh.p.mama) } };
+  return { v: 1, p: { papa: bereinigeMonate(roh.p.papa), mama: bereinigeMonate(roh.p.mama) }, x: bereinigeExtras(roh.x) };
 }
 
 /** Das Konto als Text für die Beschreibung des Kalenderereignisses; zu lange Konten werden vor dem Schreiben abgelehnt. */
 export function kontoText(konto) {
   const text = JSON.stringify(normalisiereKonto(konto));
-  if (text.length > MAX_KONTO_ZEICHEN) throw new Error('Der Kontostand-Verlauf ist zu lang für den Kalender.');
+  if (text.length > MAX_KONTO_ZEICHEN) throw new Error('Der Kontostand-Verlauf ist zu lang für den Kalender. Bitte ältere Sonderbeträge löschen.');
   return text;
 }
 
@@ -106,7 +128,46 @@ export function setzeStand(konto, { person, monat, cents }, { heute, demo = fals
     if (!demo && heute !== letzterTag(monat)) throw new Error('Ein neuer Kontostand lässt sich nur am letzten Tag des Monats eintragen.');
     if (Object.keys(konto.p[person]).length >= MAX_MONATE) throw new Error(`Höchstens ${MAX_MONATE} Monate pro Person. Bitte vorher eine Sicherung speichern.`);
   }
-  return { v: 1, p: { ...konto.p, [person]: { ...konto.p[person], [monat]: cents } } };
+  const neu = { v: 1, p: { ...konto.p, [person]: { ...konto.p[person], [monat]: cents } }, x: konto.x ?? [] };
+  kontoText(neu); // wirft, wenn der Platz im Kalender nicht reicht
+  return neu;
+}
+
+/** Löscht einen einzelnen Kontostand (Person und Monat); wiederholbar. Sonderbeträge und die andere Person bleiben. */
+export function entferneStand(konto, { person, monat }) {
+  if (!PERSONEN.includes(person)) throw new Error('Ungültige Person (Papa oder Mama).');
+  if (!MONAT.test(String(monat))) throw new Error('Ungültiger Monat.');
+  if (konto.p[person][monat] === undefined) return konto;
+  const { [monat]: _weg, ...rest } = konto.p[person];
+  return { v: 1, p: { ...konto.p, [person]: rest }, x: konto.x ?? [] };
+}
+
+/**
+ * Fügt einen Sonderbetrag hinzu (Einnahme: positiv, Ausgabe: negativ). Jederzeit möglich (es ist eine Notiz, kein Kontostand), für den laufenden
+ * oder einen früheren Monat. `id` macht die Eintragung wiederholbar: dieselbe Kennung ergibt keinen zweiten Eintrag.
+ */
+export function fuegeExtraHinzu(konto, { person, monat, cents, text, id }, { heute }) {
+  if (!PERSONEN.includes(person)) throw new Error('Ungültige Person (Papa oder Mama).');
+  if (!MONAT.test(String(monat))) throw new Error('Ungültiger Monat.');
+  if (monat > String(heute).slice(0, 7)) throw new Error('Dieser Monat hat noch nicht begonnen.');
+  if (!istBetrag(cents)) throw new Error('Der Betrag ist ungültig.');
+  if (cents === 0) throw new Error('Der Betrag darf nicht 0 sein.');
+  const name = sauber(text);
+  if (name === '') throw new Error('Bitte eine Bezeichnung eingeben.');
+  if (name.length > MAX_EXTRA_TEXT) throw new Error(`Die Bezeichnung ist zu lang (höchstens ${MAX_EXTRA_TEXT} Zeichen).`);
+  if (typeof id !== 'string' || !KENNUNG.test(id)) throw new Error('Ungültige Kennung.');
+  const bisher = konto.x ?? [];
+  if (bisher.some((e) => e.i === id)) return konto;
+  if (bisher.length >= MAX_EXTRAS) throw new Error(`Höchstens ${MAX_EXTRAS} Sonderbeträge. Bitte erst ältere löschen.`);
+  const neu = { ...konto, x: [...bisher, { i: id, p: person, m: monat, c: cents, t: name }] };
+  kontoText(neu);
+  return neu;
+}
+
+/** Löscht genau einen Sonderbetrag; eine unbekannte Kennung ändert nichts. */
+export function entferneExtra(konto, id) {
+  const bisher = konto.x ?? [];
+  return bisher.some((e) => e.i === id) ? { ...konto, x: bisher.filter((e) => e.i !== id) } : konto;
 }
 
 /** Wer in diesem Monat noch nichts eingetragen hat (in der Reihenfolge Papa, Mama). */
@@ -159,4 +220,40 @@ export function kontoZusammenfassung(zeilen) {
   const deltas = zeilen.map((z) => z.zusammen?.delta).filter((d) => typeof d === 'number');
   const seitBeginn = deltas.reduce((a, b) => a + b, 0);
   return { seitBeginn, monate: deltas.length, imPlus: deltas.filter((d) => d > 0).length, durchschnitt: deltas.length > 0 ? Math.round(seitBeginn / deltas.length) : null };
+}
+
+/**
+ * Wie `kontoVerlauf`, mit den Sonderbeträgen: jede Veränderung bekommt `extras` (die Sonderbeträge der Person in den Monaten NACH der Basis bis einschließlich
+ * dieses Monats), `extra` (ihre Summe) und `ohneExtra` (Veränderung minus Summe). Die Startzeile hat keine Veränderung (`ohneExtra: null`).
+ * `zusammen` nur bei gemeinsamer Basis; sonst `extra`/`ohneExtra` = null.
+ */
+export function kontoVerlaufMitExtra(konto) {
+  const extras = konto.x ?? [];
+  return kontoVerlauf(konto).map((z) => {
+    const ergaenze = (r, person) => {
+      if (!r) return null;
+      if (r.delta === null) return { ...r, extras: [], extra: 0, ohneExtra: null };
+      const basis = r.seit ?? vorherigerMonat(z.monat);
+      const liste = extras.filter((e) => e.p === person && e.m > basis && e.m <= z.monat);
+      const summe = liste.reduce((a, e) => a + e.c, 0);
+      return { ...r, extras: liste, extra: summe, ohneExtra: r.delta - summe };
+    };
+    const papa = ergaenze(z.papa, 'papa');
+    const mama = ergaenze(z.mama, 'mama');
+    let zusammen = z.zusammen;
+    if (zusammen) {
+      zusammen =
+        zusammen.delta === null
+          ? { ...zusammen, extras: [], extra: null, ohneExtra: null }
+          : { ...zusammen, extras: [...papa.extras, ...mama.extras], extra: papa.extra + mama.extra, ohneExtra: zusammen.delta - (papa.extra + mama.extra) };
+    }
+    return { ...z, papa, mama, zusammen };
+  });
+}
+
+/** Wie `kontoZusammenfassung`, zusätzlich `seitBeginnOhne`, `durchschnittOhne` und `imPlusOhne` (aus „ohne Extra“; Zeilen aus `kontoVerlaufMitExtra`). */
+export function kontoZusammenfassungMitExtra(zeilen) {
+  const ohne = zeilen.map((z) => z.zusammen?.ohneExtra).filter((d) => typeof d === 'number');
+  const seitBeginnOhne = ohne.reduce((a, b) => a + b, 0);
+  return { ...kontoZusammenfassung(zeilen), seitBeginnOhne, imPlusOhne: ohne.filter((d) => d > 0).length, durchschnittOhne: ohne.length > 0 ? Math.round(seitBeginnOhne / ohne.length) : null };
 }

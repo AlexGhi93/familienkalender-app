@@ -6,7 +6,7 @@ import { entfernen as artikelEntfernen, erledigteEntfernen, hinzufuegen as artik
 import { urlaubCheckEventId } from '../domain/ids.js';
 import { normalisiereTermin } from './termin.js';
 import { urlaubChecksAbgleich, urlaubChecksWunsch } from './urlaub-check.js';
-import { leeresKonto, normalisiereKonto, setzeStand } from '../domain/konto.js';
+import { entferneExtra, entferneStand, fuegeExtraHinzu, leeresKonto, normalisiereKonto, setzeStand } from '../domain/konto.js';
 import { MAX_SERIEN_WOCHEN, naechsterWochentag, wochenSerie } from './serie.js';
 
 const KITA_TYPEN = ['kita_essen', 'kita_ohne'];
@@ -142,6 +142,21 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       const gespeichert = await adapter.aendereEinkauf(fn);
       if (gespeichert) {
         state = { ...state, einkauf: gespeichert };
+        melden();
+      }
+    });
+  }
+
+  /**
+   * Ändert die Kontostände und Sonderbeträge: `fn(konto)` → neues Konto. Sofort sichtbar; bei Google wird `fn` auf die NEUESTE Fassung angewendet
+   * (zwei Telefone überschreiben sich nicht). Wirft sofort (ohne etwas zu ändern), wenn `fn` die Eingabe ablehnt.
+   */
+  async function kontoAendern(fn) {
+    const neu = fn(state.konto);
+    await aendere({ konto: neu }, async () => {
+      const gespeichert = await adapter.aendereKonto(fn);
+      if (gespeichert) {
+        state = { ...state, konto: gespeichert };
         melden();
       }
     });
@@ -406,15 +421,24 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
      */
     async kontoSpeichern(eintrag, { demo = false } = {}) {
       const heute = todayVienna(jetzt());
-      const aenderung = (konto) => setzeStand(konto, eintrag, { heute, demo });
-      const neu = aenderung(state.konto);
-      await aendere({ konto: neu }, async () => {
-        const gespeichert = await adapter.aendereKonto(aenderung);
-        if (gespeichert) {
-          state = { ...state, konto: gespeichert };
-          melden();
-        }
-      });
+      await kontoAendern((konto) => setzeStand(konto, eintrag, { heute, demo }));
+    },
+
+    /** Löscht den Kontostand einer Person für einen Monat (jederzeit; nach dem letzten Tag des Monats lässt er sich nicht mehr nachtragen). */
+    async kontoLoeschen(eintrag) {
+      await kontoAendern((konto) => entferneStand(konto, eintrag));
+    },
+
+    /** Sonderbetrag (Einnahme > 0, Ausgabe < 0) für einen Monat, jederzeit. Die Kennung macht eine wiederholte Speicherung unschädlich. */
+    async extraHinzufuegen(eintrag) {
+      const heute = todayVienna(jetzt());
+      const id = neueId().slice(0, 16);
+      await kontoAendern((konto) => fuegeExtraHinzu(konto, { ...eintrag, id }, { heute }));
+    },
+
+    /** Löscht genau einen Sonderbetrag. */
+    async extraEntfernen(id) {
+      await kontoAendern((konto) => entferneExtra(konto, id));
     },
 
     /** Einkaufsliste: Artikel eintragen (Menge optional), abhaken, löschen, Gekaufte entfernen (mit Rückgängig). */
