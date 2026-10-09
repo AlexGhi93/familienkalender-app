@@ -4,14 +4,19 @@
 import { fuelle, h, svg } from './dom.js';
 import { abschnitt, bestaetigen, blatt, chip, farbe, toast } from './components.js';
 import { kontoModel } from '../app/views/konto-model.js';
+import { balkenDiagramm, bereichLeiste, kacheln, verlaufDiagramm } from './konto-diagramm.js';
 import { MAX_EXTRA_TEXT, betragText, centsAusText } from '../domain/konto.js';
 
 const GRUEN = '#2F9E5B';
 const HINWEIS_EINGABE = 'Bitte einen Betrag eingeben, z. B. 20.711 oder 1.234,56.';
 
 // Eingaben überleben das Neuzeichnen der Seite (z. B. wenn vom anderen Telefon etwas hereinkommt).
-const entwurf = { papa: { text: '', minus: false }, mama: { text: '', minus: false } };
-const bearbeiten = new Set(); // wer seinen heutigen Eintrag gerade ändert
+const neuerZustand = () => ({ entwurf: { papa: { text: '', minus: false }, mama: { text: '', minus: false } }, bearbeiten: new Set() }); // bearbeiten: wer seinen Eintrag gerade ändert
+const eintragenZustand = neuerZustand();
+const nachtragenZustand = neuerZustand();
+let demoMonat = null; // in der Demo gewählter Monat des Formulars
+let nachtragMonat = null; // gewählter Monat beim Nachtragen
+let bereich = 12; // Zeitraum der Diagramme (6, 12 oder 0 = alles)
 const extraEntwurf = { offen: false, person: 'papa', monat: null, ausgabe: false, betrag: '', text: '' };
 
 /** Eingabe + „Im Minus“ → ganze Cent oder null. Ein eingetipptes „−“ gilt wie der Schalter. */
@@ -41,14 +46,15 @@ function betragFeld(zustand, beschriftung, beiEnter) {
   return h('div', { class: 'konto-betrag' }, eingabe, minus);
 }
 
-async function speichern(store, { person, monat, zustand, demo, danach }) {
+async function speichern(store, { person, monat, zustand, demo, nachtrag, danach }) {
   const cents = betragAusFeld(zustand.text, zustand.minus);
   if (cents === null) {
     toast(HINWEIS_EINGABE);
     return;
   }
   try {
-    await store.kontoSpeichern({ person, monat, cents }, { demo });
+    if (nachtrag) await store.kontoNachtragen({ person, monat, cents });
+    else await store.kontoSpeichern({ person, monat, cents }, { demo });
   } catch (fehler) {
     toast(fehler.message);
     return;
@@ -57,9 +63,9 @@ async function speichern(store, { person, monat, zustand, demo, danach }) {
   toast('Gespeichert ✓');
 }
 
-function personZeile(feld, e, { store, ui }) {
-  const zustand = entwurf[feld.person];
-  if (feld.hatEintrag && !bearbeiten.has(feld.person)) {
+function personZeile(feld, e, { store, ui }, z = eintragenZustand) {
+  const zustand = z.entwurf[feld.person];
+  if (feld.hatEintrag && !z.bearbeiten.has(feld.person)) {
     return h(
       'div',
       { class: 'konto-person fertig' },
@@ -74,7 +80,7 @@ function personZeile(feld, e, { store, ui }) {
             const cents = centsAusText(feld.wert);
             zustand.text = cents === null ? '' : betragText(Math.abs(cents)).replace(' €', '');
             zustand.minus = cents !== null && cents < 0;
-            bearbeiten.add(feld.person);
+            z.bearbeiten.add(feld.person);
             ui.rendern();
           },
         },
@@ -88,10 +94,11 @@ function personZeile(feld, e, { store, ui }) {
       monat: e.monat,
       zustand,
       demo: e.demo,
+      nachtrag: e.nachtrag,
       danach: () => {
         zustand.text = '';
         zustand.minus = false;
-        bearbeiten.delete(feld.person);
+        z.bearbeiten.delete(feld.person);
         ui.rendern();
       },
     });
@@ -104,6 +111,66 @@ function personZeile(feld, e, { store, ui }) {
   );
 }
 
+/** Nur Demo: Monat wählen und Beispieldaten entfernen, damit man eigene Zahlen ausprobieren kann. */
+function demoWerkzeuge(e, { store, ui }) {
+  const wahl = h(
+    'select',
+    {
+      class: 'konto-eingabe',
+      'aria-label': 'Monat für den Kontostand',
+      onChange: (ev) => {
+        demoMonat = ev.target.value;
+        eintragenZustand.bearbeiten.clear();
+        ui.rendern();
+      },
+    },
+    e.monate.map((x) => h('option', { value: x.wert, selected: x.wert === e.monat }, x.text)),
+  );
+  const entfernen = () =>
+    bestaetigen({
+      titel: 'Beispieldaten entfernen?',
+      text: 'Alle Beispiel-Kontostände und Sonderbeträge der Demo werden gelöscht, damit du eigene Zahlen ausprobieren kannst. Das betrifft nur die Demo.',
+      ja: 'Entfernen',
+      gefahr: true,
+      beiJa: async () => {
+        try {
+          await store.kontoLeeren();
+          toast('Beispieldaten entfernt');
+        } catch (fehler) {
+          toast(fehler.message);
+        }
+      },
+    });
+  return h('div', { class: 'konto-demo' }, h('span', { class: 'leise' }, 'Monat zum Ausprobieren:'), wahl, h('button', { class: 'knopf klein', type: 'button', onClick: entfernen }, 'Beispieldaten entfernen'));
+}
+
+/** Nachtragen: der Stand vom letzten Tag eines früheren Monats laut Kontoauszug (nicht der heutige Stand). */
+function nachtragKarte(m, ctx) {
+  const n = m.nachtragen;
+  const e = { monat: n.monat, monatText: n.monatText, demo: false, nachtrag: true, felder: n.felder };
+  const wahl = h(
+    'select',
+    {
+      class: 'konto-eingabe',
+      'aria-label': 'Monat zum Nachtragen',
+      onChange: (ev) => {
+        nachtragMonat = ev.target.value;
+        nachtragenZustand.bearbeiten.clear();
+        ctx.ui.rendern();
+      },
+    },
+    n.monate.map((x) => h('option', { value: x.wert, selected: x.wert === n.monat }, x.text)),
+  );
+  return h(
+    'article',
+    { class: 'karte' },
+    h('div', { class: 'karte-zeile' }, h('span', { class: 'emoji' }, '🕘'), h('div', { class: 'karte-text' }, h('b', {}, `Nachtragen: ${n.monatText}`), h('small', {}, 'Einen früheren Monat nachtragen'))),
+    h('p', { class: 'leise' }, 'Bitte den Stand vom LETZTEN Tag des Monats eintragen, so wie er im Kontoauszug steht (z. B. der Stand vom 30.09.), nicht den heutigen. Möglich für die letzten 24 Monate; der laufende Monat geht nur am letzten Tag.'),
+    wahl,
+    n.felder.map((f) => personZeile(f, e, ctx, nachtragenZustand)),
+  );
+}
+
 function eintragKarte(m, ctx) {
   const e = m.eintrag;
   return h(
@@ -113,44 +180,10 @@ function eintragKarte(m, ctx) {
       'div',
       { class: 'karte-zeile' },
       h('span', { class: 'emoji gross' }, '💶'),
-      h('div', { class: 'karte-text' }, h('b', {}, `Kontostand ${e.monatText}`), h('small', {}, e.demo ? 'Demo: Hier geht das Eintragen an jedem Tag.' : 'Heute ist der letzte Tag des Monats. Bitte den Gesamtstand aller deiner Konten eintragen.')),
+      h('div', { class: 'karte-text' }, h('b', {}, `Kontostand ${e.monatText}`), h('small', {}, e.demo ? 'Demo: Hier kannst du Beispielzahlen für jeden Monat eintragen. Alles bleibt nur in diesem Browser.' : 'Heute ist der letzte Tag des Monats. Bitte den Gesamtstand aller deiner Konten eintragen.')),
     ),
+    e.demo ? demoWerkzeuge(e, ctx) : null,
     e.felder.map((f) => personZeile(f, e, ctx)),
-  );
-}
-
-/** Balkendiagramm: Balken = gewöhnliche Ersparnis („ohne Extra“), Sonderbeträge als Segment mit Kontur; plus grün, minus rot. */
-function diagramm(balken) {
-  if (balken.length === 0) return null;
-  const breite = 320;
-  const hoehe = 140;
-  const oben = 12;
-  const unten = 24;
-  const innen = hoehe - oben - unten;
-  const werte = balken.flatMap((b) => [b.wert, b.wert + b.extra]);
-  const max = Math.max(0, ...werte);
-  const min = Math.min(0, ...werte);
-  const spanne = max - min || 1;
-  const yFuer = (wert) => oben + ((max - wert) / spanne) * innen;
-  const schritt = (breite - 20) / balken.length;
-  const balkenBreite = Math.min(28, schritt - 6);
-  return svg(
-    'svg',
-    { class: 'konto-diagramm', viewBox: `0 0 ${breite} ${hoehe}`, role: 'img', 'aria-label': `Veränderung pro Monat: ${balken.map((b) => b.text).join('; ')}` },
-    svg('line', { class: 'konto-null', x1: 6, x2: breite - 6, y1: yFuer(0), y2: yFuer(0) }),
-    balken.map((b, i) => {
-      const x = 10 + i * schritt + (schritt - balkenBreite) / 2;
-      const y1 = yFuer(0);
-      const y2 = yFuer(b.wert);
-      const yE = yFuer(b.wert + b.extra);
-      return svg(
-        'g',
-        {},
-        svg('rect', { class: `konto-balken ${b.art}`, x, y: Math.min(y1, y2), width: balkenBreite, height: Math.max(2, Math.abs(y2 - y1)), rx: 3 }, svg('title', {}, b.text)),
-        b.extra !== 0 ? svg('rect', { class: 'konto-extra', x, y: Math.min(y2, yE), width: balkenBreite, height: Math.max(2, Math.abs(yE - y2)), rx: 3 }, svg('title', {}, b.text)) : null,
-        svg('text', { class: 'konto-monat', x: x + balkenBreite / 2, y: hoehe - 8, 'text-anchor': 'middle' }, b.kurz),
-      );
-    }),
   );
 }
 
@@ -204,7 +237,7 @@ function oeffneKorrektur(z, { store }) {
         const loeschen = () =>
           bestaetigen({
             titel: 'Kontostand löschen?',
-            text: `${p.label}: ${z.monatText} (${p.stand}) wird gelöscht. Nach dem letzten Tag des Monats lässt sich dieser Kontostand nicht mehr neu eintragen; die Ersparnis wird dann „seit …“ berechnet.`,
+            text: `${p.label}: ${z.monatText} (${p.stand}) wird gelöscht. Du kannst ihn später mit „Nachtragen“ neu eintragen (Stand vom letzten Tag des Monats laut Kontoauszug); bis dahin wird die Ersparnis „seit …“ berechnet.`,
             ja: 'Löschen',
             gefahr: true,
             beiJa: async () => {
@@ -345,7 +378,7 @@ function sonderbetraegeKarte(m, ctx) {
   return h(
     'article',
     { class: 'karte' },
-    h('p', { class: 'leise' }, 'Zum Beispiel Weihnachtsgeld, ein Bonus oder eine größere Reparatur. Sonderbeträge ändern keinen Kontostand, werden aber aus der Ersparnis herausgerechnet („ohne Extra“). Sie lassen sich jederzeit eintragen und einzeln löschen.'),
+    h('p', { class: 'leise' }, 'Das ist nicht der Kontostand: Hier trägst du nur einmalige Beträge ein, zum Beispiel Weihnachtsgeld, einen Bonus oder eine größere Reparatur. Sonderbeträge ändern keinen Kontostand, werden aber aus der Ersparnis herausgerechnet („ohne Extra“). Sie lassen sich jederzeit eintragen und einzeln löschen.'),
     f.voll ? h('p', { class: 'leise' }, 'Es sind 40 Sonderbeträge eingetragen (das Maximum). Bitte erst ältere löschen.') : null,
     extraEntwurf.offen && !f.voll ? extraFormular(m, ctx) : h('div', { class: 'knopfzeile' }, neu),
     m.sonderbetraege.length > 0 ? extraListe(m, ctx) : h('p', { class: 'leise' }, 'Noch keine Sonderbeträge.'),
@@ -354,7 +387,7 @@ function sonderbetraegeKarte(m, ctx) {
 
 export function kontoScreen({ store, ui }) {
   const demo = ui.konto?.modus === 'demo';
-  const m = kontoModel(store.getState(), store.heute(), { demo });
+  const m = kontoModel(store.getState(), store.heute(), { demo, monat: demoMonat, nachtragMonat, bereich });
   const z = m.zusammenfassung;
   const ctx = { store, ui };
   return h(
@@ -363,28 +396,21 @@ export function kontoScreen({ store, ui }) {
     h('button', { class: 'zurueck', type: 'button', onClick: () => ui.gehZu('mehr') }, '‹ Zurück'),
     h('h1', { class: 'gruss' }, 'Kontostand 💶'),
     h('p', { class: 'datum' }, 'Am letzten Tag des Monats tragt ihr den Gesamtstand eurer Konten ein; so seht ihr, wie viel ihr spart.'),
-    m.eintrag ? eintragKarte(m, ctx) : h('article', { class: 'karte hinweis' }, h('div', { class: 'karte-zeile' }, h('span', { class: 'emoji' }, '🗓️'), h('div', { class: 'karte-text' }, h('b', {}, m.naechster)))),
+    m.eintrag ? eintragKarte(m, ctx) : h('article', { class: 'karte hinweis' }, h('div', { class: 'karte-zeile' }, h('span', { class: 'emoji' }, '🗓️'), h('div', { class: 'karte-text' }, h('b', {}, m.naechster), h('small', {}, 'Frühere Monate trägst du weiter unten mit „Nachtragen“ ein.')))),
+    m.nachtragen ? abschnitt('Nachtragen', nachtragKarte(m, ctx)) : null,
     m.leer ? h('p', { class: 'leise' }, 'Noch keine Kontostände. Ab dem zweiten Monatsende zeigt die Seite, wie viel ihr gespart habt.') : null,
-    z
-      ? abschnitt(
-          'Zusammenfassung',
-          h(
-            'article',
-            { class: 'karte konto-summe' },
-            h('div', { class: 'konto-reihe' }, h('span', {}, 'Seit Beginn'), h('b', {}, z.seitBeginn)),
-            h('div', { class: 'konto-reihe' }, h('span', {}, 'Ø pro Monat'), h('b', {}, z.durchschnitt)),
-            h('div', { class: 'konto-reihe' }, h('b', {}, z.text)),
-            z.ohneExtra
-              ? [
-                  h('div', { class: 'konto-reihe extra-trenner' }, h('span', {}, 'Seit Beginn ohne Extra'), h('b', {}, z.ohneExtra.seitBeginn)),
-                  h('div', { class: 'konto-reihe' }, h('span', {}, 'Ø pro Monat ohne Extra'), h('b', {}, z.ohneExtra.durchschnitt)),
-                  h('div', { class: 'konto-reihe' }, h('b', {}, z.ohneExtra.text)),
-                ]
-              : null,
-          ),
-        )
+    z || m.diagramm
+      ? [
+          bereichLeiste(m, (wert) => {
+            bereich = wert;
+            ui.rendern();
+          }),
+          kacheln(m),
+        ]
       : null,
-    m.balken.length > 0 ? abschnitt('Veränderung pro Monat (zusammen)', h('article', { class: 'karte' }, diagramm(m.balken), m.balken.some((b) => b.extra !== 0) ? h('p', { class: 'leise' }, 'Voller Balken: ohne Extra. Umrandet: Sonderbeträge des Monats.') : null)) : null,
+    m.diagramm ? abschnitt('Kontostand-Verlauf', verlaufDiagramm(m)) : null,
+    m.balken.length > 0 ? abschnitt('Veränderung pro Monat (zusammen)', balkenDiagramm(m)) : null,
+    !m.leer && !m.diagramm ? h('p', { class: 'leise' }, 'Das Diagramm erscheint ab dem zweiten Monat mit einem Kontostand. Der erste Eintrag ist der Startwert.') : null,
     abschnitt('Sonderbeträge', sonderbetraegeKarte(m, ctx)),
     m.zeilen.length > 0
       ? abschnitt('Sparen pro Monat', h('p', { class: 'leise' }, 'Veränderung des Kontostands: Gehalt, Rückzahlungen und Abbuchungen zählen mit. Antippen, um einen Eintrag zu korrigieren oder zu löschen.'), ...m.zeilen.map((r) => zeile(r, () => oeffneKorrektur(r, { store }))))

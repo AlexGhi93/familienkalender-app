@@ -18,6 +18,8 @@
   --arzt: #8b6cd6;
   --familie: #f4c842;
   --grau: #a7a2b2;
+  --serie-papa: #2a78d6; /* Diagramm-Farben: blau/orange, mit dem Farbprüfer für Hell und Dunkel validiert */
+  --serie-mama: #eb6834;
 
   --radius: 20px;
   --radius-klein: 14px;
@@ -38,6 +40,8 @@
     --akzent-ink: #1f1b2e;
     --gefahr: #ff7b7b;
     --schatten: 0 1px 0 rgba(0, 0, 0, 0.2), 0 8px 22px rgba(0, 0, 0, 0.3);
+    --serie-papa: #3987e5;
+    --serie-mama: #d95926;
     color-scheme: dark;
   }
 }
@@ -52,6 +56,8 @@
   --akzent-ink: #1f1b2e;
   --gefahr: #ff7b7b;
   --schatten: 0 1px 0 rgba(0, 0, 0, 0.2), 0 8px 22px rgba(0, 0, 0, 0.3);
+  --serie-papa: #3987e5;
+  --serie-mama: #d95926;
   color-scheme: dark;
 }
 
@@ -1801,4 +1807,317 @@ small.notiz {
 
 .extra-zeile .konto-delta {
   margin-left: 0;
+}
+
+
+/* ---------- Kontostand: Demo zum Ausprobieren ---------- */
+
+.konto-demo {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.konto-demo select.konto-eingabe {
+  flex: none;
+  width: 100%;
+}
+
+
+/* ---------- Kontostand: Diagramme, Kacheln, Zeitraum ---------- */
+
+.konto-bereich {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.konto-kacheln {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+/* die erste Kachel (Ersparnis im Zeitraum) ist die große Zahl der Seite */
+.konto-kachel:first-child {
+  grid-column: 1 / -1;
+}
+
+.konto-kachel:first-child .konto-kachel-wert {
+  font-size: 1.9rem;
+}
+
+.konto-kachel {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 10px 8px;
+  border-radius: var(--radius-klein);
+  border: 1.5px solid var(--linie);
+  background: var(--karte);
+  box-shadow: var(--schatten);
+}
+
+.konto-kachel-titel {
+  color: var(--ink-2);
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.konto-kachel-wert {
+  font-size: 1.15rem;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.konto-kachel small {
+  color: var(--ink-2);
+  font-size: 0.72rem;
+  line-height: 1.25;
+}
+
+figure.diagramm {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 12px 10px 10px;
+  border-radius: var(--radius);
+  border: 1.5px solid var(--linie);
+  background: var(--karte);
+  box-shadow: var(--schatten);
+  outline-offset: 2px;
+}
+
+.diagramm .konto-diagramm {
+  width: 100%;
+  height: auto;
+  touch-action: pan-y;
+  user-select: none;
+}
+
+.diag-gitter {
+  stroke: var(--linie);
+  stroke-width: 1;
+}
+
+.diag-achse {
+  fill: var(--ink-2);
+  font-size: 10px;
+}
+
+.diag-achse.jahr {
+  font-weight: 700;
+}
+
+.diag-linie {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.diag-linie.luecke {
+  stroke-dasharray: 4 4;
+  opacity: 0.7;
+}
+
+.diag-reihe.papa .diag-linie {
+  stroke: var(--serie-papa);
+}
+
+.diag-reihe.mama .diag-linie {
+  stroke: var(--serie-mama);
+}
+
+.diag-reihe.zusammen .diag-linie {
+  stroke-width: 3;
+}
+
+.diag-punkt {
+  fill: var(--ink);
+  stroke: var(--karte);
+  stroke-width: 2;
+}
+
+.diag-reihe.papa .diag-punkt,
+.diag-punkt.hervor.papa {
+  fill: var(--serie-papa);
+}
+
+.diag-reihe.mama .diag-punkt,
+.diag-punkt.hervor.mama {
+  fill: var(--serie-mama);
+}
+
+.diag-fadenkreuz {
+  stroke: var(--ink-2);
+  stroke-width: 1;
+  opacity: 0.6;
+}
+
+.diag-treffer {
+  cursor: crosshair;
+}
+
+.diag-balken-hervor {
+  fill: none;
+  stroke: var(--ink-2);
+  stroke-width: 1.5;
+}
+
+.diag-wert {
+  fill: var(--ink);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.diag-schnitt {
+  stroke: var(--ink-2);
+  stroke-width: 1;
+  stroke-dasharray: 5 4;
+}
+
+.diag-schnitt-text {
+  fill: var(--ink-2);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.diag-legende {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 0.85rem;
+}
+
+.diag-legende-eintrag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.diag-schluessel {
+  display: inline-block;
+  width: 16px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--ink);
+}
+
+.diag-schluessel.papa {
+  background: var(--serie-papa);
+}
+
+.diag-schluessel.mama {
+  background: var(--serie-mama);
+}
+
+.diag-schluessel.zusammen {
+  height: 4px;
+}
+
+.diag-schluessel.plus {
+  height: 10px;
+  width: 10px;
+  background: var(--kita);
+}
+
+.diag-schluessel.minus {
+  height: 10px;
+  width: 10px;
+  background: var(--krank);
+}
+
+.diag-schluessel.extra {
+  height: 10px;
+  width: 10px;
+  background: none;
+  border: 1.5px dashed var(--ink-2);
+}
+
+.diag-tip {
+  position: absolute;
+  top: -6px;
+  z-index: 5;
+  max-width: calc(100% - 8px);
+  padding: 8px 10px;
+  border-radius: var(--radius-klein);
+  background: var(--ink);
+  color: var(--bg);
+  box-shadow: var(--schatten);
+  font-size: 0.85rem;
+  pointer-events: none;
+}
+
+.diag-tip[hidden] {
+  display: none;
+}
+
+.diag-tip-titel {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.diag-tip-zeile {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.diag-tip-zeile small {
+  opacity: 0.8;
+}
+
+.diag-tip .diag-schluessel {
+  box-shadow: 0 0 0 1.5px var(--bg);
+}
+
+.diag-tip-delta {
+  font-weight: 700;
+}
+
+.diag-tabelle {
+  font-size: 0.85rem;
+}
+
+.diag-tabelle summary {
+  cursor: pointer;
+  color: var(--akzent);
+  font-weight: 700;
+}
+
+.diag-tabelle table {
+  width: 100%;
+  margin-top: 6px;
+  border-collapse: collapse;
+}
+
+.diag-tabelle th,
+.diag-tabelle td {
+  padding: 4px 6px;
+  border-top: 1px solid var(--linie);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.diag-tabelle th:first-child,
+.diag-tabelle td:first-child {
+  text-align: left;
+}
+
+.diag-tabelle small {
+  color: var(--ink-2);
+}
+
+.diag-schluessel.schnitt {
+  width: 16px;
+  height: 0;
+  border-top: 2px dashed var(--ink-2);
+  background: none;
+  border-radius: 0;
 }

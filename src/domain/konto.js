@@ -11,6 +11,7 @@ export const MAX_CENTS = 999_999_999; // ±9.999.999,99 €
 export const MAX_KONTO_ZEICHEN = 6000; // Google kürzt Beschreibungen still bei 8192 Zeichen (Vertragsprobe C11b)
 export const MAX_EXTRAS = 40; // Sonderbeträge insgesamt
 export const MAX_EXTRA_TEXT = 30; // Zeichen je Bezeichnung
+export const MAX_NACHTRAG_MONATE = 24; // so weit zurück lässt sich ein früherer Monat nachtragen
 
 const MONAT = /^\d{4}-(0[1-9]|1[0-2])$/;
 const KENNUNG = /^[A-Za-z0-9_-]{4,16}$/;
@@ -26,6 +27,17 @@ export function letzterTag(monat) {
   if (!MONAT.test(String(monat))) throw new Error(`Ungültiger Monat: ${monat}`);
   const [jahr, m] = monat.split('-').map(Number);
   return `${monat}-${pad2(new Date(Date.UTC(jahr, m, 0)).getUTCDate())}`;
+}
+
+/** Monat `n` Monate vor dem Monat von `datum` ('JJJJ-MM-TT' oder 'JJJJ-MM'); negatives `n` zählt vorwärts. */
+export function monatVor(datum, n) {
+  const index = Number(datum.slice(0, 4)) * 12 + (Number(datum.slice(5, 7)) - 1) - n;
+  return `${Math.floor(index / 12)}-${pad2((index % 12) + 1)}`;
+}
+
+/** Die Monate, die sich nachtragen lassen: die 24 vor dem laufenden Monat, neueste zuerst (der laufende Monat nur am letzten Tag). */
+export function nachtragMonate(heute) {
+  return Array.from({ length: MAX_NACHTRAG_MONATE }, (_, i) => monatVor(heute, i + 1));
 }
 
 /** Der Monat, der HEUTE eingetragen werden darf: nur am letzten Tag des Monats, sonst null. */
@@ -115,17 +127,22 @@ export const deltaText = (cents) => (cents === 0 ? '±0 €' : cents > 0 ? `+${b
 /**
  * Trägt einen Kontostand ein. `monat` ist ein ausdrücklicher Parameter (nicht „heute“): eine Eintragung, die wegen abgelaufener
  * Anmeldung erst später gespeichert wird, landet trotzdem im richtigen Monat.
- * Ein NEUER Eintrag ist nur am letzten Tag des Monats möglich (`heute` = Wiener Datum); ein bestehender darf (als Tippfehler) korrigiert
+ * Ein NEUER Eintrag ist nur am letzten Tag des Monats möglich (`heute` = Wiener Datum) – oder, mit `nachtrag: true`, für einen früheren Monat
+ * (bis 24 Monate zurück; gedacht für den Stand vom letzten Tag laut Kontoauszug). Ein bestehender darf (als Tippfehler) korrigiert
  * werden. In der Demo (`demo: true`) entfällt die Tagesregel, damit man die Funktion ausprobieren kann.
  */
-export function setzeStand(konto, { person, monat, cents }, { heute, demo = false }) {
+export function setzeStand(konto, { person, monat, cents }, { heute, demo = false, nachtrag = false }) {
   if (!PERSONEN.includes(person)) throw new Error('Ungültige Person (Papa oder Mama).');
   if (!MONAT.test(String(monat))) throw new Error('Ungültiger Monat.');
   if (monat > String(heute).slice(0, 7)) throw new Error('Dieser Monat hat noch nicht begonnen.');
   if (!istBetrag(cents)) throw new Error('Der Betrag ist ungültig.');
   const vorhanden = konto.p[person][monat] !== undefined;
   if (!vorhanden) {
-    if (!demo && heute !== letzterTag(monat)) throw new Error('Ein neuer Kontostand lässt sich nur am letzten Tag des Monats eintragen.');
+    if (!demo && heute !== letzterTag(monat)) {
+      if (!nachtrag) throw new Error('Ein neuer Kontostand lässt sich nur am letzten Tag des Monats eintragen.');
+      if (monat >= String(heute).slice(0, 7)) throw new Error('Der laufende Monat lässt sich nur am letzten Tag des Monats eintragen.');
+      if (!nachtragMonate(heute).includes(monat)) throw new Error(`Nachtragen geht nur für die letzten ${MAX_NACHTRAG_MONATE} Monate vor dem laufenden Monat.`);
+    }
     if (Object.keys(konto.p[person]).length >= MAX_MONATE) throw new Error(`Höchstens ${MAX_MONATE} Monate pro Person. Bitte vorher eine Sicherung speichern.`);
   }
   const neu = { v: 1, p: { ...konto.p, [person]: { ...konto.p[person], [monat]: cents } }, x: konto.x ?? [] };

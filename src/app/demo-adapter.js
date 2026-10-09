@@ -28,6 +28,7 @@ export function createDemoAdapter({ speicher = globalThis.localStorage, jetzt = 
   }
 
   return {
+    istDemo: true, // der Store erlaubt „Beispieldaten entfernen“ nur mit einem Adapter, der das von sich sagt
     async laden() {
       if (!daten) {
         try {

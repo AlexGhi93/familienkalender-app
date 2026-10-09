@@ -424,7 +424,16 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       await kontoAendern((konto) => setzeStand(konto, eintrag, { heute, demo }));
     },
 
-    /** Löscht den Kontostand einer Person für einen Monat (jederzeit; nach dem letzten Tag des Monats lässt er sich nicht mehr nachtragen). */
+    /**
+     * Nachtragen: den Stand vom LETZTEN Tag eines früheren Monats laut Kontoauszug eintragen (bis 24 Monate zurück, nicht der laufende Monat).
+     * Sonst wie `kontoSpeichern`; der Monat ist festgehalten.
+     */
+    async kontoNachtragen(eintrag) {
+      const heute = todayVienna(jetzt());
+      await kontoAendern((konto) => setzeStand(konto, eintrag, { heute, nachtrag: true }));
+    },
+
+    /** Löscht den Kontostand einer Person für einen Monat (jederzeit; er lässt sich danach über „Nachtragen“ wieder eintragen). */
     async kontoLoeschen(eintrag) {
       await kontoAendern((konto) => entferneStand(konto, eintrag));
     },
@@ -434,6 +443,12 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       const heute = todayVienna(jetzt());
       const id = neueId().slice(0, 16);
       await kontoAendern((konto) => fuegeExtraHinzu(konto, { ...eintrag, id }, { heute }));
+    },
+
+    /** Nur Demo („Beispieldaten entfernen“): löscht alle Kontostände und Sonderbeträge. Mit einem anderen Adapter (Google) wird nichts getan. */
+    async kontoLeeren() {
+      if (!adapter.istDemo) throw new Error('Das geht nur in der Demo.');
+      await kontoAendern(() => leeresKonto());
     },
 
     /** Löscht genau einen Sonderbetrag. */
