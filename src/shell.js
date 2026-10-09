@@ -68,13 +68,20 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
 
   /** Anmelden (im Tipp!), danach Wartendes speichern und alles neu laden. */
   async function verbinden() {
+    if (ui.verbindung.laeuft) return; // ein Versuch läuft schon (das Google-Fenster ist offen): nicht doppelt starten
+    const anmeldung = auth.anmelden(); // zuerst, noch im Tipp: Safari öffnet das Google-Fenster nur dann
+    ui.verbindung = { laeuft: true, fehler: null };
+    ui.rendern(); // sofort sichtbar: „Verbinde mit Google …“
     try {
-      await auth.anmelden();
+      await anmeldung;
       await store.wiederholeAusstehende();
       await store.laden();
+      ui.verbindung = { laeuft: false, fehler: null };
       toast('Verbunden ✓');
     } catch (fehler) {
-      toast(fehler?.message ?? 'Das hat nicht geklappt. Bitte noch einmal versuchen.');
+      const text = fehler?.message ?? 'Das hat nicht geklappt. Bitte noch einmal versuchen.';
+      ui.verbindung = { laeuft: false, fehler: text }; // bleibt im Banner und in „Mehr“ stehen, bis es klappt
+      toast(text, { art: 'fehler', dauer: 7000 });
     }
     ui.rendern();
   }
@@ -85,6 +92,7 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
     konto,
     push,
     verbinden,
+    verbindung: { laeuft: false, fehler: null }, // letzter Verbindungsversuch (Banner und „Mehr“)
     monat: jetztMonat(),
     neu: { auswahl: null },
     urlaubJahr: 0, // gewähltes Kindergartenjahr auf der Urlaub-Seite (0 = aktuelles)
@@ -95,8 +103,9 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
       return name in SEITEN ? name : 'heute';
     },
     bannerAktualisieren() {
-      fuelle(banner, verbindungsBanner({ state: store.getState(), auth, ausstehend: store.ausstehend(), verbinden }), neueVersion ? versionsBanner({ neuLaden: () => fenster.location.reload() }) : null);
+      fuelle(banner, verbindungsBanner({ state: store.getState(), auth, ausstehend: store.ausstehend(), verbinden, verbindung: ui.verbindung }), neueVersion ? versionsBanner({ neuLaden: () => fenster.location.reload() }) : null);
       fuelle(fortschritt, fortschrittLeiste(store.getState()));
+      ui.verbindungZeichnen?.(); // die Verbindungskarte in „Mehr“, falls sie gerade offen ist
     },
     rendern() {
       const seite = ui.seite();
@@ -105,7 +114,7 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
       const scrollY = fenster.scrollY;
       ui.bannerAktualisieren();
       if (auth && !state.geladen) {
-        fuelle(inhalt, verbindenKarte({ verbinden }));
+        fuelle(inhalt, verbindenKarte({ verbinden, verbindung: ui.verbindung }));
       } else {
         fuelle(inhalt, SEITEN[seite]({ store, ui }));
         if (seite === 'monat') ui.monatLaden();

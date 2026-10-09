@@ -1,6 +1,7 @@
 import { fuelle, h } from './dom.js';
 import { bestaetigen, toast } from './components.js';
 import { freigabeAnleitung } from './anleitung.js';
+import { verbindungsModel } from '../app/views/verbindung-model.js';
 
 async function kopieren(text) {
   try {
@@ -10,8 +11,6 @@ async function kopieren(text) {
     toast('Kopieren hat nicht geklappt. Bitte den Code von Hand markieren.');
   }
 }
-
-const STATUS = { verbunden: '✅ Verbunden', abgelaufen: '🔒 Anmeldung abgelaufen', getrennt: '📴 Nicht verbunden' };
 
 /** „Mehr“: Konto bei Google (Status, neu anmelden, Code, Anleitung) bzw. im Demo-Modus der Weg zu Google. Gibt { oben, unten } zurück (leer ohne `ui.konto`). */
 export function kontoKarten({ store, ui }) {
@@ -28,7 +27,39 @@ export function kontoKarten({ store, ui }) {
     return { oben: [mitGoogle], unten: [] };
   }
 
-  const status = ui.auth.status();
+  const aktualisieren = async () => {
+    try {
+      await store.laden();
+    } catch (fehler) {
+      toast(fehler.message, { art: 'fehler' });
+      return;
+    }
+    // laden() meldet fehlende Anmeldung nicht als Fehler: ohne diese Prüfung stünde hier „Aktualisiert ✓“, obwohl nichts aktualisiert wurde.
+    if (store.getState().anmeldungNoetig) toast('Nicht aktualisiert: Bitte zuerst anmelden.', { art: 'fehler' });
+    else toast('Aktualisiert ✓');
+  };
+
+  // Status, Hinweise und Knöpfe zur Verbindung: wird bei jedem Wechsel und jede halbe Minute neu gezeichnet (Rest der Anmeldung, Fehler des letzten Versuchs).
+  const verbindungBlock = h('div', { class: 'verbindung-block' });
+  const zeichneVerbindung = () => {
+    const { karte } = verbindungsModel({ state: store.getState(), status: ui.auth.status(), restMs: ui.auth.restMs(), bald: ui.auth.baldAbgelaufen(), verbindung: ui.verbindung, ausstehend: store.ausstehend() });
+    fuelle(
+      verbindungBlock,
+      h('p', {}, karte.statusText),
+      ...karte.zeilen.map((zeile) => h('p', { class: 'leise' }, zeile)),
+      karte.fehler ? h('p', { class: 'banner-fehler', role: 'alert' }, `⚠️ Letzter Versuch: ${karte.fehler}`) : null,
+      h(
+        'div',
+        { class: 'knopfzeile' },
+        h('button', { class: 'knopf klein', type: 'button', onClick: aktualisieren }, 'Aktualisieren'),
+        h('button', { class: 'knopf klein primaer', type: 'button', disabled: karte.status === 'laeuft', onClick: ui.verbinden }, karte.status === 'verbunden' ? 'Neu anmelden' : 'Mit Google anmelden'),
+      ),
+    );
+  };
+  zeichneVerbindung();
+  ui.verbindungZeichnen = () => {
+    if (verbindungBlock.isConnected) zeichneVerbindung();
+  };
   const codeBox = h('div', { class: 'code-box' });
   codeBox.hidden = true;
   if (konto.kalenderCode) {
@@ -39,14 +70,8 @@ export function kontoKarten({ store, ui }) {
     'article',
     { class: 'karte' },
     h('h3', {}, 'Konto'),
-    h('p', {}, STATUS[status] ?? STATUS.getrennt),
+    verbindungBlock,
     h('p', { class: 'leise' }, konto.rolle === 'besitzer' ? 'Du hast den Familienkalender eingerichtet.' : 'Du bist über einen Code mit dem Familienkalender verbunden.'),
-    h(
-      'div',
-      { class: 'knopfzeile' },
-      h('button', { class: 'knopf klein', type: 'button', onClick: () => store.laden().then(() => toast('Aktualisiert ✓')).catch((e) => toast(e.message)) }, 'Aktualisieren'),
-      h('button', { class: 'knopf klein primaer', type: 'button', onClick: ui.verbinden }, status === 'verbunden' ? 'Neu anmelden' : 'Mit Google anmelden'),
-    ),
     konto.kalenderCode ? h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein', type: 'button', onClick: () => { codeBox.hidden = !codeBox.hidden; } }, 'Code für das andere Elternteil anzeigen')) : null,
     konto.kalenderCode ? codeBox : null,
   );

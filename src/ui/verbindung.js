@@ -1,30 +1,26 @@
 import { h } from './dom.js';
-import { standText } from '../app/format-de.js';
+import { verbindungsModel } from '../app/views/verbindung-model.js';
 
-function banner(emoji, text, knopfText, beiKlick) {
+/** Eine Zeile oben: Emoji, Text, optional der Fehler des letzten Versuchs (bleibt stehen) und der Knopf (fehlt, solange die Verbindung läuft). */
+function banner(emoji, text, knopfText, beiKlick, fehler = null) {
   return h(
     'div',
     { class: 'banner', role: 'status' },
     h('span', { class: 'emoji', 'aria-hidden': 'true' }, emoji),
-    h('p', {}, text),
-    h('button', { class: 'knopf klein primaer', type: 'button', onClick: beiKlick }, knopfText),
+    h('div', { class: 'banner-text' }, h('p', {}, text), fehler ? h('p', { class: 'banner-fehler', role: 'alert' }, `⚠️ ${fehler}`) : null),
+    knopfText ? h('button', { class: 'knopf klein primaer', type: 'button', onClick: beiKlick }, knopfText) : null,
   );
 }
 
-/** Hinweis oben auf jedem Bildschirm: Verbinden (nur gespeicherter Stand), Neu anmelden (abgelaufen) oder Erneuern (läuft bald ab). */
-export function verbindungsBanner({ state, auth, ausstehend, verbinden }) {
+/** Hinweis oben auf jedem Bildschirm (Texte und Fälle: app/views/verbindung-model.js). `verbindung` = { laeuft, fehler } des letzten Versuchs. */
+export function verbindungsBanner({ state, auth, ausstehend, verbinden, verbindung }) {
   if (!auth) return null;
-  if (state.nurSnapshot) return banner('📴', `Gespeicherter Stand vom ${standText(state.stand)}. Zum Aktualisieren verbinden.`, 'Verbinden', verbinden);
-  if (state.anmeldungNoetig || auth.status() === 'abgelaufen') {
-    const warten = ausstehend > 0 ? ` ${ausstehend} ${ausstehend === 1 ? 'Änderung wartet' : 'Änderungen warten'} auf das Speichern.` : '';
-    return banner('🔒', `Bitte neu anmelden.${warten}`, 'Neu anmelden', verbinden);
-  }
-  if (auth.baldAbgelaufen()) return banner('⏳', 'Die Anmeldung läuft bald ab. Jetzt erneuern, damit nichts verloren geht.', 'Erneuern', verbinden);
-  return null;
+  const { banner: b } = verbindungsModel({ state, status: auth.status(), restMs: auth.restMs(), bald: auth.baldAbgelaufen(), verbindung, ausstehend });
+  return b ? banner(b.emoji, b.text, b.knopf, verbinden, b.fehler) : null;
 }
 
 /** Große Karte, solange noch nichts geladen ist (erster Start nach der Einrichtung oder ohne gespeicherten Stand). */
-export function verbindenKarte({ verbinden }) {
+export function verbindenKarte({ verbinden, verbindung = { laeuft: false, fehler: null } }) {
   return h(
     'section',
     { class: 'screen' },
@@ -33,7 +29,9 @@ export function verbindenKarte({ verbinden }) {
       'article',
       { class: 'karte tint', style: { '--c': '#7a5ce0' } },
       h('p', {}, 'Tippe auf „Mit Google anmelden“, um den Familienkalender zu laden. Das dauert nur einen Moment.'),
-      h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf primaer', type: 'button', onClick: verbinden }, 'Mit Google anmelden')),
+      verbindung.laeuft ? h('p', { class: 'leise' }, '⏳ Verbinde mit Google … Erscheint kein Fenster, erlaube Pop-ups für diese Seite.') : null,
+      verbindung.fehler ? h('p', { class: 'banner-fehler', role: 'alert' }, `⚠️ ${verbindung.fehler}`) : null,
+      h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf primaer', type: 'button', disabled: verbindung.laeuft, onClick: verbinden }, 'Mit Google anmelden')),
     ),
   );
 }

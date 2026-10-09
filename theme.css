@@ -2121,3 +2121,36 @@ figure.diagramm {
   background: none;
   border-radius: 0;
 }
+
+/* ---------- Verbindung: Fehler des letzten Versuchs bleibt sichtbar ---------- */
+
+.banner-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 180px;
+}
+
+.banner-text p {
+  min-width: 0;
+}
+
+.banner-fehler {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.karte .banner-fehler {
+  padding: 8px 10px;
+  border-radius: var(--radius-klein);
+  border: 1.5px dashed var(--gefahr);
+}
+
+.verbindung-block {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
