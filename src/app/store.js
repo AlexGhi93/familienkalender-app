@@ -6,6 +6,7 @@ import { entfernen as artikelEntfernen, erledigteEntfernen, hinzufuegen as artik
 import { urlaubCheckEventId } from '../domain/ids.js';
 import { normalisiereTermin } from './termin.js';
 import { urlaubChecksAbgleich, urlaubChecksWunsch } from './urlaub-check.js';
+import { leeresKonto, normalisiereKonto, setzeStand } from '../domain/konto.js';
 import { MAX_SERIEN_WOCHEN, naechsterWochentag, wochenSerie } from './serie.js';
 
 const KITA_TYPEN = ['kita_essen', 'kita_ohne'];
@@ -29,6 +30,7 @@ function ladeFelder(daten, state) {
     urlaub: daten.urlaub ?? [],
     termine: daten.termine ?? [],
     einkauf: daten.einkauf ? normalisiereListe(daten.einkauf) : (state.einkauf ?? leereListe()),
+    konto: daten.konto ? normalisiereKonto(daten.konto) : (state.konto ?? leeresKonto()),
     urlaubChecks: daten.urlaubChecks ?? state.urlaubChecks ?? [],
     ...(daten.konflikte ? { konflikte: daten.konflikte } : {}),
     ...(daten.warnungen ? { warnungen: daten.warnungen } : {}),
@@ -44,7 +46,7 @@ function ladeFelder(daten, state) {
  * - Mehr als drei Schreibvorgänge melden ihren Fortschritt (`state.fortschritt`).
  */
 export function createStore(adapter, { jetzt = () => new Date(), neueId = zufaelligeId } = {}) {
-  let state = { geladen: false, settings: normalizeSettings(), tage: {}, urlaub: [], termine: [], einkauf: leereListe(), fehler: null, fortschritt: null, anmeldungNoetig: false, fenster: null };
+  let state = { geladen: false, settings: normalizeSettings(), tage: {}, urlaub: [], termine: [], einkauf: leereListe(), konto: leeresKonto(), fehler: null, fortschritt: null, anmeldungNoetig: false, fenster: null };
   const hoerer = new Set();
   const wartend = []; // Schreibvorgänge, die wegen abgelaufener Anmeldung noch fehlen
   const geladeneBereiche = [];
@@ -259,7 +261,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
      */
     async sicherungsDaten() {
       const roh = adapter.ladeAlles ? await adapter.ladeAlles() : state;
-      return { settings: state.settings, tage: roh.tage, urlaub: roh.urlaub, termine: roh.termine, einkauf: state.einkauf };
+      return { settings: state.settings, tage: roh.tage, urlaub: roh.urlaub, termine: roh.termine, einkauf: state.einkauf, konto: state.konto };
     },
 
     /**
@@ -395,6 +397,24 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
         verschoben: hin.verschoben + heim.verschoben,
         uebersprungen: [...hin.uebersprungen, ...heim.uebersprungen],
       };
+    },
+
+    /**
+     * Kontostand von Papa oder Mama für einen Monat eintragen (oder als Tippfehler korrigieren). Ein NEUER Eintrag geht nur am letzten Tag des Monats
+     * (Wiener Datum zum Zeitpunkt des Tippens; `demo: true` hebt das auf). Monat und Datum sind festgehalten: eine wegen abgelaufener Anmeldung
+     * später gespeicherte Eingabe landet trotzdem im richtigen Monat. Wirft sofort (ohne etwas zu ändern), wenn die Eingabe nicht passt.
+     */
+    async kontoSpeichern(eintrag, { demo = false } = {}) {
+      const heute = todayVienna(jetzt());
+      const aenderung = (konto) => setzeStand(konto, eintrag, { heute, demo });
+      const neu = aenderung(state.konto);
+      await aendere({ konto: neu }, async () => {
+        const gespeichert = await adapter.aendereKonto(aenderung);
+        if (gespeichert) {
+          state = { ...state, konto: gespeichert };
+          melden();
+        }
+      });
     },
 
     /** Einkaufsliste: Artikel eintragen (Menge optional), abhaken, löschen, Gekaufte entfernen (mit Rückgängig). */

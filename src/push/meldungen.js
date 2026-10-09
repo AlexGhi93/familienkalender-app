@@ -9,8 +9,8 @@ async function kurzHash(text) {
   return bytesZuB64u(new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', enc.encode(text))).slice(0, 16));
 }
 
-/** Klartext der Benachrichtigung (nur auf dem Telefon lesbar): t = Titel, k = Text, g = Kennung (ersetzt Doppelte), u = Ziel. */
-export const nutzlastText = (p) => JSON.stringify({ t: p.titel, k: p.text, g: p.id, u: ZIEL });
+/** Klartext der Benachrichtigung (nur auf dem Telefon lesbar): t = Titel, k = Text, g = Kennung (ersetzt Doppelte), u = Ziel (`#/…`, sonst „Heute“). */
+export const nutzlastText = (p) => JSON.stringify({ t: p.titel, k: p.text, g: p.id, u: typeof p.ziel === 'string' && p.ziel.startsWith('#/') ? p.ziel : ZIEL });
 
 /**
  * `plan`: [{ id, um, titel, text, ttl }]; `geraete`: [{ id, p256dh, auth }] (alle Telefone der Familie, auch dieses).
@@ -21,7 +21,7 @@ export async function baueMeldungen(plan, geraete) {
   const items = [];
   for (const g of geraete) {
     for (const p of plan) {
-      const h = await kurzHash(`${p.um}|${p.titel}|${p.text}|${g.p256dh}|${g.auth}`);
+      const h = await kurzHash(`${p.um}|${p.titel}|${p.text}${p.ziel ? `|${p.ziel}` : ''}|${g.p256dh}|${g.auth}`);
       const body = bytesZuB64u(await verschluessele(g, enc.encode(nutzlastText(p))));
       items.push({ id: p.id, an: g.id, um: p.um, h, ttl: p.ttl, body });
     }

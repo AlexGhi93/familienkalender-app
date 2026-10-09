@@ -185,6 +185,17 @@ function einkaufKarte(m, ui) {
   );
 }
 
+/** Nur am letzten Tag des Monats, solange jemand seinen Kontostand noch nicht eingetragen hat. */
+function kontoHeuteKarte(m, ui) {
+  const k = m.konto;
+  return h(
+    'article',
+    { class: 'karte tint konto-heute', style: farbe('#2F9E5B') },
+    h('div', { class: 'karte-zeile' }, h('span', { class: 'emoji' }, '💶'), h('div', { class: 'karte-text' }, h('b', {}, k.text), h('small', {}, 'Heute ist der letzte Tag des Monats: der Gesamtstand aller Konten.'))),
+    h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein primaer', type: 'button', onClick: () => ui.gehZu('konto') }, 'Kontostand eintragen')),
+  );
+}
+
 function urlaubKarte(m) {
   const u = m.urlaub;
   const wochenZiel = u.durchgehend.ziel / 5;
@@ -221,6 +232,7 @@ export function heuteScreen({ store, ui }) {
     abschnitt('Heute', statusKarte(m, store, ui), offeneTageKarte(m, store, ui)),
     abschnitt(`Sachen für ${m.einrichtung}`, sachenKarte(m, store, ui)),
     abschnitt(m.einkauf.anzahlOffen > 0 ? `🛒 Einkauf · ${m.einkauf.anzahlOffen}` : '🛒 Einkauf', einkaufKarte(m, ui)),
+    m.konto.faellig ? abschnitt(`💶 Kontostand für ${m.konto.monatText} eintragen`, kontoHeuteKarte(m, ui)) : null,
     m.termineDemnaechst.length > 0 ? abschnitt('Demnächst', m.termineDemnaechst.map(terminKarte)) : null,
     abschnitt('Urlaub im Kindergartenjahr', urlaubKarte(m)),
     naechster ? h('div', { class: 'countdown' }, `✈️ Noch ${naechster.schlafen}× schlafen bis zum Urlaub`) : null,

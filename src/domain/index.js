@@ -15,3 +15,4 @@ export * from './ids.js';
 export * from './urlaub.js';
 export * from './offen.js';
 export * from './umwandlung.js';
+export * from './konto.js';

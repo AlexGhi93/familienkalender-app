@@ -3,6 +3,7 @@
 import { addDays, isValidDate } from '../domain/dates.js';
 import { normalizeSettings } from '../domain/settings.js';
 import { normalisiereListe } from '../domain/einkauf.js';
+import { normalisiereKonto } from '../domain/konto.js';
 import { TAGES_TYPEN, TYPES } from '../domain/types.js';
 
 export const SNAPSHOT_KEY = 'fk.snapshot.v1';
@@ -33,7 +34,7 @@ function pruefe(roh) {
     if (!istObjekt(t) || typeof t.id !== 'string' || !TERMIN_TYPEN.includes(t.typ) || !TYPES[t.typ] || !gueltigesDatum(t.date) || !Array.isArray(t.mitnehmen ?? [])) return null;
   }
   const fenster = istObjekt(roh.fenster) && gueltigesDatum(roh.fenster.von) && gueltigesDatum(roh.fenster.bis) ? { von: roh.fenster.von, bis: roh.fenster.bis } : null;
-  return { daten: { settings, tage: roh.tage, urlaub: roh.urlaub, termine: roh.termine, fenster, einkauf: normalisiereListe(roh.einkauf) }, gespeichertAm: roh.gespeichertAm };
+  return { daten: { settings, tage: roh.tage, urlaub: roh.urlaub, termine: roh.termine, fenster, einkauf: normalisiereListe(roh.einkauf), konto: normalisiereKonto(roh.konto) }, gespeichertAm: roh.gespeichertAm };
 }
 
 export function createSnapshot({ speicher = globalThis.localStorage ?? null, jetzt = () => new Date() } = {}) {
@@ -51,6 +52,7 @@ export function createSnapshot({ speicher = globalThis.localStorage ?? null, jet
         termine: state.termine.filter((t) => t.date >= grenze),
         fenster: state.fenster ?? null,
         einkauf: state.einkauf ?? null,
+        konto: state.konto ?? null,
       });
       if (text.length > MAX_SNAPSHOT_ZEICHEN) return false;
       try {

@@ -6,6 +6,7 @@ import { TYPES } from '../../domain/types.js';
 import { offeneTage } from '../../domain/offen.js';
 import { datumLang, gruss, stundeInWien } from '../format-de.js';
 import { einkaufModel } from './einkauf-model.js';
+import { kontoKarteModel } from './konto-model.js';
 import { sachenModel } from './sachen-model.js';
 import { urlaubCountdown, urlaubModel } from './urlaub-model.js';
 import {
@@ -96,6 +97,7 @@ export function heuteModel(state, now = new Date()) {
     termineDemnaechst: naechsteTermine(state, addDays(heute, 1), 3),
     sachen: sachenModel(state, heute),
     einkauf: einkaufModel(state),
+    konto: kontoKarteModel(state, heute),
     urlaub: { ...urlaubModel(state, heute, 0), countdown: urlaubCountdown(state, heute) },
   };
 }

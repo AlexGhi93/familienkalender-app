@@ -1,6 +1,7 @@
 // Sicherung als Datei: alle Daten der Familie in einem lesbaren JSON (zum Aufbewahren oder Weitergeben): rein, ohne DOM.
-// Enthält Arzttermine und damit Gesundheitsdaten; die Datei bleibt dort, wo die Familie sie speichert.
+// Enthält Arzttermine und Kontostände, also Gesundheits- und Finanzdaten; die Datei bleibt dort, wo die Familie sie speichert.
 import { leereListe, normalisiereListe } from '../domain/einkauf.js';
+import { leeresKonto, normalisiereKonto } from '../domain/konto.js';
 import { terminAnzeige } from './views/gemeinsam.js';
 
 export const SICHERUNG_VERSION = 1;
@@ -23,6 +24,7 @@ export function sicherungErstellen({ state, appVersion, jetzt = new Date() }) {
     urlaub: [...state.urlaub].sort((a, b) => a.start.localeCompare(b.start)),
     termine: [...state.termine].sort(nachDatum).map((t) => ({ ...t, titel: terminAnzeige(t, state.settings).titel })),
     einkauf: state.einkauf ? normalisiereListe(state.einkauf) : leereListe(),
+    konto: state.konto ? normalisiereKonto(state.konto) : leeresKonto(),
   };
 }
 
@@ -32,7 +34,8 @@ export const sicherungText = (sicherung) => JSON.stringify(sicherung, null, 2);
 
 const zahl = (n, einzahl, mehrzahl) => `${n} ${n === 1 ? einzahl : mehrzahl}`;
 
-/** „12 Tage · 3 Urlaube · 5 Termine · 4 Artikel auf der Einkaufsliste“ */
+/** „12 Tage · 3 Urlaube · 5 Termine · 4 Artikel auf der Einkaufsliste · 6 Kontostände“ */
 export function sicherungAnzahlText(s) {
-  return [zahl(Object.keys(s.tage).length, 'Tag', 'Tage'), zahl(s.urlaub.length, 'Urlaub', 'Urlaube'), zahl(s.termine.length, 'Termin', 'Termine'), `${s.einkauf.e.length} Artikel auf der Einkaufsliste`].join(' · ');
+  const kontoEintraege = Object.values(s.konto.p).reduce((summe, monate) => summe + Object.keys(monate).length, 0);
+  return [zahl(Object.keys(s.tage).length, 'Tag', 'Tage'), zahl(s.urlaub.length, 'Urlaub', 'Urlaube'), zahl(s.termine.length, 'Termin', 'Termine'), `${s.einkauf.e.length} Artikel auf der Einkaufsliste`, zahl(kontoEintraege, 'Kontostand', 'Kontostände')].join(' · ');
 }

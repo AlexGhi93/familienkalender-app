@@ -19,6 +19,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   bringzeit: '07:30', // Standard-Uhrzeit für „Sachen hinbringen“
   abholzeit: '15:30', // Standard-Uhrzeit für „Sachen heimholen“
   vorabend: '18:00', // Erinnerung am Vorabend für „Sachen hinbringen“ (zum Vorbereiten); '' = aus
+  kontoErinnerung: '18:00', // Uhrzeit der Erinnerung „Kontostand eintragen“ am letzten Tag des Monats; '' = aus
   kindname: '', // Vorname des Kindes für „Für wen“; leer = „Kind“ (steht nicht im Programmtext)
 });
 
@@ -114,6 +115,7 @@ export function normalizeSettings(gespeichert = {}) {
   const bringzeit = pruefeZeit(s.bringzeit, 'bringzeit');
   const abholzeit = pruefeZeit(s.abholzeit, 'abholzeit');
   const vorabend = s.vorabend === '' ? '' : pruefeZeit(s.vorabend, 'vorabend');
+  const kontoErinnerung = s.kontoErinnerung === '' ? '' : pruefeZeit(s.kontoErinnerung, 'kontoErinnerung');
   const kindname = pruefeKindname(s.kindname);
 
   return {
@@ -129,6 +131,7 @@ export function normalizeSettings(gespeichert = {}) {
     bringzeit,
     abholzeit,
     vorabend,
+    kontoErinnerung,
     kindname,
   };
 }

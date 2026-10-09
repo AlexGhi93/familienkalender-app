@@ -67,7 +67,7 @@ export function sichernKarte({ store }) {
     'article',
     { class: 'karte' },
     h('h3', {}, 'Sicherung'),
-    h('p', { class: 'leise' }, 'Speichert alles als Datei: Betreuungstage, Urlaub, Termine, Einkaufsliste und Einstellungen, auch ältere Monate. Die Datei enthält Arzttermine; bitte sicher aufbewahren.'),
+    h('p', { class: 'leise' }, 'Speichert alles als Datei: Betreuungstage, Urlaub, Termine, Einkaufsliste, Kontostände und Einstellungen, auch ältere Monate. Die Datei enthält Arzttermine und Kontostände; bitte sicher aufbewahren und nicht weitergeben.'),
     h('div', { class: 'knopfzeile' }, knopf),
     box,
   );

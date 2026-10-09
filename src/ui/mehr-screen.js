@@ -8,6 +8,7 @@ import { datumFeld as datumEingabe, zeitFeld as zeitEingabe } from './eingabefel
 import { leseDarstellung, wendeDarstellungAn } from './darstellung.js';
 import { mitnehmenKarte, sachenEigeneKarte, schliessTageKarte } from './listen-karten.js';
 import { sichernKarte } from './sichern-karte.js';
+import { kontoKarte } from './kontostand-karte.js';
 
 export function mehrScreen({ store, ui }) {
   const settings = store.getState().settings;
@@ -127,6 +128,7 @@ export function mehrScreen({ store, ui }) {
     schliessTageKarte({ settings, speichern }),
     mitnehmenKarte({ settings, speichern }),
     sachenEigeneKarte({ settings, speichern }),
+    kontoKarte({ store, ui, settings, speichern }),
     h(
       'article',
       { class: 'karte' },

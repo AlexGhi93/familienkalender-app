@@ -10,6 +10,7 @@ import { urlaubModel } from './app/views/urlaub-model.js';
 import { mehrScreen } from './ui/mehr-screen.js';
 import { einkaufScreen } from './ui/einkauf-screen.js';
 import { verlaufScreen } from './ui/verlauf-screen.js';
+import { kontoScreen } from './ui/konto-screen.js';
 import { oeffneTagesblatt } from './ui/tagesblatt.js';
 import { terminEntwurf } from './app/termin.js';
 import { verbindenKarte, verbindungsBanner, versionsBanner } from './ui/verbindung.js';
@@ -25,9 +26,10 @@ const SEITEN = {
   mehr: mehrScreen,
   einkauf: einkaufScreen, // keine eigene Registerkarte: erreichbar von „Heute“ (Karte) und „Neu“ (Kachel)
   verlauf: verlaufScreen, // erreichbar von „Mehr“
+  konto: kontoScreen, // „Kontostand“: erreichbar von „Mehr“, „Heute“ (am letzten Tag) und der Erinnerung
 };
 
-const SEITEN_TITEL = { einkauf: 'Einkauf', verlauf: 'Verlauf' }; // Seiten ohne Registerkarte
+const SEITEN_TITEL = { einkauf: 'Einkauf', verlauf: 'Verlauf', konto: 'Kontostand' }; // Seiten ohne Registerkarte
 
 const TABS = [
   ['heute', '🏠', 'Heute'],
@@ -193,6 +195,7 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
   let pushTermine = null;
   let pushSettings = null;
   let pushUrlaub = null;
+  let pushKonto = null;
   let checksUrlaub = null;
   let checksTage = null;
   let checksSettings = null;
@@ -202,10 +205,11 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
     else if (!state.fehler && letzterFehler) entferneFehlerToast();
     letzterFehler = state.fehler;
     // Push-Plan abgleichen, sobald frisch aus Google geladen wurde und sich Termine oder Einstellungen geändert haben (nie aus dem gespeicherten Stand)
-    if (push && state.geladen && !state.nurSnapshot && (state.termine !== pushTermine || state.settings !== pushSettings || state.urlaub !== pushUrlaub)) {
+    if (push && state.geladen && !state.nurSnapshot && (state.termine !== pushTermine || state.settings !== pushSettings || state.urlaub !== pushUrlaub || state.konto !== pushKonto)) {
       pushTermine = state.termine;
       pushSettings = state.settings;
       pushUrlaub = state.urlaub; // der Urlaubsstand bestimmt auch die Urlaub-Check-Erinnerungen
+      pushKonto = state.konto; // und wer den Kontostand schon eingetragen hat, die Erinnerung am Monatsende
       push.anstossen();
     }
     // Urlaub-Checks im Kalender (1.3., 1.5., 1.7.) beim Öffnen und nach Änderungen am Urlaub abgleichen; nur mit Google, nie aus dem gespeicherten Stand

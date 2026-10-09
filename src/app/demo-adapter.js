@@ -1,6 +1,7 @@
 import { todayVienna } from '../domain/dates.js';
 import { normalizeSettings } from '../domain/settings.js';
 import { leereListe, normalisiereListe } from '../domain/einkauf.js';
+import { leeresKonto, normalisiereKonto } from '../domain/konto.js';
 import { seedDemo } from './seed.js';
 
 const KEY = 'fk.demo.v1';
@@ -42,7 +43,10 @@ export function createDemoAdapter({ speicher = globalThis.localStorage, jetzt = 
           }
         }
         if (!daten) neuErzeugen();
-        else daten.einkauf = normalisiereListe(daten.einkauf ?? leereListe()); // Demo-Speicher aus einer älteren Version hat noch keine Liste
+        else {
+          daten.einkauf = normalisiereListe(daten.einkauf ?? leereListe()); // Demo-Speicher aus einer älteren Version hat noch keine Liste
+          daten.konto = normalisiereKonto(daten.konto ?? leeresKonto()); // … und noch keine Kontostände
+        }
       }
       return structuredClone(daten);
     },
@@ -69,6 +73,14 @@ export function createDemoAdapter({ speicher = globalThis.localStorage, jetzt = 
     async loescheTermin(id) {
       daten.termine = daten.termine.filter((t) => t.id !== id);
       sichern();
+    },
+    /** Kontostände ändern: `aenderung(konto)` → neues Konto (wie beim Google-Adapter); gibt das gespeicherte Konto zurück. */
+    async aendereKonto(aenderung) {
+      const neu = aenderung(daten.konto ?? leeresKonto());
+      if (!neu) return null;
+      daten.konto = neu;
+      sichern();
+      return structuredClone(neu);
     },
     /** Einkaufsliste ändern: `aenderung(liste)` → neue Liste (wie beim Google-Adapter); gibt die gespeicherte Liste zurück. */
     async aendereEinkauf(aenderung) {

@@ -104,7 +104,20 @@ export function seedDemo(heute) {
     ],
     h: { Joghurt: 4, Äpfel: 3, Eier: 2 },
   };
-  return { settings, tage, urlaub, termine: [...termine, ...sachenDemo({ settings, tage, urlaub }, heute)], einkauf };
+  // erfundene Kontostände der letzten fünf Monatsenden (nur für die Demo): mit Plus und einem Minus
+  const [jahr, monat] = heute.split('-').map(Number);
+  const monatVor = (n) => {
+    const index = jahr * 12 + (monat - 1) - n;
+    return `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, '0')}`;
+  };
+  const papaWerte = [1850000, 1932000, 2014050, 1988000, 2071100];
+  const mamaWerte = [900000, 951000, 1010000, 990000, 1100250];
+  const konto = { v: 1, p: { papa: {}, mama: {} } };
+  papaWerte.forEach((cents, i) => {
+    konto.p.papa[monatVor(5 - i)] = cents;
+    konto.p.mama[monatVor(5 - i)] = mamaWerte[i];
+  });
+  return { settings, tage, urlaub, termine: [...termine, ...sachenDemo({ settings, tage, urlaub }, heute)], einkauf, konto };
 }
 
 /** Sachen für die Krabbelstube: Hinbringen in der nächsten Woche, Heimholen am Freitag danach, später Windeln und Socken. */

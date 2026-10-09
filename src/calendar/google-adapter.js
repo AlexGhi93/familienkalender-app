@@ -4,7 +4,7 @@ import { addDays, todayVienna } from '../domain/dates.js';
 import { kindergartenjahr } from '../domain/urlaub.js';
 import { normalizeSettings } from '../domain/settings.js';
 import { beendeTestErinnerung, pruefeErinnerungen, repariereErinnerungen, starteTestErinnerung } from './erinnerungen.js';
-import { EINKAUF_ID, EINSTELLUNGEN_ID, GERAETE_ID, einkaufAusEreignis, einkaufZuEreignis, einstellungenAusEreignis, einstellungenZuEreignis, geraeteAusEreignis, geraeteZuEreignis, tagZuEreignis, terminZuEreignis, urlaubCheckZuEreignis, urlaubZuEreignis } from './mapping.js';
+import { EINKAUF_ID, EINSTELLUNGEN_ID, GERAETE_ID, KONTO_ID, einkaufAusEreignis, einkaufZuEreignis, kontoAusEreignis, kontoZuEreignis, einstellungenAusEreignis, einstellungenZuEreignis, geraeteAusEreignis, geraeteZuEreignis, tagZuEreignis, terminZuEreignis, urlaubCheckZuEreignis, urlaubZuEreignis } from './mapping.js';
 import { istUrlaubCheckId } from '../domain/ids.js';
 import { ereignisseZuZustand } from './zustand.js';
 
@@ -95,7 +95,8 @@ export function createGoogleAdapter({ api, kalender, jetzt = () => new Date(), a
       const z = ereignisseZuZustand({ ereignisse: await ereignisseLesen(von, bis), settings });
       await titelKorrigieren(z.resync);
       const einkauf = (await this.leseEinkauf()).liste;
-      return { settings, tage: z.tage, urlaub: z.urlaub, termine: z.termine, konflikte: z.konflikte, warnungen: gelesen.warnungen, fenster: { von, bis }, einkauf, urlaubChecks: z.urlaubChecks };
+      const konto = (await this.leseKonto()).konto;
+      return { settings, tage: z.tage, urlaub: z.urlaub, termine: z.termine, konflikte: z.konflikte, warnungen: gelesen.warnungen, fenster: { von, bis }, einkauf, konto, urlaubChecks: z.urlaubChecks };
     },
 
     /** Urlaub-Checks im Kalender „Termine“ anlegen/aktualisieren (`schreiben`) und löschen (`loeschen`); nur eigene IDs (`fkc…`), Fremdes bleibt unberührt. */
@@ -178,6 +179,16 @@ export function createGoogleAdapter({ api, kalender, jetzt = () => new Date(), a
     /** Ändert die Einkaufsliste: `aenderung(liste)` → neue Liste, angewendet auf die NEUESTE Fassung bei Google; gibt die gespeicherte Liste zurück. */
     aendereEinkauf: (aenderung) =>
       aendereVersteckt({ id: EINKAUF_ID, lesen: (e) => einkaufAusEreignis(e).liste, bauen: einkaufZuEreignis, fehler: 'Die Einkaufsliste konnte nicht gespeichert werden. Bitte noch einmal versuchen.', leer: () => einkaufAusEreignis(null).liste }, aenderung),
+
+    /** Kontostände von Papa und Mama (verstecktes Ereignis „fkkonto“): { konto } (leer, wenn es noch keins gibt). */
+    async leseKonto() {
+      const e = await api.ereignisse.holen(kalender.anwesenheit, KONTO_ID);
+      return !e || e.status === 'cancelled' ? { konto: kontoAusEreignis(null).konto } : kontoAusEreignis(e);
+    },
+
+    /** Ändert die Kontostände: `aenderung(konto)` → neues Konto, angewendet auf die NEUESTE Fassung bei Google; gibt das gespeicherte Konto zurück. */
+    aendereKonto: (aenderung) =>
+      aendereVersteckt({ id: KONTO_ID, lesen: (e) => kontoAusEreignis(e).konto, bauen: kontoZuEreignis, fehler: 'Der Kontostand konnte nicht gespeichert werden. Bitte noch einmal versuchen.', leer: () => kontoAusEreignis(null).konto }, aenderung),
 
     /** Erinnerungen dieses Kontos prüfen/reparieren und eine Test-Erinnerung auslösen (siehe erinnerungen.js). */
     pruefeErinnerungen: () => pruefeErinnerungen(api, kalender),
