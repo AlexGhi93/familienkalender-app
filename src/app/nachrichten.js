@@ -8,7 +8,7 @@ import { datumLang } from './format-de.js';
 export { GRUSSFORMELN }; // steht bei den Einstellungen (die Grußformel wird dort gespeichert und geprüft)
 
 /** Vorschläge für „Ansteckende Krankheit“ (frei änderbar). */
-export const KRANKHEITEN = Object.freeze(['Hand-Fuß-Mund-Krankheit', 'Bindehautentzündung', 'Scharlach', 'Windpocken', 'Läuse', 'Corona', 'Grippe']);
+export const KRANKHEITEN = Object.freeze(['die Hand-Fuß-Mund-Krankheit', 'eine Bindehautentzündung', 'Scharlach', 'die Windpocken', 'Läuse', 'Corona', 'die Grippe']); // mit Artikel: „hat leider die Windpocken“
 
 /**
  * Anlässe in drei Gruppen. `felder`: welche Angaben das Formular zusätzlich braucht
@@ -60,8 +60,9 @@ export function naechsterWerktag(datum) {
   return tag;
 }
 
-/** „morgen“, wenn `datum` der Tag nach `heute` ist, sonst „am Montag, 13. Oktober“. */
+/** „heute“, „morgen“ oder „am Montag, 13. Oktober“. */
 function anTag(datum, heute) {
+  if (datum === heute) return 'heute';
   return datum === addDays(heute, 1) ? 'morgen' : `am ${datumLang(datum)}`;
 }
 
