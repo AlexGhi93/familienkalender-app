@@ -172,7 +172,7 @@ export function mehrScreen({ store, ui }) {
       animation: 'brief',
       farbe: 'var(--urlaub)',
       titel: 'Nachrichten',
-      text: `Kontakt ${formen.der}, Gruß, Unterschrift`,
+      text: `Kontakt ${formen.der}, Anrede, Gruß, Unterschrift`,
       inhalt: nachrichtenInhalt({ store, ui, settings, speichern }),
     },
     {

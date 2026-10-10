@@ -1,7 +1,8 @@
 // Nachrichten an Krabbelstube/Kindergarten: jeder Anlass ergibt einen Text, Grammatik je Einrichtung, sie/er/Name, Links zum Senden.
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { ANLAESSE, GRUPPEN, GRUSSFORMELN, KRANKHEITEN, nachrichtBetreff, nachrichtText, naechsterWerktag, sendeLinks, standardUnterschrift, whatsappNummer } from '../../src/app/nachrichten.js';
+import { ANLAESSE, GRUPPEN, GRUSSFORMELN, KRANKHEITEN, TONARTEN, anredeEingabe, nachrichtBetreff, nachrichtText, naechsterWerktag, sendeLinks, standardUnterschrift, whatsappNummer } from '../../src/app/nachrichten.js';
+import { MAX_ANREDE, normalizeSettings } from '../../src/domain/settings.js';
 
 const heute = '2026-10-14'; // Mittwoch
 const voll = { kindname: 'Iris', geschlecht: 'w', einrichtung: 'Krabbelstube', tag: 'heute', zeit: '09:30', person: 'Oma', datum: '2026-10-16', krankheit: 'Scharlach', heute };
@@ -172,5 +173,105 @@ describe('Betreff und Senden', () => {
     assert.equal(standardUnterschrift(' Iris '), 'Die Eltern von Iris');
     assert.equal(standardUnterschrift(''), 'Die Eltern');
     assert.equal(standardUnterschrift(undefined), 'Die Eltern');
+  });
+});
+
+// ---------- Anrede, Tonarten und Situationen ohne Krankheit ----------
+
+describe('Anrede', () => {
+  test('eigene Anrede steht am Anfang jeder Nachricht, mit Komma', () => {
+    for (const a of ANLAESSE) {
+      const text = nachrichtText(a.id, { ...voll, anrede: 'Liebe Frau Muster' });
+      assert.ok(text.startsWith('Liebe Frau Muster,\n\n'), `${a.id}: ${text}`);
+    }
+  });
+
+  test('leer oder nur Leerzeichen = Standard je Einrichtung', () => {
+    assert.match(nachrichtText('unwohl', { ...voll, anrede: '' }), /^Liebes Krabbelstuben-Team,\n\n/);
+    assert.match(nachrichtText('unwohl', { ...voll, anrede: '   ', einrichtung: 'Kindergarten' }), /^Liebes Kindergarten-Team,\n\n/);
+  });
+
+  test('anredeEingabe: eine Zeile, Satzzeichen am Ende fallen weg, höchstens MAX_ANREDE Zeichen', () => {
+    assert.deepEqual(anredeEingabe('  Liebe   Frau Muster, '), { wert: 'Liebe Frau Muster' });
+    assert.deepEqual(anredeEingabe('Hallo Team!!'), { wert: 'Hallo Team' });
+    assert.deepEqual(anredeEingabe('Liebe Frau Muster,\n'), { wert: 'Liebe Frau Muster' });
+    assert.deepEqual(anredeEingabe(''), { wert: '' });
+    assert.deepEqual(anredeEingabe(',,,'), { wert: '' });
+    assert.match(anredeEingabe('x'.repeat(MAX_ANREDE + 1)).fehler, /Anrede: höchstens/);
+  });
+
+  test('Einstellung nachrichtAnrede: Standard leer, gespeichert getrimmt, zu lang ist ungültig', () => {
+    assert.equal(normalizeSettings({}).nachrichtAnrede, '');
+    assert.equal(normalizeSettings({ nachrichtAnrede: '  Liebe Frau Muster ' }).nachrichtAnrede, 'Liebe Frau Muster');
+    assert.throws(() => normalizeSettings({ nachrichtAnrede: 'x'.repeat(MAX_ANREDE + 1) }), /nachrichtAnrede/);
+    assert.throws(() => normalizeSettings({ nachrichtAnrede: 5 }), /nachrichtAnrede/);
+  });
+});
+
+describe('Tonarten', () => {
+  test('drei Tonarten, „normal“ ist der bisherige Text', () => {
+    assert.deepEqual(TONARTEN.map(([id]) => id), ['kurz', 'normal', 'herzlich']);
+    assert.deepEqual(TONARTEN.map(([, t]) => t), ['Kurz', 'Ausführlich', 'Herzlich']);
+    for (const a of ANLAESSE) assert.equal(nachrichtText(a.id, voll), nachrichtText(a.id, { ...voll, ton: 'normal' }), a.id);
+    assert.equal(nachrichtText('fieber', { ...voll, ton: 'gibtsnicht' }), nachrichtText('fieber', voll));
+  });
+
+  const faelle = [voll, { ...voll, tag: 'morgen', geschlecht: 'm', kindname: 'Max' }, { einrichtung: 'Kindergarten' }, { kindname: 'Kim', geschlecht: '', zeit: '', datum: '' }];
+  for (const a of ANLAESSE) {
+    test(`${a.id}: drei verschiedene, vollständige Texte; „kurz“ ist am kürzesten`, () => {
+      for (const angaben of faelle) {
+        const texte = TONARTEN.map(([ton]) => kern(nachrichtText(a.id, { ...angaben, ton })));
+        assert.equal(new Set(texte).size, 3, texte.join(' | '));
+        for (const t of texte) {
+          assert.doesNotMatch(t, /undefined|null|NaN|\$\{/, t);
+          assert.doesNotMatch(t, / {2}| ,| \./, t); // keine doppelten Leerzeichen, nichts vor Komma oder Punkt
+          assert.match(t, /^[A-ZÄÖÜ…]/, t); // Satzanfang groß
+          assert.match(t, /[.!]$/, t);
+        }
+        assert.ok(texte[0].length < texte[1].length && texte[0].length < texte[2].length, texte.join(' | '));
+      }
+    });
+  }
+});
+
+describe('Fälle der Pronomen (wir holen sie/ihn, es geht ihr/ihm besser)', () => {
+  test('Akkusativ und Dativ je nach Angabe; ohne Namen „unser Kind“ bzw. „unserem Kind“', () => {
+    assert.match(kern(nachrichtText('vormittags', { ...voll, zeit: '12:30' })), /Wir holen sie gegen 12:30 Uhr ab\./);
+    assert.match(kern(nachrichtText('vormittags', { kindname: 'Max', geschlecht: 'm', zeit: '12:30' })), /Wir holen ihn gegen 12:30 Uhr ab\./);
+    assert.match(kern(nachrichtText('vormittags', { zeit: '' })), /Wir holen unser Kind direkt nach dem Mittagessen ab\./);
+    assert.match(kern(nachrichtText('unwohl', { ...voll, ton: 'herzlich' })), /Sobald es ihr besser geht/);
+    assert.match(kern(nachrichtText('unwohl', { kindname: 'Max', geschlecht: 'm', ton: 'herzlich' })), /Sobald es ihm besser geht/);
+    assert.match(kern(nachrichtText('unwohl', { ton: 'herzlich' })), /Sobald es unserem Kind besser geht/);
+    assert.match(kern(nachrichtText('unwohl', { kindname: 'Kim', ton: 'herzlich' })), /Sobald es Kim besser geht/);
+  });
+
+  test('„in der Krabbelstube“, aber „im Kindergarten“', () => {
+    assert.match(kern(nachrichtText('vormittags', voll)), /nur bis nach dem Mittagessen in der Krabbelstube\./);
+    assert.match(kern(nachrichtText('vormittags', { ...voll, einrichtung: 'Kindergarten' })), /nur bis nach dem Mittagessen im Kindergarten\./);
+  });
+});
+
+describe('Einfach zu Hause: Situationen ohne Krankheit', () => {
+  test('eigene Gruppe vor „Bringen & Abholen“; „Müde“ steht dort statt bei „Krank“', () => {
+    assert.deepEqual(GRUPPEN.map(([id]) => id), ['krank', 'zuhause', 'zeit', 'sonst']);
+    assert.equal(GRUPPEN[1][1], 'Einfach zu Hause');
+    const zuhause = ANLAESSE.filter((a) => a.gruppe === 'zuhause').map((a) => a.id);
+    assert.deepEqual(zuhause, ['muede', 'ruhetag', 'wirfrei', 'besuch', 'ausflug', 'feier']);
+    for (const id of zuhause) assert.doesNotMatch(nachrichtText(id, voll), /krank|Fieber|Arzt/i, id);
+    assert.deepEqual(ANLAESSE.filter((a) => a.gruppe === 'zeit').map((a) => a.id), ['spaeter', 'arzt', 'frueher', 'abholer', 'vormittags', 'termin']);
+  });
+
+  test('Ruhetag betont: gesund, nur eine Pause', () => {
+    assert.equal(kern(nachrichtText('ruhetag', voll)), 'Iris ist nach den letzten Tagen etwas erschöpft und darf heute einen ruhigen Tag zu Hause verbringen. Sie ist gesund – es ist einfach eine kleine Pause.');
+    assert.equal(kern(nachrichtText('ruhetag', { ...voll, ton: 'kurz', tag: 'morgen' })), 'Iris bleibt morgen zu Hause und macht einen Ruhetag.');
+  });
+
+  test('Wir haben frei, Besuch, Ausflug, Feier, Termin: Heute/Morgen und Uhrzeit stehen im Text', () => {
+    assert.equal(kern(nachrichtText('wirfrei', { ...voll, tag: 'morgen' })), 'Wir haben morgen frei und verbringen den Tag gemeinsam als Familie. Deshalb kommt Iris nicht in die Krabbelstube.');
+    assert.match(kern(nachrichtText('besuch', voll)), /^Bei uns ist heute Familienbesuch, deshalb bleibt Iris zu Hause/);
+    assert.match(kern(nachrichtText('ausflug', { ...voll, einrichtung: 'Kindergarten' })), /^Wir machen heute einen Familienausflug, deshalb kommt Iris nicht in den Kindergarten\.$/);
+    assert.match(kern(nachrichtText('feier', voll)), /^Wir haben heute eine Familienfeier/);
+    assert.equal(kern(nachrichtText('termin', voll)), 'Wir haben heute um 09:30 Uhr einen wichtigen Termin, zu dem Iris mitkommt. Danach bringen wir sie in die Krabbelstube. Falls es länger dauert, melden wir uns.');
+    assert.match(kern(nachrichtText('termin', { ...voll, zeit: '' })), /um … einen wichtigen Termin/);
   });
 });

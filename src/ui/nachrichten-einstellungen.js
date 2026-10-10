@@ -4,15 +4,15 @@ import { h } from './dom.js';
 import { chip } from './components.js';
 import { einstellungsFeld } from './einstellungs-feld.js';
 import { oeffneNachricht } from './nachricht-blatt.js';
-import { einrichtungsFormen, emailEingabe, standardUnterschrift, telefonEingabe, unterschriftEingabe } from '../app/nachrichten.js';
+import { anredeEingabe, einrichtungsFormen, emailEingabe, standardUnterschrift, telefonEingabe, unterschriftEingabe } from '../app/nachrichten.js';
 import { einrichtungFor } from '../domain/modus.js';
-import { GRUSSFORMELN, MAX_EMAIL, MAX_TELEFON, MAX_UNTERSCHRIFT } from '../domain/settings.js';
+import { GRUSSFORMELN, MAX_ANREDE, MAX_EMAIL, MAX_TELEFON, MAX_UNTERSCHRIFT } from '../domain/settings.js';
 
 export function nachrichtenInhalt({ store, ui, settings, speichern }) {
   const formen = einrichtungsFormen(einrichtungFor(store.heute(), settings));
   const gruss = (g) => chip(g, { art: settings.nachrichtGruss === g ? 'aktiv' : '', onClick: () => speichern({ nachrichtGruss: g }) });
   return [
-    h('p', { class: 'leise' }, `Fertige Nachrichten ${formen.an}: krank, später bringen, früher abholen … Vor dem Senden kannst du jeden Text noch ändern.`),
+    h('p', { class: 'leise' }, `Fertige Nachrichten ${formen.an}: krank, Ruhetag, Familienausflug, später bringen, früher abholen … jeweils kurz, ausführlich oder herzlich. Vor dem Senden kannst du jeden Text noch ändern.`),
     einstellungsFeld({
       id: 'einrichtungTelefon',
       beschriftung: 'Telefon',
@@ -29,6 +29,15 @@ export function nachrichtenInhalt({ store, ui, settings, speichern }) {
       pruefen: emailEingabe,
       speichern: (w) => speichern({ einrichtungEmail: w }),
       attribute: { type: 'email', inputmode: 'email', maxlength: MAX_EMAIL, autocapitalize: 'off', spellcheck: 'false', placeholder: 'z. B. gruppe@beispiel.at' },
+    }),
+    einstellungsFeld({
+      id: 'nachrichtAnrede',
+      beschriftung: 'Anrede',
+      hinweis: `Steht am Anfang jeder Nachricht, das Komma kommt von selbst. Leer lassen = „Liebes ${formen.team}“.`,
+      wert: settings.nachrichtAnrede,
+      pruefen: anredeEingabe,
+      speichern: (w) => speichern({ nachrichtAnrede: w }),
+      attribute: { maxlength: MAX_ANREDE, autocapitalize: 'sentences', placeholder: `Liebes ${formen.team}` },
     }),
     h('div', { class: 'feld' }, h('span', {}, 'Grußformel'), h('div', { class: 'chip-reihe' }, GRUSSFORMELN.map(gruss))),
     einstellungsFeld({

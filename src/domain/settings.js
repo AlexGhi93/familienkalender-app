@@ -13,6 +13,7 @@ export const TELEFON_ZEICHEN = /^[\d +\-/()]*$/; // Ziffern, Leerzeichen und + -
 export const MAX_EMAIL = 80;
 export const EMAIL_FORM = /^[^\s@]+@[^\s@]+\.[^\s@]+$/; // einfache Prüfung: etwas@etwas.etwas
 export const MAX_UNTERSCHRIFT = 60;
+export const MAX_ANREDE = 40; // eigene Anrede am Anfang der Nachrichten
 export const MAX_ESSEN_PREIS_CENT = 5000; // höchstens 50 € pro Mittagessen
 
 // Bringen & Abholen: wer das Kind hinbringt (b) und wer es abholt (h); '' = niemand eingetragen (Hilfen in src/domain/dienst.js)
@@ -40,6 +41,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   kindGeschlecht: '', // 'w' | 'm' für „sie“/„er“ in Nachrichten; '' = keine Angabe (dann steht der Name)
   einrichtungTelefon: '', // Telefonnummer der Krabbelstube/des Kindergartens für WhatsApp und SMS; '' = keine
   einrichtungEmail: '', // E-Mail-Adresse der Krabbelstube/des Kindergartens; '' = keine
+  nachrichtAnrede: '', // Anrede am Anfang der Nachrichten (ohne Komma); '' = „Liebes Krabbelstuben-Team“ bzw. „Liebes Kindergarten-Team“
   nachrichtGruss: 'Liebe Grüße', // Grußformel unter Nachrichten (eine aus GRUSSFORMELN)
   nachrichtUnterschrift: '', // Unterschrift unter Nachrichten; '' = „Die Eltern von …“
   essenPreisCent: null, // Preis pro Mittagessen in Cent (für „Essensgeld“ im Monat); null = aus
@@ -185,6 +187,8 @@ export function normalizeSettings(gespeichert = {}) {
   if (!['', 'w', 'm'].includes(s.kindGeschlecht)) throw fehler('kindGeschlecht');
   const einrichtungTelefon = pruefeText(s.einrichtungTelefon, 'einrichtungTelefon', MAX_TELEFON, TELEFON_ZEICHEN);
   const einrichtungEmail = pruefeText(s.einrichtungEmail, 'einrichtungEmail', MAX_EMAIL, EMAIL_FORM);
+  if (typeof s.nachrichtAnrede !== 'string') throw fehler('nachrichtAnrede');
+  const nachrichtAnrede = pruefeText(s.nachrichtAnrede.replace(/\s+/g, ' '), 'nachrichtAnrede', MAX_ANREDE);
   if (!GRUSSFORMELN.includes(s.nachrichtGruss)) throw fehler('nachrichtGruss');
   if (typeof s.nachrichtUnterschrift !== 'string') throw fehler('nachrichtUnterschrift');
   const nachrichtUnterschrift = pruefeText(s.nachrichtUnterschrift.replace(/\s+/g, ' '), 'nachrichtUnterschrift', MAX_UNTERSCHRIFT);
@@ -213,6 +217,7 @@ export function normalizeSettings(gespeichert = {}) {
     kindGeschlecht: s.kindGeschlecht,
     einrichtungTelefon,
     einrichtungEmail,
+    nachrichtAnrede,
     nachrichtGruss: s.nachrichtGruss,
     nachrichtUnterschrift,
     essenPreisCent: s.essenPreisCent,

@@ -26,7 +26,7 @@ test('Aufbau: elf Zeilen, neun klappen auf, zwei führen weiter', async ({ page 
   expect(await page.locator('.menue-eintrag').evaluateAll((els) => els.map((el) => el.dataset.id))).toEqual(IDS);
   await expect(page.locator('.menue-text b')).toHaveText(TITEL);
   await expect(symbole(page)).toHaveText(SYMBOLE);
-  await expect(zeile(page, 'nachrichten')).toContainText('Kontakt der Krabbelstube, Gruß, Unterschrift');
+  await expect(zeile(page, 'nachrichten')).toContainText('Kontakt der Krabbelstube, Anrede, Gruß, Unterschrift');
   await expect(zeile(page, 'bringen')).toContainText('Wer bringt, wer holt – je Wochentag');
   await expect(zeile(page, 'betreuung')).toContainText('Wochentage, Erfassung, Kindergarten, Essensgeld');
   for (const id of KLAPPT) {
