@@ -3,7 +3,7 @@ import { SEP } from './titles.js';
 
 const ARZT_REGELN = [
   ['impfung', /impf/],
-  ['ekp', /eltern-?kind-?pass|mutter-?kind-?pass|\bekp\b|\bmkp\b/],
+  ['ekp', /eltern-?kind-?pass|mutter-?kind-?pass|\bmuki-?pass|\bekp\b|\bmkp\b/],
   ['augenarzt', /augen/],
   ['zahnarzt', /zahn/],
   ['kinderarzt', /kinderarzt|kinderärzt|pädiater/],

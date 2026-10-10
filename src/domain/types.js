@@ -28,11 +28,11 @@ export const TYPES = Object.freeze({
 export const TAGES_TYPEN = Object.freeze(['kita_essen', 'kita_ohne', 'abwesend', 'krank', 'schliess']);
 
 export const ARZT_SUBTYPEN = Object.freeze({
-  kinderarzt: { id: 'kinderarzt', emoji: '🩺', label: 'Kinderarzt', mitnehmen: ['e-card', 'EKP', 'Impfpass'] },
+  kinderarzt: { id: 'kinderarzt', emoji: '🩺', label: 'Kinderarzt', mitnehmen: ['e-card', 'MuKi-Pass', 'Impfpass'] },
   impfung: { id: 'impfung', emoji: '💉', label: 'Impfung', mitnehmen: ['e-card', 'Impfpass'] },
   augenarzt: { id: 'augenarzt', emoji: '👁️', label: 'Augenarzt', mitnehmen: ['e-card', 'Überweisung'] },
   zahnarzt: { id: 'zahnarzt', emoji: '🦷', label: 'Zahnarzt', mitnehmen: ['e-card'] },
-  ekp: { id: 'ekp', emoji: '📒', label: 'EKP-Untersuchung', mitnehmen: ['e-card', 'EKP'] },
+  ekp: { id: 'ekp', emoji: '📒', label: 'Mutter-Kind-Pass', mitnehmen: ['e-card', 'MuKi-Pass'] }, // id bleibt „ekp“: ältere Termine im Kalender werden weiter erkannt
   sonstiger_arzt: { id: 'sonstiger_arzt', emoji: '🩺', label: 'Arzt', mitnehmen: ['e-card'] },
 });
 
