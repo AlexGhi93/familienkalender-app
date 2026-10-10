@@ -5,7 +5,7 @@ import { h } from './dom.js';
 import { blatt, chip, toast } from './components.js';
 import { datumFeld, zeitFeld } from './eingabefelder.js';
 import { oeffneMenueZeile } from './menue.js';
-import { ANLAESSE, GRUPPEN, KRANKHEITEN, einrichtungsFormen, nachrichtBetreff, nachrichtText, sendeLinks } from '../app/nachrichten.js';
+import { ANLAESSE, GRUPPEN, KRANKHEITEN, TONARTEN, einrichtungsFormen, nachrichtBetreff, nachrichtText, sendeLinks } from '../app/nachrichten.js';
 import { addDays } from '../domain/dates.js';
 import { einrichtungFor } from '../domain/modus.js';
 
@@ -13,7 +13,7 @@ const MAX_PERSON = 40;
 const MAX_KRANKHEIT = 40;
 
 /** Beschriftung der Uhrzeit bzw. des Datums je Anlass. */
-const ZEIT_TEXT = { spaeter: 'Kommt gegen', arzt: 'Arzttermin um', frueher: 'Abholen um', abholer: 'Abholen gegen (optional)' };
+const ZEIT_TEXT = { spaeter: 'Kommt gegen', arzt: 'Arzttermin um', frueher: 'Abholen um', abholer: 'Abholen gegen (optional)', vormittags: 'Abholen gegen (optional)', termin: 'Termin um' };
 const DATUM_TEXT = { laenger: 'Krank bis einschließlich', gesund: 'Kommt wieder am (leer = morgen)', frei: 'Frei bis einschließlich' };
 
 /** Ein Knopf zum Senden als Link: ein echter Tipp auf <a href> öffnet WhatsApp, SMS und E-Mail auch aus der installierten App (iPhone, Android). */
@@ -65,6 +65,7 @@ export function oeffneNachricht({ store, ui }, optionen = {}) {
     person: '',
     datum: '',
     krankheit: '',
+    ton: 'normal', // Tonart des Textes (TONARTEN)
   };
   let links = []; // [knoten, art] der Sende-Links, deren href dem Text folgt
 
@@ -78,6 +79,8 @@ export function oeffneNachricht({ store, ui }, optionen = {}) {
       kindname: s.kindname,
       geschlecht: s.kindGeschlecht,
       einrichtung: einrichtung(),
+      anrede: s.nachrichtAnrede,
+      ton: z.ton,
       gruss: s.nachrichtGruss,
       unterschrift: s.nachrichtUnterschrift,
       tag: z.tag,
@@ -316,6 +319,12 @@ export function oeffneNachricht({ store, ui }, optionen = {}) {
       wann,
       a.felder.map((art) => feldFuer(art, a)),
       h('h3', {}, 'Nachricht'),
+      h(
+        'div',
+        { class: 'feld nachricht-ton' },
+        h('span', {}, 'Ton'),
+        h('div', { class: 'chip-reihe' }, TONARTEN.map(([id, text]) => chip(text, { art: z.ton === id ? 'aktiv' : '', onClick: () => waehle({ ton: id }) }))),
+      ),
       h('div', { class: 'feld' }, textfeld, h('small', { class: 'leise' }, 'Du kannst den Text vor dem Senden noch ändern.')),
       h('h3', {}, 'Senden'),
       senden(schliessen),

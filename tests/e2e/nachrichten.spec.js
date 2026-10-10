@@ -1,21 +1,28 @@
-// Nachrichten an die Krabbelstube bzw. den Kindergarten: Blatt mit 14 Situationen, Heute/Morgen, Angaben, änderbarem Text und
+// Nachrichten an die Krabbelstube bzw. den Kindergarten: Blatt mit 21 Situationen in vier Gruppen, drei Tonarten, eigener Anrede, Heute/Morgen, Angaben, änderbarem Text und
 // Senden per WhatsApp, SMS, E-Mail, Teilen oder Kopieren; Wege dorthin (Heute, Meldung nach „Krank“/„Abwesend“, Mehr) und Einstellungen.
 import { test, expect, starteDemo, tab, erwarteToast, WERKTAG_DATUM } from './hilfen.js';
 import { seedDemo } from '../../src/app/seed.js';
 
 const SITUATIONEN = [
   '🤒 Fühlt sich nicht wohl',
-  '😴 Schlecht geschlafen',
   '🌡️ Fieber',
   '🤢 Magen-Darm',
   '🤧 Stark erkältet',
   '🦠 Ansteckende Krankheit',
   '📅 Länger krank',
   '💪 Wieder gesund',
+  '😴 Schlecht geschlafen',
+  '😌 Ruhetag',
+  '🏡 Wir haben frei',
+  '🤗 Familienbesuch',
+  '🚗 Familienausflug',
+  '🎉 Familienfeier',
   '🕘 Kommt später',
   '🩺 Arzttermin',
   '🏃 Früher abholen',
   '👵 Jemand anderes holt ab',
+  '🍽️ Nur vormittags',
+  '📋 Termin',
   '🏖️ Urlaub / freie Tage',
   '👪 Familiäre Gründe',
 ];
@@ -40,14 +47,14 @@ async function oeffneVonHeute(page) {
   await expect(blatt(page)).toBeVisible();
 }
 
-test('Heute: „📨 Krabbelstube benachrichtigen“ öffnet das Blatt mit 14 Situationen in drei Gruppen', async ({ page }) => {
+test('Heute: „📨 Krabbelstube benachrichtigen“ öffnet das Blatt mit 21 Situationen in vier Gruppen', async ({ page }) => {
   await starteDemo(page);
   const knopf = page.locator('section.abschnitt').filter({ has: page.getByRole('heading', { name: 'Heute', exact: true }) }).getByRole('button', { name: 'Krabbelstube benachrichtigen', exact: true });
   await expect(knopf).toHaveText('📨 Krabbelstube benachrichtigen'); // das Symbol ist nur Schmuck (aria-hidden)
   await knopf.click();
   await expect(page.getByRole('dialog', { name: 'Nachricht an die Krabbelstube' })).toBeVisible();
   await expect(blatt(page).locator('.blatt-kopf h2')).toHaveText('Nachricht an die Krabbelstube');
-  await expect(blatt(page).locator('.nachricht-gruppe-titel')).toHaveText(['Krank', 'Bringen & Abholen', 'Sonstiges']);
+  await expect(blatt(page).locator('.nachricht-gruppe-titel')).toHaveText(['Krank', 'Einfach zu Hause', 'Bringen & Abholen', 'Sonstiges']);
   await expect(blatt(page).locator('.nachricht-gruppe .chip')).toHaveText(SITUATIONEN);
   await expect(blatt(page).locator('.nachricht-gruppe .chip.aktiv')).toHaveText('🤒 Fühlt sich nicht wohl');
   await expect(wann(page).locator('.chip')).toHaveText(['Heute', 'Morgen']);
@@ -100,11 +107,11 @@ test('Angaben je Situation landen im Text: Uhrzeit, wer abholt, Datum, Krankheit
   const krankheit = blatt(page).getByRole('textbox', { name: 'Welche Krankheit?' });
   await expect(textfeld(page)).toHaveValue(/Unser Kind hat leider eine ansteckende Krankheit \(ärztlich bestätigt\)/);
   await blatt(page).locator('.feld .chip', { hasText: /^Scharlach$/ }).click();
-  await expect(blatt(page).locator('.feld .chip.aktiv')).toHaveText('Scharlach');
+  await expect(blatt(page).locator('.feld').filter({ hasText: 'Welche Krankheit?' }).locator('.chip.aktiv')).toHaveText('Scharlach');
   await expect(krankheit).toHaveValue('Scharlach');
   await expect(textfeld(page)).toHaveValue(/Unser Kind hat leider Scharlach \(ärztlich bestätigt\)/);
   await krankheit.fill('die Windpocken');
-  await expect(blatt(page).locator('.feld .chip.aktiv')).toHaveText('die Windpocken'); // der passende Vorschlag leuchtet mit
+  await expect(blatt(page).locator('.feld').filter({ hasText: 'Welche Krankheit?' }).locator('.chip.aktiv')).toHaveText('die Windpocken'); // der passende Vorschlag leuchtet mit
   await expect(textfeld(page)).toHaveValue(/Unser Kind hat leider die Windpocken/);
 });
 
@@ -309,4 +316,34 @@ test('im Kindergarten heißt es „an den Kindergarten“; am Tag vor dem Wechse
   await expect(page.locator('.kopf .pille')).toHaveText('Kindergarten');
   await page.getByRole('button', { name: 'Kindergarten benachrichtigen', exact: true }).click();
   await expect(blatt(page)).toHaveAccessibleName('Nachricht an den Kindergarten');
+});
+
+test('Anrede aus Mehr und Ton (Kurz · Ausführlich · Herzlich) ändern den Text; ohne Krankheit: „Ruhetag“', async ({ page }) => {
+  await starteDemo(page, { route: '#/mehr' });
+  await page.locator('.menue-eintrag[data-id="nachrichten"] .menue-zeile').click();
+  const tafel = page.locator('#menue-nachrichten');
+  const anrede = tafel.getByRole('textbox', { name: 'Anrede' });
+  await expect(anrede).toHaveAttribute('placeholder', 'Liebes Krabbelstuben-Team');
+  await anrede.fill('Liebe Frau Muster,');
+  await anrede.press('Enter');
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('fk.demo.v1')).settings.nachrichtAnrede)).toBe('Liebe Frau Muster');
+
+  await page.locator('#menue-nachrichten').getByRole('button', { name: 'Nachricht schreiben' }).click();
+  await expect(textfeld(page)).toHaveValue(/^Liebe Frau Muster,\n\nUnser Kind fühlt sich leider nicht wohl/);
+  const ton = blatt(page).locator('.nachricht-ton');
+  await expect(ton.locator('.chip')).toHaveText(['Kurz', 'Ausführlich', 'Herzlich']);
+  await expect(ton.locator('.chip.aktiv')).toHaveText('Ausführlich');
+
+  await situation(page, 'Ruhetag').click();
+  await expect(textfeld(page)).toHaveValue(/Unser Kind ist nach den letzten Tagen etwas erschöpft und darf heute einen ruhigen Tag zu Hause verbringen\./);
+  await ton.getByRole('button', { name: 'Kurz' }).click();
+  await expect(blatt(page).locator('.nachricht-ton .chip.aktiv')).toHaveText('Kurz');
+  await expect(textfeld(page)).toHaveValue('Liebe Frau Muster,\n\nUnser Kind bleibt heute zu Hause und macht einen Ruhetag.\n\nLiebe Grüße\nDie Eltern');
+  await blatt(page).locator('.nachricht-ton').getByRole('button', { name: 'Herzlich' }).click();
+  await expect(textfeld(page)).toHaveValue(/Keine Sorge, unser Kind ist gesund und kommt danach gern wieder in die Krabbelstube\./);
+
+  // der Ton bleibt beim Wechsel der Situation
+  await situation(page, 'Fieber').click();
+  await expect(blatt(page).locator('.nachricht-ton .chip.aktiv')).toHaveText('Herzlich');
+  await expect(textfeld(page)).toHaveValue(/Unser Kind hat leider Fieber und bleibt heute zu Hause, um sich gut auszukurieren\./);
 });
