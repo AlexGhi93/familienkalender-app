@@ -2521,3 +2521,56 @@ figure.diagramm {
     animation: none;
   }
 }
+
+/* ---------- Einkauf: aktuell halten (Herunterziehen, „Aktualisiert um …“) ---------- */
+
+/* Solange die Einkaufsliste offen ist, gehört das Herunterziehen ganz oben ihr (kein Neuladen der Seite durch den Browser). */
+html:has(.screen.einkauf) {
+  overscroll-behavior-y: contain;
+}
+
+.ek-ziehen {
+  --zug: 0px;
+  height: var(--zug);
+  margin-bottom: -14px; /* gleicht den Abstand der Seite aus: in Ruhe nimmt die Anzeige keinen Platz ein */
+  overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  transition: height 0.2s ease;
+}
+
+.ek-ziehen[data-phase='ziehen'],
+.ek-ziehen[data-phase='bereit'] {
+  transition: none; /* folgt dem Finger */
+}
+
+.ek-ziehen span:not(:empty) {
+  margin-bottom: 6px;
+  padding: 4px 14px;
+  border-radius: 999px;
+  border: 1.5px solid color-mix(in srgb, var(--einkauf) 45%, transparent);
+  background: color-mix(in srgb, var(--einkauf) 14%, var(--karte));
+  font-size: 0.85rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.ek-ziehen[data-phase='bereit'] span,
+.ek-ziehen[data-phase='fertig'] span {
+  border-color: var(--einkauf);
+  background: color-mix(in srgb, var(--einkauf) 30%, var(--karte));
+}
+
+.ek-stand {
+  margin-top: -10px;
+  color: var(--ink-2);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ek-ziehen {
+    transition: none;
+  }
+}

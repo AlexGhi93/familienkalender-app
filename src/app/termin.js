@@ -119,8 +119,11 @@ export function normalisiereTermin(roh) {
   return { ...gemeinsam, label, ...(symbol ? { symbol } : {}) };
 }
 
-/** Ausgangszustand des Formulars: neuer Termin der Art `art` oder ein vorhandener `termin` zum Bearbeiten. */
-export function terminEntwurf(art, { settings, heute, termin = null, state = null }) {
+/**
+ * Ausgangszustand des Formulars: neuer Termin der Art `art` oder ein vorhandener `termin` zum Bearbeiten.
+ * `datum` (optional, nur für Neues): dieser Tag statt des Vorschlags (heute; bei Sachen der nächste Betreuungstag), z. B. der im Monat angetippte Tag.
+ */
+export function terminEntwurf(art, { settings, heute, termin = null, state = null, datum = null }) {
   if (termin) {
     const k = termin.kosten;
     const basis = {
@@ -140,10 +143,10 @@ export function terminEntwurf(art, { settings, heute, termin = null, state = nul
     return { ...basis, richtung: termin.richtung ?? 'hin', serie: termin.serie ?? null, zeitGeaendert: true, wiederholen: { art: 'einmalig', wochen: 8 } };
   }
   if (art === 'kita_sache') {
-    let datum = addDays(heute, 1);
-    if (state) {
+    let vorschlag = addDays(heute, 1);
+    if (state && !datum) {
       try {
-        datum = naechsterKitaTag(state, heute);
+        vorschlag = naechsterKitaTag(state, heute);
       } catch {
         // keine Betreuungstage eingestellt: morgen ist ein vernünftiger Vorschlag
       }
@@ -154,7 +157,7 @@ export function terminEntwurf(art, { settings, heute, termin = null, state = nul
       subtyp: 'kinderarzt',
       label: '',
       richtung: 'hin',
-      date: datum,
+      date: datum ?? vorschlag,
       time: settings.bringzeit,
       zeitGeaendert: false,
       mitnehmen: [],
@@ -171,7 +174,7 @@ export function terminEntwurf(art, { settings, heute, termin = null, state = nul
     fuer: art === 'arzt' ? 'kind' : 'alle',
     notiz: '',
     symbol: FAMILIE_SYMBOLE[0],
-    date: heute,
+    date: datum ?? heute,
     time: art === 'arzt' ? '09:00' : '',
     mitnehmen: art === 'arzt' ? [...mitnehmenFor('kinderarzt', settings)] : [],
     kosten: { art: 'keine', text: '' },

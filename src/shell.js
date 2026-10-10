@@ -18,6 +18,7 @@ import { verbindenKarte, verbindungsBanner, versionsBanner } from './ui/verbindu
 import { VERSION } from './app/version.js';
 import { istNeueVersionVerfuegbar } from './app/version-check.js';
 import { fortschrittLeiste } from './ui/fortschritt.js';
+import { createEinkaufAbgleich } from './app/einkauf-abgleich.js';
 
 const SEITEN = {
   heute: heuteScreen,
@@ -70,6 +71,12 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
   const jetztMonat = () => {
     const { y, m } = parseDate(store.heute());
     return { jahr: y, monat: m };
+  };
+
+  /** Google ist gerade nutzbar: angemeldet, frisch geladen (nicht nur der gespeicherte Stand) und nichts wartet auf die Anmeldung. */
+  const googleBereit = () => {
+    const state = store.getState();
+    return Boolean(auth) && auth.status() === 'verbunden' && state.geladen && !state.nurSnapshot && !state.anmeldungNoetig;
   };
 
   /** Anmelden (im Tipp!), danach Wartendes speichern und alles neu laden. */
@@ -134,6 +141,17 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
       fenster.scrollTo(0, scrollY);
       fuelle(leiste, TABS.map(([id, symbol, text]) => tab(id, symbol, text, seite)));
       document.title = `${ui.titel()} · ${SEITEN_TITEL[seite] ?? TABS.find(([id]) => id === seite)?.[2]}`;
+      einkaufAbgleich.pruefen(); // Einkaufsliste offen (und Google verbunden): alle 30 Sekunden nachsehen, sonst nicht
+    },
+    /**
+     * Holt nur die Einkaufsliste neu (alle 30 Sekunden, beim Zurückkehren, „Ziehen zum Aktualisieren“); Ergebnis wie store.einkaufAktualisieren.
+     * In der Demo gibt es kein anderes Telefon: dort ist die Liste immer aktuell.
+     */
+    async einkaufAktualisieren() {
+      if (auth && !googleBereit()) return 'getrennt';
+      const ergebnis = await store.einkaufAktualisieren();
+      ui.einkaufStandZeichnen?.(); // „Aktualisiert um …“ auch dann, wenn sich nichts geändert hat (dann wird nicht neu gezeichnet)
+      return ergebnis;
     },
     /** Lädt den angezeigten Monat (samt Randwochen) nach, falls er außerhalb des geladenen Fensters liegt. */
     monatLaden() {
@@ -171,8 +189,9 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
       ui.rendern();
     },
     tagesblatt: (date) => oeffneTagesblatt({ store, ui }, date),
-    neuTerminStarten(art, termin = null) {
-      ui.neu = terminEntwurf(art, { settings: store.getState().settings, heute: store.heute(), termin, state: store.getState() });
+    /** Formular für einen neuen Termin der Art `art` (oder `termin` bearbeiten); `datum` = Tag, mit dem ein neuer Eintrag beginnt (sonst der Vorschlag). */
+    neuTerminStarten(art, termin = null, { datum = null } = {}) {
+      ui.neu = terminEntwurf(art, { settings: store.getState().settings, heute: store.heute(), termin, state: store.getState(), datum });
       ui.gehZu('neu');
     },
     terminBearbeiten(id) {
@@ -205,6 +224,13 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
       h('span', { class: 'tab-text' }, text),
     );
   }
+
+  const einkaufAbgleich = createEinkaufAbgleich({
+    aktiv: () => ui.seite() === 'einkauf' && document.visibilityState === 'visible' && googleBereit(),
+    holen: () => ui.einkaufAktualisieren(),
+    zuletzt: () => store.einkaufGeprueftAm(),
+    jetzt: () => store.jetzt().getTime(),
+  });
 
   fenster.addEventListener('hashchange', () => ui.rendern());
 
@@ -247,9 +273,11 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
 
   // Rückkehr in die App (z. B. am nächsten Tag): neu zeichnen, damit „heute“ stimmt, und – mit gültiger Anmeldung – höchstens einmal pro Minute neu laden.
   document.addEventListener('visibilitychange', () => {
+    einkaufAbgleich.pruefen(); // im Hintergrund ruht der Zeitgeber der Einkaufsliste
     if (document.visibilityState !== 'visible') return;
     ui.rendern();
     if (auth) store.aktualisieren();
+    einkaufAbgleich.sofort(); // zurück auf der Einkaufsliste: gleich einmal nachsehen
     versionPruefen();
   });
 
