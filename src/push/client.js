@@ -2,14 +2,14 @@
 // aktuell halten, testen und ausschalten. Alles Browser- und Netzwerkzeug wird hineingereicht, damit es sich ohne Telefon testen lässt.
 // Der Push-Dienst bekommt nur verschlüsselte Meldungen (siehe meldungen.js); Google Kalender bleibt der zweite, unabhängige Weg.
 import { b64uZuBytes, bytesZuB64u } from './base64url.js';
-import { baueMeldungen } from './meldungen.js';
-import { bereinige, mitGeraet, neuesRegister, ohneGeraet } from './geraete.js';
+import { baueMeldungen, planDigest } from './meldungen.js';
+import { GERAET_PERSONEN, bereinige, mitGeraet, neuesRegister, ohneGeraet } from './geraete.js';
 import { planeErinnerungen } from './plan.js';
 import { verschluessele } from './verschluesselung.js';
 
 const TAGE_VORAUS = 60;
 const TAG_MS = 24 * 3600_000;
-const K = { geraet: 'fk.push.geraet.v1', aktiv: 'fk.push.aktiv.v1', digest: 'fk.push.digest.v1', stand: 'fk.push.stand.v1', erloschen: 'fk.push.erloschen.v1' };
+const K = { geraet: 'fk.push.geraet.v1', aktiv: 'fk.push.aktiv.v1', digest: 'fk.push.digest.v1', stand: 'fk.push.stand.v1', erloschen: 'fk.push.erloschen.v1', person: 'fk.push.person.v1' };
 const enc = new TextEncoder();
 
 export class PushFehler extends Error {
@@ -35,10 +35,6 @@ export function erkenneUmgebung(navigator, fenster) {
   const pushUnterstuetzt = Boolean(navigator && 'serviceWorker' in navigator && fenster && 'PushManager' in fenster && 'Notification' in fenster);
   const name = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android' : 'Computer';
   return { ios, installiert, pushUnterstuetzt, name };
-}
-
-async function kurzHash(text) {
-  return bytesZuB64u(new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', enc.encode(text))).slice(0, 16));
 }
 
 const NICHT_ERREICHBAR = () => new PushFehler('dienst-nicht-erreichbar', 'Der Push-Dienst ist gerade nicht erreichbar. Google Kalender erinnert trotzdem.');
@@ -72,6 +68,19 @@ export function createPush({ store, adapter, config, fetch, navigator, Notificat
     return id;
   }
 
+  /** Wem dieses Telefon gehört ('papa' | 'mama'; '' = keine Angabe, bekommt alle Erinnerungen). Steht hier UND im Register (siehe sync). */
+  function person() {
+    const p = speicher.getItem(K.person);
+    return GERAET_PERSONEN.includes(p) ? p : '';
+  }
+
+  /** Merkt sich, wem dieses Telefon gehört; ist es aktiv, kommt die Angabe mit dem nächsten Abgleich ins Register und zum Push-Dienst. */
+  function setzePerson(p) {
+    if (GERAET_PERSONEN.includes(p)) speicher.setItem(K.person, p);
+    else speicher.removeItem(K.person);
+    if (aktiv()) anstossen();
+  }
+
   const registrierung = () => navigator.serviceWorker.ready;
   const abonnement = async () => (await registrierung()).pushManager.getSubscription();
 
@@ -103,7 +112,7 @@ export function createPush({ store, adapter, config, fetch, navigator, Notificat
   /** Trägt dieses Telefon (mit den Schlüsseln seines Abonnements) im Register ein und gibt das Register zurück. */
   async function eintragen(sub) {
     const j = sub.toJSON();
-    const register = await adapter.aendereGeraete((reg) => mitGeraet(reg ?? neuesRegister(), { id: geraeteId(), name: umgebung.name, endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth }, jetzt().getTime()));
+    const register = await adapter.aendereGeraete((reg) => mitGeraet(reg ?? neuesRegister(), { id: geraeteId(), name: umgebung.name, endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, person: person() }, jetzt().getTime()));
     registriert = true;
     geraeteAnzahl = register.geraete.length;
     return register;
@@ -144,8 +153,9 @@ export function createPush({ store, adapter, config, fetch, navigator, Notificat
 
     let { register } = await adapter.leseGeraete();
     const eigenes = register?.geraete.find((g) => g.id === geraeteId());
-    const veraltet = !eigenes || eigenes.endpoint !== j.endpoint || eigenes.p256dh !== j.keys.p256dh || eigenes.auth !== j.keys.auth || jetzt().getTime() - eigenes.zuletzt > TAG_MS;
-    if (veraltet) register = await eintragen(sub); // neue Schlüssel, neues Telefon im Register oder „zuletzt“ auffrischen
+    // Ältere App-Versionen kennen `person` nicht und lassen es beim Umschreiben des Registers weg: dann hier wieder eintragen.
+    const veraltet = !eigenes || eigenes.endpoint !== j.endpoint || eigenes.p256dh !== j.keys.p256dh || eigenes.auth !== j.keys.auth || (eigenes.person ?? '') !== person() || jetzt().getTime() - eigenes.zuletzt > TAG_MS;
+    if (veraltet) register = await eintragen(sub); // neue Schlüssel, neues Telefon im Register, Person geändert oder „zuletzt“ auffrischen
     else {
       registriert = true;
       geraeteAnzahl = register.geraete.length;
@@ -153,7 +163,7 @@ export function createPush({ store, adapter, config, fetch, navigator, Notificat
 
     const plan = await planeErinnerungen(state, { jetzt: jetzt(), tage: TAGE_VORAUS });
     const geraete = register.geraete;
-    const digest = await kurzHash(JSON.stringify({ f: register.fid, g: geraete.map((g) => [g.id, g.endpoint, g.p256dh, g.auth]), p: plan.map((p) => [p.id, p.um, p.titel, p.text]) }));
+    const digest = await planDigest(register.fid, plan, geraete); // ändert sich auch, wenn sich ändert, wer welche Erinnerung bekommt
     if (!erzwingen && speicher.getItem(K.digest) === digest) return { art: 'unveraendert' };
 
     const von = jetzt().getTime();
@@ -231,5 +241,5 @@ export function createPush({ store, adapter, config, fetch, navigator, Notificat
     }, verzoegerungMs);
   }
 
-  return { verfuegbar, status, aktivieren, deaktivieren, sync, testSenden, anstossen };
+  return { verfuegbar, status, aktivieren, deaktivieren, sync, testSenden, anstossen, person, setzePerson };
 }

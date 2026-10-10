@@ -5,6 +5,7 @@ import { wienZuInstant } from '../../domain/instant.js';
 import { TYPES } from '../../domain/types.js';
 import { offeneTage } from '../../domain/offen.js';
 import { datumLang, gruss, stundeInWien } from '../format-de.js';
+import { dienstHeute } from './dienst-model.js';
 import { einkaufModel } from './einkauf-model.js';
 import { kontoKarteModel } from './konto-model.js';
 import { sachenModel } from './sachen-model.js';
@@ -90,6 +91,7 @@ export function heuteModel(state, now = new Date()) {
     datumText: datumLang(heute),
     einrichtung: einrichtungFor(heute, settings),
     status: statusHeute(state, heute, urlaubSet),
+    dienst: dienstHeute(state, now), // „Wer bringt, wer holt?“ für heute (und am Abend für morgen)
     offeneTage: offene,
     termineHeute: termineMitStatus(termineAm(state, heute).filter(keineSache), now),
     // Termine von morgen stehen schon heute oben (einen Tag vorher), in derselben großen Karte; „Demnächst“ beginnt danach

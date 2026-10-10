@@ -2,6 +2,7 @@ import { feiertagName } from '../../domain/feiertage.js';
 import { FAMILIE_SYMBOLE, TYPES } from '../../domain/types.js';
 import { datumLang } from '../format-de.js';
 import { FEIERTAG_EMOJI, TAGES_TYPEN_REIHENFOLGE, termineAm, typText, urlaubTageSet } from './gemeinsam.js';
+import { dienstTag } from './dienst-model.js';
 
 /** „Neu an diesem Tag“: dieselben Arten, Symbole und Farben wie die Kacheln in „Neu“ (art = Art für ui.neuTerminStarten). */
 const NEU_AN_DIESEM_TAG = [
@@ -55,5 +56,6 @@ export function tagModel(state, date, heute) {
       aktiv: typ === aktuell,
     })),
     neu: NEU_AN_DIESEM_TAG,
+    dienst: date >= heute ? dienstTag(state, date) : null, // wer bringt und holt (nur ab heute, an Tagen, an denen das Kind hingeht)
   };
 }

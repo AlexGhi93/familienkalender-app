@@ -2684,3 +2684,172 @@ html:has(.screen.einkauf) {
     animation: none; /* steht nach der allgemeinen Regel des Menüs und muss deshalb hier noch einmal aus */
   }
 }
+
+/* ---------- Bringen & Abholen ---------- */
+
+/* 🚗 Bringen & Abholen: fährt ein Stück nach rechts und federt zurück */
+.anim-auto {
+  transform-origin: 50% 90%;
+}
+.anim-auto.spielt {
+  animation-name: m-auto;
+}
+@keyframes m-auto {
+  0%,
+  100% {
+    transform: none;
+  }
+  12% {
+    transform: translateX(-2px) rotate(3deg); /* Anlauf */
+  }
+  40% {
+    transform: translateX(10px) rotate(-4deg);
+  }
+  55% {
+    transform: translateX(10px) translateY(-2px) rotate(-1deg);
+  }
+  75% {
+    transform: translateX(-3px) rotate(2deg);
+  }
+  88% {
+    transform: translateX(1px);
+  }
+}
+
+/* Auf „Heute“: „🚗 Heute“ mit zwei Knöpfen (wer bringt, wer holt); am Abend dazu „Morgen“ */
+.dienst-karte {
+  display: grid; /* „Heute“ und „Morgen“ teilen sich die Spalten: die Knöpfe stehen genau untereinander */
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  padding: 10px 12px;
+  gap: 8px;
+}
+
+.dienst-zeile {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.dienst-karte .dienst-zeile {
+  display: contents;
+}
+
+.dienst-karte .dienst-leer {
+  grid-column: 1 / -1;
+}
+
+.dienst-wann {
+  font-weight: 800;
+  font-size: 0.95rem;
+  white-space: nowrap;
+  padding-right: 2px;
+}
+
+.dienst-knopf {
+  --c: var(--grau);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  min-width: 0;
+  min-height: 50px;
+  padding: 6px 12px;
+  border-radius: var(--radius-klein);
+  border: 1.5px solid color-mix(in srgb, var(--c) 55%, transparent);
+  background: color-mix(in srgb, var(--c) 16%, var(--karte));
+  text-align: left;
+  line-height: 1.2;
+}
+
+.dienst-knopf:active {
+  transform: scale(0.97);
+}
+
+.dienst-knopf b,
+.dienst-knopf small {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dienst-knopf small {
+  color: var(--ink-2);
+  font-size: 0.82rem;
+}
+
+.dienst-knopf.niemand {
+  border-style: dashed;
+  background: var(--karte);
+}
+
+.dienst-knopf.niemand b {
+  color: var(--ink-2);
+}
+
+/* Noch niemand eingetragen: dezent, ein Tipp legt fest, wer bringt */
+.dienst-leer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 46px;
+  padding: 6px 12px;
+  border: 1.5px dashed var(--linie);
+  border-radius: var(--radius-klein);
+  background: none;
+  color: var(--ink-2);
+  text-align: left;
+}
+
+.dienst-leer b {
+  color: var(--ink);
+}
+
+.dienst-blatt {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* „Mehr“: eine Zeile je Wochentag – „Mo  Bringt [👨 Papa]  Holt [👩 Mama]“ */
+.dienst-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dienst-plan-zeile {
+  display: grid;
+  grid-template-columns: 1.7em auto minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+}
+
+.dienst-plan-rolle {
+  color: var(--ink-2);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.chip.dienst-chip {
+  justify-content: center;
+  min-width: 0;
+  padding: 6px 8px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.push-person {
+  margin-top: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .anim-auto.spielt {
+    animation: none; /* steht nach der allgemeinen Regel des Menüs und muss deshalb hier noch einmal aus */
+  }
+  .dienst-knopf:active {
+    transform: none;
+  }
+}

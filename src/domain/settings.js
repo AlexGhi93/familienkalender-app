@@ -15,6 +15,13 @@ export const EMAIL_FORM = /^[^\s@]+@[^\s@]+\.[^\s@]+$/; // einfache Prüfung: et
 export const MAX_UNTERSCHRIFT = 60;
 export const MAX_ESSEN_PREIS_CENT = 5000; // höchstens 50 € pro Mittagessen
 
+// Bringen & Abholen: wer das Kind hinbringt (b) und wer es abholt (h); '' = niemand eingetragen (Hilfen in src/domain/dienst.js)
+export const DIENST_PERSONEN = Object.freeze(['', 'papa', 'mama']);
+export const DIENST_ROLLEN = Object.freeze(['b', 'h']);
+export const DIENST_ERINNERUNG = Object.freeze(['beide', 'dienst']);
+export const MAX_DIENST_AUSNAHMEN = 60; // einzelne Tage; beim Speichern fliegen die ältesten zuerst raus
+const leererWochenplan = () => ['', '', '', '', '', '', ''];
+
 export const DEFAULT_SETTINGS = Object.freeze({
   wechseldatum: null, // 'JJJJ-MM-TT' ab dem es „Kindergarten“ heißt
   erwartung: [0, 1, 2, 3, 4], // erwartete Wochentage, Montag = 0
@@ -36,6 +43,9 @@ export const DEFAULT_SETTINGS = Object.freeze({
   nachrichtGruss: 'Liebe Grüße', // Grußformel unter Nachrichten (eine aus GRUSSFORMELN)
   nachrichtUnterschrift: '', // Unterschrift unter Nachrichten; '' = „Die Eltern von …“
   essenPreisCent: null, // Preis pro Mittagessen in Cent (für „Essensgeld“ im Monat); null = aus
+  dienstplan: Object.freeze({ b: Object.freeze(leererWochenplan()), h: Object.freeze(leererWochenplan()) }), // je Wochentag (Montag = 0): '' | 'papa' | 'mama'
+  dienstAusnahmen: Object.freeze({}), // einzelne Tage: { 'JJJJ-MM-TT': { b?, h? } } – überschreibt den Wochenplan
+  dienstErinnerung: 'beide', // Push für Sachen: 'beide' = an alle Telefone, 'dienst' = nur an wer bringt bzw. holt
 });
 
 function fehler(feld) {
@@ -86,6 +96,37 @@ function pruefeText(wert, feld, max, muster = null) {
   const text = wert.trim();
   if (text.length > max || (text !== '' && muster && !muster.test(text))) throw fehler(feld);
   return text;
+}
+
+const istObjekt = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
+
+/** Wochenplan { b: [7], h: [7] } mit '' | 'papa' | 'mama'; Ungültiges wirft. */
+function pruefeDienstplan(wert) {
+  if (!istObjekt(wert) || Object.keys(wert).some((k) => !DIENST_ROLLEN.includes(k))) throw fehler('dienstplan');
+  const plan = {};
+  for (const rolle of DIENST_ROLLEN) {
+    const liste = wert[rolle];
+    if (!Array.isArray(liste) || liste.length !== 7 || liste.some((p) => !DIENST_PERSONEN.includes(p))) throw fehler('dienstplan');
+    plan[rolle] = [...liste];
+  }
+  return plan;
+}
+
+/** Ausnahmen je Tag, nach Datum sortiert; leere Tage fallen weg, über MAX_DIENST_AUSNAHMEN bleiben die neuesten. Ungültiges wirft. */
+function pruefeDienstAusnahmen(wert) {
+  if (!istObjekt(wert)) throw fehler('dienstAusnahmen');
+  const tage = [];
+  for (const [datum, eintrag] of Object.entries(wert)) {
+    if (!isValidDate(datum) || !istObjekt(eintrag)) throw fehler('dienstAusnahmen');
+    const tag = {};
+    for (const [rolle, person] of Object.entries(eintrag)) {
+      if (!DIENST_ROLLEN.includes(rolle) || !DIENST_PERSONEN.includes(person)) throw fehler('dienstAusnahmen');
+      tag[rolle] = person;
+    }
+    if (Object.keys(tag).length > 0) tage.push([datum, tag]);
+  }
+  tage.sort(([a], [b]) => a.localeCompare(b));
+  return Object.fromEntries(tage.slice(-MAX_DIENST_AUSNAHMEN));
 }
 
 function pruefeDatumOderNull(wert, feld) {
@@ -150,6 +191,9 @@ export function normalizeSettings(gespeichert = {}) {
   if (s.essenPreisCent !== null && (!Number.isInteger(s.essenPreisCent) || s.essenPreisCent < 1 || s.essenPreisCent > MAX_ESSEN_PREIS_CENT)) {
     throw fehler('essenPreisCent');
   }
+  const dienstplan = pruefeDienstplan(s.dienstplan);
+  const dienstAusnahmen = pruefeDienstAusnahmen(s.dienstAusnahmen);
+  if (!DIENST_ERINNERUNG.includes(s.dienstErinnerung)) throw fehler('dienstErinnerung');
 
   return {
     wechseldatum,
@@ -172,6 +216,9 @@ export function normalizeSettings(gespeichert = {}) {
     nachrichtGruss: s.nachrichtGruss,
     nachrichtUnterschrift,
     essenPreisCent: s.essenPreisCent,
+    dienstplan,
+    dienstAusnahmen,
+    dienstErinnerung: s.dienstErinnerung,
   };
 }
 
