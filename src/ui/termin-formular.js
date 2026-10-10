@@ -28,7 +28,7 @@ export function terminFormular({ store, ui }, kachel) {
   const vorschauBox = h('div', { class: 'vorschau', 'aria-live': 'polite' });
 
   function zeichneVorschau() {
-    const v = terminVorschau(n);
+    const v = terminVorschau(n, settings); // mit dem Namen des Kindes, wie später gespeichert
     vorschauBox.classList.toggle('zu-lang', v.ok && v.zuLang);
     fuelle(
       vorschauBox,
@@ -269,12 +269,11 @@ export function terminFormular({ store, ui }, kachel) {
           maxlength: String(MAX_NOTIZ),
           placeholder: 'z. B. Arbeitnehmerveranlagung, 2. Stock',
           'aria-label': 'Notiz',
-          value: n.notiz,
           onInput: (e) => {
             n.notiz = e.target.value;
             zeichneVorschau();
           },
-        }),
+        }, n.notiz ?? ''), // Inhalt als Text: bei <textarea> wirkt ein value-Attribut nicht
         h('small', { class: 'leise' }, 'Steht in den Termin-Details, nicht in der Benachrichtigung.'),
       ),
     ),

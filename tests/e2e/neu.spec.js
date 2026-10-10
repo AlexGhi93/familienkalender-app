@@ -105,8 +105,7 @@ test('ungültiger Betrag: Meldung statt Speichern', async ({ page }) => {
   await expect(page).toHaveURL(/#\/neu$/);
 });
 
-test.fixme('Termin bearbeiten zeigt die vorhandene Notiz im Feld', async ({ page }) => {
-  // Vermuteter Fehler (src/ui/termin-formular.js:271): `value` wird bei <textarea> als Attribut gesetzt und erscheint nicht im Feld.
+test('Termin bearbeiten zeigt die vorhandene Notiz im Feld', async ({ page }) => {
   await starteDemo(page, { route: '#/monat' });
   await page.locator('.raster').getByRole('button', { name: 'Montag, 19. Oktober' }).click();
   await page.getByRole('dialog').locator('.zeile').filter({ hasText: 'Finanzamt' }).getByRole('button', { name: 'Ändern' }).click();

@@ -2,6 +2,7 @@
 // (krank, später, früher abholen, jemand anderes holt ab …). Reine Textbausteine ohne DOM, damit alle Fälle testbar sind.
 // Der Text wird vor dem Senden im Formular angezeigt und kann dort noch frei geändert werden.
 import { addDays, isWerktag } from '../domain/dates.js';
+import { isFeiertag } from '../domain/feiertage.js';
 import { EMAIL_FORM, GRUSSFORMELN, MAX_EMAIL, MAX_TELEFON, MAX_UNTERSCHRIFT, TELEFON_ZEICHEN } from '../domain/settings.js';
 import { datumLang } from './format-de.js';
 
@@ -53,10 +54,10 @@ function personFormen(kindname, geschlecht) {
   return { name, Name: gross(name), er, Er: gross(er) };
 }
 
-/** Nächster Werktag nach `datum` (für „kommt am … wieder“). */
+/** Nächster Werktag nach `datum` (für „kommt am … wieder“): ohne Wochenende und ohne österreichische Feiertage. */
 export function naechsterWerktag(datum) {
   let tag = addDays(datum, 1);
-  while (!isWerktag(tag)) tag = addDays(tag, 1);
+  while (!isWerktag(tag) || isFeiertag(tag)) tag = addDays(tag, 1);
   return tag;
 }
 

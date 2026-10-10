@@ -103,7 +103,6 @@ describe('Kalender „Abwesenheit“ und „Anwesenheit“', () => {
 
   test(
     'Tagestitel der App ohne versteckte Felder: „🏫 Krabbelstube · ohne Essen“ bleibt „ohne Essen“',
-    { todo: 'Vermuteter Fehler: nur das erste Titelsegment zählt, „ohne Essen“ steht aber im zweiten (classify.js:41) → kita_essen' },
     () => {
       assert.equal(an(buildDayTitle('kita_ohne', '2026-10-14', { wechseldatum: null })), 'kita_ohne');
     },

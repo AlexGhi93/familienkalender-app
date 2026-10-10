@@ -170,8 +170,7 @@ test('Familie: Name des Kindes erscheint bei „Für wen“; ungültige Zeichen 
   await expect(page.getByRole('button', { name: 'Kinderarzt (Iris), Mi 14. Okt. · 09:00' })).toBeVisible();
 });
 
-test.fixme('Vorschau im Arzttermin nennt den Namen des Kindes aus den Einstellungen', async ({ page }) => {
-  // Vermuteter Fehler (src/ui/termin-formular.js:31): terminVorschau(n) ohne Einstellungen → Vorschau zeigt „(Kind)“, gespeichert wird „(Iris)“.
+test('Vorschau im Arzttermin nennt den Namen des Kindes aus den Einstellungen', async ({ page }) => {
   await starteDemo(page, { route: '#/mehr' });
   await zeile(page, 'familie').click();
   await tafel(page, 'familie').getByRole('textbox', { name: 'Name des Kindes' }).fill('Iris');

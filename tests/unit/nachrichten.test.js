@@ -129,7 +129,6 @@ describe('naechsterWerktag', () => {
 
   test(
     'überspringt auch Feiertage (Nationalfeiertag am Montag, 26.10.2026)',
-    { todo: 'Vermuteter Fehler: naechsterWerktag (nachrichten.js:56) kennt keine Feiertage → „kommt am Montag, 26. Oktober wieder“' },
     () => {
       assert.equal(naechsterWerktag('2026-10-23'), '2026-10-27');
     },
