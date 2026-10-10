@@ -53,6 +53,10 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
   const ladendeBereiche = new Set();
   let letzteLadung = 0;
   let checksLaufen = false;
+  let schreibend = 0; // Schreibvorgänge, die gerade laufen
+  let schreibStand = 0; // zählt begonnene Schreibvorgänge: so erkennt `einkaufAktualisieren`, dass inzwischen selbst etwas geändert wurde
+  let einkaufGeprueft = null; // wann die Einkaufsliste zuletzt mit dem Kalender abgeglichen war (ms): Laden, Aktualisieren, eigenes Speichern
+  let einkaufHolen = null; // laufende Abfrage der Einkaufsliste: mehrfaches Anstoßen fragt nur einmal
   const melden = () => {
     for (const h of hoerer) h(state);
   };
@@ -61,6 +65,8 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
   async function ausfuehren(schreibe, alt) {
     let erledigt = 0;
     let gesamt = 0;
+    schreibStand += 1;
+    schreibend += 1;
     const bericht = (e, g) => {
       erledigt = e;
       gesamt = g;
@@ -94,6 +100,8 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       }
       melden();
       return 'fehler';
+    } finally {
+      schreibend -= 1;
     }
   }
 
@@ -141,6 +149,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     await aendere({ einkauf: neu }, async () => {
       const gespeichert = await adapter.aendereEinkauf(fn);
       if (gespeichert) {
+        einkaufGeprueft = jetzt().getTime(); // gespeichert wurde auf der neuesten Fassung: die Liste ist jetzt aktuell
         state = { ...state, einkauf: gespeichert };
         melden();
       }
@@ -204,6 +213,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
         state = { ...state, ...ladeFelder(daten, state), geladen: true, fehler: null, anmeldungNoetig: false, nurSnapshot: false, stand: null };
         geladeneBereiche.length = 0;
         letzteLadung = jetzt().getTime();
+        einkaufGeprueft = letzteLadung;
         melden();
       } catch (fehler) {
         if (!istAuthFehler(fehler)) throw fehler;
@@ -222,6 +232,47 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       }
       return !state.anmeldungNoetig;
     },
+
+    /**
+     * Holt nur die Einkaufsliste neu (das andere Telefon hat vielleicht etwas eingetragen): ein Ereignis statt aller Kalender.
+     * Eigene Änderungen gehen vor: solange etwas gespeichert wird oder auf die Anmeldung wartet, wird nicht gefragt, und eine Antwort,
+     * während der selbst etwas geändert wurde, wird verworfen (sie könnte älter sein). Neu gezeichnet wird nur, wenn sich die Liste wirklich geändert hat.
+     * Ergebnis: 'neu' (übernommen), 'gleich' (schon aktuell), 'warten' (eigene Änderung geht vor, später noch einmal),
+     * 'getrennt' (gerade nicht möglich: nicht geladen, nur gespeicherter Stand, Anmeldung nötig) oder 'fehler'.
+     */
+    async einkaufAktualisieren() {
+      if (einkaufHolen) return einkaufHolen;
+      einkaufHolen = (async () => {
+        if (!adapter.leseEinkauf || !state.geladen || state.nurSnapshot || state.anmeldungNoetig) return 'getrennt';
+        if (schreibend > 0 || wartend.length > 0) return 'warten';
+        const stand = schreibStand;
+        const vorher = state.einkauf;
+        let liste;
+        try {
+          liste = normalisiereListe((await adapter.leseEinkauf()).liste);
+        } catch (fehler) {
+          if (!istAuthFehler(fehler)) return 'fehler';
+          state = { ...state, anmeldungNoetig: true };
+          melden();
+          return 'getrennt';
+        }
+        if (stand !== schreibStand || schreibend > 0 || wartend.length > 0) return 'warten';
+        if (state.einkauf !== vorher) return 'gleich'; // inzwischen alles neu geladen: das ist mindestens so frisch
+        einkaufGeprueft = jetzt().getTime();
+        if (JSON.stringify(liste) === JSON.stringify(state.einkauf)) return 'gleich';
+        state = { ...state, einkauf: liste };
+        melden();
+        return 'neu';
+      })();
+      try {
+        return await einkaufHolen;
+      } finally {
+        einkaufHolen = null;
+      }
+    },
+
+    /** Zeitpunkt (ms) des letzten Abgleichs der Einkaufsliste mit dem Kalender, oder null (noch keiner). */
+    einkaufGeprueftAm: () => einkaufGeprueft,
 
     /** Speichert nach erneuter Anmeldung alles, was gewartet hat (Schreibvorgänge sind wiederholbar). */
     async wiederholeAusstehende() {

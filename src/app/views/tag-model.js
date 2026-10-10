@@ -1,7 +1,14 @@
 import { feiertagName } from '../../domain/feiertage.js';
-import { TYPES } from '../../domain/types.js';
+import { FAMILIE_SYMBOLE, TYPES } from '../../domain/types.js';
 import { datumLang } from '../format-de.js';
 import { FEIERTAG_EMOJI, TAGES_TYPEN_REIHENFOLGE, termineAm, typText, urlaubTageSet } from './gemeinsam.js';
+
+/** „Neu an diesem Tag“: dieselben Arten, Symbole und Farben wie die Kacheln in „Neu“ (art = Art für ui.neuTerminStarten). */
+const NEU_AN_DIESEM_TAG = [
+  { art: 'arzt', emoji: TYPES.arzt.emoji, text: 'Arzttermin', farbe: TYPES.arzt.farbe },
+  { art: 'familie', emoji: FAMILIE_SYMBOLE[0], text: 'Termin', farbe: TYPES.familie.farbe },
+  { art: 'kita_sache', emoji: TYPES.kita_sache.emoji, text: 'Sachen', farbe: TYPES.kita_sache.farbe },
+];
 
 /** Konflikt-Tag: was gilt, was daneben steht und wie man es auflöst (ein Tipp auf den richtigen Eintrag räumt auf). */
 function konfliktHinweis(eintrag, date, settings) {
@@ -47,5 +54,6 @@ export function tagModel(state, date, heute) {
       farbe: TYPES[typ].farbe,
       aktiv: typ === aktuell,
     })),
+    neu: NEU_AN_DIESEM_TAG,
   };
 }
