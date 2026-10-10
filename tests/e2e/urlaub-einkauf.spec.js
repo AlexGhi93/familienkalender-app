@@ -1,5 +1,6 @@
 // „Urlaub“ (Stand, Jahreswahl, planen, löschen) und „Einkauf“ (eintragen mit Menge, abhaken, löschen, Gekaufte entfernen).
-import { test, expect, starteDemo, erwarteToast } from './hilfen.js';
+// Das Aktualisieren der Einkaufsliste (Herunterziehen, 30-Sekunden-Abgleich) steht in einkauf-aktuell.spec.js.
+import { test, expect, starteDemo, tab, erwarteToast } from './hilfen.js';
 
 test.describe('Urlaub', () => {
   test('Stand im Kindergartenjahr mit Ring und Zeiträumen', async ({ page }) => {
@@ -114,12 +115,14 @@ test.describe('Einkauf', () => {
     await expect(zeile(page, 'Brot')).toBeVisible();
   });
 
-  test('„Zurück“ führt zu Heute, die Karte dort zählt mit', async ({ page }) => {
+  test('Registerkarte ohne „Zurück“; die Karte auf Heute zählt mit', async ({ page }) => {
     await starteDemo(page, { route: '#/einkauf' });
+    await expect(page.locator('nav.tabs a[aria-current="page"]')).toHaveText(/Einkauf/);
+    await expect(page.getByRole('button', { name: '‹ Zurück' })).toHaveCount(0);
     await page.getByRole('textbox', { name: 'Artikel' }).fill('Butter');
     await page.getByRole('button', { name: 'Zur Liste hinzufügen' }).click();
     await expect(zeile(page, 'Butter')).toBeVisible();
-    await page.getByRole('button', { name: '‹ Zurück' }).click();
+    await tab(page, 'Heute');
     await expect(page).toHaveURL(/#\/heute$/);
     await expect(page.getByRole('heading', { name: '🛒 Einkauf · 4' })).toBeVisible();
     await expect(page.locator('.einkauf-karte .chip')).toHaveText(['Milch (2 L)', 'Windeln', 'Nudeln (500 g)', 'Butter']);

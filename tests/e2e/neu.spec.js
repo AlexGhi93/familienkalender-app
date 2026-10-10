@@ -65,7 +65,9 @@ test('Arzttermin: Mutter-Kind-Pass, Vorschau mit Zeichenzahl, speichern, in Heut
   await expect(page.locator('.raster').getByRole('button', { name: 'Dienstag, 20. Oktober' }).locator('.punkt')).toHaveText('🩺');
 
   await tab(page, 'Heute');
-  await expect(page.locator('section.abschnitt').filter({ hasText: 'Demnächst' }).locator('article.termin').nth(1)).toContainText('Mutter-Kind-Pass · 10:30');
+  const demnaechst = page.locator('section.abschnitt').filter({ has: page.getByRole('heading', { name: 'Demnächst', exact: true }) });
+  await expect(demnaechst.locator('button.zeile').nth(1)).toContainText('Mutter-Kind-Pass · 10:30');
+  await expect(demnaechst.getByRole('button', { name: 'Mutter-Kind-Pass, Di 20. Okt., 10:30' })).toContainText('🎒 e-card, MuKi-Pass');
 
   await page.goto('/#/verlauf');
   const bevorstehend = page.locator('section.abschnitt').filter({ has: page.getByRole('heading', { name: /^Bevorstehend/ }) });

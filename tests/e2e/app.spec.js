@@ -9,6 +9,7 @@ test('Karten in der Demo und Version', async ({ page }) => {
   await starteDemo(page, { route: '#/app' });
   await expect(page.getByRole('heading', { name: 'Konto & App 👤' })).toBeVisible();
   await expect(karten(page)).toHaveText(['Mit Google verbinden', 'Darstellung', 'Sicherung', 'Demo-Modus']);
+  await expect(page.locator('.push-person')).toHaveCount(0); // „Dieses Telefon gehört“ gibt es nur mit Google (Push-Erinnerungen)
   await expect(page.locator('p.version')).toHaveText(`Familienkalender ${VERSION}`);
   await expect(page.locator('p.version')).toHaveText(/^Familienkalender \d+\.\d+\.\d+$/);
 });
