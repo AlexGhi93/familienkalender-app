@@ -1,4 +1,5 @@
-// „Heute“ in der Demo: Abschnitte, Schnell-Eintrag des Tages, offene Tage, Wochenende, Kontostand am Monatsende.
+// „Heute“ in der Demo: Abschnitte, „Demnächst“ als kompakte Zeilen, Schnell-Eintrag des Tages, offene Tage, Wochenende,
+// Kontostand am Monatsende.
 import { test, expect, starteDemo, erwarteToast } from './hilfen.js';
 import { seedDemo } from '../../src/app/seed.js';
 
@@ -13,10 +14,30 @@ test('alle Abschnitte an einem Werktag', async ({ page }) => {
   const titel = page.locator('section.abschnitt > h2');
   await expect(titel).toHaveText(['📅 Morgen steht an · 1', 'Heute', 'Sachen für Krabbelstube', '🛒 Einkauf · 3', 'Demnächst', 'Urlaub im Kindergartenjahr']);
   await expect(abschnitt(page, '📅 Morgen steht an · 1').locator('.termin-heute')).toContainText('🩺 Kinderarzt');
-  await expect(abschnitt(page, 'Demnächst').locator('article.termin')).toHaveCount(3);
+  await expect(abschnitt(page, 'Demnächst').locator('button.zeile')).toHaveCount(3);
   await expect(abschnitt(page, 'Urlaub im Kindergartenjahr')).toContainText('Noch 2 Wochen offen');
   await expect(page.locator('.countdown')).toHaveText('✈️ Noch 19× schlafen bis zum Urlaub');
   await expect(page.locator('nav.tabs a[aria-current="page"]')).toHaveText(/Heute/);
+});
+
+test('„Demnächst“: kompakte Zeilen mit Für wen, Mitnehmen, Kosten und Notiz; Antippen öffnet den Tag', async ({ page }) => {
+  await starteDemo(page);
+  const zeilen = abschnitt(page, 'Demnächst').locator('button.zeile');
+  await expect(zeilen).toHaveCount(3);
+  await expect(abschnitt(page, 'Demnächst').locator('article')).toHaveCount(0); // keine Karten mit Chips mehr
+  await expect(zeilen.locator('b')).toHaveText(['Finanzamt · 14:00', 'Impfung · 09:15', 'Geburtstag Oma · 15:00']);
+  const finanzamt = page.getByRole('button', { name: 'Finanzamt, Mo 19. Okt., 14:00' });
+  await expect(finanzamt.locator('small')).toHaveText(['Mo 19. Okt. · 👩 Mama', '🎒 Ausweis, Lohnzettel', '📝 Arbeitnehmerveranlagung, 2. Stock']);
+  await expect(page.getByRole('button', { name: 'Impfung, Do 22. Okt., 09:15' }).locator('small')).toHaveText(['Do 22. Okt. · 🧒 Kind', '🎒 e-card, Impfpass · 💶 15 €']);
+  await expect(page.getByRole('button', { name: 'Geburtstag Oma, Mo 26. Okt., 15:00' }).locator('small')).toHaveText(['Mo 26. Okt.', '🎒 Geschenk']);
+
+  await page.getByRole('button', { name: 'Impfung, Do 22. Okt., 09:15' }).click();
+  const blatt = page.getByRole('dialog', { name: 'Donnerstag, 22. Oktober' });
+  await expect(blatt).toBeVisible();
+  await expect(blatt.locator('.zeile').filter({ hasText: 'Impfung' })).toBeVisible();
+  await blatt.getByRole('button', { name: 'Schließen' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page).toHaveURL(/#\/heute$/); // der Tag öffnet sich als Blatt, die Seite bleibt
 });
 
 test('Schnell-Eintrag: vier Knöpfe, „Krank“ trägt heute ein und lässt sich ändern', async ({ page }) => {

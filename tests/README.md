@@ -5,9 +5,10 @@ Die App selbst braucht keinen Build-Schritt und kein `npm`. `package.json` gibt 
 - **Unit-Tests** (`tests/unit/*.test.js`) mit dem eingebauten Test-Runner von Node (`node:test`, `node:assert/strict`).
   Sie prüfen die reinen Module ohne DOM und ohne Netz: Regeln (`src/domain`), View-Modelle und Store (`src/app`),
   Umrechnung von/zu Google Kalender (`src/calendar`) und Push-Plan/-Verschlüsselung (`src/push`).
-- **End-to-End-Tests** (`tests/e2e/*.spec.js`) mit Playwright in Chromium, im Telefonformat (390 × 844, Touch).
-  Sie starten die echte Seite über einen kleinen statischen Server (`tests/server.mjs`, Port 8141) – meist im Demo-Modus,
-  einmal im Google-Modus aus einem gespeicherten Stand (ohne Netz).
+- **End-to-End-Tests** (`tests/e2e/*.spec.js`) mit Playwright in Chromium, im Telefonformat (390 × 844, Touch; die Tab-Leiste
+  zusätzlich mit 375 px Breite). Sie starten die echte Seite über einen kleinen statischen Server (`tests/server.mjs`, Port 8141) –
+  meist im Demo-Modus, dazu im Google-Modus ohne Netz: aus einem gespeicherten Stand oder angemeldet über eine Attrappe von
+  Google-Anmeldung und Kalender-API (`tests/e2e/hilfen.js`).
 
 ## Einrichten
 
@@ -24,7 +25,7 @@ npx playwright install chromium
 
 ```sh
 npm test               # Unit-Tests (dauert etwa 2 Sekunden)
-npm run test:e2e       # End-to-End-Tests (startet den Server selbst, etwa 1 Minute)
+npm run test:e2e       # End-to-End-Tests (startet den Server selbst, etwa 2 Minuten)
 npm run test:alle      # beides nacheinander
 ```
 
@@ -72,14 +73,19 @@ $env:CI=1; npm run test:e2e
 | `unit/speicher.test.js` | Konfiguration, gespeicherter Stand (strenge Prüfung, Größe), Einrichtungscode, Freigabe |
 | `unit/push-*.test.js` | Push-Plan (Zeiten in Wien, Zeitumstellung, Monatsende) und Meldungen (RFC-8291-Testvektor, Entschlüsselung, stabiles `h`) |
 | `e2e/willkommen.spec.js` | Erster Start mit drei Wegen, Demo starten, falscher Code |
-| `e2e/heute.spec.js` | Abschnitte, Schnell-Eintrag, offene Tage, Wochenende, Kontostand am Monatsende, Sachen erledigt |
-| `e2e/monat.spec.js` | Blättern, Tagesblatt mit „Eintragen“, Typ setzen und im Raster sehen |
+| `e2e/tabs.spec.js` | Tab-Leiste: sieben Registerkarten (Heute, Monat, Einkauf, ＋ Neu, Urlaub, Konto, Mehr), Fenstertitel je Seite („Kontostand“ für `#/konto`), Einkauf und Kontostand ohne „‹ Zurück“, „＋ Neu“ genau in der Mitte bei 375 und 390 px |
+| `e2e/heute.spec.js` | Abschnitte, „Demnächst“ als kompakte Zeilen (Antippen öffnet den Tag), Schnell-Eintrag, offene Tage, Wochenende, Kontostand am Monatsende, Sachen erledigt |
+| `e2e/monat.spec.js` | Blättern, Tagesblatt mit „Eintragen“, Typ setzen und im Raster sehen; „Neu an diesem Tag“ (Arzttermin, Termin, Sachen mit dem angetippten Tag); „Bringen & Abholen“ im Tagesblatt (nur künftige Betreuungstage, nur für diesen Tag) |
 | `e2e/neu.spec.js` | Jede Kachel öffnet ihr Formular; Mutter-Kind-Pass speichern und in Heute/Monat/Verlauf wiederfinden |
-| `e2e/urlaub-einkauf.spec.js` | Urlaub (Stand, Jahre, planen, löschen) und Einkauf (Menge, abhaken, löschen, Rückgängig) |
-| `e2e/konto-verlauf.spec.js` | Kontostand-Diagramme und Eintragen in der Demo; Verlauf mit Suche und Filtern |
-| `e2e/mehr.spec.js` | Menü: Intro-Animation, Akkordeon, offen nach dem Speichern, reduzierte Bewegung, Wege |
+| `e2e/urlaub-einkauf.spec.js` | Urlaub (Stand, Jahre, planen, löschen) und Einkauf (Menge, abhaken, löschen, Rückgängig, Registerkarte ohne „Zurück“) |
+| `e2e/einkauf-aktuell.spec.js` | Einkauf aktuell halten: Herunterziehen (echte Touch-Ereignisse) in der Demo und im Google-Modus, „Aktualisiert um …“, Abgleich alle 30 Sekunden nur bei offener Liste (Google-Attrappe, laufende Uhr) |
+| `e2e/essensgeld.spec.js` | „Preis pro Mittagessen“ in Mehr → Betreuung (Schreibweisen, Fehler, Leeren = aus) und „Essensgeld: ca. … (N × … €)“ im Monat, nur mit Preis |
+| `e2e/konto-verlauf.spec.js` | Kontostand-Diagramme und Eintragen in der Demo, „Sparen pro Monat“ (neueste drei, „Ältere anzeigen (N)“/„Weniger anzeigen“), „ⓘ Was sind Sonderbeträge?“; Verlauf mit Suche und Filtern |
+| `e2e/mehr.spec.js` | Menü mit elf Zeilen (neun klappen auf, zwei führen weiter): Intro-Animation (elf `m-*`), Akkordeon, offen nach dem Speichern, reduzierte Bewegung, Wege; getippte Uhrzeit/Datum wird mit Enter bzw. beim Verlassen gespeichert |
+| `e2e/nachrichten.spec.js` | Nachricht an Krabbelstube/Kindergarten: Wege (Heute, „Benachrichtigen“ nach „Krank“/„Abwesend“, Mehr), 14 Situationen, Heute/Morgen, Angaben, änderbarer Text, Links für WhatsApp (`wa.me/43…`), SMS und E-Mail, Teilen, Kopieren, Einstellungen (Kontakt, Gruß, Unterschrift, „Das Kind ist“) |
+| `e2e/bringen-holen.spec.js` | Wer bringt, wer holt: Wochenplan in Mehr (— → 👨 Papa → 👩 Mama → —), Benachrichtigungen, „🚗 Heute“ mit Ausnahme nur für diesen Tag, am Abend „Morgen“ |
 | `e2e/app.spec.js` | Konto & App: Karten, Hell/Dunkel, Sicherung als Download, Demo zurücksetzen, Version |
-| `e2e/google.spec.js` | Google-Modus ohne Netz aus dem gespeicherten Stand: Banner, Status in Mehr, fünf Karten |
+| `e2e/google.spec.js` | Google-Modus ohne Netz aus dem gespeicherten Stand: Banner, Status in Mehr, fünf Karten, „Dieses Telefon gehört“; Login-Dienst aus: Verhalten wie bisher (Token-Weg, „gilt eine Stunde“, keine Sitzung, keine Anfrage an den Dienst) |
 
 Vermutete Fehler in `src/` sind als offene Tests markiert (`{ todo: … }` bei den Unit-Tests, `test.fixme` bei Playwright)
 und stehen dort mit Datei und Zeile im Kommentar. Wird ein Fehler behoben, die Markierung entfernen.
@@ -102,6 +108,11 @@ und stehen dort mit Datei und Zeile im Kommentar. Wird ein Fehler behoben, die M
 - `await starteDemo(page, { route: '#/monat' })` startet die Demo zur festen Zeit (Mittwoch, 14.10.2026, 08:00 Wien);
   mit `zeit: '…'` eine andere Uhrzeit, mit `speicher: { … }` vorbelegter `localStorage`.
   `starteGoogleAusSnapshot(page)` startet den Google-Modus ohne Netz (dazu `test.use({ erlaubteFehler: NETZFEHLER })`).
+  `starteGoogleVerbunden(page, { einkauf, uhrLaeuft })` meldet sich über eine Attrappe an (Google-Skript und Kalender-API im Test,
+  siehe `googleAttrappe`); das Ergebnis zählt die Anfragen (`anfragen`) und spielt mit `setzeEinkauf(liste)` das andere Telefon.
+- Uhr: Standard ist eine stehende Uhr (`page.clock.setFixedTime`). Wer Zeitgeber prüft (z. B. den 30-Sekunden-Abgleich), lässt sie
+  laufen (`uhrLaeuft: true`, intern `page.clock.install`) und springt mit `page.clock.fastForward(…)` – nie mit festen Wartezeiten.
+- Wischen und Ziehen: echte Touch-Ereignisse über das DevTools-Protokoll (`Input.dispatchTouchEvent`, siehe `einkauf-aktuell.spec.js`).
 - Stabile Selektoren: Rollen und sichtbarer Text (`getByRole('button', { name: 'Speichern' })`), vorhandene IDs und Klassen
   (`#menue-betreuung`, `.menue-eintrag[data-id="familie"]`). Keine festen Wartezeiten – auf Zustände warten (`expect(…).toBeVisible()`).
 - Standard ist „reduzierte Bewegung“ (siehe `playwright.config.js`). Wer Animationen prüft, schaltet sie im Test wieder ein:

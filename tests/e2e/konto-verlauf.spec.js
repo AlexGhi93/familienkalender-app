@@ -1,4 +1,5 @@
-// „Kontostand“ (Diagramme, Kennzahlen, Eintragen in der Demo) und „Verlauf“ (Suche, Filter, Tag öffnen).
+// „Kontostand“ (Diagramme, Kennzahlen, Eintragen in der Demo, „Sparen pro Monat“ mit älteren Monaten zum Aufklappen,
+// Erklärung der Sonderbeträge) und „Verlauf“ (Suche, Filter, Tag öffnen).
 import { test, expect, starteDemo, erwarteToast } from './hilfen.js';
 
 test.describe('Kontostand', () => {
@@ -65,6 +66,66 @@ test.describe('Kontostand', () => {
     await expect(page.locator('.konto-person.fertig')).toContainText('Papa ✔ 21.000 €');
     await expect(page.locator('.konto-zeile .konto-monat-titel').first()).toHaveText('Oktober 2026');
     await expect(page.getByRole('button', { name: 'Oktober 2026 korrigieren oder löschen' })).toContainText('+289 €');
+  });
+
+  test('„Sparen pro Monat“: zuerst die neuesten drei Monate, „Ältere anzeigen (N)“ und „Weniger anzeigen“', async ({ page }) => {
+    await starteDemo(page, { route: '#/konto' });
+    const sparen = page.locator('section.abschnitt').filter({ has: page.getByRole('heading', { name: 'Sparen pro Monat' }) });
+    const monate = sparen.locator('.konto-zeile');
+    const knopf = sparen.getByRole('button', { name: /Ältere anzeigen|Weniger anzeigen/ });
+    await expect(monate.locator('.konto-monat-titel')).toHaveText(['September 2026', 'August 2026', 'Juli 2026', 'Juni 2026', 'Mai 2026']);
+    const sichtbar = () => monate.evaluateAll((els) => els.filter((el) => !el.hidden).map((el) => el.querySelector('.konto-monat-titel').textContent));
+    await expect.poll(sichtbar).toEqual(['September 2026', 'August 2026', 'Juli 2026']);
+    await expect(monate.nth(3)).toBeHidden();
+    await expect(knopf).toHaveText('Ältere anzeigen (2)');
+    await expect(knopf).toHaveAttribute('aria-expanded', 'false');
+
+    await knopf.click();
+    await expect(monate.nth(4)).toBeVisible();
+    await expect.poll(sichtbar).toHaveLength(5);
+    await expect(knopf).toHaveText('Weniger anzeigen');
+    await expect(knopf).toHaveAttribute('aria-expanded', 'true');
+    await expect(knopf).toBeFocused(); // ohne Neuzeichnen: der Fokus bleibt auf dem Knopf
+
+    await knopf.click();
+    await expect(monate.nth(3)).toBeHidden();
+    await expect(knopf).toHaveText('Ältere anzeigen (2)');
+
+    // ein neuer Monat schiebt den ältesten der drei hinter den Knopf
+    const papa = page.locator('.konto-person').filter({ hasText: 'Papa' });
+    await papa.getByRole('textbox', { name: 'Kontostand Papa' }).fill('21.000');
+    await papa.getByRole('button', { name: 'Speichern' }).click();
+    await erwarteToast(page, 'Gespeichert ✓');
+    await expect(knopf).toHaveText('Ältere anzeigen (3)');
+    await expect.poll(sichtbar).toEqual(['Oktober 2026', 'September 2026', 'August 2026']);
+    // aufgeklappt bleibt aufgeklappt, auch nach dem Neuzeichnen der Seite
+    await knopf.click();
+    await page.getByRole('group', { name: 'Zeitraum der Diagramme' }).getByRole('button', { name: 'Alles' }).click();
+    await expect(page.getByRole('group', { name: 'Zeitraum der Diagramme' }).locator('.chip.aktiv')).toHaveText('Alles');
+    await expect(knopf).toHaveText('Weniger anzeigen');
+    await expect.poll(sichtbar).toHaveLength(6);
+  });
+
+  test('Sonderbeträge: die Erklärung steht hinter „ⓘ Was sind Sonderbeträge?“ und bleibt beim Neuzeichnen offen', async ({ page }) => {
+    await starteDemo(page, { route: '#/konto' });
+    const sonder = page.locator('section.abschnitt').filter({ has: page.getByRole('heading', { name: 'Sonderbeträge' }) });
+    const info = sonder.locator('details');
+    const text = info.getByText('Das ist nicht der Kontostand');
+    await expect(info.locator('summary')).toHaveText('ⓘ Was sind Sonderbeträge?');
+    await expect(info).not.toHaveAttribute('open');
+    await expect(text).toBeHidden();
+    await expect(sonder.getByText('Autoreparatur')).toBeVisible(); // die Liste steht nicht dahinter
+
+    await info.locator('summary').click();
+    await expect(info).toHaveAttribute('open', '');
+    await expect(text).toBeVisible();
+    await expect(text).toContainText('Sonderbeträge ändern keinen Kontostand, werden aber aus der Ersparnis herausgerechnet („ohne Extra“).');
+
+    await page.getByRole('group', { name: 'Zeitraum der Diagramme' }).getByRole('button', { name: '6 Monate' }).click();
+    await expect(page.locator('.konto-kachel-titel').first()).toHaveText('In den letzten 6 Monaten');
+    await expect(info).toHaveAttribute('open', '');
+    await info.locator('summary').click();
+    await expect(text).toBeHidden();
   });
 
   test('unlesbarer Betrag wird gemeldet', async ({ page }) => {
