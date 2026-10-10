@@ -2572,6 +2572,9 @@ html:has(.screen.einkauf) {
 @media (prefers-reduced-motion: reduce) {
   .ek-ziehen {
     transition: none;
+  }
+}
+
 /* ---------- Nachrichten an Krabbelstube/Kindergarten und Essensgeld ---------- */
 
 /* Textfelder in „Mehr“ (Telefon, E-Mail, Unterschrift, Preis pro Mittagessen) */
