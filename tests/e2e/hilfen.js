@@ -63,8 +63,9 @@ export async function starteGoogleAusSnapshot(page, { route = '#/heute', zeit = 
 }
 
 /**
- * Attrappe des Google-Anmeldeskripts (accounts.google.com/gsi/client): der bisherige Token-Weg (ein Token für eine Stunde),
- * wie ihn die App ohne Login-Dienst benutzt. Jeder Aufruf landet in `window.gisAufrufe`, damit ein Test sehen kann, welcher Weg lief.
+ * Attrappe des Google-Anmeldeskripts (accounts.google.com/gsi/client): der Code-Weg für den Login-Dienst (ein Code, den der
+ * Dienst eintauscht) und der bisherige Token-Weg (ein Token für eine Stunde, wenn der Dienst nicht erreichbar ist).
+ * Jeder Aufruf landet in `window.gisAufrufe`, damit ein Test sehen kann, welcher Weg lief.
  */
 const GIS_ATTRAPPE = `
 window.gisAufrufe = [];
@@ -75,17 +76,38 @@ window.google = { accounts: { oauth2: {
   },
   initCodeClient(c) {
     gisAufrufe.push('initCodeClient');
-    return { requestCode() { gisAufrufe.push('requestCode'); } };
+    return { requestCode() { gisAufrufe.push('requestCode'); setTimeout(() => c.callback({ code: 'attrappe-code', state: c.state }), 0); } };
   },
 } } };`;
+
+/** Sitzung, die die Attrappe des Login-Dienstes vergibt und annimmt (43 Zeichen base64url, wie beim echten Dienst). */
+export const ATTRAPPE_SITZUNG = 'attrappe-sitzung-0123456789abcdefghijklmnop';
+
+/**
+ * Attrappe des Login-Dienstes (familienkalender-login…workers.dev): `/v1/anmelden` tauscht jeden Code gegen ATTRAPPE_SITZUNG und
+ * ein Token für eine Stunde, `/v1/token` gibt für ATTRAPPE_SITZUNG ein frisches Token (sonst 401), `/v1/abmelden` antwortet 204.
+ */
+async function loginDienstAntwort(route) {
+  const anfrage = route.request();
+  const antwort = (status, daten) =>
+    route.fulfill({ status, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: daten === undefined ? '' : JSON.stringify(daten) });
+  const pfad = new URL(anfrage.url()).pathname;
+  const body = anfrage.method() === 'POST' ? anfrage.postDataJSON() : null;
+  const token = { access_token: 'attrappe-token-dienst', expires_in: 3600 };
+  if (pfad === '/v1/anmelden' && typeof body?.code === 'string') return antwort(200, { sitzung: ATTRAPPE_SITZUNG, ...token });
+  if (pfad === '/v1/token') return body?.sitzung === ATTRAPPE_SITZUNG ? antwort(200, token) : antwort(401, { fehler: 'sitzung-ungueltig' });
+  if (pfad === '/v1/abmelden') return antwort(204);
+  return antwort(404, { fehler: 'unbekannt' });
+}
 
 /**
  * Google ohne Netz, aber anmeldbar: das Anmeldeskript ist eine Attrappe (siehe oben), die Kalender-API ein kleiner Speicher im Test
  * (Ereignisse nach ID; Listen sind leer). `einkauf` = Einkaufsliste, die schon im Kalender steht.
- * Ergebnis: { anfragen: ['GET /calendars/…/events/fkeinkauf', …], setzeEinkauf(liste) } – `setzeEinkauf` spielt das andere Telefon.
- * Der Login-Dienst und der Push-Dienst sind nicht erreichbar (Anfragen werden abgebrochen und in `dienste` gezählt).
+ * Ergebnis: { anfragen: ['GET /calendars/…/events/fkeinkauf', …], dienste, setzeEinkauf(liste) } – `setzeEinkauf` spielt das andere Telefon.
+ * Der Login-Dienst ist eine Attrappe (siehe oben; mit `loginDienst: false` nicht erreichbar), der Push-Dienst ist nicht erreichbar.
+ * Alle Anfragen an beide Dienste landen in `dienste`.
  */
-export async function googleAttrappe(page, { einkauf = null } = {}) {
+export async function googleAttrappe(page, { einkauf = null, loginDienst = true } = {}) {
   const ereignisse = new Map();
   const anfragen = [];
   const dienste = [];
@@ -97,7 +119,7 @@ export async function googleAttrappe(page, { einkauf = null } = {}) {
   await page.route('https://accounts.google.com/gsi/client', (r) => r.fulfill({ contentType: 'text/javascript', body: GIS_ATTRAPPE }));
   await page.route(/workers\.dev/, (r) => {
     dienste.push(r.request().url());
-    return r.abort();
+    return loginDienst && r.request().url().includes('familienkalender-login') ? loginDienstAntwort(r) : r.abort();
   });
   await page.route(/^https:\/\/www\.googleapis\.com\/calendar\/v3\//, (route) => {
     const anfrage = route.request();
@@ -133,10 +155,10 @@ export async function googleAttrappe(page, { einkauf = null } = {}) {
  * bis „Verbunden ✓“. Mit `uhrLaeuft` läuft die Uhr ab `zeit` weiter (page.clock.install, für Zeitgeber wie den 30-Sekunden-Abgleich),
  * sonst steht sie. Gibt die Attrappe zurück.
  */
-export async function starteGoogleVerbunden(page, { route = '#/heute', zeit = WERKTAG, einkauf = null, uhrLaeuft = false } = {}) {
+export async function starteGoogleVerbunden(page, { route = '#/heute', zeit = WERKTAG, einkauf = null, uhrLaeuft = false, loginDienst = true } = {}) {
   if (uhrLaeuft) await page.clock.install({ time: new Date(zeit) });
   else await page.clock.setFixedTime(new Date(zeit));
-  const google = await googleAttrappe(page, { einkauf });
+  const google = await googleAttrappe(page, { einkauf, loginDienst });
   await speicherVorbelegen(page, { 'fk.config.v1': KONFIG_GOOGLE });
   await page.goto(`/${route}`);
   await page.getByRole('button', { name: 'Mit Google anmelden' }).click();

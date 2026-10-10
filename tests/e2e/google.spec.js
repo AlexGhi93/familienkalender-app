@@ -1,8 +1,8 @@
 // Google-Modus ohne Netz: Start aus dem gespeicherten Stand. Anfragen an Google und den Push-Dienst werden abgebrochen;
 // die dadurch erwarteten Netzwerkmeldungen in der Konsole sind erlaubt, alles andere nicht.
-// Dazu der Login-Dienst (src/calendar/auth.js, login-dienst.js): er ist noch aus (CONFIG.login.dienst === ''), alles muss sich
-// verhalten wie vorher – Token-Weg über das Google-Fenster, „gilt eine Stunde“, keine Sitzung, keine Anfrage an den Dienst.
-import { test, expect, starteGoogleAusSnapshot, starteGoogleVerbunden, erwarteToast, NETZFEHLER, KONFIG_GOOGLE, WERKTAG } from './hilfen.js';
+// Dazu der Login-Dienst (src/calendar/auth.js, login-dienst.js): er ist an. Erste Anmeldung über den Code-Weg, danach bleibt das
+// Telefon angemeldet (stille Anmeldung beim Start); ist der Dienst nicht erreichbar, gilt der bisherige Token-Weg (eine Stunde).
+import { test, expect, starteGoogleAusSnapshot, starteGoogleVerbunden, googleAttrappe, erwarteToast, NETZFEHLER, KONFIG_GOOGLE, WERKTAG, ATTRAPPE_SITZUNG } from './hilfen.js';
 import { CONFIG } from '../../src/calendar/config.js';
 
 test.use({ erlaubteFehler: NETZFEHLER });
@@ -77,51 +77,71 @@ test('Konto & App: „Dieses Telefon gehört“ Papa oder Mama (für Erinnerunge
   await expect(page.locator('.push-person .chip.aktiv')).toHaveText('👩 Mama'); // gilt nur für dieses Telefon, bleibt aber gespeichert
 });
 
-test.describe('Login-Dienst (noch aus)', () => {
-  test('ist ausgeschaltet: keine Adresse in der Konfiguration', () => {
-    expect(CONFIG.login.dienst).toBe('');
+test.describe('Login-Dienst (an)', () => {
+  const DIENST = 'https://familienkalender-login.fk-h2vq8eei.workers.dev';
+  const konto = (page) => page.locator('article.karte').filter({ has: page.getByRole('heading', { name: 'Konto', exact: true }) });
+
+  test('ist eingeschaltet: Adresse in der Konfiguration und in der CSP', async ({ page }) => {
+    expect(CONFIG.login.dienst).toBe(DIENST);
+    await starteGoogleAusSnapshot(page);
+    expect(await page.locator('meta[http-equiv="Content-Security-Policy"]').getAttribute('content')).toContain(DIENST);
   });
 
-  test('mit gespeichertem Stand: kein Anruf beim Dienst, keine Sitzung, Hinweis „gilt eine Stunde“ wie bisher', async ({ page }) => {
+  test('mit gespeichertem Stand, aber ohne Sitzung: kein Anruf beim Dienst, Hinweis „bleibt angemeldet“, „Verbinden“', async ({ page }) => {
     const anfragen = [];
     page.on('request', (r) => anfragen.push(r.url()));
     await starteGoogleAusSnapshot(page, { route: '#/app' });
-    const konto = page.locator('article.karte').filter({ has: page.getByRole('heading', { name: 'Konto', exact: true }) });
-    await expect(konto).toContainText('Die Anmeldung gilt eine Stunde. Nach dem Öffnen der App einmal „Verbinden“ tippen');
-    await expect(konto).not.toContainText('bleibt dieses Telefon angemeldet');
+    await expect(konto(page)).toContainText('Einmal anmelden – danach bleibt dieses Telefon angemeldet.');
+    await expect(konto(page)).not.toContainText('Die Anmeldung gilt eine Stunde');
     await expect(page.locator('#banner')).toContainText('Zum Aktualisieren verbinden.');
     await expect(page.locator('#banner').getByRole('button', { name: 'Verbinden' })).toBeEnabled();
     expect(await page.evaluate(() => localStorage.getItem('fk.login.v1'))).toBeNull();
     expect(anfragen.filter((url) => url.includes('familienkalender-login'))).toEqual([]);
   });
 
-  test('ohne gespeicherten Stand: die große Karte „Mit Google anmelden“ ohne Hinweis auf dauerhafte Anmeldung', async ({ page }) => {
+  test('ohne gespeicherten Stand: die große Karte „Mit Google anmelden“ mit Hinweis auf dauerhafte Anmeldung', async ({ page }) => {
     await page.clock.setFixedTime(new Date(WERKTAG));
     await page.route(/accounts\.google\.com|googleapis\.com|workers\.dev/, (r) => r.abort());
     await page.addInitScript((konfig) => localStorage.setItem('fk.config.v1', konfig), JSON.stringify(KONFIG_GOOGLE));
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'Schön, dass du da bist! 🌸' })).toBeVisible();
     const karte = page.locator('#inhalt article.karte');
-    await expect(karte.locator('p')).toHaveText(['Tippe auf „Mit Google anmelden“, um den Familienkalender zu laden. Das dauert nur einen Moment.']);
+    await expect(karte).toContainText('Einmal anmelden – danach bleibt dieses Telefon angemeldet.');
     await expect(karte.getByRole('button', { name: 'Mit Google anmelden' })).toBeEnabled();
-    await expect(page.locator('#banner')).toBeEmpty(); // nichts geladen, kein gespeicherter Stand: kein Banner, keine stille Anmeldung
+    await expect(page.locator('#banner')).toBeEmpty(); // keine Sitzung: keine stille Anmeldung
   });
 
-  test('Anmelden nimmt den bisherigen Token-Weg (Google-Fenster), lädt aus Google und gilt eine Stunde', async ({ page }) => {
+  test('Anmelden nimmt den Code-Weg über den Dienst, speichert die Sitzung und bleibt angemeldet', async ({ page }) => {
     const google = await starteGoogleVerbunden(page, { route: '#/app' });
-    expect(await page.evaluate(() => window.gisAufrufe)).toEqual(['initTokenClient', 'requestAccessToken']); // kein Code-Weg
-    expect(google.anfragen).toEqual(expect.arrayContaining([
-      'GET /calendars/x_1@group.calendar.google.com/events/fkeinstellungen',
-      'GET /calendars/x_1@group.calendar.google.com/events/fkeinkauf',
-      'GET /calendars/x_1@group.calendar.google.com/events/fkkonto',
-    ]));
-    const konto = page.locator('article.karte').filter({ has: page.getByRole('heading', { name: 'Konto', exact: true }) });
-    await expect(konto.locator('.verbindung-block > p').first()).toHaveText('✅ Verbunden · Anmeldung noch 59 Min');
+    expect(await page.evaluate(() => window.gisAufrufe)).toEqual(['initTokenClient', 'initCodeClient', 'requestCode']); // vorbereitet, dann Code-Weg statt Token
+    expect(google.dienste.filter((url) => url.includes('familienkalender-login'))).toEqual([`${DIENST}/v1/anmelden`]);
+    expect(google.anfragen).toEqual(expect.arrayContaining(['GET /calendars/x_1@group.calendar.google.com/events/fkeinstellungen']));
+    expect(JSON.parse(await page.evaluate(() => localStorage.getItem('fk.login.v1')))).toEqual({ v: 1, sitzung: ATTRAPPE_SITZUNG });
+    await expect(konto(page).locator('.verbindung-block > p').first()).toHaveText('✅ Verbunden · Dieses Telefon bleibt angemeldet');
     await expect(page.locator('#banner')).toBeEmpty();
-    await page.goto('/#/mehr');
-    await expect(page.locator('.menue-eintrag[data-id="app"] .menue-status')).toHaveText('✅ Verbunden mit Google');
-    await expect(page.locator('.menue-eintrag[data-id="app"] .menue-status')).not.toHaveClass(/warnung/);
+  });
+
+  test('nach dem Neuladen: still angemeldet über den Dienst, ohne Tipp und ohne Google-Fenster', async ({ page }) => {
+    const google = await starteGoogleVerbunden(page, { route: '#/app' });
+    await page.reload();
+    await expect(konto(page).locator('.verbindung-block > p').first()).toHaveText('✅ Verbunden · Dieses Telefon bleibt angemeldet');
+    await expect(page.locator('#banner')).toBeEmpty();
+    expect(await page.evaluate(() => window.gisAufrufe ?? [])).not.toContain('requestCode'); // kein Google-Fenster
+    expect(await page.evaluate(() => window.gisAufrufe ?? [])).not.toContain('requestAccessToken');
+    expect(google.dienste.filter((url) => url.includes('familienkalender-login'))).toEqual([`${DIENST}/v1/anmelden`, `${DIENST}/v1/token`]);
+  });
+
+  test('Dienst nicht erreichbar: Hinweis, der nächste Tipp nimmt den bisherigen Token-Weg (gilt eine Stunde)', async ({ page }) => {
+    await page.clock.setFixedTime(new Date(WERKTAG));
+    const google = await googleAttrappe(page, { loginDienst: false });
+    await page.addInitScript((konfig) => localStorage.setItem('fk.config.v1', konfig), JSON.stringify(KONFIG_GOOGLE));
+    await page.goto('/#/app');
+    await page.getByRole('button', { name: 'Mit Google anmelden' }).click();
+    await expect(page.locator('#inhalt .banner-fehler')).toContainText('Der Anmelde-Dienst ist gerade nicht erreichbar.');
+    await page.getByRole('button', { name: 'Mit Google anmelden' }).click();
+    await expect(konto(page).locator('.verbindung-block > p').first()).toHaveText('✅ Verbunden · Anmeldung noch 59 Min');
+    expect(await page.evaluate(() => window.gisAufrufe)).toEqual(['initTokenClient', 'initCodeClient', 'requestCode', 'requestAccessToken']);
     expect(await page.evaluate(() => localStorage.getItem('fk.login.v1'))).toBeNull();
-    expect(google.dienste.filter((url) => url.includes('familienkalender-login'))).toEqual([]);
+    expect(google.dienste.filter((url) => url.includes('familienkalender-login'))).toEqual([`${DIENST}/v1/anmelden`]);
   });
 });

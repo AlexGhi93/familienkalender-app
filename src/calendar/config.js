@@ -11,7 +11,7 @@ export const CONFIG = Object.freeze({
   // Push-Dienst (Cloudflare Worker): Adresse und öffentlicher VAPID-Schlüssel, beides öffentlich. Leer = „noch nicht eingerichtet“.
   push: Object.freeze({ dienst: 'https://familienkalender-push.fk-h2vq8eei.workers.dev', vapidPublic: 'BOTDTS3msWMWwaqZiZE-pMoyZD56AMvnJw17RqGIXBhExZZmbGWj5QvJklUzbvLwJZv2lRx-QtxrAlZOt5P8Sws' }),
   // Login-Dienst (eigener Cloudflare Worker, Quelle in login-dienst/): hält Telefone dauerhaft angemeldet, statt jede Stunde
-  // „Verbinden“ zu verlangen. Leer = aus (bisheriges Verhalten). Nach dem Einrichten (login-dienst/README.md) hier eintragen:
-  // 'https://familienkalender-login.fk-h2vq8eei.workers.dev' (steht schon in der CSP von index.html).
-  login: Object.freeze({ dienst: '' }),
+  // „Verbinden“ zu verlangen. Leer = aus (bisheriges Verhalten, Notbremse: login-dienst/README.md). Die Adresse steht auch
+  // in der CSP von index.html.
+  login: Object.freeze({ dienst: 'https://familienkalender-login.fk-h2vq8eei.workers.dev' }),
 });
