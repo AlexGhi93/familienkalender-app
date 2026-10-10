@@ -20,12 +20,24 @@ export function echteGoogle() {
     erzeuge() {
       if (!cache) {
         const auth = createAuth();
-        cache = { auth, api: createApi({ fetch: (...argumente) => globalThis.fetch(...argumente), token: () => auth.token() }) };
+        let fetch = (...argumente) => globalThis.fetch(...argumente);
+        if (auth.dauerAnmeldung()) {
+          // Login-Dienst: lehnt Google ein Token vorzeitig ab (401), holt die nächste Anfrage still ein neues.
+          const holen = fetch;
+          fetch = async (url, init) => {
+            const antwort = await holen(url, init);
+            if (antwort.status === 401) auth.tokenAbgelehnt(String(init?.headers?.Authorization ?? '').replace(/^Bearer /, ''));
+            return antwort;
+          };
+        }
+        cache = { auth, api: createApi({ fetch, token: () => auth.token() }) };
       }
       return cache;
     },
   };
 }
+
+const STILL_WARTEN_MS = 4000; // so lange wartet der Start ohne gespeicherten Stand auf die stille Anmeldung
 
 const ladefehler = () => h('main', { class: 'screen' }, h('p', { class: 'hinweis karte' }, 'Die Daten konnten nicht geladen werden. Bitte die App neu öffnen.'));
 
@@ -67,12 +79,18 @@ export async function starte({ wurzel, speicher = globalThis.localStorage ?? nul
   const snapshot = createSnapshot({ speicher, jetzt });
   const gespeichert = snapshot.lesen();
   if (gespeichert) store.starteAusSnapshot(gespeichert);
+  // Login-Dienst: dieses Telefon bleibt angemeldet – still (ohne Tipp) ein frisches Token holen. Mit gespeichertem Stand
+  // erscheint die App sofort und lädt im Hintergrund nach; ohne Stand wird kurz gewartet, statt „Mit Google anmelden“ zu zeigen.
+  const still = auth.dauerAnmeldung?.()?.dauerhaft ? auth.stillAnmelden() : null;
+  if (still && !gespeichert) await Promise.race([still, new Promise((r) => setTimeout(r, STILL_WARTEN_MS))]);
   if (auth.status() === 'verbunden') {
     try {
       await store.laden(); // direkt nach der Einrichtung ist die Anmeldung noch da: kein zweiter Tipp nötig
     } catch {
       // bleibt beim gespeicherten Stand; das Banner bietet „Verbinden“ an
     }
+  } else if (still) {
+    still.then((ok) => (ok ? store.laden() : null)).catch(() => {}); // klappt es nicht, bietet das Banner „Verbinden“ an
   }
   const push =
     speicher && fenster && globalThis.navigator

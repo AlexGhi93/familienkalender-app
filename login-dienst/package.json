@@ -1,0 +1,17 @@
+{
+  "name": "familienkalender-login",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Login-Dienst des Familienkalenders: hält Telefone dauerhaft bei Google angemeldet (Cloudflare Worker).",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "test": "node --test \"test/*.test.js\""
+  },
+  "devDependencies": {
+    "wrangler": "4.139.0"
+  }
+}
