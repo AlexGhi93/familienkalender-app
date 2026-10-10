@@ -2,9 +2,10 @@
 // (krank, später, früher abholen, jemand anderes holt ab …). Reine Textbausteine ohne DOM, damit alle Fälle testbar sind.
 // Der Text wird vor dem Senden im Formular angezeigt und kann dort noch frei geändert werden.
 import { addDays, isWerktag } from '../domain/dates.js';
+import { EMAIL_FORM, GRUSSFORMELN, MAX_EMAIL, MAX_TELEFON, MAX_UNTERSCHRIFT, TELEFON_ZEICHEN } from '../domain/settings.js';
 import { datumLang } from './format-de.js';
 
-export const GRUSSFORMELN = Object.freeze(['Liebe Grüße', 'Viele Grüße', 'Mit freundlichen Grüßen']);
+export { GRUSSFORMELN }; // steht bei den Einstellungen (die Grußformel wird dort gespeichert und geprüft)
 
 /** Vorschläge für „Ansteckende Krankheit“ (frei änderbar). */
 export const KRANKHEITEN = Object.freeze(['Hand-Fuß-Mund-Krankheit', 'Bindehautentzündung', 'Scharlach', 'Windpocken', 'Läuse', 'Corona', 'Grippe']);
@@ -38,11 +39,11 @@ export const GRUPPEN = Object.freeze([
 
 const gross = (text) => text.charAt(0).toUpperCase() + text.slice(1);
 
-/** Grammatik der Einrichtung: „in die Krabbelstube“, aber „in den Kindergarten“. */
-function einrichtungsFormen(einrichtung) {
+/** Grammatik der Einrichtung: „in die Krabbelstube“, aber „in den Kindergarten“; `an` für Titel, `der` für „Kontakt der …“. */
+export function einrichtungsFormen(einrichtung) {
   return einrichtung === 'Kindergarten'
-    ? { team: 'Kindergarten-Team', indie: 'in den Kindergarten', name: 'Kindergarten' }
-    : { team: 'Krabbelstuben-Team', indie: 'in die Krabbelstube', name: 'Krabbelstube' };
+    ? { team: 'Kindergarten-Team', indie: 'in den Kindergarten', name: 'Kindergarten', an: 'an den Kindergarten', der: 'des Kindergartens' }
+    : { team: 'Krabbelstuben-Team', indie: 'in die Krabbelstube', name: 'Krabbelstube', an: 'an die Krabbelstube', der: 'der Krabbelstube' };
 }
 
 /** Name und Pronomen: ohne Angabe zum Kind wird statt „sie“/„er“ der Name wiederholt (nie falsch). */
@@ -133,9 +134,12 @@ export function nachrichtBetreff(anlass, angaben = {}) {
   return `${Name}: ${titel}`;
 }
 
+/** Nur Ziffern und „+“; die oft geschriebene „(0)“ nach der Ländervorwahl („+43 (0)664 …“) fällt weg. */
+const telefonZiffern = (telefon) => String(telefon ?? '').replace(/\(0\)/g, '').replace(/[^\d+]/g, '');
+
 /** Telefonnummer für wa.me: nur Ziffern mit Ländervorwahl; eine österreichische 0 am Anfang wird zu 43. Leer, wenn unbrauchbar. */
 export function whatsappNummer(telefon) {
-  let n = String(telefon ?? '').replace(/[^\d+]/g, '');
+  let n = telefonZiffern(telefon);
   if (n.startsWith('+')) n = n.slice(1);
   else if (n.startsWith('00')) n = n.slice(2);
   else if (n.startsWith('0')) n = `43${n.slice(1)}`;
@@ -146,10 +150,40 @@ export function whatsappNummer(telefon) {
 export function sendeLinks({ telefon = '', email = '', text, betreff }) {
   const t = encodeURIComponent(text);
   const wa = whatsappNummer(telefon);
-  const sms = String(telefon ?? '').replace(/[^\d+]/g, '');
+  const sms = telefonZiffern(telefon);
   return {
     whatsapp: wa ? `https://wa.me/${wa}?text=${t}` : null,
     sms: sms ? `sms:${sms}?&body=${t}` : null,
     email: email ? `mailto:${String(email).trim()}?subject=${encodeURIComponent(betreff)}&body=${t}` : null,
   };
+}
+
+// Eingaben in „Mehr“ → „Nachrichten“ prüfen: { wert } zum Speichern oder { fehler } mit dem Grund (für die Meldung).
+const einzeilig = (text) => String(text ?? '').replace(/\s+/g, ' ').trim();
+
+/** Telefonnummer der Einrichtung: '' = keine; sonst mit Vorwahl (0… oder +43 …) und 7 bis 15 Ziffern, damit WhatsApp und SMS sie finden. */
+export function telefonEingabe(text) {
+  const t = einzeilig(text);
+  if (t === '') return { wert: '' };
+  if (!TELEFON_ZEICHEN.test(t)) return { fehler: 'Telefon: bitte nur Ziffern, Leerzeichen und + - / ( ) verwenden.' };
+  if (t.length > MAX_TELEFON) return { fehler: `Telefon: höchstens ${MAX_TELEFON} Zeichen.` };
+  const ziffern = telefonZiffern(t);
+  if (!/^[+0]/.test(ziffern) || !whatsappNummer(t)) return { fehler: 'Telefon: bitte die ganze Nummer mit Vorwahl eingeben, z. B. 0664 1234567 oder +43 664 1234567.' };
+  return { wert: t };
+}
+
+/** E-Mail-Adresse der Einrichtung: '' = keine; sonst etwas@etwas.etwas. */
+export function emailEingabe(text) {
+  const t = String(text ?? '').trim();
+  if (t === '') return { wert: '' };
+  if (t.length > MAX_EMAIL) return { fehler: `E-Mail: höchstens ${MAX_EMAIL} Zeichen.` };
+  if (!EMAIL_FORM.test(t)) return { fehler: 'E-Mail: das ist keine gültige Adresse (so sieht eine aus: name@beispiel.at).' };
+  return { wert: t };
+}
+
+/** Unterschrift: eine Zeile; '' = Standard („Die Eltern von …“). */
+export function unterschriftEingabe(text) {
+  const t = einzeilig(text);
+  if (t.length > MAX_UNTERSCHRIFT) return { fehler: `Unterschrift: höchstens ${MAX_UNTERSCHRIFT} Zeichen.` };
+  return { wert: t };
 }

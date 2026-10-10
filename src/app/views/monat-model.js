@@ -2,6 +2,7 @@ import { addDays, eachDay, isWerktag, weekday } from '../../domain/dates.js';
 import { feiertagName } from '../../domain/feiertage.js';
 import { einrichtungFor } from '../../domain/modus.js';
 import { TYPES } from '../../domain/types.js';
+import { euroText } from '../../domain/format.js';
 import { MONATE, monatTitel } from '../format-de.js';
 import { FEIERTAG_EMOJI, FEIERTAG_FARBE, tagTyp, termineAm, urlaubTageSet } from './gemeinsam.js';
 
@@ -17,12 +18,23 @@ export function naechsterMonat(jahr, monat) {
 
 const tageText = (n, einzahl, mehrzahl) => `${n} ${n === 1 ? einzahl : mehrzahl}`;
 
-function statistikZeilen(zaehler, einrichtung, monat) {
+/**
+ * Essensgeld eines Monats: `anzahl` Tage mit Mittagessen × Preis pro Essen (Cent, aus den Einstellungen).
+ * null ohne Preis oder ohne Mittagessen. „ca.“, weil die Rechnung der Einrichtung z. B. Abmeldefristen anders zählen kann.
+ */
+export function essensgeld(anzahl, preisCent) {
+  if (!Number.isInteger(preisCent) || preisCent <= 0 || !Number.isInteger(anzahl) || anzahl <= 0) return null;
+  const summeCent = anzahl * preisCent;
+  return { anzahl, preisCent, summeCent, text: `Essensgeld: ca. ${euroText(summeCent / 100)} (${anzahl} × ${euroText(preisCent / 100)})` };
+}
+
+function statistikZeilen(zaehler, einrichtung, monat, geld) {
   const zeilen = [];
   if (zaehler.kita > 0) {
     const essen = zaehler.essen > 0 ? `, davon ${zaehler.essen} mit Mittagessen` : '';
     zeilen.push(`${MONATE[monat - 1]}: ${tageText(zaehler.kita, 'Tag', 'Tage')} ${einrichtung}${essen}`);
   }
+  if (geld) zeilen.push(geld.text);
   const weitere = [];
   if (zaehler.krank > 0) weitere.push(`${tageText(zaehler.krank, 'Tag', 'Tage')} krank`);
   if (zaehler.abwesend > 0) weitere.push(`${tageText(zaehler.abwesend, 'Tag', 'Tage')} abwesend`);
@@ -32,7 +44,7 @@ function statistikZeilen(zaehler, einrichtung, monat) {
   return zeilen;
 }
 
-/** Monatsraster (Montag bis Sonntag) mit allem, was pro Tag angezeigt wird, plus Statistik ohne Geldbeträge. */
+/** Monatsraster (Montag bis Sonntag) mit allem, was pro Tag angezeigt wird, plus Statistik (mit Essensgeld, wenn ein Preis eingetragen ist). */
 export function monatModel(state, jahr, monat, heute) {
   const erster = `${jahr}-${pad2(monat)}-01`;
   const folge = naechsterMonat(jahr, monat);
@@ -78,6 +90,7 @@ export function monatModel(state, jahr, monat, heute) {
 
   const wochen = [];
   for (let i = 0; i < zellen.length; i += 7) wochen.push(zellen.slice(i, i + 7));
+  const geld = essensgeld(zaehler.essen, state.settings.essenPreisCent);
 
   return {
     jahr,
@@ -86,7 +99,8 @@ export function monatModel(state, jahr, monat, heute) {
     vorher: vorherigerMonat(jahr, monat),
     nachher: naechsterMonat(jahr, monat),
     wochen,
-    statistik: statistikZeilen(zaehler, einrichtungFor(erster, state.settings), monat),
+    statistik: statistikZeilen(zaehler, einrichtungFor(erster, state.settings), monat, geld),
     zaehler,
+    essensgeld: geld,
   };
 }

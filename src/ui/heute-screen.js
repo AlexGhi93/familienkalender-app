@@ -7,6 +7,10 @@ import { TYPES } from '../domain/types.js';
 import { sacheErledigt } from './sachen-aktionen.js';
 import { zeigeRueckgaengig } from './fortschritt.js';
 import { EINKAUF_FARBE } from '../app/views/einkauf-model.js';
+import { oeffneNachricht } from './nachricht-blatt.js';
+
+/** Nach „Krank“ bzw. „Abwesend“ bietet die Meldung an, der Einrichtung gleich Bescheid zu geben (mit dieser Situation vorausgewählt). */
+const BENACHRICHTIGEN = { krank: 'unwohl', abwesend: 'familie' };
 
 function knopf(emoji, titel, untertitel, farbeHex, beiKlick) {
   return h(
@@ -72,7 +76,9 @@ function statusKarte(m, store, ui) {
   if (s.art === 'offen') {
     const setze = async (typ) => {
       await store.setTag(m.heute, typ);
-      toast('Eingetragen ✓');
+      const anlass = BENACHRICHTIGEN[typ];
+      // Die Schnellknöpfe haben kein „Rückgängig“ (dafür gibt es „Ändern“): der Platz für die Aktion in der Meldung ist frei.
+      toast('Eingetragen ✓', anlass ? { aktion: { text: 'Benachrichtigen', beiKlick: () => oeffneNachricht({ store, ui }, { anlass, tag: 'heute' }) } } : {});
     };
     return h(
       'article',
@@ -94,6 +100,16 @@ function statusKarte(m, store, ui) {
     { class: 'karte tint', style: farbe(s.farbe) },
     kopf,
     aenderbar ? h('div', { class: 'knopfzeile rechts' }, h('button', { class: 'knopf klein', type: 'button', onClick: () => ui.tagesblatt(m.heute) }, 'Ändern')) : null,
+  );
+}
+
+/** Weg zur Nachricht an die Einrichtung (krank, später, früher abholen …), jeden Tag unter der Status-Karte. */
+function nachrichtKnopf(m, store, ui) {
+  return h(
+    'button',
+    { class: 'knopf nachricht-oeffnen', type: 'button', onClick: () => oeffneNachricht({ store, ui }) },
+    h('span', { 'aria-hidden': 'true' }, '📨'),
+    ` ${m.einrichtung} benachrichtigen`,
   );
 }
 
@@ -220,7 +236,7 @@ export function heuteScreen({ store, ui }) {
     h('p', { class: 'datum' }, m.datumText),
     m.termineHeute.length > 0 ? abschnitt(`📌 Heute steht an · ${m.termineHeute.length}`, m.termineHeute.map(terminHeuteKarte)) : null,
     m.termineMorgen.length > 0 ? abschnitt(`📅 Morgen steht an · ${m.termineMorgen.length}`, m.termineMorgen.map(terminHeuteKarte)) : null,
-    abschnitt('Heute', statusKarte(m, store, ui), offeneTageKarte(m, store, ui)),
+    abschnitt('Heute', statusKarte(m, store, ui), nachrichtKnopf(m, store, ui), offeneTageKarte(m, store, ui)),
     abschnitt(`Sachen für ${m.einrichtung}`, sachenKarte(m, store, ui)),
     abschnitt(m.einkauf.anzahlOffen > 0 ? `🛒 Einkauf · ${m.einkauf.anzahlOffen}` : '🛒 Einkauf', einkaufKarte(m, ui)),
     m.konto.faellig ? abschnitt(`💶 Kontostand für ${m.konto.monatText} eintragen`, kontoHeuteKarte(m, ui)) : null,

@@ -2572,5 +2572,112 @@ html:has(.screen.einkauf) {
 @media (prefers-reduced-motion: reduce) {
   .ek-ziehen {
     transition: none;
+/* ---------- Nachrichten an Krabbelstube/Kindergarten und Essensgeld ---------- */
+
+/* Textfelder in „Mehr“ (Telefon, E-Mail, Unterschrift, Preis pro Mittagessen) */
+.feld input[type='tel'],
+.feld input[type='email'] {
+  width: 100%;
+}
+
+.feld input[aria-invalid='true'] {
+  border-color: var(--gefahr);
+  background: color-mix(in srgb, var(--gefahr) 8%, var(--karte));
+}
+
+/* 📨 Nachrichten: der Brief kippt, fliegt ein Stück nach rechts oben und kommt zurück */
+.anim-brief {
+  transform-origin: 50% 60%;
+}
+.anim-brief.spielt {
+  animation-name: m-brief;
+}
+@keyframes m-brief {
+  0%,
+  100% {
+    transform: none;
+  }
+  18% {
+    transform: translate(-2px, 2px) rotate(-14deg);
+  }
+  45% {
+    transform: translate(13px, -13px) rotate(-18deg) scale(0.85);
+  }
+  70% {
+    transform: translate(-2px, 1px) rotate(6deg);
+  }
+  86% {
+    transform: rotate(-3deg);
+  }
+}
+
+/* „Krabbelstube benachrichtigen“ auf Heute, unter der Status-Karte */
+.knopf.nachricht-oeffnen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 48px;
+  background: color-mix(in srgb, var(--urlaub) 14%, var(--karte));
+  border-color: color-mix(in srgb, var(--urlaub) 45%, transparent);
+}
+
+/* Blatt „Nachricht an …“ */
+.nachricht-details {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.nachricht-gruppe {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.nachricht-gruppe-titel {
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: var(--ink-2);
+}
+
+.feld textarea.nachricht-text {
+  min-height: 140px;
+  line-height: 1.45;
+  color: var(--ink);
+}
+
+.nachricht-kontakt {
+  gap: 10px;
+}
+
+.nachricht-kontakt p {
+  font-size: 0.95rem;
+}
+
+.nachricht-senden {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); /* zwei nebeneinander; ein einzelner Knopf nimmt die ganze Breite */
+  gap: 10px;
+}
+
+.knopf.senden {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  text-align: center;
+  text-decoration: none;
+  color: var(--ink);
+}
+
+.knopf.senden.primaer {
+  color: var(--akzent-ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .anim-brief.spielt {
+    animation: none; /* steht nach der allgemeinen Regel des Menüs und muss deshalb hier noch einmal aus */
   }
 }

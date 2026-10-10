@@ -5,6 +5,11 @@ import { farbe } from './components.js';
 
 let offen = null; // id der aufgeklappten Zeile: überlebt das Neuzeichnen der Seite (z. B. nach dem Speichern)
 
+/** Klappt beim nächsten Zeichnen die Zeile `id` auf (z. B. „Kontakt eintragen“ aus der Nachricht heraus, vor dem Wechsel nach „Mehr“). */
+export function oeffneMenueZeile(id) {
+  offen = id;
+}
+
 const SCHRITT_MS = 110; // Abstand zwischen den Symbolen beim Betreten der Seite
 const START_MS = 150;
 

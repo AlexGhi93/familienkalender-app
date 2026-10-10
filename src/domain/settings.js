@@ -6,6 +6,15 @@ export const MAX_LISTEN_EINTRAG = 30; // Zeichen je Eintrag in „Mitnehmen“- 
 export const MAX_MITNEHMEN_LISTE = 8; // Einträge je Arzt-Untertyp (wie viele Dinge ein Termin tragen kann)
 export const MAX_SACHEN_EIGENE = 20; // eigene Vorschläge für „Sachen“
 
+// Nachrichten an die Krabbelstube bzw. den Kindergarten (Texte in src/app/nachrichten.js)
+export const GRUSSFORMELN = Object.freeze(['Liebe Grüße', 'Viele Grüße', 'Mit freundlichen Grüßen']);
+export const MAX_TELEFON = 30;
+export const TELEFON_ZEICHEN = /^[\d +\-/()]*$/; // Ziffern, Leerzeichen und + - / ( )
+export const MAX_EMAIL = 80;
+export const EMAIL_FORM = /^[^\s@]+@[^\s@]+\.[^\s@]+$/; // einfache Prüfung: etwas@etwas.etwas
+export const MAX_UNTERSCHRIFT = 60;
+export const MAX_ESSEN_PREIS_CENT = 5000; // höchstens 50 € pro Mittagessen
+
 export const DEFAULT_SETTINGS = Object.freeze({
   wechseldatum: null, // 'JJJJ-MM-TT' ab dem es „Kindergarten“ heißt
   erwartung: [0, 1, 2, 3, 4], // erwartete Wochentage, Montag = 0
@@ -21,6 +30,12 @@ export const DEFAULT_SETTINGS = Object.freeze({
   vorabend: '18:00', // Erinnerung am Vorabend für „Sachen hinbringen“ (zum Vorbereiten); '' = aus
   kontoErinnerung: '18:00', // Uhrzeit der Erinnerung „Kontostand eintragen“ am letzten Tag des Monats; '' = aus
   kindname: '', // Vorname des Kindes für „Für wen“; leer = „Kind“ (steht nicht im Programmtext)
+  kindGeschlecht: '', // 'w' | 'm' für „sie“/„er“ in Nachrichten; '' = keine Angabe (dann steht der Name)
+  einrichtungTelefon: '', // Telefonnummer der Krabbelstube/des Kindergartens für WhatsApp und SMS; '' = keine
+  einrichtungEmail: '', // E-Mail-Adresse der Krabbelstube/des Kindergartens; '' = keine
+  nachrichtGruss: 'Liebe Grüße', // Grußformel unter Nachrichten (eine aus GRUSSFORMELN)
+  nachrichtUnterschrift: '', // Unterschrift unter Nachrichten; '' = „Die Eltern von …“
+  essenPreisCent: null, // Preis pro Mittagessen in Cent (für „Essensgeld“ im Monat); null = aus
 });
 
 function fehler(feld) {
@@ -63,6 +78,14 @@ function pruefeTextListe(wert, feld, max) {
     liste.push(text);
   }
   return liste;
+}
+
+/** Text mit Höchstlänge und Form (`muster`); vorne und hinten ohne Leerraum, '' ist erlaubt. */
+function pruefeText(wert, feld, max, muster = null) {
+  if (typeof wert !== 'string') throw fehler(feld);
+  const text = wert.trim();
+  if (text.length > max || (text !== '' && muster && !muster.test(text))) throw fehler(feld);
+  return text;
 }
 
 function pruefeDatumOderNull(wert, feld) {
@@ -118,6 +141,16 @@ export function normalizeSettings(gespeichert = {}) {
   const kontoErinnerung = s.kontoErinnerung === '' ? '' : pruefeZeit(s.kontoErinnerung, 'kontoErinnerung');
   const kindname = pruefeKindname(s.kindname);
 
+  if (!['', 'w', 'm'].includes(s.kindGeschlecht)) throw fehler('kindGeschlecht');
+  const einrichtungTelefon = pruefeText(s.einrichtungTelefon, 'einrichtungTelefon', MAX_TELEFON, TELEFON_ZEICHEN);
+  const einrichtungEmail = pruefeText(s.einrichtungEmail, 'einrichtungEmail', MAX_EMAIL, EMAIL_FORM);
+  if (!GRUSSFORMELN.includes(s.nachrichtGruss)) throw fehler('nachrichtGruss');
+  if (typeof s.nachrichtUnterschrift !== 'string') throw fehler('nachrichtUnterschrift');
+  const nachrichtUnterschrift = pruefeText(s.nachrichtUnterschrift.replace(/\s+/g, ' '), 'nachrichtUnterschrift', MAX_UNTERSCHRIFT);
+  if (s.essenPreisCent !== null && (!Number.isInteger(s.essenPreisCent) || s.essenPreisCent < 1 || s.essenPreisCent > MAX_ESSEN_PREIS_CENT)) {
+    throw fehler('essenPreisCent');
+  }
+
   return {
     wechseldatum,
     erwartung,
@@ -133,6 +166,12 @@ export function normalizeSettings(gespeichert = {}) {
     vorabend,
     kontoErinnerung,
     kindname,
+    kindGeschlecht: s.kindGeschlecht,
+    einrichtungTelefon,
+    einrichtungEmail,
+    nachrichtGruss: s.nachrichtGruss,
+    nachrichtUnterschrift,
+    essenPreisCent: s.essenPreisCent,
   };
 }
 
