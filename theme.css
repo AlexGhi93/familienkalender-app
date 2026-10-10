@@ -8,7 +8,8 @@
   --linie: #eadfcb;
   --akzent: #7a5ce0;
   --akzent-ink: #ffffff;
-  --gefahr: #d94a4a;
+  --gefahr: #c93c3c; /* ≥ 4.5:1 als Text auf --karte und --bg und unter weißer Schrift */
+  --gefahr-ink: #ffffff; /* Schrift auf --gefahr (Löschen-Knopf, Fehler-Meldung) */
 
   --kita: #2f9e5b;
   --kita-ohne: #8fd0a2;
@@ -39,6 +40,7 @@
     --akzent: #a68cff;
     --akzent-ink: #1f1b2e;
     --gefahr: #ff7b7b;
+    --gefahr-ink: #1f1b2e; /* helles Rot braucht dunkle Schrift (Weiß hätte nur 2,5:1) */
     --schatten: 0 1px 0 rgba(0, 0, 0, 0.2), 0 8px 22px rgba(0, 0, 0, 0.3);
     --serie-papa: #3987e5;
     --serie-mama: #d95926;
@@ -55,6 +57,7 @@
   --akzent: #a68cff;
   --akzent-ink: #1f1b2e;
   --gefahr: #ff7b7b;
+  --gefahr-ink: #1f1b2e; /* helles Rot braucht dunkle Schrift (Weiß hätte nur 2,5:1) */
   --schatten: 0 1px 0 rgba(0, 0, 0, 0.2), 0 8px 22px rgba(0, 0, 0, 0.3);
   --serie-papa: #3987e5;
   --serie-mama: #d95926;
@@ -294,7 +297,7 @@ button.chip {
 .knopf.gefahr {
   background: var(--gefahr);
   border-color: var(--gefahr);
-  color: #fff;
+  color: var(--gefahr-ink);
 }
 
 .knopfzeile {
@@ -1197,7 +1200,7 @@ small.notiz {
 
 .toast.fehler {
   background: var(--gefahr);
-  color: #fff;
+  color: var(--gefahr-ink);
 }
 
 .banner .knopf {
