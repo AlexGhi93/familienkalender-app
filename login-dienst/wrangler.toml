@@ -7,10 +7,10 @@ main = "src/index.js"
 compatibility_date = "2026-09-01"
 
 # Sitzungen (KV-Schlüssel = Hash der Sitzung, Wert = verschlüsseltes Refresh-Token).
-# PLATZHALTER: nach `npx wrangler kv namespace create SITZUNGEN` die ausgegebene id hier eintragen.
+# Angelegt mit `npx wrangler kv namespace create SITZUNGEN` (die id ist nicht geheim).
 [[kv_namespaces]]
 binding = "SITZUNGEN"
-id = "HIER-DIE-KV-ID-EINTRAGEN"
+id = "23e86a86c23c46d381e7825fd520e7d9"
 
 [vars]
 # Nur diese Seite darf den Dienst benutzen (exakter Vergleich mit dem Origin-Kopf: ohne Pfad, ohne / am Ende).
