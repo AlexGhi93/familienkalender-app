@@ -1,4 +1,4 @@
-// Darstellung zur Laufzeit wechseln (Mehr → Darstellung). Beim Start übernimmt src/theme-init.js dasselbe vor dem Zeichnen.
+// Darstellung zur Laufzeit wechseln (Konto & App → Darstellung). Beim Start übernimmt src/theme-init.js dasselbe vor dem Zeichnen.
 import { DARSTELLUNG_SCHLUESSEL, gueltigeDarstellung, themeAttribut, themeFarben } from '../domain/darstellung.js';
 
 /** Gespeicherte Wahl dieses Telefons ('auto' | 'hell' | 'dunkel'); ohne Speicher oder bei Fehlern 'auto'. */

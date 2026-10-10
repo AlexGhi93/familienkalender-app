@@ -12,7 +12,7 @@ async function kopieren(text) {
   }
 }
 
-/** „Mehr“: Konto bei Google (Status, neu anmelden, Code, Anleitung) bzw. im Demo-Modus der Weg zu Google. Gibt { oben, unten } zurück (leer ohne `ui.konto`). */
+/** „Konto & App“: Konto bei Google (Status, neu anmelden, Code, Anleitung) bzw. im Demo-Modus der Weg zu Google. Gibt { oben, unten } zurück (leer ohne `ui.konto`). */
 export function kontoKarten({ store, ui }) {
   const konto = ui.konto;
   if (!konto) return { oben: [], unten: [] };

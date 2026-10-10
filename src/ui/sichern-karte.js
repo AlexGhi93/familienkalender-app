@@ -1,4 +1,4 @@
-// „Mehr“ → Sicherung: den ganzen Verlauf holen und als Datei speichern. Zwei Schritte (Vorbereiten, dann Speichern),
+// „Konto & App“ → Sicherung: den ganzen Verlauf holen und als Datei speichern. Zwei Schritte (Vorbereiten, dann Speichern),
 // weil Teilen/Herunterladen auf dem iPhone eine direkte Berührung braucht und das Holen etwas dauern kann.
 import { fuelle, h } from './dom.js';
 import { toast } from './components.js';
@@ -7,7 +7,7 @@ import { sicherungAnzahlText, sicherungDateiname, sicherungErstellen, sicherungT
 
 let bereit = null; // { text, name, anzahl }: bleibt erhalten, wenn die Seite neu gezeichnet wird
 
-const MELDUNG_ANMELDEN = 'Bitte zuerst neu anmelden (Mehr → Konto → Neu anmelden).';
+const MELDUNG_ANMELDEN = 'Bitte zuerst neu anmelden (Mehr → Konto & App → Neu anmelden).';
 const fehlerText = (fehler) => (fehler?.name === 'AuthAbgelaufen' ? MELDUNG_ANMELDEN : fehler?.message || 'Das hat nicht geklappt. Bitte noch einmal versuchen.');
 
 const istApple = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);

@@ -2154,3 +2154,361 @@ figure.diagramm {
   flex-direction: column;
   gap: 12px;
 }
+
+/* ---------- Menü in „Mehr“ (src/ui/menue.js) ---------- */
+
+.menue {
+  padding: 6px;
+  gap: 0;
+}
+
+.menue-eintrag {
+  --c: var(--grau);
+  border-top: 1px solid var(--linie);
+  scroll-margin-top: 12px;
+}
+
+.menue-eintrag:first-child,
+.menue-eintrag.offen,
+.menue-eintrag.offen + .menue-eintrag {
+  border-top-color: transparent;
+}
+
+.menue-eintrag.offen {
+  background: color-mix(in srgb, var(--c) 9%, var(--karte));
+  border-radius: var(--radius-klein);
+}
+
+.menue-zeile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 62px;
+  padding: 8px;
+  border: 0;
+  border-radius: var(--radius-klein);
+  background: none;
+  text-align: left;
+}
+
+.menue-kachel {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--c) 22%, var(--karte));
+  border: 1.5px solid color-mix(in srgb, var(--c) 50%, transparent);
+  overflow: hidden;
+  transition: transform 0.12s ease;
+}
+
+.menue-zeile:active .menue-kachel {
+  transform: scale(0.92);
+}
+
+.menue-symbol {
+  display: inline-block;
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.menue-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.menue-text b {
+  font-size: 1.02rem;
+}
+
+.menue-text small {
+  color: var(--ink-2);
+  font-size: 0.85rem;
+}
+
+.menue-text .menue-status {
+  font-weight: 700;
+}
+
+.menue-text .menue-status.warnung {
+  color: var(--gefahr);
+}
+
+.menue-pfeil {
+  flex: none;
+  width: 20px;
+  text-align: center;
+  color: var(--ink-2);
+  font-size: 1.5rem;
+  line-height: 1;
+  transition: transform 0.2s ease;
+}
+
+.menue-eintrag.klappt .menue-pfeil {
+  transform: rotate(90deg);
+}
+
+.menue-eintrag.offen .menue-pfeil {
+  transform: rotate(-90deg);
+}
+
+.menue-inhalt {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 2px 10px 14px;
+}
+
+.menue-inhalt.aufgehend {
+  animation: menue-auf 0.22s ease-out both;
+}
+
+@keyframes menue-auf {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Jedes Symbol hat seine eigene kurze Bewegung; sie spielt beim Betreten von „Mehr“ (nacheinander) und beim Antippen. */
+.menue-symbol.spielt {
+  animation-duration: 0.9s;
+  animation-timing-function: ease-in-out;
+  animation-delay: var(--verzoegerung, 0ms);
+  animation-fill-mode: both;
+}
+
+/* 👤 Konto & App: nickt freundlich */
+.anim-nicken {
+  transform-origin: 50% 100%;
+}
+.anim-nicken.spielt {
+  animation-name: m-nicken;
+}
+@keyframes m-nicken {
+  0%,
+  100% {
+    transform: none;
+  }
+  25% {
+    transform: translateY(-4px) rotate(-10deg);
+  }
+  50% {
+    transform: rotate(8deg);
+  }
+  75% {
+    transform: translateY(-2px) rotate(-4deg);
+  }
+}
+
+/* 📅 Betreuung: das Kalenderblatt wird umgeschlagen */
+.anim-blatt {
+  transform-origin: 50% 0%;
+}
+.anim-blatt.spielt {
+  animation-name: m-blatt;
+}
+@keyframes m-blatt {
+  0%,
+  100% {
+    transform: perspective(160px) rotateX(0deg);
+  }
+  35% {
+    transform: perspective(160px) rotateX(-80deg);
+  }
+  60% {
+    transform: perspective(160px) rotateX(18deg);
+  }
+  80% {
+    transform: perspective(160px) rotateX(-6deg);
+  }
+}
+
+/* 👶 Familie: schaukelt hin und her */
+.anim-wiegen {
+  transform-origin: 50% 90%;
+}
+.anim-wiegen.spielt {
+  animation-name: m-wiegen;
+}
+@keyframes m-wiegen {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  20% {
+    transform: rotate(-16deg);
+  }
+  40% {
+    transform: rotate(14deg);
+  }
+  60% {
+    transform: rotate(-9deg);
+  }
+  80% {
+    transform: rotate(5deg);
+  }
+}
+
+/* ⏰ Zeiten für Sachen: klingelt wie ein Wecker */
+.anim-klingeln.spielt {
+  animation-name: m-klingeln;
+}
+@keyframes m-klingeln {
+  0%,
+  80%,
+  100% {
+    transform: rotate(0deg) scale(1);
+  }
+  8% {
+    transform: rotate(-18deg) scale(1.12);
+  }
+  16% {
+    transform: rotate(16deg) scale(1.12);
+  }
+  24% {
+    transform: rotate(-16deg) scale(1.12);
+  }
+  32% {
+    transform: rotate(14deg) scale(1.12);
+  }
+  40% {
+    transform: rotate(-12deg) scale(1.1);
+  }
+  48% {
+    transform: rotate(10deg) scale(1.08);
+  }
+  56% {
+    transform: rotate(-6deg) scale(1.04);
+  }
+  64% {
+    transform: rotate(3deg) scale(1.02);
+  }
+}
+
+/* ✈️ Urlaub: fliegt oben rechts hinaus und kommt unten links wieder herein */
+.anim-fliegen.spielt {
+  animation-name: m-fliegen;
+  animation-duration: 1.2s;
+}
+@keyframes m-fliegen {
+  0%,
+  100% {
+    transform: translate(0, 0);
+    opacity: 1;
+  }
+  40% {
+    transform: translate(30px, -30px);
+    opacity: 0;
+  }
+  41% {
+    transform: translate(-30px, 30px);
+    opacity: 0;
+  }
+  80% {
+    transform: translate(2px, -2px);
+    opacity: 1;
+  }
+}
+
+/* 🩺 Mitnehmen beim Arzt: schlägt wie ein Herz (zweimal) */
+.anim-herz.spielt {
+  animation-name: m-herz;
+}
+@keyframes m-herz {
+  0%,
+  55%,
+  100% {
+    transform: scale(1);
+  }
+  12% {
+    transform: scale(1.28);
+  }
+  24% {
+    transform: scale(1);
+  }
+  36% {
+    transform: scale(1.2);
+  }
+}
+
+/* 🎒 Eigene Sachen: hüpft zweimal */
+.anim-huepfen {
+  transform-origin: 50% 100%;
+}
+.anim-huepfen.spielt {
+  animation-name: m-huepfen;
+}
+@keyframes m-huepfen {
+  0%,
+  100% {
+    transform: translateY(0) scale(1, 1);
+  }
+  15% {
+    transform: translateY(0) scale(1.12, 0.88);
+  }
+  35% {
+    transform: translateY(-12px) scale(0.94, 1.06);
+  }
+  55% {
+    transform: translateY(0) scale(1.08, 0.92);
+  }
+  70% {
+    transform: translateY(-5px) scale(1, 1);
+  }
+  85% {
+    transform: translateY(0) scale(1.03, 0.97);
+  }
+}
+
+/* 💶 Kontostand: dreht sich wie eine Münze */
+.anim-muenze.spielt {
+  animation-name: m-muenze;
+}
+@keyframes m-muenze {
+  from {
+    transform: perspective(160px) rotateY(0deg);
+  }
+  to {
+    transform: perspective(160px) rotateY(360deg);
+  }
+}
+
+/* 📜 Verlauf: rollt sich zusammen und wieder auf */
+.anim-rolle {
+  transform-origin: 50% 0%;
+}
+.anim-rolle.spielt {
+  animation-name: m-rolle;
+}
+@keyframes m-rolle {
+  0%,
+  100% {
+    transform: scale(1, 1);
+  }
+  30% {
+    transform: scale(1, 0.25);
+  }
+  65% {
+    transform: scale(1, 1.12);
+  }
+  82% {
+    transform: scale(1, 0.96);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .menue-symbol.spielt,
+  .menue-inhalt.aufgehend {
+    animation: none;
+  }
+}
