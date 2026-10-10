@@ -1,0 +1,19 @@
+# Login-Dienst des Familienkalenders (Cloudflare Worker, Gratis-Tarif). Anleitung: README.md.
+# Diese Datei ist öffentlich: hier stehen KEINE Geheimnisse. Das Client-Secret kommt nur per
+#   npx wrangler secret put GOOGLE_CLIENT_SECRET
+# zu Cloudflare (verschlüsselt gespeichert, nie im Repository).
+name = "familienkalender-login"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+# Sitzungen (KV-Schlüssel = Hash der Sitzung, Wert = verschlüsseltes Refresh-Token).
+# PLATZHALTER: nach `npx wrangler kv namespace create SITZUNGEN` die ausgegebene id hier eintragen.
+[[kv_namespaces]]
+binding = "SITZUNGEN"
+id = "HIER-DIE-KV-ID-EINTRAGEN"
+
+[vars]
+# Nur diese Seite darf den Dienst benutzen (exakter Vergleich mit dem Origin-Kopf: ohne Pfad, ohne / am Ende).
+ERLAUBTE_HERKUNFT = "https://alexghi93.github.io"
+# Öffentliche OAuth-Client-ID (dieselbe wie in src/calendar/config.js der App).
+GOOGLE_CLIENT_ID = "154849350786-nv47ddiarefk30v8qull88cpuj2nu8t3.apps.googleusercontent.com"

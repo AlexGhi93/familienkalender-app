@@ -1,0 +1,58 @@
+name: Tests
+
+on:
+  push:
+    branches: [main, 'claude/**', 'agent/**']
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: Unit-Tests (node:test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            login-dienst/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - name: Login-Dienst (Cloudflare Worker)
+        working-directory: login-dienst
+        run: |
+          npm ci
+          npm test
+
+  e2e:
+    name: End-to-End-Tests (Playwright, Chromium)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - name: Bericht hochladen (nur bei Fehlern)
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14

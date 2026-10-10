@@ -18,6 +18,9 @@ let demoMonat = null; // in der Demo gewählter Monat des Formulars
 let nachtragMonat = null; // gewählter Monat beim Nachtragen
 let bereich = 12; // Zeitraum der Diagramme (6, 12 oder 0 = alles)
 const extraEntwurf = { offen: false, person: 'papa', monat: null, ausgabe: false, betrag: '', text: '' };
+const SPAREN_SICHTBAR = 3; // „Sparen pro Monat“ zeigt zuerst nur die neuesten Monate
+let aeltereOffen = false; // ältere Monate in „Sparen pro Monat“ aufgeklappt
+let sonderInfoOffen = false; // Erklärung „Was sind Sonderbeträge?“ aufgeklappt
 
 /** Eingabe + „Im Minus“ → ganze Cent oder null. Ein eingetipptes „−“ gilt wie der Schalter. */
 function betragAusFeld(text, minus) {
@@ -262,6 +265,42 @@ function oeffneKorrektur(z, { store }) {
   });
 }
 
+/**
+ * „Sparen pro Monat“: die neuesten Monate gleich, die älteren hinter „Ältere anzeigen (N)“. Auf- und Zuklappen ohne Neuzeichnen
+ * (der Fokus bleibt auf dem Knopf); beim Neuzeichnen gilt `aeltereOffen`.
+ */
+function sparenAbschnitt(m, { store }) {
+  const karten = m.zeilen.map((r) => zeile(r, () => oeffneKorrektur(r, { store })));
+  const aeltere = karten.slice(SPAREN_SICHTBAR);
+  const beschriftung = () => (aeltereOffen ? 'Weniger anzeigen' : `Ältere anzeigen (${aeltere.length})`);
+  const zeigen = () => {
+    for (const k of aeltere) k.hidden = !aeltereOffen;
+  };
+  zeigen();
+  const knopf =
+    aeltere.length > 0
+      ? h(
+          'button',
+          {
+            class: 'knopf klein',
+            type: 'button',
+            'aria-expanded': String(aeltereOffen),
+            onClick: () => {
+              const vorher = knopf.getBoundingClientRect().top;
+              aeltereOffen = !aeltereOffen;
+              zeigen();
+              knopf.textContent = beschriftung();
+              knopf.setAttribute('aria-expanded', String(aeltereOffen));
+              // Beim Zuklappen bleibt der Knopf an seiner Stelle auf dem Bildschirm, statt mit der Liste nach oben zu verschwinden
+              if (!aeltereOffen) globalThis.scrollBy(0, knopf.getBoundingClientRect().top - vorher);
+            },
+          },
+          beschriftung(),
+        )
+      : null;
+  return abschnitt('Sparen pro Monat', h('p', { class: 'leise' }, 'Veränderung des Kontostands: Gehalt, Rückzahlungen und Abbuchungen zählen mit. Antippen, um einen Eintrag zu korrigieren oder zu löschen.'), karten, knopf);
+}
+
 // ---------- Sonderbeträge ----------
 
 function extraFormular(m, { store, ui }) {
@@ -375,10 +414,22 @@ function sonderbetraegeKarte(m, ctx) {
     },
     '＋ Sonderbetrag',
   );
+  const info = h(
+    'details',
+    {
+      class: 'anleitung',
+      open: sonderInfoOffen,
+      onToggle: (ev) => {
+        sonderInfoOffen = ev.currentTarget.open;
+      },
+    },
+    h('summary', {}, 'ⓘ Was sind Sonderbeträge?'),
+    h('p', { class: 'leise' }, 'Das ist nicht der Kontostand: Hier trägst du nur einmalige Beträge ein, zum Beispiel Weihnachtsgeld, einen Bonus oder eine größere Reparatur. Sonderbeträge ändern keinen Kontostand, werden aber aus der Ersparnis herausgerechnet („ohne Extra“). Sie lassen sich jederzeit eintragen und einzeln löschen.'),
+  );
   return h(
     'article',
     { class: 'karte' },
-    h('p', { class: 'leise' }, 'Das ist nicht der Kontostand: Hier trägst du nur einmalige Beträge ein, zum Beispiel Weihnachtsgeld, einen Bonus oder eine größere Reparatur. Sonderbeträge ändern keinen Kontostand, werden aber aus der Ersparnis herausgerechnet („ohne Extra“). Sie lassen sich jederzeit eintragen und einzeln löschen.'),
+    info,
     f.voll ? h('p', { class: 'leise' }, 'Es sind 40 Sonderbeträge eingetragen (das Maximum). Bitte erst ältere löschen.') : null,
     extraEntwurf.offen && !f.voll ? extraFormular(m, ctx) : h('div', { class: 'knopfzeile' }, neu),
     m.sonderbetraege.length > 0 ? extraListe(m, ctx) : h('p', { class: 'leise' }, 'Noch keine Sonderbeträge.'),
@@ -393,7 +444,6 @@ export function kontoScreen({ store, ui }) {
   return h(
     'section',
     { class: 'screen konto' },
-    h('button', { class: 'zurueck', type: 'button', onClick: () => ui.gehZu('mehr') }, '‹ Zurück'),
     h('h1', { class: 'gruss' }, 'Kontostand 💶'),
     h('p', { class: 'datum' }, 'Am letzten Tag des Monats tragt ihr den Gesamtstand eurer Konten ein; so seht ihr, wie viel ihr spart.'),
     m.eintrag ? eintragKarte(m, ctx) : h('article', { class: 'karte hinweis' }, h('div', { class: 'karte-zeile' }, h('span', { class: 'emoji' }, '🗓️'), h('div', { class: 'karte-text' }, h('b', {}, m.naechster), h('small', {}, 'Frühere Monate trägst du weiter unten mit „Nachtragen“ ein.')))),
@@ -412,8 +462,6 @@ export function kontoScreen({ store, ui }) {
     m.balken.length > 0 ? abschnitt('Veränderung pro Monat (zusammen)', balkenDiagramm(m)) : null,
     !m.leer && !m.diagramm ? h('p', { class: 'leise' }, 'Das Diagramm erscheint ab dem zweiten Monat mit einem Kontostand. Der erste Eintrag ist der Startwert.') : null,
     abschnitt('Sonderbeträge', sonderbetraegeKarte(m, ctx)),
-    m.zeilen.length > 0
-      ? abschnitt('Sparen pro Monat', h('p', { class: 'leise' }, 'Veränderung des Kontostands: Gehalt, Rückzahlungen und Abbuchungen zählen mit. Antippen, um einen Eintrag zu korrigieren oder zu löschen.'), ...m.zeilen.map((r) => zeile(r, () => oeffneKorrektur(r, { store }))))
-      : null,
+    m.zeilen.length > 0 ? sparenAbschnitt(m, ctx) : null,
   );
 }

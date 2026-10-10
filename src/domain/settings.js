@@ -6,6 +6,22 @@ export const MAX_LISTEN_EINTRAG = 30; // Zeichen je Eintrag in „Mitnehmen“- 
 export const MAX_MITNEHMEN_LISTE = 8; // Einträge je Arzt-Untertyp (wie viele Dinge ein Termin tragen kann)
 export const MAX_SACHEN_EIGENE = 20; // eigene Vorschläge für „Sachen“
 
+// Nachrichten an die Krabbelstube bzw. den Kindergarten (Texte in src/app/nachrichten.js)
+export const GRUSSFORMELN = Object.freeze(['Liebe Grüße', 'Viele Grüße', 'Mit freundlichen Grüßen']);
+export const MAX_TELEFON = 30;
+export const TELEFON_ZEICHEN = /^[\d +\-/()]*$/; // Ziffern, Leerzeichen und + - / ( )
+export const MAX_EMAIL = 80;
+export const EMAIL_FORM = /^[^\s@]+@[^\s@]+\.[^\s@]+$/; // einfache Prüfung: etwas@etwas.etwas
+export const MAX_UNTERSCHRIFT = 60;
+export const MAX_ESSEN_PREIS_CENT = 5000; // höchstens 50 € pro Mittagessen
+
+// Bringen & Abholen: wer das Kind hinbringt (b) und wer es abholt (h); '' = niemand eingetragen (Hilfen in src/domain/dienst.js)
+export const DIENST_PERSONEN = Object.freeze(['', 'papa', 'mama']);
+export const DIENST_ROLLEN = Object.freeze(['b', 'h']);
+export const DIENST_ERINNERUNG = Object.freeze(['beide', 'dienst']);
+export const MAX_DIENST_AUSNAHMEN = 60; // einzelne Tage; beim Speichern fliegen die ältesten zuerst raus
+const leererWochenplan = () => ['', '', '', '', '', '', ''];
+
 export const DEFAULT_SETTINGS = Object.freeze({
   wechseldatum: null, // 'JJJJ-MM-TT' ab dem es „Kindergarten“ heißt
   erwartung: [0, 1, 2, 3, 4], // erwartete Wochentage, Montag = 0
@@ -21,6 +37,15 @@ export const DEFAULT_SETTINGS = Object.freeze({
   vorabend: '18:00', // Erinnerung am Vorabend für „Sachen hinbringen“ (zum Vorbereiten); '' = aus
   kontoErinnerung: '18:00', // Uhrzeit der Erinnerung „Kontostand eintragen“ am letzten Tag des Monats; '' = aus
   kindname: '', // Vorname des Kindes für „Für wen“; leer = „Kind“ (steht nicht im Programmtext)
+  kindGeschlecht: '', // 'w' | 'm' für „sie“/„er“ in Nachrichten; '' = keine Angabe (dann steht der Name)
+  einrichtungTelefon: '', // Telefonnummer der Krabbelstube/des Kindergartens für WhatsApp und SMS; '' = keine
+  einrichtungEmail: '', // E-Mail-Adresse der Krabbelstube/des Kindergartens; '' = keine
+  nachrichtGruss: 'Liebe Grüße', // Grußformel unter Nachrichten (eine aus GRUSSFORMELN)
+  nachrichtUnterschrift: '', // Unterschrift unter Nachrichten; '' = „Die Eltern von …“
+  essenPreisCent: null, // Preis pro Mittagessen in Cent (für „Essensgeld“ im Monat); null = aus
+  dienstplan: Object.freeze({ b: Object.freeze(leererWochenplan()), h: Object.freeze(leererWochenplan()) }), // je Wochentag (Montag = 0): '' | 'papa' | 'mama'
+  dienstAusnahmen: Object.freeze({}), // einzelne Tage: { 'JJJJ-MM-TT': { b?, h? } } – überschreibt den Wochenplan
+  dienstErinnerung: 'beide', // Push für Sachen: 'beide' = an alle Telefone, 'dienst' = nur an wer bringt bzw. holt
 });
 
 function fehler(feld) {
@@ -63,6 +88,45 @@ function pruefeTextListe(wert, feld, max) {
     liste.push(text);
   }
   return liste;
+}
+
+/** Text mit Höchstlänge und Form (`muster`); vorne und hinten ohne Leerraum, '' ist erlaubt. */
+function pruefeText(wert, feld, max, muster = null) {
+  if (typeof wert !== 'string') throw fehler(feld);
+  const text = wert.trim();
+  if (text.length > max || (text !== '' && muster && !muster.test(text))) throw fehler(feld);
+  return text;
+}
+
+const istObjekt = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
+
+/** Wochenplan { b: [7], h: [7] } mit '' | 'papa' | 'mama'; Ungültiges wirft. */
+function pruefeDienstplan(wert) {
+  if (!istObjekt(wert) || Object.keys(wert).some((k) => !DIENST_ROLLEN.includes(k))) throw fehler('dienstplan');
+  const plan = {};
+  for (const rolle of DIENST_ROLLEN) {
+    const liste = wert[rolle];
+    if (!Array.isArray(liste) || liste.length !== 7 || liste.some((p) => !DIENST_PERSONEN.includes(p))) throw fehler('dienstplan');
+    plan[rolle] = [...liste];
+  }
+  return plan;
+}
+
+/** Ausnahmen je Tag, nach Datum sortiert; leere Tage fallen weg, über MAX_DIENST_AUSNAHMEN bleiben die neuesten. Ungültiges wirft. */
+function pruefeDienstAusnahmen(wert) {
+  if (!istObjekt(wert)) throw fehler('dienstAusnahmen');
+  const tage = [];
+  for (const [datum, eintrag] of Object.entries(wert)) {
+    if (!isValidDate(datum) || !istObjekt(eintrag)) throw fehler('dienstAusnahmen');
+    const tag = {};
+    for (const [rolle, person] of Object.entries(eintrag)) {
+      if (!DIENST_ROLLEN.includes(rolle) || !DIENST_PERSONEN.includes(person)) throw fehler('dienstAusnahmen');
+      tag[rolle] = person;
+    }
+    if (Object.keys(tag).length > 0) tage.push([datum, tag]);
+  }
+  tage.sort(([a], [b]) => a.localeCompare(b));
+  return Object.fromEntries(tage.slice(-MAX_DIENST_AUSNAHMEN));
 }
 
 function pruefeDatumOderNull(wert, feld) {
@@ -118,6 +182,19 @@ export function normalizeSettings(gespeichert = {}) {
   const kontoErinnerung = s.kontoErinnerung === '' ? '' : pruefeZeit(s.kontoErinnerung, 'kontoErinnerung');
   const kindname = pruefeKindname(s.kindname);
 
+  if (!['', 'w', 'm'].includes(s.kindGeschlecht)) throw fehler('kindGeschlecht');
+  const einrichtungTelefon = pruefeText(s.einrichtungTelefon, 'einrichtungTelefon', MAX_TELEFON, TELEFON_ZEICHEN);
+  const einrichtungEmail = pruefeText(s.einrichtungEmail, 'einrichtungEmail', MAX_EMAIL, EMAIL_FORM);
+  if (!GRUSSFORMELN.includes(s.nachrichtGruss)) throw fehler('nachrichtGruss');
+  if (typeof s.nachrichtUnterschrift !== 'string') throw fehler('nachrichtUnterschrift');
+  const nachrichtUnterschrift = pruefeText(s.nachrichtUnterschrift.replace(/\s+/g, ' '), 'nachrichtUnterschrift', MAX_UNTERSCHRIFT);
+  if (s.essenPreisCent !== null && (!Number.isInteger(s.essenPreisCent) || s.essenPreisCent < 1 || s.essenPreisCent > MAX_ESSEN_PREIS_CENT)) {
+    throw fehler('essenPreisCent');
+  }
+  const dienstplan = pruefeDienstplan(s.dienstplan);
+  const dienstAusnahmen = pruefeDienstAusnahmen(s.dienstAusnahmen);
+  if (!DIENST_ERINNERUNG.includes(s.dienstErinnerung)) throw fehler('dienstErinnerung');
+
   return {
     wechseldatum,
     erwartung,
@@ -133,6 +210,15 @@ export function normalizeSettings(gespeichert = {}) {
     vorabend,
     kontoErinnerung,
     kindname,
+    kindGeschlecht: s.kindGeschlecht,
+    einrichtungTelefon,
+    einrichtungEmail,
+    nachrichtGruss: s.nachrichtGruss,
+    nachrichtUnterschrift,
+    essenPreisCent: s.essenPreisCent,
+    dienstplan,
+    dienstAusnahmen,
+    dienstErinnerung: s.dienstErinnerung,
   };
 }
 

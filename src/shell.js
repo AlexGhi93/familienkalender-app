@@ -18,6 +18,7 @@ import { verbindenKarte, verbindungsBanner, versionsBanner } from './ui/verbindu
 import { VERSION } from './app/version.js';
 import { istNeueVersionVerfuegbar } from './app/version-check.js';
 import { fortschrittLeiste } from './ui/fortschritt.js';
+import { createEinkaufAbgleich } from './app/einkauf-abgleich.js';
 
 const SEITEN = {
   heute: heuteScreen,
@@ -25,19 +26,22 @@ const SEITEN = {
   neu: neuScreen,
   urlaub: urlaubScreen,
   mehr: mehrScreen,
-  einkauf: einkaufScreen, // keine eigene Registerkarte: erreichbar von „Heute“ (Karte) und „Neu“ (Kachel)
+  einkauf: einkaufScreen, // Registerkarte; auch erreichbar von „Heute“ (Karte) und „Neu“ (Kachel)
   verlauf: verlaufScreen, // erreichbar von „Mehr“
-  konto: kontoScreen, // „Kontostand“: erreichbar von „Mehr“, „Heute“ (am letzten Tag) und der Erinnerung
+  konto: kontoScreen, // „Kontostand“: Registerkarte; auch erreichbar von „Mehr“, „Heute“ (am letzten Tag) und der Erinnerung
   app: appScreen, // „Konto & App“: erreichbar von „Mehr“
 };
 
-const SEITEN_TITEL = { einkauf: 'Einkauf', verlauf: 'Verlauf', konto: 'Kontostand', app: 'Konto & App' }; // Seiten ohne Registerkarte
+const SEITEN_TITEL = { einkauf: 'Einkauf', verlauf: 'Verlauf', konto: 'Kontostand', app: 'Konto & App' }; // Fenstertitel, wo er von der Registerkarte abweicht oder es keine gibt
 
+// Drei links, „Neu“ in der Mitte, drei rechts. „Kontostand“ passt bei sieben Karten nicht in die Leiste, daher kurz „Konto“.
 const TABS = [
   ['heute', '🏠', 'Heute'],
   ['monat', '📅', 'Monat'],
+  ['einkauf', '🛒', 'Einkauf'],
   ['neu', '＋', 'Neu'],
   ['urlaub', '✈️', 'Urlaub'],
+  ['konto', '💶', 'Konto'],
   ['mehr', '⚙️', 'Mehr'],
 ];
 
@@ -67,6 +71,12 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
   const jetztMonat = () => {
     const { y, m } = parseDate(store.heute());
     return { jahr: y, monat: m };
+  };
+
+  /** Google ist gerade nutzbar: angemeldet, frisch geladen (nicht nur der gespeicherte Stand) und nichts wartet auf die Anmeldung. */
+  const googleBereit = () => {
+    const state = store.getState();
+    return Boolean(auth) && auth.status() === 'verbunden' && state.geladen && !state.nurSnapshot && !state.anmeldungNoetig;
   };
 
   /** Anmelden (im Tipp!), danach Wartendes speichern und alles neu laden. */
@@ -118,7 +128,7 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
       const scrollY = fenster.scrollY;
       ui.bannerAktualisieren();
       if (auth && !state.geladen) {
-        fuelle(inhalt, verbindenKarte({ verbinden, verbindung: ui.verbindung }));
+        fuelle(inhalt, verbindenKarte({ verbinden, verbindung: ui.verbindung, login: auth.dauerAnmeldung?.() ?? null }));
       } else {
         ui.seiteBetreten = seite !== letzteSeite;
         letzteSeite = seite;
@@ -130,7 +140,18 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
       inhalt.scrollTop = alt;
       fenster.scrollTo(0, scrollY);
       fuelle(leiste, TABS.map(([id, symbol, text]) => tab(id, symbol, text, seite)));
-      document.title = `${ui.titel()} · ${TABS.find(([id]) => id === seite)?.[2] ?? SEITEN_TITEL[seite]}`;
+      document.title = `${ui.titel()} · ${SEITEN_TITEL[seite] ?? TABS.find(([id]) => id === seite)?.[2]}`;
+      einkaufAbgleich.pruefen(); // Einkaufsliste offen (und Google verbunden): alle 30 Sekunden nachsehen, sonst nicht
+    },
+    /**
+     * Holt nur die Einkaufsliste neu (alle 30 Sekunden, beim Zurückkehren, „Ziehen zum Aktualisieren“); Ergebnis wie store.einkaufAktualisieren.
+     * In der Demo gibt es kein anderes Telefon: dort ist die Liste immer aktuell.
+     */
+    async einkaufAktualisieren() {
+      if (auth && !googleBereit()) return 'getrennt';
+      const ergebnis = await store.einkaufAktualisieren();
+      ui.einkaufStandZeichnen?.(); // „Aktualisiert um …“ auch dann, wenn sich nichts geändert hat (dann wird nicht neu gezeichnet)
+      return ergebnis;
     },
     /** Lädt den angezeigten Monat (samt Randwochen) nach, falls er außerhalb des geladenen Fensters liegt. */
     monatLaden() {
@@ -168,8 +189,9 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
       ui.rendern();
     },
     tagesblatt: (date) => oeffneTagesblatt({ store, ui }, date),
-    neuTerminStarten(art, termin = null) {
-      ui.neu = terminEntwurf(art, { settings: store.getState().settings, heute: store.heute(), termin, state: store.getState() });
+    /** Formular für einen neuen Termin der Art `art` (oder `termin` bearbeiten); `datum` = Tag, mit dem ein neuer Eintrag beginnt (sonst der Vorschlag). */
+    neuTerminStarten(art, termin = null, { datum = null } = {}) {
+      ui.neu = terminEntwurf(art, { settings: store.getState().settings, heute: store.heute(), termin, state: store.getState(), datum });
       ui.gehZu('neu');
     },
     terminBearbeiten(id) {
@@ -202,6 +224,13 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
       h('span', { class: 'tab-text' }, text),
     );
   }
+
+  const einkaufAbgleich = createEinkaufAbgleich({
+    aktiv: () => ui.seite() === 'einkauf' && document.visibilityState === 'visible' && googleBereit(),
+    holen: () => ui.einkaufAktualisieren(),
+    zuletzt: () => store.einkaufGeprueftAm(),
+    jetzt: () => store.jetzt().getTime(),
+  });
 
   fenster.addEventListener('hashchange', () => ui.rendern());
 
@@ -242,16 +271,31 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
     }
   });
 
+  /** Login-Dienst: still (ohne Google-Fenster) ein frisches Token holen; hat etwas auf die Anmeldung gewartet, wird es jetzt gespeichert und neu geladen. */
+  async function stillVerbinden() {
+    if (ui.verbindung.laeuft || !(await auth.stillAnmelden())) return; // klappt es nicht, bleibt „Verbinden“ im Banner
+    if (!store.getState().anmeldungNoetig) {
+      await store.aktualisieren();
+      return;
+    }
+    await store.wiederholeAusstehende();
+    await store.laden();
+  }
+
   // Rückkehr in die App (z. B. am nächsten Tag): neu zeichnen, damit „heute“ stimmt, und – mit gültiger Anmeldung – höchstens einmal pro Minute neu laden.
   document.addEventListener('visibilitychange', () => {
+    einkaufAbgleich.pruefen(); // im Hintergrund ruht der Zeitgeber der Einkaufsliste
     if (document.visibilityState !== 'visible') return;
     ui.rendern();
-    if (auth) store.aktualisieren();
+    if (auth?.dauerAnmeldung?.()?.dauerhaft) stillVerbinden().catch(() => {});
+    else if (auth) store.aktualisieren();
+    einkaufAbgleich.sofort(); // zurück auf der Einkaufsliste: gleich einmal nachsehen
     versionPruefen();
   });
 
   if (auth) {
-    auth.onStatus(() => ui.bannerAktualisieren());
+    // Mit Login-Dienst und noch ohne Daten ganz neu zeichnen: die große Anmelde-Karte zeigt die stille Anmeldung mit an.
+    auth.onStatus(() => (auth.dauerAnmeldung?.() && !store.getState().geladen ? ui.rendern() : ui.bannerAktualisieren()));
     setInterval(() => ui.bannerAktualisieren(), BANNER_INTERVALL_MS); // „läuft bald ab“ erscheint ohne Zutun
     auth.vorbereiten(); // Google schon laden, damit der Anmelde-Tipp sofort wirkt
   }

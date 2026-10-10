@@ -3,6 +3,7 @@ import { bestaetigen, blatt, chip, farbe, toast } from './components.js';
 import { tagModel } from '../app/views/tag-model.js';
 import { datumLang } from '../app/format-de.js';
 import { sacheErledigt, sacheLoeschen } from './sachen-aktionen.js';
+import { dienstImBlatt } from './bringen-holen.js';
 
 function eintragZeile(e, { store, ui }, schliessen) {
   // Der Titel beginnt schon mit dem Emoji der Zeile; es steht links und nicht doppelt im Text.
@@ -93,9 +94,9 @@ function eintragZeile(e, { store, ui }, schliessen) {
   );
 }
 
-/** Blatt für einen Tag: was eingetragen ist und was man setzen kann. */
+/** Blatt für einen Tag: was eingetragen ist, was man setzen kann und was man an diesem Tag neu eintragen kann. */
 export function oeffneTagesblatt(ctx, date) {
-  const { store } = ctx;
+  const { store, ui } = ctx;
   let abmelden = () => {};
   const b = blatt({
     titel: datumLang(date),
@@ -136,6 +137,21 @@ export function oeffneTagesblatt(ctx, date) {
               ),
             )
           : null,
+        dienstImBlatt({ store, tag: m.dienst }),
+        h('h3', {}, 'Neu an diesem Tag'),
+        h(
+          'div',
+          { class: 'chip-reihe' },
+          m.neu.map((n) =>
+            chip(`${n.emoji} ${n.text}`, {
+              farbeHex: n.farbe,
+              onClick: () => {
+                schliessen();
+                ui.neuTerminStarten(n.art, null, { datum: date }); // das Formular beginnt mit diesem Tag
+              },
+            }),
+          ),
+        ),
       ];
     },
   });

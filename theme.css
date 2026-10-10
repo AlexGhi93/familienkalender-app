@@ -8,7 +8,8 @@
   --linie: #eadfcb;
   --akzent: #7a5ce0;
   --akzent-ink: #ffffff;
-  --gefahr: #d94a4a;
+  --gefahr: #c93c3c; /* ≥ 4.5:1 als Text auf --karte und --bg und unter weißer Schrift */
+  --gefahr-ink: #ffffff; /* Schrift auf --gefahr (Löschen-Knopf, Fehler-Meldung) */
 
   --kita: #2f9e5b;
   --kita-ohne: #8fd0a2;
@@ -39,6 +40,7 @@
     --akzent: #a68cff;
     --akzent-ink: #1f1b2e;
     --gefahr: #ff7b7b;
+    --gefahr-ink: #1f1b2e; /* helles Rot braucht dunkle Schrift (Weiß hätte nur 2,5:1) */
     --schatten: 0 1px 0 rgba(0, 0, 0, 0.2), 0 8px 22px rgba(0, 0, 0, 0.3);
     --serie-papa: #3987e5;
     --serie-mama: #d95926;
@@ -55,6 +57,7 @@
   --akzent: #a68cff;
   --akzent-ink: #1f1b2e;
   --gefahr: #ff7b7b;
+  --gefahr-ink: #1f1b2e; /* helles Rot braucht dunkle Schrift (Weiß hätte nur 2,5:1) */
   --schatten: 0 1px 0 rgba(0, 0, 0, 0.2), 0 8px 22px rgba(0, 0, 0, 0.3);
   --serie-papa: #3987e5;
   --serie-mama: #d95926;
@@ -294,7 +297,7 @@ button.chip {
 .knopf.gefahr {
   background: var(--gefahr);
   border-color: var(--gefahr);
-  color: #fff;
+  color: var(--gefahr-ink);
 }
 
 .knopfzeile {
@@ -813,7 +816,7 @@ small.notiz {
   height: calc(var(--tabs-hoehe) + env(safe-area-inset-bottom, 0px));
   padding-bottom: env(safe-area-inset-bottom, 0px);
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(3, 1fr) 64px repeat(3, 1fr); /* „Neu“ genau in der Mitte */
   align-items: center;
   background: color-mix(in srgb, var(--karte) 92%, transparent);
   -webkit-backdrop-filter: blur(14px);
@@ -837,6 +840,12 @@ small.notiz {
 .tab-symbol {
   font-size: 1.35rem;
   line-height: 1.1;
+}
+
+@media (max-width: 359px) {
+  .tab {
+    font-size: 0.64rem;
+  }
 }
 
 .tab.aktiv {
@@ -1197,7 +1206,7 @@ small.notiz {
 
 .toast.fehler {
   background: var(--gefahr);
-  color: #fff;
+  color: var(--gefahr-ink);
 }
 
 .banner .knopf {
@@ -2510,5 +2519,337 @@ figure.diagramm {
   .menue-symbol.spielt,
   .menue-inhalt.aufgehend {
     animation: none;
+  }
+}
+
+/* ---------- Einkauf: aktuell halten (Herunterziehen, „Aktualisiert um …“) ---------- */
+
+/* Solange die Einkaufsliste offen ist, gehört das Herunterziehen ganz oben ihr (kein Neuladen der Seite durch den Browser). */
+html:has(.screen.einkauf) {
+  overscroll-behavior-y: contain;
+}
+
+.ek-ziehen {
+  --zug: 0px;
+  height: var(--zug);
+  margin-bottom: -14px; /* gleicht den Abstand der Seite aus: in Ruhe nimmt die Anzeige keinen Platz ein */
+  overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  transition: height 0.2s ease;
+}
+
+.ek-ziehen[data-phase='ziehen'],
+.ek-ziehen[data-phase='bereit'] {
+  transition: none; /* folgt dem Finger */
+}
+
+.ek-ziehen span:not(:empty) {
+  margin-bottom: 6px;
+  padding: 4px 14px;
+  border-radius: 999px;
+  border: 1.5px solid color-mix(in srgb, var(--einkauf) 45%, transparent);
+  background: color-mix(in srgb, var(--einkauf) 14%, var(--karte));
+  font-size: 0.85rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.ek-ziehen[data-phase='bereit'] span,
+.ek-ziehen[data-phase='fertig'] span {
+  border-color: var(--einkauf);
+  background: color-mix(in srgb, var(--einkauf) 30%, var(--karte));
+}
+
+.ek-stand {
+  margin-top: -10px;
+  color: var(--ink-2);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ek-ziehen {
+    transition: none;
+  }
+}
+
+/* ---------- Nachrichten an Krabbelstube/Kindergarten und Essensgeld ---------- */
+
+/* Textfelder in „Mehr“ (Telefon, E-Mail, Unterschrift, Preis pro Mittagessen) */
+.feld input[type='tel'],
+.feld input[type='email'] {
+  width: 100%;
+}
+
+.feld input[aria-invalid='true'] {
+  border-color: var(--gefahr);
+  background: color-mix(in srgb, var(--gefahr) 8%, var(--karte));
+}
+
+/* 📨 Nachrichten: der Brief kippt, fliegt ein Stück nach rechts oben und kommt zurück */
+.anim-brief {
+  transform-origin: 50% 60%;
+}
+.anim-brief.spielt {
+  animation-name: m-brief;
+}
+@keyframes m-brief {
+  0%,
+  100% {
+    transform: none;
+  }
+  18% {
+    transform: translate(-2px, 2px) rotate(-14deg);
+  }
+  45% {
+    transform: translate(13px, -13px) rotate(-18deg) scale(0.85);
+  }
+  70% {
+    transform: translate(-2px, 1px) rotate(6deg);
+  }
+  86% {
+    transform: rotate(-3deg);
+  }
+}
+
+/* „Krabbelstube benachrichtigen“ auf Heute, unter der Status-Karte */
+.knopf.nachricht-oeffnen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 48px;
+  background: color-mix(in srgb, var(--urlaub) 14%, var(--karte));
+  border-color: color-mix(in srgb, var(--urlaub) 45%, transparent);
+}
+
+/* Blatt „Nachricht an …“ */
+.nachricht-details {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.nachricht-gruppe {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.nachricht-gruppe-titel {
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: var(--ink-2);
+}
+
+.feld textarea.nachricht-text {
+  min-height: 140px;
+  line-height: 1.45;
+  color: var(--ink);
+}
+
+.nachricht-kontakt {
+  gap: 10px;
+}
+
+.nachricht-kontakt p {
+  font-size: 0.95rem;
+}
+
+.nachricht-senden {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); /* zwei nebeneinander; ein einzelner Knopf nimmt die ganze Breite */
+  gap: 10px;
+}
+
+.knopf.senden {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  text-align: center;
+  text-decoration: none;
+  color: var(--ink);
+}
+
+.knopf.senden.primaer {
+  color: var(--akzent-ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .anim-brief.spielt {
+    animation: none; /* steht nach der allgemeinen Regel des Menüs und muss deshalb hier noch einmal aus */
+  }
+}
+
+/* ---------- Bringen & Abholen ---------- */
+
+/* 🚗 Bringen & Abholen: fährt ein Stück nach rechts und federt zurück */
+.anim-auto {
+  transform-origin: 50% 90%;
+}
+.anim-auto.spielt {
+  animation-name: m-auto;
+}
+@keyframes m-auto {
+  0%,
+  100% {
+    transform: none;
+  }
+  12% {
+    transform: translateX(-2px) rotate(3deg); /* Anlauf */
+  }
+  40% {
+    transform: translateX(10px) rotate(-4deg);
+  }
+  55% {
+    transform: translateX(10px) translateY(-2px) rotate(-1deg);
+  }
+  75% {
+    transform: translateX(-3px) rotate(2deg);
+  }
+  88% {
+    transform: translateX(1px);
+  }
+}
+
+/* Auf „Heute“: „🚗 Heute“ mit zwei Knöpfen (wer bringt, wer holt); am Abend dazu „Morgen“ */
+.dienst-karte {
+  display: grid; /* „Heute“ und „Morgen“ teilen sich die Spalten: die Knöpfe stehen genau untereinander */
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  padding: 10px 12px;
+  gap: 8px;
+}
+
+.dienst-zeile {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.dienst-karte .dienst-zeile {
+  display: contents;
+}
+
+.dienst-karte .dienst-leer {
+  grid-column: 1 / -1;
+}
+
+.dienst-wann {
+  font-weight: 800;
+  font-size: 0.95rem;
+  white-space: nowrap;
+  padding-right: 2px;
+}
+
+.dienst-knopf {
+  --c: var(--grau);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  min-width: 0;
+  min-height: 50px;
+  padding: 6px 12px;
+  border-radius: var(--radius-klein);
+  border: 1.5px solid color-mix(in srgb, var(--c) 55%, transparent);
+  background: color-mix(in srgb, var(--c) 16%, var(--karte));
+  text-align: left;
+  line-height: 1.2;
+}
+
+.dienst-knopf:active {
+  transform: scale(0.97);
+}
+
+.dienst-knopf b,
+.dienst-knopf small {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dienst-knopf small {
+  color: var(--ink-2);
+  font-size: 0.82rem;
+}
+
+.dienst-knopf.niemand {
+  border-style: dashed;
+  background: var(--karte);
+}
+
+.dienst-knopf.niemand b {
+  color: var(--ink-2);
+}
+
+/* Noch niemand eingetragen: dezent, ein Tipp legt fest, wer bringt */
+.dienst-leer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 46px;
+  padding: 6px 12px;
+  border: 1.5px dashed var(--linie);
+  border-radius: var(--radius-klein);
+  background: none;
+  color: var(--ink-2);
+  text-align: left;
+}
+
+.dienst-leer b {
+  color: var(--ink);
+}
+
+.dienst-blatt {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* „Mehr“: eine Zeile je Wochentag – „Mo  Bringt [👨 Papa]  Holt [👩 Mama]“ */
+.dienst-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dienst-plan-zeile {
+  display: grid;
+  grid-template-columns: 1.7em auto minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+}
+
+.dienst-plan-rolle {
+  color: var(--ink-2);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.chip.dienst-chip {
+  justify-content: center;
+  min-width: 0;
+  padding: 6px 8px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.push-person {
+  margin-top: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .anim-auto.spielt {
+    animation: none; /* steht nach der allgemeinen Regel des Menüs und muss deshalb hier noch einmal aus */
+  }
+  .dienst-knopf:active {
+    transform: none;
   }
 }

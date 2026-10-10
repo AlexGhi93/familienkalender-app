@@ -38,7 +38,8 @@ function typAusTitel(text, calendar) {
  */
 export function classifyEvent(event, calendar) {
   const privat = event.extendedProperties?.private ?? {};
-  const text = (event.summary ?? '').split(SEP)[0].toLowerCase();
+  const voll = (event.summary ?? '').toLowerCase();
+  const text = voll.split(SEP)[0];
 
   let typ;
   let quelle;
@@ -46,7 +47,8 @@ export function classifyEvent(event, calendar) {
     typ = privat.typ;
     quelle = 'app';
   } else {
-    typ = typAusTitel(text, calendar);
+    // Tagestitel der App tragen „ohne Essen“ im zweiten Segment („🏫 Krabbelstube · ohne Essen“): dort zählt der ganze Titel
+    typ = typAusTitel(calendar === CALENDARS.ANWESENHEIT ? voll : text, calendar);
     quelle = 'titel';
   }
   const subtyp = typ === 'arzt' ? (arztSubtyp(text) ?? 'sonstiger_arzt') : null;

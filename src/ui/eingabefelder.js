@@ -11,7 +11,8 @@ import { datumAnzeige, datumAusEingabe, datumWaehrendTippen, zeitAusEingabe, zei
  * `istVollstaendig(text)` → true, wenn schon beim Tippen übernommen werden darf.
  */
 function baue({ art, symbol, platzhalter, maxLaenge, beschriftung, wert, beiAenderung, erstBeiFertig, umwandeln, waehrendTippen, anzeige, istVollstaendig, pickerWert, hinweis }) {
-  let aktuell = wert ?? '';
+  let aktuell = wert ?? ''; // zuletzt gültig erkannter Wert (auch schon während des Tippens)
+  let gemeldet = aktuell; // zuletzt an `beiAenderung` gemeldeter (bzw. von außen gesetzter) Wert
   const text = h('input', { type: 'text', inputmode: 'numeric', autocomplete: 'off', enterkeyhint: 'done', maxlength: String(maxLaenge), placeholder: platzhalter, 'aria-label': beschriftung });
   text.value = anzeige(aktuell);
   const picker = h('input', { type: art, class: 'picker-unsichtbar', tabindex: '-1', 'aria-label': `${beschriftung} auswählen` });
@@ -27,11 +28,15 @@ function baue({ art, symbol, platzhalter, maxLaenge, beschriftung, wert, beiAend
   const zeigeHinweis = (w) => fuelle(zusatz, w ? hinweis(w) : null);
   zeigeHinweis(aktuell);
 
+  // Mit `erstBeiFertig` wird eine beim Tippen schon vollständige Eingabe erst bei Enter/Verlassen gemeldet: verglichen wird deshalb
+  // mit dem zuletzt gemeldeten Wert, nicht mit `aktuell` (sonst ginge eine fertig getippte Uhrzeit nie raus).
   function uebernehmen(neu, fertig) {
     zeigeHinweis(neu);
-    if (neu === aktuell) return;
     aktuell = neu;
-    if (!erstBeiFertig || fertig) beiAenderung(neu);
+    if ((!erstBeiFertig || fertig) && neu !== gemeldet) {
+      gemeldet = neu;
+      beiAenderung(neu);
+    }
   }
 
   function fertig() {
@@ -85,6 +90,7 @@ function baue({ art, symbol, platzhalter, maxLaenge, beschriftung, wert, beiAend
     /** Setzt den Wert von außen (ohne `beiAenderung` aufzurufen). */
     setzeWert(neu) {
       aktuell = neu ?? '';
+      gemeldet = aktuell;
       text.value = anzeige(aktuell);
       picker.value = pickerWert(aktuell);
       markiere(false);

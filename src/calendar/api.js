@@ -56,14 +56,15 @@ function mitLeerung(zeit) {
 const ereignisPfad = (kalenderId, id = '') => `/calendars/${kodiert(kalenderId)}/events${id ? `/${kodiert(id)}` : ''}`;
 
 /**
- * `token()` liefert das aktuelle Token (oder wirft AuthAbgelaufen); `sleep` ist für Tests austauschbar.
+ * `token()` liefert das aktuelle Token – mit Login-Dienst auch ein Promise darauf, während es still erneuert wird – oder wirft
+ * AuthAbgelaufen; `sleep` ist für Tests austauschbar.
  */
 export function createApi({ fetch = globalThis.fetch, token, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), basis = CONFIG.apiBasis }) {
   const sauber = (text, tokenWert) => String(text ?? '').replaceAll(tokenWert, '[Token]');
 
   async function anfrage(methode, pfad, { body, kopf = {} } = {}) {
     for (let versuch = 0; ; versuch += 1) {
-      const tokenWert = token();
+      const tokenWert = await token();
       let res;
       try {
         res = await fetch(`${basis}${pfad}`, {

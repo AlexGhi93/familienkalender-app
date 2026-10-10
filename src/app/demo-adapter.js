@@ -83,6 +83,10 @@ export function createDemoAdapter({ speicher = globalThis.localStorage, jetzt = 
       sichern();
       return structuredClone(neu);
     },
+    /** Einkaufsliste lesen (wie beim Google-Adapter): { liste }. In der Demo schreibt kein anderes Telefon, sie ist also immer die eigene. */
+    async leseEinkauf() {
+      return { liste: structuredClone(daten?.einkauf ?? leereListe()) };
+    },
     /** Einkaufsliste ändern: `aenderung(liste)` → neue Liste (wie beim Google-Adapter); gibt die gespeicherte Liste zurück. */
     async aendereEinkauf(aenderung) {
       const neu = aenderung(daten.einkauf ?? leereListe());

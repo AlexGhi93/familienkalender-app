@@ -8,6 +8,13 @@ import { datumFeld as datumEingabe, zeitFeld as zeitEingabe } from './eingabefel
 import { mitnehmenInhalt, sachenEigeneInhalt, schliessTageInhalt } from './listen-karten.js';
 import { kontostandInhalt } from './kontostand-karte.js';
 import { menue } from './menue.js';
+import { einstellungsFeld } from './einstellungs-feld.js';
+import { nachrichtenInhalt } from './nachrichten-einstellungen.js';
+import { bringenHolenInhalt } from './bringen-holen.js';
+import { einrichtungsFormen } from '../app/nachrichten.js';
+import { betragAusText } from '../app/termin.js';
+import { einrichtungFor } from '../domain/modus.js';
+import { MAX_ESSEN_PREIS_CENT } from '../domain/settings.js';
 
 const KURZSTATUS = {
   verbunden: '✅ Verbunden mit Google',
@@ -16,11 +23,25 @@ const KURZSTATUS = {
   getrennt: '📴 Nicht verbunden',
 };
 
+/** Preis pro Mittagessen: 350 → „3,50“; ohne Preis leer. */
+const preisText = (cent) => (cent == null ? '' : (cent / 100).toFixed(2).replace('.', ','));
+
+/** „3,50“, „3.50“, „3“ (auch mit €) → Cent; leer → null (aus). */
+function preisEingabe(text) {
+  const betrag = betragAusText(text);
+  if (betrag === null) return { wert: null };
+  const cent = Math.round(betrag * 100);
+  if (Number.isNaN(betrag) || cent < 1 || cent > MAX_ESSEN_PREIS_CENT) {
+    return { fehler: `Preis: bitte einen Betrag wie 3,50 eingeben (höchstens ${MAX_ESSEN_PREIS_CENT / 100} €). Leer lassen = aus.` };
+  }
+  return { wert: cent };
+}
+
 /** Kurzstatus der Verbindung für die Zeile „Konto & App“; wird wie die Karte in „Konto & App“ bei jedem Wechsel neu gezeichnet. */
 function verbindungsStatus({ store, ui }) {
   const box = h('small', { class: 'menue-status' });
   const zeichne = () => {
-    const { karte } = verbindungsModel({ state: store.getState(), status: ui.auth.status(), restMs: ui.auth.restMs(), bald: ui.auth.baldAbgelaufen(), verbindung: ui.verbindung, ausstehend: store.ausstehend() });
+    const { karte } = verbindungsModel({ state: store.getState(), status: ui.auth.status(), restMs: ui.auth.restMs(), bald: ui.auth.baldAbgelaufen(), verbindung: ui.verbindung, ausstehend: store.ausstehend(), login: ui.auth.dauerAnmeldung?.() ?? null });
     box.classList.toggle('warnung', karte.status === 'abgelaufen' || karte.status === 'getrennt' || karte.fehler !== null);
     fuelle(box, KURZSTATUS[karte.status], karte.fehler ? ' · ⚠️ Letzter Versuch fehlgeschlagen' : null);
   };
@@ -34,6 +55,7 @@ function verbindungsStatus({ store, ui }) {
 export function mehrScreen({ store, ui }) {
   const settings = store.getState().settings;
   const google = ui.konto?.modus === 'google' && ui.auth;
+  const formen = einrichtungsFormen(einrichtungFor(store.heute(), settings)); // „der Krabbelstube“ bzw. „des Kindergartens“
 
   async function speichern(teil, text = 'Gespeichert ✓') {
     try {
@@ -88,6 +110,26 @@ export function mehrScreen({ store, ui }) {
     h('small', { class: 'leise' }, 'Erscheint bei „Für wen“ und in neuen Terminen, z. B. „Kinderarzt (Vorname)“. Du kannst ihn jederzeit ändern.'),
   );
 
+  const geschlecht = (text, wert) => chip(text, { art: settings.kindGeschlecht === wert ? 'aktiv' : '', onClick: () => speichern({ kindGeschlecht: wert }) });
+  const geschlechtFeld = h(
+    'div',
+    { class: 'feld' },
+    h('span', {}, 'Das Kind ist'),
+    h('div', { class: 'chip-reihe' }, geschlecht('👧 Mädchen', 'w'), geschlecht('👦 Junge', 'm'), geschlecht('Keine Angabe', '')),
+    h('small', { class: 'leise' }, `Für „sie“ bzw. „er“ in den Nachrichten ${formen.an}.`),
+  );
+
+  const essenPreisFeld = einstellungsFeld({
+    id: 'essenPreisCent',
+    beschriftung: 'Preis pro Mittagessen',
+    hinweis: `Steht auf der Rechnung ${formen.der}. Leer lassen = aus.`,
+    wert: settings.essenPreisCent,
+    anzeige: preisText,
+    pruefen: preisEingabe,
+    speichern: (w) => speichern({ essenPreisCent: w }),
+    attribute: { inputmode: 'decimal', maxlength: '9', placeholder: 'z. B. 3,50' },
+  });
+
   const zeitFeld = (beschriftung, wert, beiAenderung) =>
     h(
       'div',
@@ -114,15 +156,25 @@ export function mehrScreen({ store, ui }) {
       animation: 'blatt',
       farbe: 'var(--kita)',
       titel: 'Betreuung',
-      text: 'Wochentage, Erfassung, Kindergarten',
+      text: 'Wochentage, Erfassung, Kindergarten, Essensgeld',
       inhalt: [
         h('p', { class: 'leise' }, 'An welchen Wochentagen geht dein Kind normalerweise hin? Daraus ergeben sich die Tage, die noch „offen“ sind.'),
         tage,
         datumsFeld('Erfassung ab', settings.erfassungAb, (w) => speichern({ erfassungAb: w }), 'Ab diesem Tag zählt die App „offene“ Tage.'),
         datumsFeld('Wechsel zum Kindergarten ab', settings.wechseldatum, (w) => speichern({ wechseldatum: w }), 'Ab diesem Tag heißt es „Kindergarten“ statt „Krabbelstube“.'),
+        essenPreisFeld,
       ],
     },
-    { id: 'familie', emoji: '👶', animation: 'wiegen', farbe: 'var(--familie)', titel: 'Familie', text: 'Name des Kindes', inhalt: kindnameFeld },
+    { id: 'familie', emoji: '👶', animation: 'wiegen', farbe: 'var(--familie)', titel: 'Familie', text: 'Name des Kindes, Mädchen oder Junge', inhalt: [kindnameFeld, geschlechtFeld] },
+    {
+      id: 'nachrichten',
+      emoji: '📨',
+      animation: 'brief',
+      farbe: 'var(--urlaub)',
+      titel: 'Nachrichten',
+      text: `Kontakt ${formen.der}, Gruß, Unterschrift`,
+      inhalt: nachrichtenInhalt({ store, ui, settings, speichern }),
+    },
     {
       id: 'zeiten',
       emoji: '⏰',
@@ -142,6 +194,15 @@ export function mehrScreen({ store, ui }) {
           h('small', { class: 'leise' }, 'Am Abend davor, zum Einpacken, direkt aus der App. Leer lassen = aus.'),
         ),
       ],
+    },
+    {
+      id: 'bringen',
+      emoji: '🚗',
+      animation: 'auto',
+      farbe: 'var(--kita-ohne)',
+      titel: 'Bringen & Abholen',
+      text: 'Wer bringt, wer holt – je Wochentag',
+      inhalt: bringenHolenInhalt({ settings, formen, speichern }),
     },
     { id: 'urlaub', emoji: '✈️', animation: 'fliegen', farbe: 'var(--urlaub)', titel: 'Urlaub', text: 'Schließtage als Urlaub', inhalt: schliessTageInhalt({ settings, speichern }) },
     { id: 'mitnehmen', emoji: '🩺', animation: 'herz', farbe: 'var(--arzt)', titel: 'Mitnehmen beim Arzt', text: 'Vorschläge je Arzttermin', inhalt: mitnehmenInhalt({ settings, speichern }) },
