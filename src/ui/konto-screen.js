@@ -444,7 +444,6 @@ export function kontoScreen({ store, ui }) {
   return h(
     'section',
     { class: 'screen konto' },
-    h('button', { class: 'zurueck', type: 'button', onClick: () => ui.gehZu('mehr') }, '‹ Zurück'),
     h('h1', { class: 'gruss' }, 'Kontostand 💶'),
     h('p', { class: 'datum' }, 'Am letzten Tag des Monats tragt ihr den Gesamtstand eurer Konten ein; so seht ihr, wie viel ihr spart.'),
     m.eintrag ? eintragKarte(m, ctx) : h('article', { class: 'karte hinweis' }, h('div', { class: 'karte-zeile' }, h('span', { class: 'emoji' }, '🗓️'), h('div', { class: 'karte-text' }, h('b', {}, m.naechster), h('small', {}, 'Frühere Monate trägst du weiter unten mit „Nachtragen“ ein.')))),

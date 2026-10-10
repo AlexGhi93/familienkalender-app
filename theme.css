@@ -816,7 +816,7 @@ small.notiz {
   height: calc(var(--tabs-hoehe) + env(safe-area-inset-bottom, 0px));
   padding-bottom: env(safe-area-inset-bottom, 0px);
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(3, 1fr) 64px repeat(3, 1fr); /* „Neu“ genau in der Mitte */
   align-items: center;
   background: color-mix(in srgb, var(--karte) 92%, transparent);
   -webkit-backdrop-filter: blur(14px);
@@ -840,6 +840,12 @@ small.notiz {
 .tab-symbol {
   font-size: 1.35rem;
   line-height: 1.1;
+}
+
+@media (max-width: 359px) {
+  .tab {
+    font-size: 0.64rem;
+  }
 }
 
 .tab.aktiv {

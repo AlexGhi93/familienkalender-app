@@ -25,19 +25,22 @@ const SEITEN = {
   neu: neuScreen,
   urlaub: urlaubScreen,
   mehr: mehrScreen,
-  einkauf: einkaufScreen, // keine eigene Registerkarte: erreichbar von „Heute“ (Karte) und „Neu“ (Kachel)
+  einkauf: einkaufScreen, // Registerkarte; auch erreichbar von „Heute“ (Karte) und „Neu“ (Kachel)
   verlauf: verlaufScreen, // erreichbar von „Mehr“
-  konto: kontoScreen, // „Kontostand“: erreichbar von „Mehr“, „Heute“ (am letzten Tag) und der Erinnerung
+  konto: kontoScreen, // „Kontostand“: Registerkarte; auch erreichbar von „Mehr“, „Heute“ (am letzten Tag) und der Erinnerung
   app: appScreen, // „Konto & App“: erreichbar von „Mehr“
 };
 
-const SEITEN_TITEL = { einkauf: 'Einkauf', verlauf: 'Verlauf', konto: 'Kontostand', app: 'Konto & App' }; // Seiten ohne Registerkarte
+const SEITEN_TITEL = { einkauf: 'Einkauf', verlauf: 'Verlauf', konto: 'Kontostand', app: 'Konto & App' }; // Fenstertitel, wo er von der Registerkarte abweicht oder es keine gibt
 
+// Drei links, „Neu“ in der Mitte, drei rechts. „Kontostand“ passt bei sieben Karten nicht in die Leiste, daher kurz „Konto“.
 const TABS = [
   ['heute', '🏠', 'Heute'],
   ['monat', '📅', 'Monat'],
+  ['einkauf', '🛒', 'Einkauf'],
   ['neu', '＋', 'Neu'],
   ['urlaub', '✈️', 'Urlaub'],
+  ['konto', '💶', 'Konto'],
   ['mehr', '⚙️', 'Mehr'],
 ];
 
@@ -130,7 +133,7 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
       inhalt.scrollTop = alt;
       fenster.scrollTo(0, scrollY);
       fuelle(leiste, TABS.map(([id, symbol, text]) => tab(id, symbol, text, seite)));
-      document.title = `${ui.titel()} · ${TABS.find(([id]) => id === seite)?.[2] ?? SEITEN_TITEL[seite]}`;
+      document.title = `${ui.titel()} · ${SEITEN_TITEL[seite] ?? TABS.find(([id]) => id === seite)?.[2]}`;
     },
     /** Lädt den angezeigten Monat (samt Randwochen) nach, falls er außerhalb des geladenen Fensters liegt. */
     monatLaden() {
