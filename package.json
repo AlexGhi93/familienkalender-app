@@ -1,6 +1,6 @@
 {
   "name": "familienkalender-app",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "private": true,
   "description": "Familienkalender (statische PWA ohne Build-Schritt): Unit- und End-to-End-Tests",
   "type": "module",

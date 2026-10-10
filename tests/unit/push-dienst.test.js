@@ -39,7 +39,7 @@ test('plan: „An beide“ (Standard) – keine Erinnerung hat `nur`', async () 
   assert.ok(plan.every((p) => !('nur' in p)));
 });
 
-test('plan: „Nur an wer bringt bzw. holt“ – Hinbringen an wer bringt, Heimholen an wer holt', async () => {
+test('plan: „Nur an den, der bringt bzw. holt“ – Hinbringen an den, der bringt, Heimholen an den, der holt', async () => {
   const plan = await plane(zustand({ dienstErinnerung: 'dienst' }));
   const sachen = plan.filter((p) => p.titel.startsWith('👕'));
   const hin = sachen.filter((p) => !p.titel.toLowerCase().includes('heim'));

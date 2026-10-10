@@ -128,7 +128,7 @@ export function bringenHolenInhalt({ settings, formen, speichern }) {
       'div',
       { class: 'feld' },
       h('span', {}, 'Benachrichtigungen der App für Sachen'),
-      h('div', { class: 'chip-reihe' }, wahl('👪 An beide', 'beide'), wahl('🚗 Nur an wer bringt bzw. holt', 'dienst')),
+      h('div', { class: 'chip-reihe' }, wahl('👪 An beide', 'beide'), wahl('🚗 Nur an den, der bringt bzw. holt', 'dienst')),
       h(
         'small',
         { class: 'leise' },

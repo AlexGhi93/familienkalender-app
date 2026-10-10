@@ -71,12 +71,12 @@ test.describe('Mehr → Bringen & Abholen', () => {
     await starteDemo(page, { route: '#/mehr' });
     await page.locator('.menue-eintrag[data-id="bringen"] .menue-zeile').click();
     const wahl = tafel(page).locator('.feld').filter({ hasText: 'Benachrichtigungen der App für Sachen' });
-    await expect(wahl.locator('.chip')).toHaveText(['👪 An beide', '🚗 Nur an wer bringt bzw. holt']);
+    await expect(wahl.locator('.chip')).toHaveText(['👪 An beide', '🚗 Nur an den, der bringt bzw. holt']);
     await expect(wahl.locator('.chip.aktiv')).toHaveText('👪 An beide');
     await expect(wahl).toContainText('Wem welches Telefon gehört, steht in Konto & App.');
-    await wahl.getByRole('button', { name: '🚗 Nur an wer bringt bzw. holt' }).click();
+    await wahl.getByRole('button', { name: '🚗 Nur an den, der bringt bzw. holt' }).click();
     await erwarteToast(page, 'Gespeichert ✓');
-    await expect(tafel(page).locator('.feld').filter({ hasText: 'Benachrichtigungen der App für Sachen' }).locator('.chip.aktiv')).toHaveText('🚗 Nur an wer bringt bzw. holt');
+    await expect(tafel(page).locator('.feld').filter({ hasText: 'Benachrichtigungen der App für Sachen' }).locator('.chip.aktiv')).toHaveText('🚗 Nur an den, der bringt bzw. holt');
     await expect.poll(async () => (await gespeichert(page)).dienstErinnerung).toBe('dienst');
     await tafel(page).getByRole('button', { name: '👪 An beide' }).click();
     await expect.poll(async () => (await gespeichert(page)).dienstErinnerung).toBe('beide');

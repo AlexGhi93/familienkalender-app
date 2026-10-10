@@ -52,7 +52,7 @@ export function pushAbschnitt({ push }) {
           h('button', { class: `chip ${aktuell === p ? 'aktiv' : ''}`.trim(), type: 'button', 'aria-pressed': String(aktuell === p), onClick: () => waehle(p) }, `${FUER[p].emoji} ${FUER[p].label}`),
         ),
       ),
-      h('small', { class: 'leise' }, 'Mit „Nur an wer bringt bzw. holt“ (Mehr → Bringen & Abholen) kommen Erinnerungen für Sachen nur auf das Telefon dessen, der bringt bzw. abholt. Ohne Angabe bekommt dieses Telefon alle.'),
+      h('small', { class: 'leise' }, 'Mit „Nur an den, der bringt bzw. holt“ (Mehr → Bringen & Abholen) kommen Erinnerungen für Sachen nur auf das Telefon dessen, der bringt bzw. abholt. Ohne Angabe bekommt dieses Telefon alle.'),
     );
   }
 
