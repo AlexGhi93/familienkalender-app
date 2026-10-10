@@ -1,19 +1,39 @@
+// „Mehr“: oben der Weg zu „Konto & App“, darunter das Menü der Familien-Einstellungen. Jede Zeile hat ein eigenes animiertes Symbol
+// und klappt ihre Einstellungen auf; beim Betreten der Seite spielen die Symbole nacheinander, damit man sieht, wo man tippen kann.
 import { fuelle, h } from './dom.js';
-import { bestaetigen, chip, toast } from './components.js';
+import { chip, toast } from './components.js';
 import { WOCHENTAGE_KURZ } from '../app/format-de.js';
-import { VERSION } from '../app/version.js';
-import { kontoKarten } from './konto-karte.js';
-import { erinnerungenKarte } from './erinnerungen-karte.js';
+import { verbindungsModel } from '../app/views/verbindung-model.js';
 import { datumFeld as datumEingabe, zeitFeld as zeitEingabe } from './eingabefelder.js';
-import { leseDarstellung, wendeDarstellungAn } from './darstellung.js';
-import { mitnehmenKarte, sachenEigeneKarte, schliessTageKarte } from './listen-karten.js';
-import { sichernKarte } from './sichern-karte.js';
-import { kontoKarte } from './kontostand-karte.js';
+import { mitnehmenInhalt, sachenEigeneInhalt, schliessTageInhalt } from './listen-karten.js';
+import { kontostandInhalt } from './kontostand-karte.js';
+import { menue } from './menue.js';
+
+const KURZSTATUS = {
+  verbunden: '✅ Verbunden mit Google',
+  laeuft: '⏳ Verbinde mit Google …',
+  abgelaufen: '🔒 Bitte neu anmelden',
+  getrennt: '📴 Nicht verbunden',
+};
+
+/** Kurzstatus der Verbindung für die Zeile „Konto & App“; wird wie die Karte in „Konto & App“ bei jedem Wechsel neu gezeichnet. */
+function verbindungsStatus({ store, ui }) {
+  const box = h('small', { class: 'menue-status' });
+  const zeichne = () => {
+    const { karte } = verbindungsModel({ state: store.getState(), status: ui.auth.status(), restMs: ui.auth.restMs(), bald: ui.auth.baldAbgelaufen(), verbindung: ui.verbindung, ausstehend: store.ausstehend() });
+    box.classList.toggle('warnung', karte.status === 'abgelaufen' || karte.status === 'getrennt' || karte.fehler !== null);
+    fuelle(box, KURZSTATUS[karte.status], karte.fehler ? ' · ⚠️ Letzter Versuch fehlgeschlagen' : null);
+  };
+  zeichne();
+  ui.verbindungZeichnen = () => {
+    if (box.isConnected) zeichne();
+  };
+  return box;
+}
 
 export function mehrScreen({ store, ui }) {
   const settings = store.getState().settings;
-  const konto = kontoKarten({ store, ui });
-  const demo = ui.konto?.modus === 'demo';
+  const google = ui.konto?.modus === 'google' && ui.auth;
 
   async function speichern(teil, text = 'Gespeichert ✓') {
     try {
@@ -76,101 +96,66 @@ export function mehrScreen({ store, ui }) {
       zeitEingabe({ wert, beschriftung, erstBeiFertig: true, beiAenderung: (w) => (w ? beiAenderung(w) : toast('Bitte eine Uhrzeit eingeben, z. B. 07:30.')) }),
     );
 
-  const DARSTELLUNG_TEXTE = [['auto', 'Automatisch'], ['hell', '☀️ Hell'], ['dunkel', '🌙 Dunkel']];
-  const darstellungBox = h('div', { class: 'chip-reihe' });
-  function zeichneDarstellung() {
-    const aktuell = leseDarstellung();
-    fuelle(
-      darstellungBox,
-      ...DARSTELLUNG_TEXTE.map(([wahl, text]) =>
-        chip(text, {
-          art: aktuell === wahl ? 'aktiv' : '',
-          onClick: () => {
-            wendeDarstellungAn(wahl);
-            zeichneDarstellung();
-          },
-        }),
-      ),
-    );
-  }
-  zeichneDarstellung();
+  const kontoApp = {
+    id: 'app',
+    emoji: '👤',
+    animation: 'nicken',
+    farbe: 'var(--akzent)',
+    titel: 'Konto & App',
+    text: google ? 'Erinnerungen, Darstellung, Sicherung' : 'Mit Google verbinden, Darstellung, Sicherung',
+    status: google ? verbindungsStatus({ store, ui }) : null,
+    beiKlick: () => ui.gehZu('app'),
+  };
 
+  const einstellungen = [
+    {
+      id: 'betreuung',
+      emoji: '📅',
+      animation: 'blatt',
+      farbe: 'var(--kita)',
+      titel: 'Betreuung',
+      text: 'Wochentage, Erfassung, Kindergarten',
+      inhalt: [
+        h('p', { class: 'leise' }, 'An welchen Wochentagen geht dein Kind normalerweise hin? Daraus ergeben sich die Tage, die noch „offen“ sind.'),
+        tage,
+        datumsFeld('Erfassung ab', settings.erfassungAb, (w) => speichern({ erfassungAb: w }), 'Ab diesem Tag zählt die App „offene“ Tage.'),
+        datumsFeld('Wechsel zum Kindergarten ab', settings.wechseldatum, (w) => speichern({ wechseldatum: w }), 'Ab diesem Tag heißt es „Kindergarten“ statt „Krabbelstube“.'),
+      ],
+    },
+    { id: 'familie', emoji: '👶', animation: 'wiegen', farbe: 'var(--familie)', titel: 'Familie', text: 'Name des Kindes', inhalt: kindnameFeld },
+    {
+      id: 'zeiten',
+      emoji: '⏰',
+      animation: 'klingeln',
+      farbe: 'var(--abwesend)',
+      titel: 'Zeiten für Sachen',
+      text: 'Hinbringen, Heimholen, Vorabend',
+      inhalt: [
+        h('p', { class: 'leise' }, 'Zu dieser Uhrzeit meldet sich die Erinnerung (einen Tag und eine Stunde vorher).'),
+        zeitFeld('Hinbringen um', settings.bringzeit, (w) => speichern({ bringzeit: w })),
+        zeitFeld('Heimholen um', settings.abholzeit, (w) => speichern({ abholzeit: w })),
+        h(
+          'div',
+          { class: 'feld' },
+          h('span', {}, 'Erinnerung am Vorabend um (nur Hinbringen)'),
+          zeitEingabe({ wert: settings.vorabend, beschriftung: 'Erinnerung am Vorabend', erstBeiFertig: true, beiAenderung: (w) => speichern({ vorabend: w }) }),
+          h('small', { class: 'leise' }, 'Am Abend davor, zum Einpacken, direkt aus der App. Leer lassen = aus.'),
+        ),
+      ],
+    },
+    { id: 'urlaub', emoji: '✈️', animation: 'fliegen', farbe: 'var(--urlaub)', titel: 'Urlaub', text: 'Schließtage als Urlaub', inhalt: schliessTageInhalt({ settings, speichern }) },
+    { id: 'mitnehmen', emoji: '🩺', animation: 'herz', farbe: 'var(--arzt)', titel: 'Mitnehmen beim Arzt', text: 'Vorschläge je Arzttermin', inhalt: mitnehmenInhalt({ settings, speichern }) },
+    { id: 'sachen', emoji: '🎒', animation: 'huepfen', farbe: 'var(--sache)', titel: 'Eigene Sachen', text: 'Eigene Vorschläge für Sachen', inhalt: sachenEigeneInhalt({ settings, speichern }) },
+    { id: 'kontostand', emoji: '💶', animation: 'muenze', farbe: 'var(--serie-papa)', titel: 'Kontostand', text: 'Stand, Erinnerung am Monatsende', inhalt: kontostandInhalt({ store, ui, settings, speichern }) },
+    { id: 'verlauf', emoji: '📜', animation: 'rolle', farbe: 'var(--grau)', titel: 'Verlauf', text: 'Alle Einträge, mit Suche und Filtern', beiKlick: () => ui.gehZu('verlauf') },
+  ];
+
+  const animieren = ui.seiteBetreten !== false; // nur beim Betreten, nicht bei jedem Neuzeichnen (z. B. nach dem Speichern)
   return h(
     'section',
     { class: 'screen' },
     h('h1', { class: 'gruss' }, 'Mehr ⚙️'),
-    h(
-      'article',
-      { class: 'karte' },
-      h('h3', {}, 'Betreuung'),
-      h('p', { class: 'leise' }, 'An welchen Wochentagen geht dein Kind normalerweise hin? Daraus ergeben sich die Tage, die noch „offen“ sind.'),
-      tage,
-      datumsFeld('Erfassung ab', settings.erfassungAb, (w) => speichern({ erfassungAb: w }), 'Ab diesem Tag zählt die App „offene“ Tage.'),
-      datumsFeld('Wechsel zum Kindergarten ab', settings.wechseldatum, (w) => speichern({ wechseldatum: w }), 'Ab diesem Tag heißt es „Kindergarten“ statt „Krabbelstube“.'),
-    ),
-    h('article', { class: 'karte' }, h('h3', {}, 'Familie'), kindnameFeld),
-    h('article', { class: 'karte' }, h('h3', {}, 'Darstellung'), h('p', { class: 'leise' }, 'Automatisch folgt dem Telefon. Die Wahl gilt nur für dieses Telefon.'), darstellungBox),
-    h(
-      'article',
-      { class: 'karte' },
-      h('h3', {}, 'Zeiten für Sachen'),
-      h('p', { class: 'leise' }, 'Zu dieser Uhrzeit meldet sich die Erinnerung (einen Tag und eine Stunde vorher).'),
-      zeitFeld('Hinbringen um', settings.bringzeit, (w) => speichern({ bringzeit: w })),
-      zeitFeld('Heimholen um', settings.abholzeit, (w) => speichern({ abholzeit: w })),
-      h(
-        'div',
-        { class: 'feld' },
-        h('span', {}, 'Erinnerung am Vorabend um (nur Hinbringen)'),
-        zeitEingabe({ wert: settings.vorabend, beschriftung: 'Erinnerung am Vorabend', erstBeiFertig: true, beiAenderung: (w) => speichern({ vorabend: w }) }),
-        h('small', { class: 'leise' }, 'Am Abend davor, zum Einpacken, direkt aus der App. Leer lassen = aus.'),
-      ),
-    ),
-    schliessTageKarte({ settings, speichern }),
-    mitnehmenKarte({ settings, speichern }),
-    sachenEigeneKarte({ settings, speichern }),
-    kontoKarte({ store, ui, settings, speichern }),
-    h(
-      'article',
-      { class: 'karte' },
-      h('h3', {}, 'Verlauf'),
-      h('p', { class: 'leise' }, 'Alle Termine, Urlaube und Krank-, Abwesend- und Schließtage in einer Liste, mit Suche und Filtern.'),
-      h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein primaer', type: 'button', onClick: () => ui.gehZu('verlauf') }, 'Verlauf öffnen')),
-    ),
-    sichernKarte({ store }),
-    ui.konto?.modus === 'google' ? erinnerungenKarte({ store, ui }) : null,
-    ...konto.oben,
-    demo
-      ? h(
-        'article',
-        { class: 'karte' },
-        h('h3', {}, 'Demo-Modus'),
-        h('p', { class: 'leise' }, 'Du siehst Beispieldaten. Sie bleiben nur auf diesem Gerät und kommen nirgendwohin.'),
-        h(
-          'div',
-          { class: 'knopfzeile' },
-          h(
-            'button',
-            {
-              class: 'knopf klein',
-              type: 'button',
-              onClick: () =>
-                bestaetigen({
-                  titel: 'Demo zurücksetzen?',
-                  text: 'Alle Änderungen in der Demo gehen verloren und die Beispieldaten kommen frisch zurück.',
-                  ja: 'Zurücksetzen',
-                  gefahr: true,
-                  beiJa: async () => {
-                    await store.zuruecksetzen();
-                    toast('Demo zurückgesetzt');
-                  },
-                }),
-            },
-            'Demo zurücksetzen',
-          ),
-        ),
-      )
-      : null,
-    ...konto.unten,
-    h('p', { class: 'version' }, `Familienkalender ${VERSION}`),
+    menue({ eintraege: [kontoApp], startIndex: animieren ? 0 : null }),
+    menue({ eintraege: einstellungen, startIndex: animieren ? 1 : null }),
   );
 }

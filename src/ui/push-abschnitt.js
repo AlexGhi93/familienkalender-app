@@ -3,11 +3,11 @@ import { toast } from './components.js';
 import { standText } from '../app/format-de.js';
 import { GRUND_TEXT } from '../push/client.js';
 
-const MELDUNG_ANMELDEN = 'Bitte zuerst neu anmelden (Mehr → Konto → Neu anmelden).';
+const MELDUNG_ANMELDEN = 'Bitte zuerst neu anmelden (Mehr → Konto & App → Neu anmelden).';
 const fehlerText = (fehler) => (fehler?.name === 'AuthAbgelaufen' ? MELDUNG_ANMELDEN : fehler?.message || 'Das hat nicht geklappt.');
 
 /**
- * „Benachrichtigungen von der App“ in Mehr → Erinnerungen: aktivieren, testen, abgleichen, ausschalten.
+ * „Benachrichtigungen von der App“ in Konto & App → Erinnerungen: aktivieren, testen, abgleichen, ausschalten.
  * `push` kommt aus createPush (src/push/client.js). Ist der Push-Dienst noch nicht eingerichtet, bleibt der Abschnitt unsichtbar.
  */
 export function pushAbschnitt({ push }) {

@@ -1,4 +1,4 @@
-// Verbindung zu Google als reine Daten: Banner oben und Statuskarte in „Mehr“. Kein DOM, damit alle Fälle testbar sind.
+// Verbindung zu Google als reine Daten: Banner oben, Statuskarte in „Konto & App“ und Kurzstatus in „Mehr“. Kein DOM, damit alle Fälle testbar sind.
 import { standText } from '../format-de.js';
 
 /** Rest der Anmeldung: Minuten aufgerundet, unter einer Minute „weniger als 1 Min“; ohne Anmeldung leer. */

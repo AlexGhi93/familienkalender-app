@@ -11,6 +11,7 @@ import { mehrScreen } from './ui/mehr-screen.js';
 import { einkaufScreen } from './ui/einkauf-screen.js';
 import { verlaufScreen } from './ui/verlauf-screen.js';
 import { kontoScreen } from './ui/konto-screen.js';
+import { appScreen } from './ui/app-screen.js';
 import { oeffneTagesblatt } from './ui/tagesblatt.js';
 import { terminEntwurf } from './app/termin.js';
 import { verbindenKarte, verbindungsBanner, versionsBanner } from './ui/verbindung.js';
@@ -27,9 +28,10 @@ const SEITEN = {
   einkauf: einkaufScreen, // keine eigene Registerkarte: erreichbar von „Heute“ (Karte) und „Neu“ (Kachel)
   verlauf: verlaufScreen, // erreichbar von „Mehr“
   konto: kontoScreen, // „Kontostand“: erreichbar von „Mehr“, „Heute“ (am letzten Tag) und der Erinnerung
+  app: appScreen, // „Konto & App“: erreichbar von „Mehr“
 };
 
-const SEITEN_TITEL = { einkauf: 'Einkauf', verlauf: 'Verlauf', konto: 'Kontostand' }; // Seiten ohne Registerkarte
+const SEITEN_TITEL = { einkauf: 'Einkauf', verlauf: 'Verlauf', konto: 'Kontostand', app: 'Konto & App' }; // Seiten ohne Registerkarte
 
 const TABS = [
   ['heute', '🏠', 'Heute'],
@@ -44,7 +46,7 @@ const SNAPSHOT_VERZOEGERUNG_MS = 1000;
 const CHECKS_VERZOEGERUNG_MS = 2500; // Urlaub-Checks erst abgleichen, wenn sich der Urlaub kurz nicht mehr ändert
 
 /**
- * `auth` und `snapshot` gibt es nur im Google-Modus; `konto` bündelt, was „Mehr“ dafür braucht
+ * `auth` und `snapshot` gibt es nur im Google-Modus; `konto` bündelt, was „Konto & App“ dafür braucht
  * ({ rolle, kalenderCode, zuruecksetzen }); `push` = Push-Erinnerungen dieses Telefons (src/push/client.js). Im Demo-Modus sind alle null.
  */
 export function startShell({ wurzel, store, auth = null, snapshot = null, konto = null, push = null, fenster = window }) {
@@ -55,6 +57,7 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
   fuelle(wurzel, banner, fortschritt, inhalt, leiste);
 
   let neueVersion = false;
+  let letzteSeite = null; // zuletzt gezeichnete Seite (für `ui.seiteBetreten`)
   const versionPruefen = async () => {
     if (neueVersion || !(await istNeueVersionVerfuegbar({ aktuell: VERSION }))) return;
     neueVersion = true;
@@ -80,7 +83,7 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
       toast('Verbunden ✓');
     } catch (fehler) {
       const text = fehler?.message ?? 'Das hat nicht geklappt. Bitte noch einmal versuchen.';
-      ui.verbindung = { laeuft: false, fehler: text }; // bleibt im Banner und in „Mehr“ stehen, bis es klappt
+      ui.verbindung = { laeuft: false, fehler: text }; // bleibt im Banner, in „Mehr“ und in „Konto & App“ stehen, bis es klappt
       toast(text, { art: 'fehler', dauer: 7000 });
     }
     ui.rendern();
@@ -92,7 +95,8 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
     konto,
     push,
     verbinden,
-    verbindung: { laeuft: false, fehler: null }, // letzter Verbindungsversuch (Banner und „Mehr“)
+    verbindung: { laeuft: false, fehler: null }, // letzter Verbindungsversuch (Banner, „Mehr“ und „Konto & App“)
+    seiteBetreten: true, // true, wenn die Seite gerade neu betreten wurde (nicht nur neu gezeichnet): „Mehr“ spielt dann seine Animationen
     monat: jetztMonat(),
     neu: { auswahl: null },
     urlaubJahr: 0, // gewähltes Kindergartenjahr auf der Urlaub-Seite (0 = aktuelles)
@@ -105,7 +109,7 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
     bannerAktualisieren() {
       fuelle(banner, verbindungsBanner({ state: store.getState(), auth, ausstehend: store.ausstehend(), verbinden, verbindung: ui.verbindung }), neueVersion ? versionsBanner({ neuLaden: () => fenster.location.reload() }) : null);
       fuelle(fortschritt, fortschrittLeiste(store.getState()));
-      ui.verbindungZeichnen?.(); // die Verbindungskarte in „Mehr“, falls sie gerade offen ist
+      ui.verbindungZeichnen?.(); // die Verbindung in „Mehr“ bzw. „Konto & App“, falls die Seite gerade offen ist
     },
     rendern() {
       const seite = ui.seite();
@@ -116,6 +120,8 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
       if (auth && !state.geladen) {
         fuelle(inhalt, verbindenKarte({ verbinden, verbindung: ui.verbindung }));
       } else {
+        ui.seiteBetreten = seite !== letzteSeite;
+        letzteSeite = seite;
         fuelle(inhalt, SEITEN[seite]({ store, ui }));
         if (seite === 'monat') ui.monatLaden();
         if (seite === 'urlaub') ui.urlaubLaden();

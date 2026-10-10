@@ -1,4 +1,5 @@
-// Karten in „Mehr“ zum Bearbeiten kurzer Listen: Schließtage-Schalter, Mitnehmen je Arzt-Untertyp, eigene Sachen.
+// Inhalte im Menü von „Mehr“ zum Bearbeiten kurzer Listen: Schließtage-Schalter, Mitnehmen je Arzt-Untertyp, eigene Sachen.
+// Jede Funktion gibt nur den Inhalt zurück; Titel und Rahmen kommen von der Menü-Zeile (src/ui/menue.js).
 import { h } from './dom.js';
 import { chip, toast } from './components.js';
 import { listeMitEintrag, listeOhneEintrag } from '../app/listen.js';
@@ -63,19 +64,16 @@ function listenEditor({ id, liste, max, leerText, platzhalter, beiAenderung }) {
 }
 
 /** „Schließtage zählen als Urlaub“: Ja / Nein (wirkt auf den Urlaubsstand). */
-export function schliessTageKarte({ settings, speichern }) {
+export function schliessTageInhalt({ settings, speichern }) {
   const wahl = (text, wert) => chip(text, { art: settings.schliessZaehlenAlsUrlaub === wert ? 'aktiv' : '', onClick: () => speichern({ schliessZaehlenAlsUrlaub: wert }) });
-  return h(
-    'article',
-    { class: 'karte' },
-    h('h3', {}, 'Urlaub'),
+  return [
     h('p', { class: 'leise' }, 'Schließtage zählen als Urlaub: Wenn die Einrichtung geschlossen hat, wird dieser Tag auf die Urlaubswochen angerechnet. Im Zweifel bei der Einrichtung nachfragen, wie es bei euch gilt.'),
     h('div', { class: 'chip-reihe' }, wahl('Nein', false), wahl('Ja', true)),
-  );
+  ];
 }
 
 /** Mitnehmen-Listen je Arzt-Untertyp (ab dem nächsten neuen Arzttermin vorgeschlagen). */
-export function mitnehmenKarte({ settings, speichern }) {
+export function mitnehmenInhalt({ settings, speichern }) {
   const gruppe = (s) => {
     const eigen = settings.mitnehmen[s.id];
     const liste = mitnehmenFor(s.id, settings);
@@ -105,22 +103,16 @@ export function mitnehmenKarte({ settings, speichern }) {
         : null,
     );
   };
-  return h(
-    'article',
-    { class: 'karte' },
-    h('h3', {}, 'Mitnehmen bei Arztterminen'),
+  return [
     h('p', { class: 'leise' }, 'Das wird bei einem neuen Arzttermin vorgeschlagen. Beim Termin selbst kannst du es jederzeit ändern.'),
     h('div', { class: 'gruppen' }, Object.values(ARZT_SUBTYPEN).map(gruppe)),
-  );
+  ];
 }
 
 /** Eigene Vorschläge für „Sachen“: erscheinen im Formular als Gruppe „Eigene“. */
-export function sachenEigeneKarte({ settings, speichern }) {
-  return h(
-    'article',
-    { class: 'karte' },
-    h('h3', {}, 'Eigene Sachen'),
+export function sachenEigeneInhalt({ settings, speichern }) {
+  return [
     h('p', { class: 'leise' }, 'Was ihr oft in die Krabbelstube oder den Kindergarten mitgebt. Es erscheint beim Eintragen von Sachen in der Gruppe „Eigene“.'),
     listenEditor({ id: 'sachen-eigene', liste: settings.sachenEigene, max: MAX_SACHEN_EIGENE, leerText: 'Noch nichts eingetragen.', platzhalter: 'z. B. Lieblingsbuch', beiAenderung: (neu) => speichern({ sachenEigene: neu }) }),
-  );
+  ];
 }
