@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'" />
+    <meta name="theme-color" content="#FFF7EC" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1F1B2E" media="(prefers-color-scheme: dark)" />
+    <link rel="icon" href="icons/icon-192.png" />
+    <link rel="stylesheet" href="theme.css" />
+    <title>Datenschutz · Familienkalender</title>
+  </head>
+  <body>
+    <main class="screen datenschutz">
+      <h1>Datenschutz</h1>
+      <p class="leise">Familienkalender · Stand: Oktober 2026</p>
+
+      <article class="karte">
+        <h2>Worum es geht</h2>
+        <p>Der Familienkalender ist eine private App für eine einzelne Familie. Er zeigt und bearbeitet Termine, Betreuungstage, Urlaub, Einkaufsliste und Kontostände, die in den eigenen Google-Kalendern der Familie gespeichert sind. Es gibt keine Werbung, kein Tracking, keine Analyse-Werkzeuge und keine Cookies.</p>
+      </article>
+
+      <article class="karte">
+        <h2>Welche Google-Daten die App nutzt</h2>
+        <p>Nach der Anmeldung mit Google erhält die App genau zwei Berechtigungen:</p>
+        <ul>
+          <li><b>Kalender, die die App selbst angelegt hat</b> („Familie · Termine“, „Familie · Abwesenheit“, „Familie · Anwesenheit“): lesen und schreiben. Andere Kalender und Termine sieht die App nicht.</li>
+          <li><b>Kalenderliste</b>: nur um diese drei Kalender einem zweiten Elternteil hinzuzufügen.</li>
+        </ul>
+        <p>Die Daten bleiben in Google Kalender. Die App zeigt sie im Browser an und speichert eine Kopie nur auf dem jeweiligen Gerät, damit sie auch ohne Verbindung lesbar ist. Die Nutzung der Google-Daten folgt der <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, einschließlich der Anforderungen zur eingeschränkten Nutzung („Limited Use“). Die Daten werden an niemanden weitergegeben oder verkauft und nicht für Werbung oder zum Trainieren von KI-Modellen verwendet.</p>
+      </article>
+
+      <article class="karte">
+        <h2>Anmeldedienst (dauerhafte Anmeldung)</h2>
+        <p>Damit ein Telefon angemeldet bleibt, tauscht ein kleiner Dienst bei Cloudflare den einmaligen Google-Anmeldecode gegen ein Google-Erneuerungstoken. Dieses Token wird verschlüsselt (AES-GCM) gespeichert; den Schlüssel kennt nur das jeweilige Telefon. Der Dienst speichert keine Kalenderinhalte und protokolliert weder Codes noch Tokens. Eine Sitzung, die 180 Tage nicht benutzt wird, verfällt automatisch. Beim Abmelden oder Zurücksetzen in der App wird das Token gelöscht und bei Google widerrufen.</p>
+      </article>
+
+      <article class="karte">
+        <h2>Erinnerungen (Push)</h2>
+        <p>Wer Erinnerungen einschaltet, erlaubt dem Browser Benachrichtigungen. Ein zweiter Dienst bei Cloudflare speichert dafür die Push-Adresse des Geräts und die geplanten Erinnerungen in Ende-zu-Ende-verschlüsselter Form. Der Dienst kann deren Inhalt nicht lesen.</p>
+      </article>
+
+      <article class="karte">
+        <h2>Zugriff widerrufen und Daten löschen</h2>
+        <ul>
+          <li>In der App: „Mehr“ → „Konto &amp; App“ → „Dieses Telefon zurücksetzen“ löscht die Einrichtung und die Kopie auf dem Gerät.</li>
+          <li>Bei Google: Unter <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a> lässt sich der Zugriff des Familienkalenders jederzeit entfernen.</li>
+          <li>Die drei Kalender können in Google Kalender gelöscht werden; damit sind alle Inhalte entfernt.</li>
+        </ul>
+      </article>
+
+      <article class="karte">
+        <h2>Kontakt</h2>
+        <p>Fragen zum Datenschutz über das Projekt auf GitHub: <a href="https://github.com/AlexGhi93/familienkalender-app">github.com/AlexGhi93/familienkalender-app</a>.</p>
+      </article>
+
+      <p><a href="./">← Zum Familienkalender</a></p>
+    </main>
+  </body>
+</html>
