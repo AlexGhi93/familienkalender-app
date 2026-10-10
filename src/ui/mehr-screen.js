@@ -10,6 +10,7 @@ import { kontostandInhalt } from './kontostand-karte.js';
 import { menue } from './menue.js';
 import { einstellungsFeld } from './einstellungs-feld.js';
 import { nachrichtenInhalt } from './nachrichten-einstellungen.js';
+import { bringenHolenInhalt } from './bringen-holen.js';
 import { einrichtungsFormen } from '../app/nachrichten.js';
 import { betragAusText } from '../app/termin.js';
 import { einrichtungFor } from '../domain/modus.js';
@@ -193,6 +194,15 @@ export function mehrScreen({ store, ui }) {
           h('small', { class: 'leise' }, 'Am Abend davor, zum Einpacken, direkt aus der App. Leer lassen = aus.'),
         ),
       ],
+    },
+    {
+      id: 'bringen',
+      emoji: '🚗',
+      animation: 'auto',
+      farbe: 'var(--kita-ohne)',
+      titel: 'Bringen & Abholen',
+      text: 'Wer bringt, wer holt – je Wochentag',
+      inhalt: bringenHolenInhalt({ settings, formen, speichern }),
     },
     { id: 'urlaub', emoji: '✈️', animation: 'fliegen', farbe: 'var(--urlaub)', titel: 'Urlaub', text: 'Schließtage als Urlaub', inhalt: schliessTageInhalt({ settings, speichern }) },
     { id: 'mitnehmen', emoji: '🩺', animation: 'herz', farbe: 'var(--arzt)', titel: 'Mitnehmen beim Arzt', text: 'Vorschläge je Arzttermin', inhalt: mitnehmenInhalt({ settings, speichern }) },

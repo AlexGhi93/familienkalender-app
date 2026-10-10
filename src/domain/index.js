@@ -16,3 +16,4 @@ export * from './urlaub.js';
 export * from './offen.js';
 export * from './umwandlung.js';
 export * from './konto.js';
+export * from './dienst.js';

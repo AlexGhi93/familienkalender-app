@@ -2,6 +2,8 @@ import { fuelle, h } from './dom.js';
 import { toast } from './components.js';
 import { standText } from '../app/format-de.js';
 import { GRUND_TEXT } from '../push/client.js';
+import { GERAET_PERSONEN } from '../push/geraete.js';
+import { FUER } from '../domain/types.js';
 
 const MELDUNG_ANMELDEN = 'Bitte zuerst neu anmelden (Mehr → Konto & App → Neu anmelden).';
 const fehlerText = (fehler) => (fehler?.name === 'AuthAbgelaufen' ? MELDUNG_ANMELDEN : fehler?.message || 'Das hat nicht geklappt.');
@@ -31,6 +33,29 @@ export function pushAbschnitt({ push }) {
 
   const knopf = (text, beiKlick, art = '') => h('button', { class: `knopf klein ${art}`.trim(), type: 'button', onClick: beiKlick }, text);
 
+  /** „Dieses Telefon gehört: 👨 Papa / 👩 Mama“ – für Erinnerungen „nur an wer bringt bzw. holt“. Nochmal antippen = keine Angabe (bekommt alle). */
+  function personFeld() {
+    const aktuell = push.person();
+    const waehle = (p) => {
+      push.setzePerson(aktuell === p ? '' : p);
+      toast('Gespeichert ✓');
+      zeichne();
+    };
+    return h(
+      'div',
+      { class: 'feld push-person' },
+      h('span', {}, 'Dieses Telefon gehört'),
+      h(
+        'div',
+        { class: 'chip-reihe' },
+        GERAET_PERSONEN.map((p) =>
+          h('button', { class: `chip ${aktuell === p ? 'aktiv' : ''}`.trim(), type: 'button', 'aria-pressed': String(aktuell === p), onClick: () => waehle(p) }, `${FUER[p].emoji} ${FUER[p].label}`),
+        ),
+      ),
+      h('small', { class: 'leise' }, 'Mit „Nur an wer bringt bzw. holt“ (Mehr → Bringen & Abholen) kommen Erinnerungen für Sachen nur auf das Telefon dessen, der bringt bzw. abholt. Ohne Angabe bekommt dieses Telefon alle.'),
+    );
+  }
+
   function inhalt(s) {
     if (s.zustand === 'nicht-moeglich') {
       if (s.grund === 'nicht-eingerichtet') return null;
@@ -46,15 +71,16 @@ export function pushAbschnitt({ push }) {
         h('p', { class: 'leise' }, `${s.geraete} ${s.geraete === 1 ? 'Telefon' : 'Telefone'} in der Familie · ${letzte}`),
         fehler,
         h('div', { class: 'knopfzeile' }, knopf('Test-Push senden', testen, 'primaer'), knopf('Jetzt abgleichen', abgleichen), knopf('Ausschalten', ausschalten)),
+        personFeld(),
       ];
     }
     if (s.zustand === 'erneut') {
-      return [kopf, h('p', {}, '⚠️ Bitte noch einmal aktivieren: Dieses Telefon ist beim Push-Dienst nicht mehr angemeldet.'), fehler, h('div', { class: 'knopfzeile' }, knopf('Benachrichtigungen aktivieren', aktivieren, 'primaer'), knopf('Ausschalten', ausschalten))];
+      return [kopf, h('p', {}, '⚠️ Bitte noch einmal aktivieren: Dieses Telefon ist beim Push-Dienst nicht mehr angemeldet.'), fehler, h('div', { class: 'knopfzeile' }, knopf('Benachrichtigungen aktivieren', aktivieren, 'primaer'), knopf('Ausschalten', ausschalten)), personFeld()];
     }
     if (s.zustand === 'abgelehnt') {
-      return [kopf, h('p', {}, 'Die Erlaubnis fehlt. Bitte in den Einstellungen des Telefons die Benachrichtigungen für diese App erlauben, dann hier noch einmal versuchen.'), h('div', { class: 'knopfzeile' }, knopf('Noch einmal versuchen', aktivieren, 'primaer'))];
+      return [kopf, h('p', {}, 'Die Erlaubnis fehlt. Bitte in den Einstellungen des Telefons die Benachrichtigungen für diese App erlauben, dann hier noch einmal versuchen.'), h('div', { class: 'knopfzeile' }, knopf('Noch einmal versuchen', aktivieren, 'primaer')), personFeld()];
     }
-    return [kopf, h('p', { class: 'leise' }, 'Die App kann dir selbst Erinnerungen schicken, auch wenn sie geschlossen ist, zusätzlich zu Google Kalender. Jedes Telefon schaltet das für sich ein.'), fehler, h('div', { class: 'knopfzeile' }, knopf('Benachrichtigungen aktivieren', aktivieren, 'primaer'))];
+    return [kopf, h('p', { class: 'leise' }, 'Die App kann dir selbst Erinnerungen schicken, auch wenn sie geschlossen ist, zusätzlich zu Google Kalender. Jedes Telefon schaltet das für sich ein.'), fehler, h('div', { class: 'knopfzeile' }, knopf('Benachrichtigungen aktivieren', aktivieren, 'primaer')), personFeld()];
   }
 
   async function zeichne() {

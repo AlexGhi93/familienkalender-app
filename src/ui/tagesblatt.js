@@ -3,6 +3,7 @@ import { bestaetigen, blatt, chip, farbe, toast } from './components.js';
 import { tagModel } from '../app/views/tag-model.js';
 import { datumLang } from '../app/format-de.js';
 import { sacheErledigt, sacheLoeschen } from './sachen-aktionen.js';
+import { dienstImBlatt } from './bringen-holen.js';
 
 function eintragZeile(e, { store, ui }, schliessen) {
   // Der Titel beginnt schon mit dem Emoji der Zeile; es steht links und nicht doppelt im Text.
@@ -136,6 +137,7 @@ export function oeffneTagesblatt(ctx, date) {
               ),
             )
           : null,
+        dienstImBlatt({ store, tag: m.dienst }),
         h('h3', {}, 'Neu an diesem Tag'),
         h(
           'div',

@@ -3,6 +3,7 @@
 import { addDays, todayVienna } from '../domain/dates.js';
 import { PERSONEN, fehlendePersonen, leeresKonto, letzterTag } from '../domain/konto.js';
 import { FUER } from '../domain/types.js';
+import { dienstFuer } from '../domain/dienst.js';
 import { instantZuWien, wienZuInstant } from '../domain/instant.js';
 import { terminAnzeige } from '../app/views/gemeinsam.js';
 import { urlaubChecksWunsch } from '../app/urlaub-check.js';
@@ -65,8 +66,18 @@ async function kontoErinnerungen(state, von, bis) {
 }
 
 /**
- * Plan der nächsten `tage` Tage: [{ id, um (ms), art: 'tag'|'stunde'|'vortag'|'abend', titel, text, ttl }], sortiert nach Zeitpunkt.
+ * Für wen eine Erinnerung an Sachen ist, wenn sie nur an wer bringt bzw. holt gehen soll (Einstellung `dienstErinnerung: 'dienst'`):
+ * Hinbringen (auch am Vorabend) → wer an dem Tag bringt, Heimholen → wer abholt. null = an alle Telefone (auch wenn niemand eingetragen ist).
+ */
+function nurFuer(t, settings) {
+  if (t.typ !== 'kita_sache' || settings?.dienstErinnerung !== 'dienst') return null;
+  return dienstFuer(t.date, settings)[t.richtung === 'heim' ? 'h' : 'b'] || null;
+}
+
+/**
+ * Plan der nächsten `tage` Tage: [{ id, um (ms), art: 'tag'|'stunde'|'vortag'|'abend', titel, text, ttl, nur? }], sortiert nach Zeitpunkt.
  * Die `id` hängt nur an Termin und Art (nicht am Zeitpunkt), damit zwei Telefone denselben Plan ohne Doppelungen schicken.
+ * `nur` ('papa' | 'mama'): nur an die Telefone dieser Person (und an Telefone ohne Angabe, siehe meldungen.js).
  */
 export async function planeErinnerungen(state, { jetzt = new Date(), tage = 60 } = {}) {
   const von = jetzt.getTime();
@@ -94,8 +105,9 @@ export async function planeErinnerungen(state, { jetzt = new Date(), tage = 60 }
     } catch {
       continue; // eine Uhrzeit, die es in Wien nicht gibt, darf den ganzen Plan nicht verhindern
     }
+    const nur = nurFuer(t, state.settings);
     for (const k of kandidaten) {
-      if (k.um > von && k.um <= bis) plan.push({ id: await kennung(t.id, k.art), um: k.um, art: k.art, titel, text: k.text, ttl: TTL[k.art] });
+      if (k.um > von && k.um <= bis) plan.push({ id: await kennung(t.id, k.art), um: k.um, art: k.art, titel, text: k.text, ttl: TTL[k.art], ...(nur ? { nur } : {}) });
     }
   }
   plan.push(...(await kontoErinnerungen(state, von, bis)));
