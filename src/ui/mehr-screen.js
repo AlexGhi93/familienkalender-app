@@ -20,7 +20,7 @@ const KURZSTATUS = {
 function verbindungsStatus({ store, ui }) {
   const box = h('small', { class: 'menue-status' });
   const zeichne = () => {
-    const { karte } = verbindungsModel({ state: store.getState(), status: ui.auth.status(), restMs: ui.auth.restMs(), bald: ui.auth.baldAbgelaufen(), verbindung: ui.verbindung, ausstehend: store.ausstehend() });
+    const { karte } = verbindungsModel({ state: store.getState(), status: ui.auth.status(), restMs: ui.auth.restMs(), bald: ui.auth.baldAbgelaufen(), verbindung: ui.verbindung, ausstehend: store.ausstehend(), login: ui.auth.dauerAnmeldung?.() ?? null });
     box.classList.toggle('warnung', karte.status === 'abgelaufen' || karte.status === 'getrennt' || karte.fehler !== null);
     fuelle(box, KURZSTATUS[karte.status], karte.fehler ? ' · ⚠️ Letzter Versuch fehlgeschlagen' : null);
   };

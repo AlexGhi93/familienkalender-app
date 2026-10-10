@@ -118,7 +118,7 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
       const scrollY = fenster.scrollY;
       ui.bannerAktualisieren();
       if (auth && !state.geladen) {
-        fuelle(inhalt, verbindenKarte({ verbinden, verbindung: ui.verbindung }));
+        fuelle(inhalt, verbindenKarte({ verbinden, verbindung: ui.verbindung, login: auth.dauerAnmeldung?.() ?? null }));
       } else {
         ui.seiteBetreten = seite !== letzteSeite;
         letzteSeite = seite;
@@ -242,16 +242,29 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
     }
   });
 
+  /** Login-Dienst: still (ohne Google-Fenster) ein frisches Token holen; hat etwas auf die Anmeldung gewartet, wird es jetzt gespeichert und neu geladen. */
+  async function stillVerbinden() {
+    if (ui.verbindung.laeuft || !(await auth.stillAnmelden())) return; // klappt es nicht, bleibt „Verbinden“ im Banner
+    if (!store.getState().anmeldungNoetig) {
+      await store.aktualisieren();
+      return;
+    }
+    await store.wiederholeAusstehende();
+    await store.laden();
+  }
+
   // Rückkehr in die App (z. B. am nächsten Tag): neu zeichnen, damit „heute“ stimmt, und – mit gültiger Anmeldung – höchstens einmal pro Minute neu laden.
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible') return;
     ui.rendern();
-    if (auth) store.aktualisieren();
+    if (auth?.dauerAnmeldung?.()?.dauerhaft) stillVerbinden().catch(() => {});
+    else if (auth) store.aktualisieren();
     versionPruefen();
   });
 
   if (auth) {
-    auth.onStatus(() => ui.bannerAktualisieren());
+    // Mit Login-Dienst und noch ohne Daten ganz neu zeichnen: die große Anmelde-Karte zeigt die stille Anmeldung mit an.
+    auth.onStatus(() => (auth.dauerAnmeldung?.() && !store.getState().geladen ? ui.rendern() : ui.bannerAktualisieren()));
     setInterval(() => ui.bannerAktualisieren(), BANNER_INTERVALL_MS); // „läuft bald ab“ erscheint ohne Zutun
     auth.vorbereiten(); // Google schon laden, damit der Anmelde-Tipp sofort wirkt
   }

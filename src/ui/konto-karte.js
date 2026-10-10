@@ -42,7 +42,7 @@ export function kontoKarten({ store, ui }) {
   // Status, Hinweise und Knöpfe zur Verbindung: wird bei jedem Wechsel und jede halbe Minute neu gezeichnet (Rest der Anmeldung, Fehler des letzten Versuchs).
   const verbindungBlock = h('div', { class: 'verbindung-block' });
   const zeichneVerbindung = () => {
-    const { karte } = verbindungsModel({ state: store.getState(), status: ui.auth.status(), restMs: ui.auth.restMs(), bald: ui.auth.baldAbgelaufen(), verbindung: ui.verbindung, ausstehend: store.ausstehend() });
+    const { karte } = verbindungsModel({ state: store.getState(), status: ui.auth.status(), restMs: ui.auth.restMs(), bald: ui.auth.baldAbgelaufen(), verbindung: ui.verbindung, ausstehend: store.ausstehend(), login: ui.auth.dauerAnmeldung?.() ?? null });
     fuelle(
       verbindungBlock,
       h('p', {}, karte.statusText),

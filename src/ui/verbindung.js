@@ -1,5 +1,5 @@
 import { h } from './dom.js';
-import { verbindungsModel } from '../app/views/verbindung-model.js';
+import { anmeldeHinweis, verbindungsModel } from '../app/views/verbindung-model.js';
 
 /** Eine Zeile oben: Emoji, Text, optional der Fehler des letzten Versuchs (bleibt stehen) und der Knopf (fehlt, solange die Verbindung läuft). */
 function banner(emoji, text, knopfText, beiKlick, fehler = null) {
@@ -15,12 +15,17 @@ function banner(emoji, text, knopfText, beiKlick, fehler = null) {
 /** Hinweis oben auf jedem Bildschirm (Texte und Fälle: app/views/verbindung-model.js). `verbindung` = { laeuft, fehler } des letzten Versuchs. */
 export function verbindungsBanner({ state, auth, ausstehend, verbinden, verbindung }) {
   if (!auth) return null;
-  const { banner: b } = verbindungsModel({ state, status: auth.status(), restMs: auth.restMs(), bald: auth.baldAbgelaufen(), verbindung, ausstehend });
+  const { banner: b } = verbindungsModel({ state, status: auth.status(), restMs: auth.restMs(), bald: auth.baldAbgelaufen(), verbindung, ausstehend, login: auth.dauerAnmeldung?.() ?? null });
   return b ? banner(b.emoji, b.text, b.knopf, verbinden, b.fehler) : null;
 }
 
-/** Große Karte, solange noch nichts geladen ist (erster Start nach der Einrichtung oder ohne gespeicherten Stand). */
-export function verbindenKarte({ verbinden, verbindung = { laeuft: false, fehler: null } }) {
+/**
+ * Große Karte, solange noch nichts geladen ist (erster Start nach der Einrichtung oder ohne gespeicherten Stand).
+ * `login` = auth.dauerAnmeldung() (null ohne Login-Dienst): Hinweis „bleibt angemeldet“ und „Verbinde …“ während der stillen Anmeldung.
+ */
+export function verbindenKarte({ verbinden, verbindung = { laeuft: false, fehler: null }, login = null }) {
+  const hinweis = anmeldeHinweis(login);
+  const still = login?.still === true && !verbindung.laeuft;
   return h(
     'section',
     { class: 'screen' },
@@ -29,9 +34,11 @@ export function verbindenKarte({ verbinden, verbindung = { laeuft: false, fehler
       'article',
       { class: 'karte tint', style: { '--c': '#7a5ce0' } },
       h('p', {}, 'Tippe auf „Mit Google anmelden“, um den Familienkalender zu laden. Das dauert nur einen Moment.'),
+      hinweis ? h('p', { class: 'leise' }, hinweis) : null,
       verbindung.laeuft ? h('p', { class: 'leise' }, '⏳ Verbinde mit Google … Erscheint kein Fenster, erlaube Pop-ups für diese Seite.') : null,
-      verbindung.fehler ? h('p', { class: 'banner-fehler', role: 'alert' }, `⚠️ ${verbindung.fehler}`) : null,
-      h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf primaer', type: 'button', disabled: verbindung.laeuft, onClick: verbinden }, 'Mit Google anmelden')),
+      still ? h('p', { class: 'leise' }, '⏳ Verbinde mit Google …') : null,
+      verbindung.fehler && !still ? h('p', { class: 'banner-fehler', role: 'alert' }, `⚠️ ${verbindung.fehler}`) : null,
+      h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf primaer', type: 'button', disabled: verbindung.laeuft || still, onClick: verbinden }, 'Mit Google anmelden')),
     ),
   );
 }
