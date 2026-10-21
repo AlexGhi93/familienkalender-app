@@ -4,15 +4,35 @@ import { addDays, isValidDate } from '../domain/dates.js';
 import { normalizeSettings } from '../domain/settings.js';
 import { normalisiereListe } from '../domain/einkauf.js';
 import { normalisiereKonto } from '../domain/konto.js';
+import { normalisiereKatalog, normalisiereMonat } from '../domain/schicht.js';
 import { TAGES_TYPEN, TYPES } from '../domain/types.js';
 
 export const SNAPSHOT_KEY = 'fk.snapshot.v1';
 export const MAX_SNAPSHOT_ZEICHEN = 200_000;
 const TAGE_ZURUECK = 365;
 const TERMIN_TYPEN = ['arzt', 'familie', 'kita_sache'];
+export const MAX_SNAPSHOT_SCHICHT_MONATE = 6;
+const MONAT = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 const istObjekt = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 const gueltigesDatum = (d) => typeof d === 'string' && isValidDate(d);
+
+/** Die neuesten Monate (nach 'JJJJ-MM'), höchstens `max`. */
+const neuesteMonate = (monate, max) => Object.fromEntries(Object.entries(monate ?? {}).sort(([a], [b]) => b.localeCompare(a)).slice(0, max));
+
+/**
+ * Schichtplan nachsichtig lesen (anders als der Rest: er ist nur eine Kopie und wird beim Öffnen der Seite ohnehin neu geholt):
+ * unbrauchbare Monate fallen weg, der Katalog wird normalisiert; nichts davon macht den ganzen Schnappschuss ungültig.
+ */
+function pruefeSchicht(roh) {
+  if (!istObjekt(roh)) return { katalog: null, monate: {} };
+  const katalog = istObjekt(roh.katalog) ? normalisiereKatalog(roh.katalog).katalog : null;
+  const monate = {};
+  for (const [jm, monat] of Object.entries(istObjekt(roh.monate) ? roh.monate : {})) {
+    if (MONAT.test(jm) && istObjekt(monat)) monate[jm] = normalisiereMonat(monat, jm).monat;
+  }
+  return { katalog, monate: neuesteMonate(monate, MAX_SNAPSHOT_SCHICHT_MONATE) };
+}
 
 /** Prüft die gelesene Struktur streng; liefert die bereinigten Daten oder null. */
 function pruefe(roh) {
@@ -34,12 +54,15 @@ function pruefe(roh) {
     if (!istObjekt(t) || typeof t.id !== 'string' || !TERMIN_TYPEN.includes(t.typ) || !TYPES[t.typ] || !gueltigesDatum(t.date) || !Array.isArray(t.mitnehmen ?? [])) return null;
   }
   const fenster = istObjekt(roh.fenster) && gueltigesDatum(roh.fenster.von) && gueltigesDatum(roh.fenster.bis) ? { von: roh.fenster.von, bis: roh.fenster.bis } : null;
-  return { daten: { settings, tage: roh.tage, urlaub: roh.urlaub, termine: roh.termine, fenster, einkauf: normalisiereListe(roh.einkauf), konto: normalisiereKonto(roh.konto) }, gespeichertAm: roh.gespeichertAm };
+  return { daten: { settings, tage: roh.tage, urlaub: roh.urlaub, termine: roh.termine, fenster, einkauf: normalisiereListe(roh.einkauf), konto: normalisiereKonto(roh.konto), schicht: pruefeSchicht(roh.schicht) }, gespeichertAm: roh.gespeichertAm };
 }
 
 export function createSnapshot({ speicher = globalThis.localStorage ?? null, jetzt = () => new Date() } = {}) {
   return {
-    /** Speichert Tage, Urlaub, Termine und Einstellungen der letzten zwölf Monate. Gibt true zurück, wenn gespeichert wurde. */
+    /**
+     * Speichert Tage, Urlaub, Termine und Einstellungen der letzten zwölf Monate, dazu die Schichtarten und die sechs neuesten
+     * geladenen Monate des Schichtplans. Gibt true zurück, wenn gespeichert wurde.
+     */
     speichern(state, heute) {
       if (!speicher) return false;
       const grenze = addDays(heute, -TAGE_ZURUECK);
@@ -53,6 +76,7 @@ export function createSnapshot({ speicher = globalThis.localStorage ?? null, jet
         fenster: state.fenster ?? null,
         einkauf: state.einkauf ?? null,
         konto: state.konto ?? null,
+        schicht: state.schicht ? { katalog: state.schicht.katalog ?? null, monate: neuesteMonate(state.schicht.monate, MAX_SNAPSHOT_SCHICHT_MONATE) } : null,
       });
       if (text.length > MAX_SNAPSHOT_ZEICHEN) return false;
       try {

@@ -86,7 +86,7 @@ describe('Schnappschuss', () => {
     const s = speicherAttrappe();
     const snap = createSnapshot({ speicher: s, jetzt });
     snap.speichern({ settings: state.settings, tage: {}, urlaub: [], termine: [] }, '2026-10-14');
-    assert.deepEqual(snap.lesen().daten, { settings: state.settings, tage: {}, urlaub: [], termine: [], fenster: null, einkauf: leereListe(), konto: leeresKonto() });
+    assert.deepEqual(snap.lesen().daten, { settings: state.settings, tage: {}, urlaub: [], termine: [], fenster: null, einkauf: leereListe(), konto: leeresKonto(), schicht: { katalog: null, monate: {} } });
   });
 
   test('zu groß: nichts wird gespeichert', () => {
@@ -138,6 +138,16 @@ describe('Schnappschuss', () => {
 
     test('ungültiges Fenster wird verworfen, nicht der ganze Stand', () => {
       assert.equal(lies({ ...gut, fenster: { von: 'x', bis: '2027-01-01' } }).daten.fenster, null);
+    });
+
+    test('Schichtplan wird nachsichtig gelesen: Unbrauchbares fällt weg, nicht der ganze Stand', () => {
+      const monat = { v: 1, t: { papa: 'A', mama: 'kaputt!' } };
+      const g = lies({ ...gut, schicht: { katalog: { v: 1, arten: { papa: [], mama: 'x' } }, monate: { '2026-10': monat, '2026-13': monat, quatsch: 1 } } });
+      assert.deepEqual(Object.keys(g.daten.schicht.monate), ['2026-10']);
+      assert.equal(g.daten.schicht.monate['2026-10'].t.papa, `A${'.'.repeat(30)}`);
+      assert.equal(g.daten.schicht.monate['2026-10'].jm, '2026-10');
+      assert.deepEqual(g.daten.schicht.katalog.arten, { papa: [], mama: [] });
+      assert.deepEqual(lies({ ...gut, schicht: 'kaputt' }).daten.schicht, { katalog: null, monate: {} });
     });
   });
 });

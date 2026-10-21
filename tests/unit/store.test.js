@@ -3,6 +3,8 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { createStore } from '../../src/app/store.js';
 import { createDemoAdapter } from '../../src/app/demo-adapter.js';
+import { createSnapshot } from '../../src/calendar/snapshot.js';
+import { leererMonat, monatText, setzeSchicht, standardKatalog, zusatzHinzufuegen } from '../../src/domain/schicht.js';
 import { speicherAttrappe } from './hilfen.js';
 
 const JETZT = new Date('2026-10-14T08:00:00+02:00'); // Mittwoch
@@ -343,6 +345,245 @@ describe('Einstellungen und Sicherung', () => {
     await store.laden();
     const d = await store.sicherungsDaten();
     const s = store.getState();
-    assert.deepEqual(d, { settings: s.settings, tage: s.tage, urlaub: s.urlaub, termine: s.termine, einkauf: s.einkauf, konto: s.konto });
+    const { schicht, ...rest } = d;
+    assert.deepEqual(rest, { settings: s.settings, tage: s.tage, urlaub: s.urlaub, termine: s.termine, einkauf: s.einkauf, konto: s.konto });
+    assert.deepEqual(Object.keys(schicht), ['katalog', 'monate']); // Inhalt: siehe „Schichtplan“
+  });
+});
+
+describe('Schichtplan', () => {
+  const JM = '2026-10';
+  /** Demo-Speicher aus einer älteren Version: noch kein Schichtplan, keine Schichtarten. */
+  const ohneSchicht = () => speicherAttrappe({ 'fk.demo.v1': JSON.stringify({ settings: {}, tage: {}, urlaub: [], termine: [] }) });
+  const tagK = (monat, person, tag) => monat.t[person][tag - 1];
+  const ZU_GROSS = 'Zu viele Notizen in diesem Monat. Bitte einige kürzen oder löschen.';
+
+  test('am Anfang leer; schichtLaden holt Katalog und drei Monate (Standardarten, wenn noch keine gespeichert sind)', async () => {
+    const { store } = aufbau({ speicher: ohneSchicht() });
+    await store.laden();
+    assert.deepEqual(store.getState().schicht, { katalog: null, monate: {}, status: {} });
+    const zusage = store.schichtLaden(JM);
+    assert.deepEqual(store.getState().schicht.status, { '2026-09': 'laedt', '2026-10': 'laedt', '2026-11': 'laedt' });
+    await zusage;
+    const s = store.getState().schicht;
+    assert.deepEqual(s.status, { '2026-09': 'geladen', '2026-10': 'geladen', '2026-11': 'geladen' });
+    assert.deepEqual(s.katalog, standardKatalog());
+    assert.deepEqual(Object.keys(s.monate).sort(), ['2026-09', '2026-10', '2026-11']);
+    assert.deepEqual(s.monate[JM], leererMonat(JM));
+  });
+
+  test('schichtLaden mit Beispieldaten: die gespeicherten Monate kommen an', async () => {
+    const { store, speicher } = aufbau();
+    await store.laden();
+    await store.schichtLaden(JM);
+    const s = store.getState().schicht;
+    assert.deepEqual(s.monate[JM], gespeichert(speicher).schicht.monate[JM]);
+    assert.deepEqual(s.katalog, gespeichert(speicher).schicht.katalog);
+  });
+
+  test('Jahreswechsel: Dezember fragt November, Dezember und Januar', async () => {
+    const gefragt = [];
+    const { store } = aufbau({ aendern: (a) => ({ ...a, leseSchichtMonat: async (jm) => (gefragt.push(jm), { monat: null }) }) });
+    await store.laden();
+    await store.schichtLaden('2026-12');
+    assert.deepEqual(gefragt.sort(), ['2026-11', '2026-12', '2027-01']);
+    assert.deepEqual(Object.keys(store.getState().schicht.status).sort(), ['2026-11', '2026-12', '2027-01']);
+  });
+
+  test('Fehler beim Laden: Status „fehler“; abgelaufene Anmeldung zusätzlich anmeldungNoetig', async () => {
+    let art = 'netz';
+    const { store } = aufbau({
+      aendern: (a) => ({ ...a, leseSchichtMonat: async (jm) => { if (jm === '2026-11') throw art === 'auth' ? authFehler() : new Error('Netz'); return a.leseSchichtMonat(jm); } }),
+    });
+    await store.laden();
+    await store.schichtLaden(JM);
+    assert.deepEqual(store.getState().schicht.status, { '2026-09': 'geladen', '2026-10': 'geladen', '2026-11': 'fehler' });
+    assert.equal(store.getState().anmeldungNoetig, false);
+    art = 'auth';
+    await store.schichtLaden(JM);
+    assert.equal(store.getState().schicht.status['2026-11'], 'fehler');
+    assert.equal(store.getState().anmeldungNoetig, true);
+  });
+
+  test('Pinsel: sofort sichtbar, dann gespeichert; derselbe Schlüssel noch einmal macht den Tag frei', async () => {
+    const { store, speicher } = aufbau();
+    await store.laden();
+    await store.schichtLaden(JM);
+    await store.schichtSetzen(JM, 6, 'papa', null);
+    assert.equal(tagK(gespeichert(speicher).schicht.monate[JM], 'papa', 6), '.');
+    const zusage = store.schichtPinsel(JM, 6, 'papa', 'A');
+    assert.equal(tagK(store.getState().schicht.monate[JM], 'papa', 6), 'A'); // schon vor dem Speichern
+    await zusage;
+    assert.equal(tagK(gespeichert(speicher).schicht.monate[JM], 'papa', 6), 'A');
+    await store.schichtPinsel(JM, 6, 'papa', 'A');
+    assert.equal(tagK(store.getState().schicht.monate[JM], 'papa', 6), '.');
+    assert.equal(tagK(gespeichert(speicher).schicht.monate[JM], 'papa', 6), '.');
+  });
+
+  test('Notiz und Zusatz: eintragen und entfernen', async () => {
+    const { store, speicher } = aufbau();
+    await store.laden();
+    await store.schichtLaden(JM);
+    await store.schichtNotiz(JM, 3, 'papa', 'Tausch mit Kollegen');
+    await store.schichtZusatzHinzufuegen(JM, 3, 'mama', { k: 'F', von: '18:00', bis: '19:30' });
+    let m = gespeichert(speicher).schicht.monate[JM];
+    assert.deepEqual([m.n.papa[3], m.z.mama[3]], ['Tausch mit Kollegen', [{ k: 'F', von: '18:00', bis: '19:30' }]]);
+    await store.schichtNotiz(JM, 3, 'papa', '');
+    await store.schichtZusatzEntfernen(JM, 3, 'mama', { k: 'F', von: '18:00' });
+    m = gespeichert(speicher).schicht.monate[JM];
+    assert.deepEqual([m.n.papa[3], m.z.mama[3]], [undefined, undefined]);
+    assert.deepEqual(store.getState().schicht.monate[JM], m);
+  });
+
+  test('zwei Telefone: die eigene Änderung wird auf die neueste Fassung angewendet, beide bleiben', async () => {
+    const { store } = aufbau({
+      aendern: (a) => ({
+        ...a,
+        leseSchichtMonat: async () => ({ monat: null }),
+        aendereSchichtMonat: async (jm, fn) => fn(setzeSchicht(leererMonat(jm), { person: 'papa', tag: 5, k: 'B' })), // das andere Telefon war schneller
+      }),
+    });
+    await store.laden();
+    await store.schichtLaden(JM);
+    await store.schichtSetzen(JM, 6, 'papa', 'A');
+    const m = store.getState().schicht.monate[JM];
+    assert.deepEqual([tagK(m, 'papa', 5), tagK(m, 'papa', 6), m.jm], ['B', 'A', JM]);
+  });
+
+  test('Monat zu voll: abgelehnt mit der Meldung, nichts ändert sich', async () => {
+    let voll = leererMonat(JM);
+    fuellen: for (const person of ['papa', 'mama']) {
+      for (let tag = 1; tag <= 31; tag += 1) {
+        for (const von of ['06:00', '07:00', '08:00']) {
+          try {
+            voll = zusatzHinzufuegen(voll, { person, tag, k: 'F', von, bis: '09:00' });
+          } catch {
+            break fuellen; // so voll wie möglich: eine Notiz mit 40 Zeichen passt nicht mehr
+          }
+        }
+      }
+    }
+    assert.ok(monatText(voll).length > 5900);
+    let geschrieben = 0;
+    const { store } = aufbau({
+      aendern: (a) => ({ ...a, leseSchichtMonat: async (jm) => ({ monat: jm === JM ? voll : null }), aendereSchichtMonat: async (...x) => ((geschrieben += 1), a.aendereSchichtMonat(...x)) }),
+    });
+    await store.laden();
+    await store.schichtLaden(JM);
+    const vorher = store.getState();
+    await assert.rejects(store.schichtNotiz(JM, 1, 'papa', 'x'.repeat(40)), { message: ZU_GROSS });
+    assert.equal(store.getState(), vorher);
+    assert.equal(geschrieben, 0);
+  });
+
+  test('Netzfehler beim Speichern: zurück zum alten Stand, Meldung', async () => {
+    const { store } = aufbau({ aendern: (a) => ({ ...a, aendereSchichtMonat: async () => { throw new Error('Netz weg'); } }) });
+    await store.laden();
+    await store.schichtLaden(JM);
+    const alt = store.getState().schicht.monate[JM];
+    const k = tagK(alt, 'papa', 6) === 'A' ? 'B' : 'A';
+    await store.schichtSetzen(JM, 6, 'papa', k);
+    assert.deepEqual(store.getState().schicht.monate[JM], alt);
+    assert.equal(store.getState().fehler, 'Speichern hat nicht geklappt. Bitte noch einmal versuchen.');
+  });
+
+  test('abgelaufene Anmeldung: die Änderung wartet und wird nach dem Anmelden gespeichert', async () => {
+    let abgelaufen = true;
+    const { store, speicher } = aufbau({ aendern: (a) => ({ ...a, aendereSchichtMonat: async (jm, fn) => { if (abgelaufen) throw authFehler(); return a.aendereSchichtMonat(jm, fn); } }) });
+    await store.laden();
+    await store.schichtLaden(JM);
+    await store.schichtSetzen(JM, 6, 'papa', null);
+    assert.deepEqual([tagK(store.getState().schicht.monate[JM], 'papa', 6), store.getState().anmeldungNoetig, store.ausstehend()], ['.', true, 1]);
+    assert.notEqual(tagK(gespeichert(speicher).schicht.monate[JM], 'papa', 6), '.');
+    abgelaufen = false;
+    await store.wiederholeAusstehende();
+    assert.deepEqual([store.getState().anmeldungNoetig, store.ausstehend()], [false, 0]);
+    assert.equal(tagK(gespeichert(speicher).schicht.monate[JM], 'papa', 6), '.');
+  });
+
+  test('Schichtarten: neue Art bekommt „I“ (ausgehend von den Standardarten), ändern, archivieren, verschieben', async () => {
+    const { store, speicher } = aufbau({ speicher: ohneSchicht() });
+    await store.laden();
+    assert.equal(store.getState().schicht.katalog, null);
+    const k = await store.schichtArtSpeichern('papa', { kuerzel: 'BS', name: 'Bereitschaft', farbe: 'grau' });
+    assert.equal(k, 'I');
+    const papa = () => store.getState().schicht.katalog.arten.papa;
+    assert.deepEqual(papa().at(-1), { k: 'I', kuerzel: 'BS', name: 'Bereitschaft', farbe: 'grau', gruppe: 'dienst' });
+    assert.deepEqual(gespeichert(speicher).schicht.katalog, store.getState().schicht.katalog);
+    assert.equal(await store.schichtArtSpeichern('papa', { kuerzel: 'BS', name: 'Rufbereitschaft', farbe: 'grau' }, 'I'), 'I');
+    assert.equal(papa().at(-1).name, 'Rufbereitschaft');
+    await store.schichtArtArchivieren('papa', 'I', true);
+    assert.equal(papa().at(-1).archiv, true);
+    await store.schichtArtVerschieben('papa', 'I', -1);
+    assert.deepEqual(papa().slice(-2).map((a) => a.k), ['I', 'H']);
+    assert.deepEqual(gespeichert(speicher).schicht.katalog, store.getState().schicht.katalog);
+    const vorher = store.getState();
+    await assert.rejects(store.schichtArtSpeichern('papa', { kuerzel: 'F', name: 'Doppelt', farbe: 'grau' }), /Kürzel gibt es schon/);
+    assert.equal(store.getState(), vorher);
+  });
+
+  test('schichtAktualisieren: übernimmt, was das andere Telefon geschrieben hat; nicht, wenn inzwischen selbst geschrieben wurde', async () => {
+    let fremd = null;
+    let warte = null;
+    const { store } = aufbau({
+      aendern: (a) => ({ ...a, leseSchichtMonat: async (jm) => { if (warte) await warte; return jm === JM && fremd ? { monat: fremd } : a.leseSchichtMonat(jm); } }),
+    });
+    await store.laden();
+    await store.schichtLaden(JM);
+    fremd = setzeSchicht(leererMonat(JM), { person: 'mama', tag: 2, k: 'C' });
+    assert.equal(await store.schichtAktualisieren([JM]), true);
+    assert.deepEqual(store.getState().schicht.monate[JM], fremd);
+    // eine Antwort, während der selbst geschrieben wurde, wird verworfen (sie könnte älter sein)
+    let weiter;
+    warte = new Promise((r) => (weiter = r));
+    fremd = leererMonat(JM);
+    const zusage = store.schichtAktualisieren([JM]);
+    await store.schichtSetzen(JM, 9, 'papa', 'A');
+    weiter();
+    assert.equal(await zusage, false);
+    assert.equal(tagK(store.getState().schicht.monate[JM], 'papa', 9), 'A');
+  });
+
+  test('Offline-Kopie: ein neuer Store aus dem Schnappschuss hat Katalog und Monate; höchstens die sechs neuesten', async () => {
+    const { store, speicher } = aufbau();
+    await store.laden();
+    await store.schichtLaden(JM);
+    const snap = createSnapshot({ speicher, jetzt: () => JETZT });
+    assert.equal(snap.speichern(store.getState(), store.heute()), true);
+    const neu = aufbau({ speicher }).store;
+    neu.starteAusSnapshot(snap.lesen());
+    const s = neu.getState().schicht;
+    assert.deepEqual(s.katalog, store.getState().schicht.katalog);
+    assert.deepEqual(s.monate, store.getState().schicht.monate);
+    assert.deepEqual(s.status, { '2026-09': 'geladen', '2026-10': 'geladen', '2026-11': 'geladen' });
+
+    for (const jm of ['2026-05', '2026-07']) await store.schichtLaden(jm); // dazu 2026-04 … 2026-08: acht Monate
+    assert.equal(Object.keys(store.getState().schicht.monate).length, 8);
+    snap.speichern(store.getState(), store.heute());
+    assert.deepEqual(Object.keys(snap.lesen().daten.schicht.monate).sort(), ['2026-06', '2026-07', '2026-08', '2026-09', '2026-10', '2026-11']);
+  });
+
+  test('Sicherung: Katalog und alle vorhandenen Monate (ab Jänner 2026 bis zwölf Monate nach heute), fehlende übersprungen', async () => {
+    const gefragt = [];
+    const { store, speicher } = aufbau({ aendern: (a) => ({ ...a, leseSchichtMonat: async (jm) => (gefragt.push(jm), a.leseSchichtMonat(jm)) }) });
+    await store.laden();
+    const d = await store.sicherungsDaten();
+    const seed = gespeichert(speicher).schicht;
+    assert.deepEqual(d.schicht, { katalog: seed.katalog, monate: seed.monate });
+    gefragt.sort();
+    assert.deepEqual([gefragt.length, gefragt[0], gefragt.at(-1)], [22, '2026-01', '2027-10']);
+    assert.deepEqual(store.getState().schicht, { katalog: null, monate: {}, status: {} }); // der Zustand bleibt unverändert
+  });
+
+  test('Zurücksetzen (Demo): der Schichtplan kommt aus den neuen Beispieldaten', async () => {
+    const { store, speicher } = aufbau();
+    await store.laden();
+    await store.schichtLaden(JM);
+    await store.schichtSetzen(JM, 6, 'papa', 'A');
+    await store.schichtSetzen(JM, 7, 'papa', 'A');
+    await store.zuruecksetzen();
+    const s = store.getState().schicht;
+    assert.deepEqual(s.monate, gespeichert(speicher).schicht.monate);
+    assert.deepEqual(s.status, { '2026-09': 'geladen', '2026-10': 'geladen', '2026-11': 'geladen' });
   });
 });

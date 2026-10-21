@@ -6,12 +6,17 @@ import { entfernen as artikelEntfernen, erledigteEntfernen, hinzufuegen as artik
 import { urlaubCheckEventId } from '../domain/ids.js';
 import { normalisiereTermin } from './termin.js';
 import { urlaubChecksAbgleich, urlaubChecksWunsch } from './urlaub-check.js';
-import { entferneExtra, entferneStand, fuegeExtraHinzu, leeresKonto, normalisiereKonto, setzeStand } from '../domain/konto.js';
+import { entferneExtra, entferneStand, fuegeExtraHinzu, leeresKonto, monatVor, normalisiereKonto, setzeStand } from '../domain/konto.js';
+import { artAendern, artArchivieren, artHinzufuegen, artVerschieben, leererMonat, normalisiereKatalog, normalisiereMonat, schaltePinsel, setzeNotiz, setzeSchicht, standardKatalog, tageImMonat, zusatzEntfernen, zusatzHinzufuegen } from '../domain/schicht.js';
 import { MAX_SERIEN_WOCHEN, naechsterWochentag, wochenSerie } from './serie.js';
 
 const KITA_TYPEN = ['kita_essen', 'kita_ohne'];
 const MIN_ABSTAND_MS = 60_000; // höchstens einmal pro Minute neu laden
 const FORTSCHRITT_AB = 3; // ab mehr als drei Schreibvorgängen gibt es eine Fortschrittsanzeige
+
+const SCHICHT_SICHERUNG_AB = '2026-01'; // erster Monat, den die Sicherung nach einem Schichtplan fragt
+const SCHICHT_SICHERUNG_VORAUS = 12; // … bis zwölf Monate nach dem laufenden
+const SCHICHT_SICHERUNG_PARALLEL = 6; // so viele Monate werden gleichzeitig gefragt
 
 const TEXT_FEHLER = 'Speichern hat nicht geklappt. Bitte noch einmal versuchen.';
 const TEXT_ANMELDEN = 'Bitte neu anmelden: deine Änderung wird danach gespeichert.';
@@ -22,7 +27,26 @@ const zufaelligeId = () => `u${Array.from({ length: 11 }, () => Math.floor(Math.
 
 const istAuthFehler = (fehler) => fehler?.name === 'AuthAbgelaufen';
 
-/** Übernimmt aus dem, was ein Adapter liefert, nur die Felder des Zustands. */
+/** Schichtplan im Zustand: `katalog` null = noch nicht gelesen (die Ansicht zeigt dann die Standardarten). */
+const leererSchichtplan = () => ({ katalog: null, monate: {}, status: {} });
+
+/** Schichtplan aus Schnappschuss oder Beispieldaten ({ katalog, monate }): normalisiert, alle Monate gelten als geladen. */
+function schichtAusDaten(roh) {
+  const monate = {};
+  for (const [jm, monat] of Object.entries(roh?.monate ?? {})) {
+    try {
+      monate[jm] = normalisiereMonat(monat, jm).monat;
+    } catch {
+      // kein gültiger Monat als Schlüssel: weglassen
+    }
+  }
+  return { katalog: roh?.katalog ? normalisiereKatalog(roh.katalog).katalog : null, monate, status: Object.fromEntries(Object.keys(monate).map((jm) => [jm, 'geladen'])) };
+}
+
+/**
+ * Übernimmt aus dem, was ein Adapter liefert, nur die Felder des Zustands. Den Schichtplan nicht: er wird erst beim Öffnen seiner Seite
+ * geladen (`schichtLaden`); die Demo liefert ihn zwar mit, aber so verhalten sich Demo und Google gleich.
+ */
 function ladeFelder(daten, state) {
   return {
     settings: daten.settings ?? state.settings,
@@ -46,7 +70,7 @@ function ladeFelder(daten, state) {
  * - Mehr als drei Schreibvorgänge melden ihren Fortschritt (`state.fortschritt`).
  */
 export function createStore(adapter, { jetzt = () => new Date(), neueId = zufaelligeId } = {}) {
-  let state = { geladen: false, settings: normalizeSettings(), tage: {}, urlaub: [], termine: [], einkauf: leereListe(), konto: leeresKonto(), fehler: null, fortschritt: null, anmeldungNoetig: false, fenster: null };
+  let state = { geladen: false, settings: normalizeSettings(), tage: {}, urlaub: [], termine: [], einkauf: leereListe(), konto: leeresKonto(), schicht: leererSchichtplan(), fehler: null, fortschritt: null, anmeldungNoetig: false, fenster: null };
   const hoerer = new Set();
   const wartend = []; // Schreibvorgänge, die wegen abgelaufener Anmeldung noch fehlen
   const geladeneBereiche = [];
@@ -171,6 +195,52 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     });
   }
 
+  /**
+   * Ändert einen Monat des Schichtplans: `fn(monat)` → neuer Monat. Sofort sichtbar; gespeichert wird `fn` auf der NEUESTEN Fassung
+   * (zwei Telefone überschreiben sich nicht). Wirft sofort (ohne etwas zu ändern), wenn `fn` ablehnt (z. B. Monat zu voll).
+   */
+  async function schichtMonatAendern(jm, fn) {
+    const neu = fn(state.schicht.monate[jm] ?? leererMonat(jm));
+    await aendere({ schicht: { ...state.schicht, monate: { ...state.schicht.monate, [jm]: neu } } }, async () => {
+      const gespeichert = await adapter.aendereSchichtMonat(jm, fn);
+      if (gespeichert) {
+        state = { ...state, schicht: { ...state.schicht, monate: { ...state.schicht.monate, [jm]: normalisiereMonat(gespeichert, jm).monat } } };
+        melden();
+      }
+    });
+  }
+
+  /** Ändert die Schichtarten wie `schichtMonatAendern`; gibt es noch keine, wird von den Standardarten ausgegangen. Gibt den neuen Katalog zurück. */
+  async function schichtKatalogAendern(fn) {
+    const neu = fn(state.schicht.katalog ?? standardKatalog());
+    await aendere({ schicht: { ...state.schicht, katalog: neu } }, async () => {
+      const gespeichert = await adapter.aendereSchichtarten(fn);
+      if (gespeichert) {
+        state = { ...state, schicht: { ...state.schicht, katalog: normalisiereKatalog(gespeichert).katalog } };
+        melden();
+      }
+    });
+    return neu;
+  }
+
+  /** Schichtplan für die Sicherung: Katalog und alle vorhandenen Monate von Jänner 2026 bis zwölf Monate nach heute (fehlende übersprungen). */
+  async function schichtFuerSicherung() {
+    if (!adapter.leseSchichtMonat) return { katalog: state.schicht.katalog, monate: state.schicht.monate };
+    const bis = monatVor(todayVienna(jetzt()), -SCHICHT_SICHERUNG_VORAUS);
+    const jms = [];
+    for (let jm = SCHICHT_SICHERUNG_AB; jm <= bis; jm = monatVor(jm, -1)) jms.push(jm);
+    const { katalog } = await adapter.leseSchichtarten();
+    const monate = {};
+    for (let i = 0; i < jms.length; i += SCHICHT_SICHERUNG_PARALLEL) {
+      const teil = jms.slice(i, i + SCHICHT_SICHERUNG_PARALLEL);
+      const gelesen = await Promise.all(teil.map((jm) => adapter.leseSchichtMonat(jm)));
+      teil.forEach((jm, j) => {
+        if (gelesen[j]?.monat) monate[jm] = normalisiereMonat(gelesen[j].monat, jm).monat;
+      });
+    }
+    return { katalog: katalog ? normalisiereKatalog(katalog).katalog : null, monate };
+  }
+
   /** Stellt Tage auf einen früheren Stand zurück: `vorher` = [[Datum, Typ oder null], …]. */
   async function stelleTageWieder(vorher, zusatz = {}) {
     const tage = { ...state.tage };
@@ -202,7 +272,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
 
     /** Startet mit zuletzt gespeicherten Daten (nur zum Anzeigen, bis die Anmeldung da ist). `stand` = Zeitpunkt der Speicherung. */
     starteAusSnapshot({ daten, gespeichertAm }) {
-      state = { ...state, ...ladeFelder(daten, state), geladen: true, nurSnapshot: true, stand: gespeichertAm, anmeldungNoetig: true };
+      state = { ...state, ...ladeFelder(daten, state), ...(daten.schicht ? { schicht: schichtAusDaten(daten.schicht) } : {}), geladen: true, nurSnapshot: true, stand: gespeichertAm, anmeldungNoetig: true };
       melden();
     },
 
@@ -323,11 +393,13 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
 
     /**
      * Alle Daten für die Sicherung. Mit Google wird der gesamte Verlauf aus den Kalendern geholt (Anmeldefehler laufen nach oben);
-     * in der Demo steht ohnehin alles im Zustand. Der Zustand der App bleibt dabei unverändert.
+     * in der Demo steht ohnehin alles im Zustand. Der Schichtplan wird in beiden Fällen Monat für Monat gelesen.
+     * Der Zustand der App bleibt dabei unverändert.
      */
     async sicherungsDaten() {
       const roh = adapter.ladeAlles ? await adapter.ladeAlles() : state;
-      return { settings: state.settings, tage: roh.tage, urlaub: roh.urlaub, termine: roh.termine, einkauf: state.einkauf, konto: state.konto };
+      const schicht = await schichtFuerSicherung();
+      return { settings: state.settings, tage: roh.tage, urlaub: roh.urlaub, termine: roh.termine, einkauf: state.einkauf, konto: state.konto, schicht };
     },
 
     /**
@@ -554,6 +626,104 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       };
     },
 
+    /**
+     * Schichtplan beim Öffnen seiner Seite: die Schichtarten (falls noch nicht gelesen) und der Monat `jm` mit seinem Vor- und
+     * Folgemonat, alles gleichzeitig. Status je Monat: 'laedt' → 'geladen' oder 'fehler' (abgelaufene Anmeldung setzt zusätzlich
+     * `anmeldungNoetig`). Fehlt der Katalog im Kalender, gelten die Standardarten. Wurde inzwischen selbst etwas geändert, bleiben
+     * schon vorhandene Monate, wie sie sind (die Antwort könnte älter sein).
+     */
+    async schichtLaden(jm) {
+      tageImMonat(jm); // wirft bei einem ungültigen Monat
+      const jms = [monatVor(jm, 1), jm, monatVor(jm, -1)];
+      const mitKatalog = state.schicht.katalog === null;
+      const stand = schreibStand;
+      state = { ...state, schicht: { ...state.schicht, status: { ...state.schicht.status, ...Object.fromEntries(jms.map((m) => [m, 'laedt'])) } } };
+      melden();
+      const [katalog, ...monate] = await Promise.allSettled([mitKatalog ? adapter.leseSchichtarten() : null, ...jms.map((m) => adapter.leseSchichtMonat(m))]);
+      const eigene = stand !== schreibStand || schreibend > 0 || wartend.length > 0;
+      const s = state.schicht;
+      const neueMonate = { ...s.monate };
+      const status = { ...s.status };
+      let auth = false;
+      jms.forEach((m, i) => {
+        const r = monate[i];
+        if (r.status === 'rejected') {
+          status[m] = 'fehler';
+          auth ||= istAuthFehler(r.reason);
+          return;
+        }
+        if (!(eigene && s.monate[m])) neueMonate[m] = normalisiereMonat(r.value?.monat ?? null, m).monat;
+        status[m] = 'geladen';
+      });
+      let kat = s.katalog;
+      if (mitKatalog && katalog.status === 'rejected') auth ||= istAuthFehler(katalog.reason);
+      else if (mitKatalog && kat === null) kat = normalisiereKatalog(katalog.value?.katalog ?? null).katalog;
+      state = { ...state, schicht: { katalog: kat, monate: neueMonate, status }, ...(auth ? { anmeldungNoetig: true } : {}) };
+      melden();
+    },
+
+    /**
+     * Holt Schichtarten und die Monate `jms` neu (das andere Telefon hat vielleicht etwas eingetragen; alle 30 Sekunden und beim
+     * Zurückkehren). Eigene Änderungen gehen vor: solange etwas gespeichert wird oder wartet, wird nicht gefragt, und eine Antwort,
+     * während der selbst etwas geändert wurde, wird verworfen. Neu gezeichnet wird nur bei einer echten Änderung.
+     * Ergebnis: true, wenn der Stand jetzt aktuell ist; false, wenn es gerade nicht ging oder die Antwort verworfen wurde.
+     */
+    async schichtAktualisieren(jms) {
+      if (!adapter.leseSchichtMonat || !state.geladen || state.nurSnapshot || state.anmeldungNoetig) return false;
+      if (schreibend > 0 || wartend.length > 0) return false;
+      const stand = schreibStand;
+      let gelesen;
+      try {
+        gelesen = await Promise.all([adapter.leseSchichtarten(), ...jms.map((jm) => adapter.leseSchichtMonat(jm))]);
+      } catch (fehler) {
+        if (istAuthFehler(fehler)) {
+          state = { ...state, anmeldungNoetig: true };
+          melden();
+        }
+        return false;
+      }
+      if (stand !== schreibStand || schreibend > 0 || wartend.length > 0) return false;
+      const [katalog, ...monate] = gelesen;
+      const s = state.schicht;
+      const neu = { katalog: normalisiereKatalog(katalog?.katalog ?? null).katalog, monate: { ...s.monate }, status: { ...s.status } };
+      jms.forEach((jm, i) => {
+        neu.monate[jm] = normalisiereMonat(monate[i]?.monat ?? null, jm).monat;
+        neu.status[jm] = 'geladen';
+      });
+      if (JSON.stringify(neu) !== JSON.stringify(s)) {
+        state = { ...state, schicht: neu };
+        melden();
+      }
+      return true;
+    },
+
+    /** Schichtplan: Pinsel (gleiche Art noch einmal = frei), Art setzen (`k: null` = frei), Notiz, Zusatz mit Uhrzeit dazu oder weg. */
+    schichtPinsel: (jm, tag, person, k) => schichtMonatAendern(jm, (m) => schaltePinsel(m, { person, tag, k })),
+    schichtSetzen: (jm, tag, person, k) => schichtMonatAendern(jm, (m) => setzeSchicht(m, { person, tag, k })),
+    schichtNotiz: (jm, tag, person, text) => schichtMonatAendern(jm, (m) => setzeNotiz(m, { person, tag, text })),
+    schichtZusatzHinzufuegen: (jm, tag, person, { k, von, bis }) => schichtMonatAendern(jm, (m) => zusatzHinzufuegen(m, { person, tag, k, von, bis })),
+    schichtZusatzEntfernen: (jm, tag, person, { k, von }) => schichtMonatAendern(jm, (m) => zusatzEntfernen(m, { person, tag, k, von })),
+
+    /**
+     * Schichtart anlegen (ohne `k`) oder ändern (mit `k`). Gibt den Schlüssel zurück; eine neue Art wird nach dem Speichern an ihrem
+     * Kürzel wiedergefunden (hat das andere Telefon gleichzeitig eine angelegt, kann ihr Schlüssel ein anderer sein).
+     */
+    async schichtArtSpeichern(person, entwurf, k) {
+      if (k !== undefined && k !== null) {
+        await schichtKatalogAendern((kat) => artAendern(kat, person, k, entwurf));
+        return k;
+      }
+      const neu = await schichtKatalogAendern((kat) => artHinzufuegen(kat, person, entwurf));
+      const art = neu.arten[person].at(-1);
+      return state.schicht.katalog?.arten?.[person]?.find((a) => a.kuerzel === art.kuerzel)?.k ?? art.k;
+    },
+    async schichtArtArchivieren(person, k, archiv) {
+      await schichtKatalogAendern((kat) => artArchivieren(kat, person, k, archiv));
+    },
+    async schichtArtVerschieben(person, k, richtung) {
+      await schichtKatalogAendern((kat) => artVerschieben(kat, person, k, richtung));
+    },
+
     async einstellungen(teil) {
       const settings = normalizeSettings({ ...state.settings, ...teil });
       await aendere({ settings }, () => adapter.speichereSettings(teil));
@@ -567,7 +737,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
 
     async zuruecksetzen() {
       const daten = await adapter.zuruecksetzen();
-      state = { ...state, ...daten, geladen: true, fehler: null };
+      state = { ...state, ...daten, schicht: daten.schicht ? schichtAusDaten(daten.schicht) : leererSchichtplan(), geladen: true, fehler: null };
       melden();
     },
   };
