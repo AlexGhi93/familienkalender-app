@@ -17,3 +17,7 @@ export * from './offen.js';
 export * from './umwandlung.js';
 export * from './konto.js';
 export * from './dienst.js';
+export * from './schicht.js';
+// notiz.js und schicht.js haben beide MAX_NOTIZ: der ausdrückliche Export gewinnt über `export *` (Termin-Notiz = 300 wie bisher).
+export { MAX_NOTIZ } from './notiz.js';
+export { MAX_NOTIZ as MAX_SCHICHT_NOTIZ } from './schicht.js';
