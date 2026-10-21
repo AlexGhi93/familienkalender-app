@@ -1,7 +1,7 @@
 // Schichtplan aktuell halten: alle 30 Sekunden neu holen, solange die Seite offen und sichtbar ist (mit falscher Uhr).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { SCHICHT_INTERVALL_MS, createSchichtAbgleich } from '../../src/app/schicht-abgleich.js';
+import { SCHICHT_INTERVALL_MS, createSchichtAbgleich, schichtAktualisierenFaellig } from '../../src/app/schicht-abgleich.js';
 
 /** Uhr zum Vorspulen: `vor(ms)` lässt fällige Zeitgeber der Reihe nach laufen (und wartet auf ihre Promises). */
 function uhrAttrappe() {
@@ -84,4 +84,12 @@ test('Fehler beim Holen stören nicht; stop() während des Holens plant nichts m
   await uhr.vor(5000);
   assert.equal(geholt, 2);
   assert.equal(uhr.offen(), 0);
+});
+
+test('Rückkehr in die App: höchstens einmal pro Minute neu holen', () => {
+  assert.equal(schichtAktualisierenFaellig(null, 5_000), true); // noch nie geholt
+  assert.equal(schichtAktualisierenFaellig(100_000, 100_000), false);
+  assert.equal(schichtAktualisierenFaellig(100_000, 159_999), false);
+  assert.equal(schichtAktualisierenFaellig(100_000, 160_000), true);
+  assert.equal(schichtAktualisierenFaellig(100_000, 500_000), true);
 });

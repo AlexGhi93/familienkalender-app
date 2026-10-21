@@ -1,4 +1,4 @@
-// Tab-Leiste: sieben Registerkarten (drei links, „＋ Neu“ genau in der Mitte, drei rechts), Fenstertitel je Seite,
+// Tab-Leiste: acht Registerkarten (drei links, „＋ Neu“ als runder Hauptknopf, „Schicht“ gleich danach, dann drei), Fenstertitel je Seite,
 // Einkauf und Kontostand als Registerkarten ohne „Zurück“, Lage der Leiste auf schmalen Telefonen.
 import { test, expect, starteDemo, tab } from './hilfen.js';
 
@@ -7,6 +7,7 @@ const TABS = [
   ['monat', '📅', 'Monat', 'Monat'],
   ['einkauf', '🛒', 'Einkauf', 'Einkauf'],
   ['neu', '＋', 'Neu', 'Neu'],
+  ['schicht', '🗓️', 'Schicht', 'Schichtplan'], // der Fenstertitel sagt es ganz
   ['urlaub', '✈️', 'Urlaub', 'Urlaub'],
   ['konto', '💶', 'Konto', 'Kontostand'], // „Kontostand“ passt nicht in die Leiste; der Fenstertitel sagt es ganz
   ['mehr', '⚙️', 'Mehr', 'Mehr'],
@@ -15,10 +16,10 @@ const TABS = [
 const leiste = (page) => page.locator('nav.tabs');
 const tabs = (page) => leiste(page).locator('a.tab');
 
-test('sieben Registerkarten in fester Reihenfolge, „Neu“ als runder Hauptknopf', async ({ page }) => {
+test('acht Registerkarten in fester Reihenfolge, „Neu“ als runder Hauptknopf', async ({ page }) => {
   await starteDemo(page);
   await expect(leiste(page)).toHaveAccessibleName('Hauptmenü');
-  await expect(tabs(page)).toHaveCount(7);
+  await expect(tabs(page)).toHaveCount(8);
   await expect(tabs(page).locator('.tab-symbol')).toHaveText(TABS.map(([, symbol]) => symbol));
   await expect(tabs(page).locator('.tab-text')).toHaveText(TABS.map(([, , text]) => text));
   expect(await tabs(page).evaluateAll((els) => els.map((a) => a.getAttribute('href')))).toEqual(TABS.map(([id]) => `#/${id}`));
@@ -68,11 +69,11 @@ test('„Neu“ beginnt immer bei den Kacheln, auch mitten aus einem Formular', 
   await expect(page.locator('.kacheln .kachel')).toHaveCount(10);
 });
 
-for (const breite of [375, 390]) {
+for (const breite of [320, 375, 390]) {
   test.describe(`Telefon mit ${breite} px Breite`, () => {
     test.use({ viewport: { width: breite, height: 812 } });
 
-    test('„＋ Neu“ steht genau in der Mitte, links und rechts je drei gleich breite Karten, nichts ragt hinaus', async ({ page }) => {
+    test('acht Karten nebeneinander, „＋ Neu“ rund an vierter Stelle, nichts abgeschnitten, nichts überlappt, nichts ragt hinaus', async ({ page }) => {
       await starteDemo(page);
       const masse = await leiste(page).evaluate((nav) => {
         const r = (el) => el.getBoundingClientRect();
@@ -82,25 +83,29 @@ for (const breite of [375, 390]) {
           tabs: [...nav.querySelectorAll('a.tab')].map((a) => ({ links: r(a).left, rechts: r(a).right, breite: r(a).width })),
           fab: r(nav.querySelector('a.fab')),
           kreis: r(nav.querySelector('a.fab .tab-symbol')),
-          texte: [...nav.querySelectorAll('.tab-text')].map((t) => ({ links: r(t).left, rechts: r(t).right })),
+          texte: [...nav.querySelectorAll('.tab-text')].map((t) => ({ links: r(t).left, rechts: r(t).right, abgeschnitten: t.scrollWidth > t.clientWidth + 0.5 })),
         };
       });
       expect(masse.fenster).toBe(breite);
       expect(masse.leiste.links).toBeCloseTo(0, 1);
       expect(masse.leiste.rechts).toBeCloseTo(breite, 1);
       expect(masse.leiste.ueberlauf).toBe(0);
-      const mitte = breite / 2;
-      expect(Math.abs(masse.fab.left + masse.fab.width / 2 - mitte)).toBeLessThan(0.5);
-      expect(Math.abs(masse.kreis.left + masse.kreis.width / 2 - mitte)).toBeLessThan(0.5);
-      expect(masse.kreis.width).toBe(54);
-      // drei links, drei rechts, alle gleich breit; lückenlos von Rand zu Rand
+      expect(masse.tabs).toHaveLength(8);
+      // „Neu“ ist der runde Hauptknopf an vierter Stelle; der Kreis bleibt in seiner Karte
+      expect(masse.fab.left).toBeCloseTo(masse.tabs[3].links, 1);
+      expect(masse.kreis.width).toBe(masse.kreis.height);
+      expect(masse.kreis.width).toBeGreaterThanOrEqual(46);
+      expect(masse.kreis.left).toBeGreaterThanOrEqual(masse.fab.left - 0.5);
+      expect(masse.kreis.right).toBeLessThanOrEqual(masse.fab.right + 0.5);
+      // die übrigen sieben gleich breit; lückenlos und ohne Überlappung von Rand zu Rand
       const seiten = masse.tabs.filter((_, i) => i !== 3).map((t) => t.breite);
       for (const b of seiten) expect(Math.abs(b - seiten[0])).toBeLessThan(0.5);
       expect(masse.tabs[0].links).toBeCloseTo(0, 1);
-      expect(Math.abs(masse.tabs[6].rechts - breite)).toBeLessThan(0.5);
-      for (let i = 1; i < 7; i += 1) expect(Math.abs(masse.tabs[i].links - masse.tabs[i - 1].rechts)).toBeLessThan(0.5);
-      // jede Beschriftung passt in ihre Karte
+      expect(Math.abs(masse.tabs[7].rechts - breite)).toBeLessThan(0.5);
+      for (let i = 1; i < 8; i += 1) expect(Math.abs(masse.tabs[i].links - masse.tabs[i - 1].rechts)).toBeLessThan(0.5);
+      // jede Beschriftung passt ganz in ihre Karte (nicht abgeschnitten, nicht in die Nachbarkarte)
       masse.texte.forEach((t, i) => {
+        expect(t.abgeschnitten).toBe(false);
         expect(t.links).toBeGreaterThanOrEqual(masse.tabs[i].links - 0.5);
         expect(t.rechts).toBeLessThanOrEqual(masse.tabs[i].rechts + 0.5);
       });

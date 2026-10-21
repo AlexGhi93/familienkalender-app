@@ -915,7 +915,7 @@ small.notiz {
   height: calc(var(--tabs-hoehe) + env(safe-area-inset-bottom, 0px));
   padding-bottom: env(safe-area-inset-bottom, 0px);
   display: grid;
-  grid-template-columns: repeat(3, 1fr) 64px repeat(3, 1fr); /* „Neu“ genau in der Mitte */
+  grid-template-columns: repeat(3, 1fr) 52px repeat(4, 1fr); /* „Neu“ als runder Hauptknopf an vierter Stelle, sieben gleich breite Karten */
   align-items: center;
   background: color-mix(in srgb, var(--karte) 92%, transparent);
   -webkit-backdrop-filter: blur(14px);
@@ -929,10 +929,13 @@ small.notiz {
   flex-direction: column;
   align-items: center;
   gap: 2px;
+  min-width: 0;
   color: var(--ink-2);
   text-decoration: none;
-  font-size: 0.72rem;
+  font-size: 0.66rem; /* acht Karten: „Einkauf“ und „Schicht“ passen auf 375 px ganz hinein */
   font-weight: 800;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
   padding: 6px 0;
 }
 
@@ -943,7 +946,7 @@ small.notiz {
 
 @media (max-width: 359px) {
   .tab {
-    font-size: 0.64rem;
+    font-size: 0.58rem; /* kleiner, aber nie abgeschnitten */
   }
 }
 
@@ -958,9 +961,9 @@ small.notiz {
 .tab.fab .tab-symbol {
   display: grid;
   place-items: center;
-  width: 54px;
-  height: 54px;
-  margin-top: -22px;
+  width: 48px;
+  height: 48px;
+  margin-top: -20px;
   border-radius: 50%;
   background: var(--akzent);
   color: var(--akzent-ink);
@@ -3033,4 +3036,215 @@ html:has(.screen.einkauf) {
   .dienst-knopf:active {
     transform: none;
   }
+}
+
+/* ---------- Schichtplan ---------- */
+
+.sp-kopf {
+  gap: 10px;
+}
+
+.sp-kopf .gruss {
+  font-size: 1.55rem;
+}
+
+.sp-eintragen {
+  flex: none;
+  font-weight: 800;
+}
+
+.sp-monat {
+  background: var(--karte);
+  border: 1.5px solid var(--linie);
+  border-radius: var(--radius);
+  padding: 6px 8px;
+}
+
+.sp-monat h2 {
+  font-size: 1.1rem;
+  font-weight: 800;
+}
+
+.sp-filter {
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+
+.sp-filter .chip {
+  white-space: nowrap;
+  font-weight: 700;
+}
+
+.schicht-seite .wochentage,
+.sp-raster {
+  gap: 4px;
+}
+
+.schicht-seite .wochentage {
+  margin-bottom: -10px;
+}
+
+.sp-raster {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.sp-zelle {
+  min-width: 0;
+  min-height: 58px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px 2px 3px;
+  border: 1.5px solid var(--linie);
+  border-radius: 10px;
+  background: var(--karte);
+  text-align: center;
+}
+
+.sp-zelle.we {
+  background: color-mix(in srgb, var(--linie) 30%, var(--karte));
+}
+
+.sp-zelle.heute {
+  border: 2.5px solid var(--akzent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--akzent) 22%, transparent);
+}
+
+.sp-zkopf {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  height: 14px;
+  min-width: 0;
+}
+
+.sp-zkopf .nr {
+  font-size: 0.68rem;
+  font-weight: 800;
+  color: var(--ink-2);
+  padding-left: 2px;
+}
+
+.sp-zelle.heute .nr {
+  color: var(--akzent);
+}
+
+.sp-feiertag {
+  font-size: 0.55rem;
+}
+
+.sp-zusatz {
+  margin-left: auto;
+  font-size: 0.5rem;
+  font-weight: 900;
+  border-radius: 5px;
+  padding: 0 2px;
+  line-height: 11px;
+}
+
+.sp-mehr {
+  font-size: 0.55rem;
+  font-weight: 900;
+  color: var(--ink-2);
+}
+
+.sp-notiz {
+  margin-left: auto;
+  font-size: 0.6rem;
+  color: var(--ink-2);
+}
+
+.sp-zusatz + .sp-notiz,
+.sp-mehr + .sp-notiz {
+  margin-left: 1px;
+}
+
+.sp-streifen {
+  height: 17px;
+  min-width: 0;
+  border-radius: 5px;
+  font-size: 0.66rem;
+  font-weight: 900;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.sp-streifen.leer {
+  height: 14px;
+  margin: 1.5px 0;
+  background: transparent;
+  border: 1.5px dashed var(--linie);
+}
+
+.sp-raster.eine-person .sp-streifen {
+  height: 36px;
+  font-size: 0.8rem;
+}
+
+.sp-raster.eine-person .sp-streifen.leer {
+  height: 33px;
+}
+
+.sp-streifen.urlaub,
+.sp-lg-kuerzel.urlaub {
+  background-image: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.35) 0 4px, transparent 4px 8px);
+}
+
+.sp-mond {
+  font-size: 0.6rem;
+  opacity: 0.9;
+}
+
+.sp-person-zeile {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 10px;
+  align-items: baseline;
+  font-size: 0.84rem;
+}
+
+.sp-zaehlung {
+  gap: 6px;
+}
+
+.sp-legende {
+  gap: 10px;
+}
+
+.sp-legende .sp-person-zeile {
+  grid-template-columns: 1fr;
+}
+
+.sp-lg-liste {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 10px;
+  font-size: 0.76rem;
+  color: var(--ink-2);
+}
+
+.sp-lg {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sp-lg-kuerzel {
+  font-style: normal;
+  font-weight: 900;
+  font-size: 0.64rem;
+  border-radius: 5px;
+  padding: 1px 4px;
+  min-width: 18px;
+  text-align: center;
+}
+
+.sp-arten {
+  align-self: center;
 }
