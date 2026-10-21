@@ -27,7 +27,7 @@ export function pinselTippen({ store }, pinsel, datum) {
     setzen: () => store.schichtSetzen(jm, tag, person, null),
     pinsel: () => store.schichtPinsel(jm, tag, person, a.k),
     zusatzDazu: () => store.schichtZusatzHinzufuegen(jm, tag, person, { k: a.k, von: a.von, bis: a.bis }),
-    zusatzWeg: () => store.schichtZusatzEntfernen(jm, tag, person, { k: a.k, von: a.von }),
+    zusatzWeg: () => store.schichtZusatzEntfernen(jm, tag, person, { k: a.k, von: a.von, bis: a.bis }),
   };
   // Speicherfehler meldet der Store selbst (und nimmt nur diesen Tipp zurück); hier landen abgelehnte Änderungen, z. B. „Höchstens 3 Zusätze pro Tag.“
   aufrufe[a.aktion]().catch((fehler) => toast(fehler?.message ?? 'Das hat nicht geklappt. Bitte noch einmal versuchen.', { art: 'fehler' }));

@@ -161,8 +161,8 @@ export function pinselModel(state, { person, k }) {
 
 /**
  * Was ein Tipp auf Tag `tag` des Monats `jm` tut: „Frei“ → Dienst löschen (`setzen`, k null); ein Dienst → `pinsel` (der Store ersetzt
- * oder löscht bei gleicher Art); ein Zusatz → `zusatzWeg`, wenn die Person ihn an dem Tag schon hat (bevorzugt den mit den Zeiten der
- * Art), sonst `zusatzDazu` mit den Zeiten der Art. Eine archivierte oder unbekannte Art tut nichts (null).
+ * oder löscht bei gleicher Art); ein Zusatz → `zusatzWeg` mit Von und Bis genau eines Eintrags, wenn die Person ihn an dem Tag schon hat
+ * (bevorzugt den mit den Zeiten der Art, sonst den ersten dieser Art), sonst `zusatzDazu` mit den Zeiten der Art. Eine archivierte oder unbekannte Art tut nichts (null).
  */
 export function pinselAktion(state, jm, tag, { person, k }) {
   if (k === null) return { aktion: 'setzen', k: null };
@@ -170,8 +170,8 @@ export function pinselAktion(state, jm, tag, { person, k }) {
   if (!art) return null;
   if (art.gruppe !== 'zusatz') return { aktion: 'pinsel', k };
   const liste = state.schicht?.monate?.[jm]?.z?.[person]?.[tag] ?? [];
-  const da = liste.find((z) => z.k === k && z.von === art.von) ?? liste.find((z) => z.k === k);
-  return da ? { aktion: 'zusatzWeg', k, von: da.von } : { aktion: 'zusatzDazu', k, von: art.von, bis: art.bis };
+  const da = liste.find((z) => z.k === k && z.von === art.von && z.bis === art.bis) ?? liste.find((z) => z.k === k);
+  return da ? { aktion: 'zusatzWeg', k, von: da.von, bis: da.bis } : { aktion: 'zusatzDazu', k, von: art.von, bis: art.bis };
 }
 
 // ---------- Tagesblatt (ein Tag, beide Personen) ----------

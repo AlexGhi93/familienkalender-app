@@ -435,6 +435,16 @@ describe('Schichtplan', () => {
     assert.deepEqual(store.getState().schicht.monate[JM], m);
   });
 
+  test('Zusatz entfernen mit Bis: von zweien mit gleicher Art und Von bleibt der andere', async () => {
+    const { store, speicher } = aufbau();
+    await store.laden();
+    await store.schichtLaden(JM);
+    await store.schichtZusatzHinzufuegen(JM, 3, 'mama', { k: 'F', von: '18:00', bis: '19:30' });
+    await store.schichtZusatzHinzufuegen(JM, 3, 'mama', { k: 'F', von: '18:00', bis: '20:00' });
+    await store.schichtZusatzEntfernen(JM, 3, 'mama', { k: 'F', von: '18:00', bis: '19:30' });
+    assert.deepEqual(gespeichert(speicher).schicht.monate[JM].z.mama[3], [{ k: 'F', von: '18:00', bis: '20:00' }]);
+  });
+
   test('zwei Telefone: die eigene Änderung wird auf die neueste Fassung angewendet, beide bleiben', async () => {
     const { store } = aufbau({
       aendern: (a) => ({

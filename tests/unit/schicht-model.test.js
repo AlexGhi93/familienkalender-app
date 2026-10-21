@@ -225,10 +225,15 @@ describe('Pinsel', () => {
   test('Tipp mit einem Zusatz: fehlt er → mit den Zeiten der Art dazu; ist er da → weg (bevorzugt der mit den Standardzeiten)', () => {
     const db = k('mama', 'DB');
     assert.deepEqual(pinselAktion(stateMit(), JM, 6, { person: 'mama', k: db }), { aktion: 'zusatzDazu', k: db, von: '18:00', bis: '19:30' });
-    assert.deepEqual(pinselAktion(stateMit(), JM, 21, { person: 'mama', k: db }), { aktion: 'zusatzWeg', k: db, von: '18:00' });
+    assert.deepEqual(pinselAktion(stateMit(), JM, 21, { person: 'mama', k: db }), { aktion: 'zusatzWeg', k: db, von: '18:00', bis: '19:30' });
     // nur einer mit anderen Zeiten (z. B. im Tagesblatt geändert) → der wird entfernt
     const m = zusatzHinzufuegen(leererMonat(JM), { person: 'mama', tag: 5, k: db, von: '08:00', bis: '09:00' });
-    assert.deepEqual(pinselAktion(stateMit({ monate: { [JM]: m } }), JM, 5, { person: 'mama', k: db }), { aktion: 'zusatzWeg', k: db, von: '08:00' });
+    assert.deepEqual(pinselAktion(stateMit({ monate: { [JM]: m } }), JM, 5, { person: 'mama', k: db }), { aktion: 'zusatzWeg', k: db, von: '08:00', bis: '09:00' });
+    // gleiche Art und Von, anderes Bis: genau einer geht weg – der mit den Zeiten der Art, sonst der erste dieser Art
+    const zwei = zusatzHinzufuegen(zusatzHinzufuegen(leererMonat(JM), { person: 'mama', tag: 5, k: db, von: '18:00', bis: '20:00' }), { person: 'mama', tag: 5, k: db, von: '18:00', bis: '19:30' });
+    assert.deepEqual(pinselAktion(stateMit({ monate: { [JM]: zwei } }), JM, 5, { person: 'mama', k: db }), { aktion: 'zusatzWeg', k: db, von: '18:00', bis: '19:30' });
+    const ohneStandard = zusatzHinzufuegen(zusatzHinzufuegen(leererMonat(JM), { person: 'mama', tag: 5, k: db, von: '18:00', bis: '20:00' }), { person: 'mama', tag: 5, k: db, von: '18:00', bis: '21:00' });
+    assert.deepEqual(pinselAktion(stateMit({ monate: { [JM]: ohneStandard } }), JM, 5, { person: 'mama', k: db }), { aktion: 'zusatzWeg', k: db, von: '18:00', bis: '20:00' });
     // nur Zusätze derselben Person zählen: ein Papa-Eintrag mit gleichem Schlüssel am selben Tag ändert nichts an Mamas Tipp
     const mitPapa = { ...m, z: { ...m.z, papa: { 6: [{ k: db, von: '18:00', bis: '19:30' }] } } };
     assert.equal(pinselAktion(stateMit({ monate: { [JM]: mitPapa } }), JM, 6, { person: 'mama', k: db }).aktion, 'zusatzDazu');

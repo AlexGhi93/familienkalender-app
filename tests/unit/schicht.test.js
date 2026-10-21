@@ -335,6 +335,18 @@ describe('Monat', () => {
     assert.deepEqual(zwei.z.mama['21'], [{ k: 'F', von: '18:30', bis: '20:00' }, { k: 'G', von: '10:00', bis: '11:00' }]);
   });
 
+  test('zusatzEntfernen mit Bis: gleiche Art und Von, anderes Bis → nur genau dieser geht weg (wiederholbar); ohne Bis wie bisher', () => {
+    const db = { person: 'mama', tag: 21, k: 'F' };
+    const m = zusatzHinzufuegen(zusatzHinzufuegen(leererMonat('2026-10'), { ...db, von: '18:00', bis: '19:30' }), { ...db, von: '18:00', bis: '20:00' });
+    assert.equal(m.z.mama['21'].length, 2);
+    const eins = zusatzEntfernen(m, { ...db, von: '18:00', bis: '20:00' });
+    assert.deepEqual(eins.z.mama['21'], [{ k: 'F', von: '18:00', bis: '19:30' }]);
+    assert.deepEqual(zusatzEntfernen(eins, { ...db, von: '18:00', bis: '20:00' }), eins); // wiederholbar
+    assert.deepEqual(zusatzEntfernen(m, { ...db, von: '18:00', bis: '21:00' }), m); // kein passender → nichts
+    assert.deepEqual(m.z.mama['21'].length, 2); // Argument unverändert
+    assert.equal(zusatzEntfernen(m, { ...db, von: '18:00' }).z.mama['21'], undefined); // ohne Bis: alle mit Art und Von
+  });
+
   test('Monats-Funktionen verändern ihr Argument nicht', () => {
     let m = leererMonat('2026-10');
     m = setzeSchicht(m, { person: 'papa', tag: 2, k: 'A' });

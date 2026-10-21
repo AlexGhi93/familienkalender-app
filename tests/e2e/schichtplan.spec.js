@@ -485,6 +485,21 @@ test.describe('Tagesblatt (ein Tag)', () => {
     await expect.poll(async () => (await demo(page)).z.mama['22'] ?? null).toBeNull();
   });
 
+  test('zwei DB mit gleichem Von, anderem Bis: ✕ entfernt nur den einen', async ({ page }) => {
+    await starteDemo(page, { route: '#/schicht' });
+    await zelle(page, '2026-10-21').click(); // Beispiel: Mama DB 18:00–19:30
+    const zusaetze = karte(page, 'mama').locator('.sp-tag-zusatz');
+    const form = karte(page, 'mama').locator('.sp-tag-zusatz-form');
+    await karte(page, 'mama').getByRole('button', { name: '＋ Zusatz' }).click();
+    await form.getByRole('textbox', { name: 'Bis', exact: true }).fill('20:00');
+    await form.getByRole('button', { name: 'Hinzufügen' }).click();
+    await expect(zusaetze).toHaveText(['DB Dienstbesprechung 18:00–19:30 ✕', 'DB Dienstbesprechung 18:00–20:00 ✕']);
+    await karte(page, 'mama').getByRole('button', { name: 'Dienstbesprechung 18:00–20:00 entfernen' }).click();
+    await expect(zusaetze).toHaveText(['DB Dienstbesprechung 18:00–19:30 ✕']);
+    await expect.poll(async () => (await demo(page)).z.mama['21']).toEqual([{ k: expect.any(String), von: '18:00', bis: '19:30' }]);
+    await expect(zelle(page, '2026-10-21').locator('.sp-zusatz')).toHaveText('DB');
+  });
+
   test('eine ausgeblendete (archivierte) Art des Tages steht da, ist aber kein Knopf; eine unbekannte heißt „Unbekannte Art“', async ({ page }) => {
     await starteDemo(page, { route: '#/schicht' });
     await expect(zelle(page, '2026-10-21')).toBeVisible();

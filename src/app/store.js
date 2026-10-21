@@ -782,7 +782,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     schichtSetzen: (jm, tag, person, k) => schichtMonatAendern(jm, (m) => setzeSchicht(m, { person, tag, k })),
     schichtNotiz: (jm, tag, person, text) => schichtMonatAendern(jm, (m) => setzeNotiz(m, { person, tag, text })),
     schichtZusatzHinzufuegen: (jm, tag, person, { k, von, bis }) => schichtMonatAendern(jm, (m) => zusatzHinzufuegen(m, { person, tag, k, von, bis })),
-    schichtZusatzEntfernen: (jm, tag, person, { k, von }) => schichtMonatAendern(jm, (m) => zusatzEntfernen(m, { person, tag, k, von })),
+    schichtZusatzEntfernen: (jm, tag, person, { k, von, bis }) => schichtMonatAendern(jm, (m) => zusatzEntfernen(m, { person, tag, k, von, bis })),
 
     /**
      * Schichtart anlegen (ohne `k`) oder ändern (mit `k`). Gibt den Schlüssel zurück; eine neue Art wird nach dem Speichern an ihrem

@@ -128,7 +128,7 @@ export function oeffneSchichtTag({ store }, datum) {
           ' ',
           h(
             'button',
-            { class: 'sp-tag-weg', type: 'button', 'aria-label': `${z.text} entfernen`, onClick: () => aendern(store.schichtZusatzEntfernen(jm, tag, p.person, { k: z.k, von: z.von })) },
+            { class: 'sp-tag-weg', type: 'button', 'aria-label': `${z.text} entfernen`, onClick: () => aendern(store.schichtZusatzEntfernen(jm, tag, p.person, { k: z.k, von: z.von, bis: z.bis })) },
             '✕',
           ),
         ),

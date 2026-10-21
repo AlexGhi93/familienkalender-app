@@ -496,12 +496,15 @@ export function zusatzHinzufuegen(monat, { person, tag, k, von, bis }) {
   return passt(mitTagEintrag(monat, 'z', person, tag, [...liste, neu]));
 }
 
-/** Entfernt Zusätze nach Inhalt (Schlüssel und Von), nicht nach Position – daher wiederholbar. */
-export function zusatzEntfernen(monat, { person, tag, k, von }) {
+/**
+ * Entfernt Zusätze nach Inhalt, nicht nach Position – daher wiederholbar. Mit `bis` genau den einen (Schlüssel, Von und Bis; zwei mit
+ * gleichem Von und anderem Bis sind verschiedene Zusätze), ohne `bis` alle mit diesem Schlüssel und Von.
+ */
+export function zusatzEntfernen(monat, { person, tag, k, von, bis }) {
   pruefePerson(person);
   pruefeTag(monat, tag);
   const liste = monat.z[person][tag] ?? [];
-  const rest = liste.filter((x) => !(x.k === k && x.von === von));
+  const rest = liste.filter((x) => !(x.k === k && x.von === von && (bis === undefined || x.bis === bis)));
   if (rest.length === liste.length) return monat;
   return mitTagEintrag(monat, 'z', person, tag, rest.length > 0 ? rest : undefined);
 }
