@@ -586,4 +586,115 @@ describe('Schichtplan', () => {
     assert.deepEqual(s.monate, gespeichert(speicher).schicht.monate);
     assert.deepEqual(s.status, { '2026-09': 'geladen', '2026-10': 'geladen', '2026-11': 'geladen' });
   });
+
+  /** Schranke vor dem Kalender: jede Schreibanfrage wartet, bis `weiter()` sie freigibt (oder mit `fehler` scheitern lässt); zählt gleichzeitige Anfragen. */
+  function schranke() {
+    const warten = [];
+    const z = { aufrufe: 0, gleichzeitig: 0, hoechstens: 0 };
+    return {
+      z,
+      async durch(arbeit) {
+        z.aufrufe += 1;
+        z.gleichzeitig += 1;
+        z.hoechstens = Math.max(z.hoechstens, z.gleichzeitig);
+        try {
+          await new Promise((weiter, abbruch) => warten.push({ weiter, abbruch }));
+          return await arbeit();
+        } finally {
+          z.gleichzeitig -= 1;
+        }
+      },
+      async weiter(fehler) {
+        for (let i = 0; warten.length === 0; i += 1) {
+          if (i > 1000) throw new Error('keine Schreibanfrage angekommen');
+          await new Promise((r) => setImmediate(r));
+        }
+        const w = warten.shift();
+        if (fehler) w.abbruch(fehler);
+        else w.weiter();
+      },
+    };
+  }
+
+  test('Fehler beim Speichern nimmt nur diesen Monat zurück; inzwischen Geladenes bleibt; der Monat wird neu gelesen', async () => {
+    const tor = schranke();
+    let fremd = null;
+    const { store } = aufbau({
+      aendern: (a) => ({
+        ...a,
+        leseSchichtMonat: async (jm) => (jm === JM && fremd ? { monat: fremd } : a.leseSchichtMonat(jm)),
+        aendereSchichtMonat: (jm, fn) => tor.durch(() => a.aendereSchichtMonat(jm, fn)),
+      }),
+    });
+    await store.laden();
+    await store.schichtLaden(JM);
+    const alt = store.getState().schicht.monate[JM];
+    const zusage = store.schichtSetzen(JM, 6, 'papa', 'Z');
+    await store.schichtLaden('2026-12'); // inzwischen weitergeblättert
+    fremd = setzeSchicht(alt, { person: 'mama', tag: 2, k: 'C' }); // und das andere Telefon hat etwas eingetragen
+    await tor.weiter(new Error('Netz weg'));
+    await zusage;
+    const s = store.getState().schicht;
+    assert.deepEqual(s.status, { '2026-09': 'geladen', '2026-10': 'geladen', '2026-11': 'geladen', '2026-12': 'geladen', '2027-01': 'geladen' });
+    assert.deepEqual(Object.keys(s.monate).sort(), ['2026-09', '2026-10', '2026-11', '2026-12', '2027-01']);
+    assert.deepEqual(s.monate[JM], fremd); // neu gelesen: der wahre Stand im Kalender
+    assert.equal(store.getState().fehler, 'Speichern hat nicht geklappt. Bitte noch einmal versuchen.');
+  });
+
+  test('Fehler beim Speichern der Schichtarten: nur der Katalog zurück und neu gelesen, die Monate bleiben', async () => {
+    let fremd = null;
+    const { store } = aufbau({
+      aendern: (a) => ({
+        ...a,
+        leseSchichtarten: async () => (fremd ? { katalog: fremd } : a.leseSchichtarten()),
+        aendereSchichtarten: async () => {
+          throw new Error('Netz weg');
+        },
+      }),
+    });
+    await store.laden();
+    await store.schichtLaden(JM);
+    const monate = store.getState().schicht.monate;
+    fremd = { ...standardKatalog(), arten: { ...standardKatalog().arten, mama: standardKatalog().arten.mama.slice(0, 2) } };
+    await store.schichtArtSpeichern('papa', { kuerzel: 'BS', name: 'Bereitschaft', farbe: 'grau' });
+    const s = store.getState().schicht;
+    assert.deepEqual(s.katalog, fremd);
+    assert.equal(s.monate, monate);
+    assert.equal(s.status[JM], 'geladen');
+  });
+
+  test('schnelle Pinsel-Tipps auf einem Monat: nacheinander gespeichert, kein früherer Tipp verschwindet zwischendurch, am Ende alle drei', async () => {
+    const tor = schranke();
+    const { store, speicher } = aufbau({ aendern: (a) => ({ ...a, aendereSchichtMonat: (jm, fn) => tor.durch(() => a.aendereSchichtMonat(jm, fn)) }) });
+    await store.laden();
+    await store.schichtLaden(JM);
+    const TAGE = [6, 7, 8];
+    const tipps = TAGE.map((tag) => store.schichtPinsel(JM, tag, 'papa', 'Z'));
+    assert.deepEqual(TAGE.map((t) => tagK(store.getState().schicht.monate[JM], 'papa', t)), ['Z', 'Z', 'Z']); // alle sofort sichtbar
+    const zwischenstaende = [];
+    store.subscribe((s) => zwischenstaende.push(s.schicht.monate[JM]));
+    for (const _ of TAGE) await tor.weiter();
+    await Promise.all(tipps);
+    assert.deepEqual([tor.z.aufrufe, tor.z.hoechstens], [3, 1]); // nacheinander, nie gleichzeitig
+    assert.ok(zwischenstaende.length > 0);
+    for (const m of zwischenstaende) assert.deepEqual(TAGE.map((t) => tagK(m, 'papa', t)), ['Z', 'Z', 'Z']);
+    assert.deepEqual(TAGE.map((t) => tagK(gespeichert(speicher).schicht.monate[JM], 'papa', t)), ['Z', 'Z', 'Z']);
+  });
+
+  test('Schichtarten schnell nacheinander: eine Speicherung nach der anderen, beide bleiben', async () => {
+    const tor = schranke();
+    const { store, speicher } = aufbau({ aendern: (a) => ({ ...a, aendereSchichtarten: (fn) => tor.durch(() => a.aendereSchichtarten(fn)) }) });
+    await store.laden();
+    await store.schichtLaden(JM);
+    const eins = store.schichtArtSpeichern('papa', { kuerzel: 'BS', name: 'Bereitschaft', farbe: 'grau' });
+    const zwei = store.schichtArtSpeichern('mama', { kuerzel: 'BS', name: 'Bereitschaft', farbe: 'grau' });
+    const zwischenstaende = [];
+    store.subscribe((s) => zwischenstaende.push(s.schicht.katalog));
+    await tor.weiter();
+    await tor.weiter();
+    assert.deepEqual(await Promise.all([eins, zwei]), ['I', 'G']);
+    assert.deepEqual([tor.z.aufrufe, tor.z.hoechstens], [2, 1]);
+    for (const k of zwischenstaende) assert.deepEqual([k.arten.papa.at(-1).kuerzel, k.arten.mama.at(-1).kuerzel], ['BS', 'BS']);
+    assert.deepEqual(gespeichert(speicher).schicht.katalog, store.getState().schicht.katalog);
+  });
 });

@@ -85,8 +85,12 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     for (const h of hoerer) h(state);
   };
 
-  /** Führt einen Schreibvorgang aus. Ergebnis: 'ok', 'auth' (wartet auf Anmeldung) oder 'fehler' (zurückgenommen, neu geladen). */
-  async function ausfuehren(schreibe, alt) {
+  /**
+   * Führt einen Schreibvorgang aus. Ergebnis: 'ok', 'auth' (wartet auf Anmeldung) oder 'fehler' (zurückgenommen, neu geladen).
+   * Ohne `optionen` wird bei einem Fehler alles auf `alt` zurückgesetzt und neu geladen. Mit `optionen.zurueck()` (→ neuer Zustand)
+   * wird nur das Betroffene zurückgenommen und danach `optionen.neuLesen()` statt des ganzen Ladens ausgeführt (Schichtplan).
+   */
+  async function ausfuehren(schreibe, alt, optionen = {}) {
     let erledigt = 0;
     let gesamt = 0;
     schreibStand += 1;
@@ -108,12 +112,23 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       return 'ok';
     } catch (fehler) {
       if (istAuthFehler(fehler)) {
-        wartend.push(schreibe);
+        wartend.push({ schreibe, optionen });
         state = { ...state, fortschritt: null, anmeldungNoetig: true, fehler: TEXT_ANMELDEN };
         melden();
         return 'auth';
       }
       const text = gesamt > 1 && erledigt > 0 ? `Gespeichert: ${erledigt} von ${gesamt}. Bitte noch einmal versuchen; Gespeichertes bleibt erhalten.` : TEXT_FEHLER;
+      if (optionen.zurueck) {
+        state = { ...optionen.zurueck(), fortschritt: null, fehler: text };
+        melden();
+        try {
+          await optionen.neuLesen();
+        } catch {
+          state = { ...state, fehler: TEXT_UNKLAR };
+        }
+        melden();
+        return 'fehler';
+      }
       state = { ...alt, fortschritt: null, fehler: text };
       melden();
       try {
@@ -195,32 +210,97 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     });
   }
 
-  /**
-   * Ändert einen Monat des Schichtplans: `fn(monat)` → neuer Monat. Sofort sichtbar; gespeichert wird `fn` auf der NEUESTEN Fassung
-   * (zwei Telefone überschreiben sich nicht). Wirft sofort (ohne etwas zu ändern), wenn `fn` ablehnt (z. B. Monat zu voll).
-   */
-  async function schichtMonatAendern(jm, fn) {
-    const neu = fn(state.schicht.monate[jm] ?? leererMonat(jm));
-    await aendere({ schicht: { ...state.schicht, monate: { ...state.schicht.monate, [jm]: neu } } }, async () => {
-      const gespeichert = await adapter.aendereSchichtMonat(jm, fn);
-      if (gespeichert) {
-        state = { ...state, schicht: { ...state.schicht, monate: { ...state.schicht.monate, [jm]: normalisiereMonat(gespeichert, jm).monat } } };
-        melden();
+  // Schichtplan-Änderungen, die noch nicht gespeichert sind, je Teil ('katalog' oder 'JJJJ-MM'):
+  // { basis: zuletzt bekannter Stand im Kalender, offen: [fn, …] in Tipp-Reihenfolge, kette: Promise der Speicherungen }.
+  // Angezeigt wird immer `basis` mit allen offenen Änderungen darauf: so verschwindet kein Tipp, während ein früherer gespeichert wird.
+  const schichtOffen = new Map();
+  const schichtSchreibtNoch = () => schichtOffen.size > 0;
+
+  const schichtTeil = (teil) => (teil === 'katalog' ? state.schicht.katalog : state.schicht.monate[teil]);
+  const mitSchichtTeil = (teil, wert) => ({ ...state, schicht: teil === 'katalog' ? { ...state.schicht, katalog: wert } : { ...state.schicht, monate: { ...state.schicht.monate, [teil]: wert } } });
+
+  /** `basis` mit den offenen Änderungen; eine, die darauf nicht mehr passt, wird übersprungen (ihr eigenes Speichern meldet den Fehler). */
+  const mitOffenen = (basis, offen) =>
+    offen.reduce((wert, fn) => {
+      try {
+        return fn(wert);
+      } catch {
+        return wert;
       }
+    }, basis);
+
+  /**
+   * Ändert einen Teil des Schichtplans: `fn(wert)` → neuer Wert. Sofort sichtbar; wirft sofort (ohne etwas zu ändern), wenn `fn` ablehnt.
+   * Gespeichert wird je Teil eines nach dem anderen (schnelle Pinsel-Tipps streiten nicht um dieselbe Fassung im Kalender), und zwar `fn`
+   * auf der NEUESTEN Fassung (zwei Telefone überschreiben sich nicht). Bei einem Fehler wird nur diese Änderung zurückgenommen und der
+   * Teil neu gelesen; anderes (inzwischen geladene Monate, Status) bleibt. Gibt den sofort angezeigten Wert zurück.
+   */
+  async function schichtAendern(teil, fn, { leer, speichern, lesen, normalisiere }) {
+    const vorher = schichtTeil(teil) ?? leer();
+    const neu = fn(vorher);
+    let eintrag = schichtOffen.get(teil);
+    if (!eintrag) {
+      eintrag = { basis: vorher, offen: [], kette: Promise.resolve() };
+      schichtOffen.set(teil, eintrag);
+    }
+    eintrag.offen.push(fn);
+    state = { ...mitSchichtTeil(teil, neu), fehler: null };
+    melden();
+
+    const anzeigen = () => mitSchichtTeil(teil, mitOffenen(eintrag.basis, eintrag.offen));
+    const herausnehmen = () => {
+      const i = eintrag.offen.indexOf(fn);
+      if (i >= 0) eintrag.offen.splice(i, 1);
+    };
+    const aufraeumen = () => {
+      if (eintrag.offen.length === 0 && schichtOffen.get(teil) === eintrag) schichtOffen.delete(teil);
+    };
+    const schreibe = async () => {
+      const gespeichert = await speichern(fn);
+      herausnehmen();
+      if (gespeichert) eintrag.basis = normalisiere(gespeichert);
+      state = anzeigen();
+      aufraeumen();
+      melden();
+    };
+    const optionen = {
+      zurueck: () => {
+        herausnehmen();
+        return anzeigen();
+      },
+      async neuLesen() {
+        try {
+          eintrag.basis = normalisiere(await lesen());
+          state = anzeigen();
+        } finally {
+          aufraeumen();
+        }
+      },
+    };
+    const lauf = eintrag.kette.then(() => ausfuehren(schreibe, state, optionen));
+    eintrag.kette = lauf;
+    await lauf;
+    return neu;
+  }
+
+  /** Ändert einen Monat des Schichtplans (siehe `schichtAendern`). */
+  function schichtMonatAendern(jm, fn) {
+    return schichtAendern(jm, fn, {
+      leer: () => leererMonat(jm),
+      speichern: (f) => adapter.aendereSchichtMonat(jm, f),
+      lesen: async () => (await adapter.leseSchichtMonat(jm)).monat ?? null,
+      normalisiere: (m) => normalisiereMonat(m, jm).monat,
     });
   }
 
-  /** Ändert die Schichtarten wie `schichtMonatAendern`; gibt es noch keine, wird von den Standardarten ausgegangen. Gibt den neuen Katalog zurück. */
-  async function schichtKatalogAendern(fn) {
-    const neu = fn(state.schicht.katalog ?? standardKatalog());
-    await aendere({ schicht: { ...state.schicht, katalog: neu } }, async () => {
-      const gespeichert = await adapter.aendereSchichtarten(fn);
-      if (gespeichert) {
-        state = { ...state, schicht: { ...state.schicht, katalog: normalisiereKatalog(gespeichert).katalog } };
-        melden();
-      }
+  /** Ändert die Schichtarten (siehe `schichtAendern`); gibt es noch keine, wird von den Standardarten ausgegangen. Gibt den neuen Katalog zurück. */
+  function schichtKatalogAendern(fn) {
+    return schichtAendern('katalog', fn, {
+      leer: standardKatalog,
+      speichern: (f) => adapter.aendereSchichtarten(f),
+      lesen: async () => (await adapter.leseSchichtarten()).katalog ?? null,
+      normalisiere: (k) => normalisiereKatalog(k).katalog,
     });
-    return neu;
   }
 
   /** Schichtplan für die Sicherung: Katalog und alle vorhandenen Monate von Jänner 2026 bis zwölf Monate nach heute (fehlende übersprungen). */
@@ -350,7 +430,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       state = { ...state, anmeldungNoetig: false, fehler: null };
       melden();
       for (let i = 0; i < liste.length; i += 1) {
-        if ((await ausfuehren(liste[i], state)) === 'auth') {
+        if ((await ausfuehren(liste[i].schreibe, state, liste[i].optionen)) === 'auth') {
           wartend.push(...liste.slice(i + 1));
           return;
         }
@@ -640,7 +720,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       state = { ...state, schicht: { ...state.schicht, status: { ...state.schicht.status, ...Object.fromEntries(jms.map((m) => [m, 'laedt'])) } } };
       melden();
       const [katalog, ...monate] = await Promise.allSettled([mitKatalog ? adapter.leseSchichtarten() : null, ...jms.map((m) => adapter.leseSchichtMonat(m))]);
-      const eigene = stand !== schreibStand || schreibend > 0 || wartend.length > 0;
+      const eigene = stand !== schreibStand || schreibend > 0 || wartend.length > 0 || schichtSchreibtNoch();
       const s = state.schicht;
       const neueMonate = { ...s.monate };
       const status = { ...s.status };
@@ -670,7 +750,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
      */
     async schichtAktualisieren(jms) {
       if (!adapter.leseSchichtMonat || !state.geladen || state.nurSnapshot || state.anmeldungNoetig) return false;
-      if (schreibend > 0 || wartend.length > 0) return false;
+      if (schreibend > 0 || wartend.length > 0 || schichtSchreibtNoch()) return false;
       const stand = schreibStand;
       let gelesen;
       try {
@@ -682,7 +762,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
         }
         return false;
       }
-      if (stand !== schreibStand || schreibend > 0 || wartend.length > 0) return false;
+      if (stand !== schreibStand || schreibend > 0 || wartend.length > 0 || schichtSchreibtNoch()) return false;
       const [katalog, ...monate] = gelesen;
       const s = state.schicht;
       const neu = { katalog: normalisiereKatalog(katalog?.katalog ?? null).katalog, monate: { ...s.monate }, status: { ...s.status } };
