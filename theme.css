@@ -21,6 +21,39 @@
   --grau: #a7a2b2;
   --serie-papa: #2a78d6; /* Diagramm-Farben: blau/orange, mit dem Farbprüfer für Hell und Dunkel validiert */
   --serie-mama: #eb6834;
+  /* Schichtplan: Fläche --sf-<id> und Kürzel-Schrift --sf-<id>-ink je Palettenfarbe (src/domain/schicht.js), Kontrast ≥ 4,5:1 */
+  --sf-gruen: #16a34a;
+  --sf-gruen-ink: #03210e;
+  --sf-orange: #f59e0b;
+  --sf-orange-ink: #2b1700;
+  --sf-hellblau: #7dd3fc;
+  --sf-hellblau-ink: #0c2a44;
+  --sf-dunkelblau: #1e3a8a;
+  --sf-dunkelblau-ink: #ffffff;
+  --sf-rosa: #ec4899;
+  --sf-rosa-ink: #2d0418;
+  --sf-rot: #dc2626;
+  --sf-rot-ink: #ffffff;
+  --sf-violett: #7c3aed;
+  --sf-violett-ink: #ffffff;
+  --sf-tuerkis: #28b5c4;
+  --sf-tuerkis-ink: #06343a;
+  --sf-gelb: #eab308;
+  --sf-gelb-ink: #2a1f00;
+  --sf-dunkellila: #4c1d95;
+  --sf-dunkellila-ink: #ffffff;
+  --sf-schiefer: #64748b;
+  --sf-schiefer-ink: #ffffff;
+  --sf-braun: #92400e;
+  --sf-braun-ink: #ffffff;
+  --sf-oliv: #4d7c0f;
+  --sf-oliv-ink: #ffffff;
+  --sf-cyan: #0891b2;
+  --sf-cyan-ink: #00171f;
+  --sf-magenta: #c026d3;
+  --sf-magenta-ink: #ffffff;
+  --sf-grau: #a8a29e;
+  --sf-grau-ink: #1c1917;
 
   --radius: 20px;
   --radius-klein: 14px;
@@ -44,6 +77,39 @@
     --schatten: 0 1px 0 rgba(0, 0, 0, 0.2), 0 8px 22px rgba(0, 0, 0, 0.3);
     --serie-papa: #3987e5;
     --serie-mama: #d95926;
+    /* Schichtplan dunkel: dunkle Töne aufgehellt (≥ 2:1 auf --karte), Kürzel weiter ≥ 4,5:1; in beiden dunklen Blöcken gleich */
+    --sf-gruen: #22c55e;
+    --sf-gruen-ink: #03210e;
+    --sf-orange: #fb923c;
+    --sf-orange-ink: #2b1100;
+    --sf-hellblau: #7dd3fc;
+    --sf-hellblau-ink: #0c2a44;
+    --sf-dunkelblau: #2f6ae8;
+    --sf-dunkelblau-ink: #ffffff;
+    --sf-rosa: #f472b6;
+    --sf-rosa-ink: #3b0a24;
+    --sf-rot: #dc2626;
+    --sf-rot-ink: #ffffff;
+    --sf-violett: #a78bfa;
+    --sf-violett-ink: #1e0a4a;
+    --sf-tuerkis: #28b5c4;
+    --sf-tuerkis-ink: #06343a;
+    --sf-gelb: #facc15;
+    --sf-gelb-ink: #2a1f00;
+    --sf-dunkellila: #7e3fd0;
+    --sf-dunkellila-ink: #ffffff;
+    --sf-schiefer: #64748b;
+    --sf-schiefer-ink: #ffffff;
+    --sf-braun: #9a5a2c;
+    --sf-braun-ink: #ffffff;
+    --sf-oliv: #65a30d;
+    --sf-oliv-ink: #132302;
+    --sf-cyan: #0891b2;
+    --sf-cyan-ink: #00171f;
+    --sf-magenta: #c026d3;
+    --sf-magenta-ink: #ffffff;
+    --sf-grau: #a8a29e;
+    --sf-grau-ink: #1c1917;
     color-scheme: dark;
   }
 }
@@ -61,6 +127,39 @@
   --schatten: 0 1px 0 rgba(0, 0, 0, 0.2), 0 8px 22px rgba(0, 0, 0, 0.3);
   --serie-papa: #3987e5;
   --serie-mama: #d95926;
+  /* Schichtplan dunkel: dunkle Töne aufgehellt (≥ 2:1 auf --karte), Kürzel weiter ≥ 4,5:1; in beiden dunklen Blöcken gleich */
+  --sf-gruen: #22c55e;
+  --sf-gruen-ink: #03210e;
+  --sf-orange: #fb923c;
+  --sf-orange-ink: #2b1100;
+  --sf-hellblau: #7dd3fc;
+  --sf-hellblau-ink: #0c2a44;
+  --sf-dunkelblau: #2f6ae8;
+  --sf-dunkelblau-ink: #ffffff;
+  --sf-rosa: #f472b6;
+  --sf-rosa-ink: #3b0a24;
+  --sf-rot: #dc2626;
+  --sf-rot-ink: #ffffff;
+  --sf-violett: #a78bfa;
+  --sf-violett-ink: #1e0a4a;
+  --sf-tuerkis: #28b5c4;
+  --sf-tuerkis-ink: #06343a;
+  --sf-gelb: #facc15;
+  --sf-gelb-ink: #2a1f00;
+  --sf-dunkellila: #7e3fd0;
+  --sf-dunkellila-ink: #ffffff;
+  --sf-schiefer: #64748b;
+  --sf-schiefer-ink: #ffffff;
+  --sf-braun: #9a5a2c;
+  --sf-braun-ink: #ffffff;
+  --sf-oliv: #65a30d;
+  --sf-oliv-ink: #132302;
+  --sf-cyan: #0891b2;
+  --sf-cyan-ink: #00171f;
+  --sf-magenta: #c026d3;
+  --sf-magenta-ink: #ffffff;
+  --sf-grau: #a8a29e;
+  --sf-grau-ink: #1c1917;
   color-scheme: dark;
 }
 
@@ -2843,6 +2942,88 @@ html:has(.screen.einkauf) {
 
 .push-person {
   margin-top: 4px;
+}
+
+/* ---------- Schichtplan: Farbflächen je Palettenfarbe ---------- */
+
+.sf-gruen {
+  background: var(--sf-gruen);
+  color: var(--sf-gruen-ink);
+}
+
+.sf-orange {
+  background: var(--sf-orange);
+  color: var(--sf-orange-ink);
+}
+
+.sf-hellblau {
+  background: var(--sf-hellblau);
+  color: var(--sf-hellblau-ink);
+}
+
+.sf-dunkelblau {
+  background: var(--sf-dunkelblau);
+  color: var(--sf-dunkelblau-ink);
+}
+
+.sf-rosa {
+  background: var(--sf-rosa);
+  color: var(--sf-rosa-ink);
+}
+
+.sf-rot {
+  background: var(--sf-rot);
+  color: var(--sf-rot-ink);
+}
+
+.sf-violett {
+  background: var(--sf-violett);
+  color: var(--sf-violett-ink);
+}
+
+.sf-tuerkis {
+  background: var(--sf-tuerkis);
+  color: var(--sf-tuerkis-ink);
+}
+
+.sf-gelb {
+  background: var(--sf-gelb);
+  color: var(--sf-gelb-ink);
+}
+
+.sf-dunkellila {
+  background: var(--sf-dunkellila);
+  color: var(--sf-dunkellila-ink);
+}
+
+.sf-schiefer {
+  background: var(--sf-schiefer);
+  color: var(--sf-schiefer-ink);
+}
+
+.sf-braun {
+  background: var(--sf-braun);
+  color: var(--sf-braun-ink);
+}
+
+.sf-oliv {
+  background: var(--sf-oliv);
+  color: var(--sf-oliv-ink);
+}
+
+.sf-cyan {
+  background: var(--sf-cyan);
+  color: var(--sf-cyan-ink);
+}
+
+.sf-magenta {
+  background: var(--sf-magenta);
+  color: var(--sf-magenta-ink);
+}
+
+.sf-grau {
+  background: var(--sf-grau);
+  color: var(--sf-grau-ink);
 }
 
 @media (prefers-reduced-motion: reduce) {
