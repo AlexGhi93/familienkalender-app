@@ -20,6 +20,7 @@ import { istNeueVersionVerfuegbar } from './app/version-check.js';
 import { fortschrittLeiste } from './ui/fortschritt.js';
 import { createEinkaufAbgleich } from './app/einkauf-abgleich.js';
 import { schichtScreen } from './ui/schicht-screen.js';
+import { oeffneSchichtTag } from './ui/schicht-tag.js';
 import { schichtFilterLesen, schichtFilterSpeichern } from './app/views/schicht-model.js';
 import { createSchichtAbgleich, schichtAktualisierenFaellig } from './app/schicht-abgleich.js';
 import { monatVor } from './domain/konto.js';
@@ -220,6 +221,8 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
       ui.rendern();
     },
     tagesblatt: (date) => oeffneTagesblatt({ store, ui }, date),
+    /** Tagesblatt des Schichtplans: ein Tag, beide Personen (Tipp auf einen Tag ohne Pinsel). */
+    schichtTag: (datum) => oeffneSchichtTag({ store, ui }, datum),
     /** Formular für einen neuen Termin der Art `art` (oder `termin` bearbeiten); `datum` = Tag, mit dem ein neuer Eintrag beginnt (sonst der Vorschlag). */
     neuTerminStarten(art, termin = null, { datum = null } = {}) {
       ui.neu = terminEntwurf(art, { settings: store.getState().settings, heute: store.heute(), termin, state: store.getState(), datum });

@@ -1,7 +1,7 @@
 // Ansicht des Schichtplans ohne DOM: Monatsraster mit zwei Streifen je Tag, Filter, Zählung, Legende, gemerkter Filter.
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { SCHICHT_FILTER_SCHLUESSEL, pinselAktion, pinselModel, pinselStart, rasterFilter, schichtFilterLesen, schichtFilterSpeichern, schichtMonatModel } from '../../src/app/views/schicht-model.js';
+import { SCHICHT_FILTER_SCHLUESSEL, pinselAktion, pinselModel, pinselStart, rasterFilter, schichtFilterLesen, schichtFilterSpeichern, schichtMonatModel, schichtTagModel } from '../../src/app/views/schicht-model.js';
 import { artArchivieren, leererMonat, setzeNotiz, setzeSchicht, standardKatalog, zusatzHinzufuegen } from '../../src/domain/schicht.js';
 import { speicherAttrappe, zustand } from './hilfen.js';
 
@@ -248,5 +248,91 @@ describe('Pinsel', () => {
     const archiviert = artArchivieren(katalog, 'papa', k('papa', 'F'), true);
     assert.equal(pinselAktion(stateMit({ katalog: archiviert }), JM, 9, { person: 'papa', k: k('papa', 'F') }), null);
     assert.equal(pinselAktion(stateMit(), JM, 9, { person: 'papa', k: 'z' }), null);
+  });
+});
+
+describe('schichtTagModel (Tagesblatt)', () => {
+  const tagModel = (state, datum) => schichtTagModel(state, datum);
+  const person = (m, p) => m.personen.find((x) => x.person === p);
+
+  test('Titel wie „Mittwoch, 21. Oktober“, immer beide Personen (Papa oben), Monat und Tag', () => {
+    const m = tagModel(stateMit(), '2026-10-21');
+    assert.equal(m.titel, 'Mittwoch, 21. Oktober');
+    assert.equal(m.jm, JM);
+    assert.equal(m.tag, 21);
+    assert.equal(m.geladen, true);
+    assert.deepEqual(m.personen.map((p) => [p.person, p.name, p.emoji]), [
+      ['papa', 'Papa', '👨'],
+      ['mama', 'Mama', '👩'],
+    ]);
+  });
+
+  test('Knöpfe: nur aktive Dienst-Arten in Katalog-Reihenfolge, die eingetragene markiert; Kopf mit Zeiten und Nacht', () => {
+    const m = tagModel(stateMit(), '2026-10-03');
+    const papa = person(m, 'papa');
+    assert.deepEqual(papa.arten.map((a) => a.kuerzel), ['F', 'M', 'NM', 'N', '2T', 'Ü', 'S', 'U']);
+    assert.deepEqual(papa.arten.filter((a) => a.aktiv).map((a) => a.kuerzel), ['N']);
+    assert.equal(papa.frei, false);
+    assert.deepEqual(papa.schicht, { text: 'Nacht', nacht: true });
+    assert.deepEqual(papa.arten[0], { k: k('papa', 'F'), kuerzel: 'F', name: 'Frühdienst', farbe: 'gruen', urlaub: false, aktiv: false });
+    assert.equal(papa.arten.find((a) => a.kuerzel === 'U').urlaub, true);
+    assert.equal(papa.nichtWaehlbar, null);
+    const mama = person(tagModel(stateMit(), '2026-10-01'), 'mama');
+    assert.deepEqual(mama.arten.map((a) => a.kuerzel), ['T', 'N', 'S', 'Ü', 'U']); // DB ist ein Zusatz, kein Dienst
+    assert.deepEqual(mama.schicht, { text: 'Tagdienst 07:00–17:45', nacht: false });
+    assert.deepEqual(person(tagModel(stateMit(), '2026-10-02'), 'mama').schicht, { text: 'Nachtdienst 17:30–07:00', nacht: true }); // Nacht aus den Zeiten
+  });
+
+  test('ein freier Tag: „Frei“ markiert, keine Art aktiv, keine Notiz, keine Zusätze', () => {
+    const papa = person(tagModel(stateMit(), '2026-10-10'), 'papa');
+    assert.equal(papa.frei, true);
+    assert.deepEqual(papa.schicht, { text: 'Frei', nacht: false });
+    assert.equal(papa.arten.some((a) => a.aktiv), false);
+    assert.equal(papa.notiz, '');
+    assert.deepEqual(papa.zusaetze, []);
+  });
+
+  test('Notiz und Zusätze des Tages (Text „Name von–bis“); Zusatz-Arten zum Hinzufügen mit ihren Zeiten', () => {
+    assert.equal(person(tagModel(stateMit(), '2026-10-13'), 'mama').notiz, 'Dienst 12');
+    assert.equal(person(tagModel(stateMit(), '2026-10-13'), 'papa').notiz, '');
+    const mama = person(tagModel(stateMit(), '2026-10-21'), 'mama');
+    const db = k('mama', 'DB');
+    assert.deepEqual(mama.zusaetze, [
+      { k: db, von: '18:00', bis: '19:30', kuerzel: 'DB', name: 'Dienstbesprechung', farbe: 'schiefer', text: 'Dienstbesprechung 18:00–19:30' },
+      { k: db, von: '20:00', bis: '21:00', kuerzel: 'DB', name: 'Dienstbesprechung', farbe: 'schiefer', text: 'Dienstbesprechung 20:00–21:00' },
+    ]);
+    assert.deepEqual(mama.zusatzArten, [{ k: db, kuerzel: 'DB', name: 'Dienstbesprechung', farbe: 'schiefer', von: '18:00', bis: '19:30' }]);
+    assert.deepEqual(person(tagModel(stateMit(), '2026-10-21'), 'papa').zusatzArten, []);
+  });
+
+  test('eingetragene archivierte Art: kein Knopf, aber als „(ausgeblendet)“ zu sehen; unbekannte Art: „Unbekannte Art“', () => {
+    const kat = artArchivieren(katalog, 'papa', k('papa', 'F'), true);
+    const papa = person(tagModel(stateMit({ katalog: kat }), '2026-10-01'), 'papa');
+    assert.equal(papa.arten.some((a) => a.kuerzel === 'F'), false);
+    assert.deepEqual(papa.nichtWaehlbar, { kuerzel: 'F', name: 'Frühdienst (ausgeblendet)', farbe: 'gruen', urlaub: false });
+    assert.deepEqual(papa.schicht, { text: 'Frühdienst', nacht: false });
+    assert.equal(papa.frei, false);
+    // an einem anderen Tag fehlt sie einfach
+    assert.equal(person(tagModel(stateMit({ katalog: kat }), '2026-10-03'), 'papa').nichtWaehlbar, null);
+    const unbekannt = person(tagModel(stateMit(), '2026-10-08'), 'papa');
+    assert.deepEqual(unbekannt.nichtWaehlbar, { kuerzel: '?', name: 'Unbekannte Art', farbe: 'grau', urlaub: false });
+    assert.deepEqual(unbekannt.schicht, { text: 'Unbekannte Art', nacht: false });
+    assert.equal(unbekannt.arten.some((a) => a.aktiv), false);
+  });
+
+  test('ein Zusatz mit unbekannter Art bleibt sichtbar und entfernbar („?“, „Unbekannte Art“)', () => {
+    const m = { ...testMonat() };
+    m.z = { ...m.z, mama: { ...m.z.mama, 4: [{ k: 'y', von: '08:00', bis: '09:00' }] } };
+    const mama = person(tagModel(stateMit({ monate: { [JM]: m } }), '2026-10-04'), 'mama');
+    assert.deepEqual(mama.zusaetze, [{ k: 'y', von: '08:00', bis: '09:00', kuerzel: '?', name: 'Unbekannte Art', farbe: 'grau', text: 'Unbekannte Art 08:00–09:00' }]);
+  });
+
+  test('ohne gelesene Schichtarten gelten die Standardarten; ein nicht geladener Monat zeigt beide frei', () => {
+    const m = tagModel(zustand(), '2026-11-05');
+    assert.equal(m.geladen, false);
+    assert.equal(m.titel, 'Donnerstag, 5. November');
+    assert.deepEqual(person(m, 'papa').arten.map((a) => a.kuerzel), ['F', 'M', 'NM', 'N', '2T', 'Ü', 'S', 'U']);
+    assert.equal(person(m, 'mama').frei, true);
+    assert.equal(person(m, 'mama').zusatzArten.length, 1);
   });
 });

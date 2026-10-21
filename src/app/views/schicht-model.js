@@ -5,7 +5,7 @@ import { addDays, eachDay, weekday } from '../../domain/dates.js';
 import { feiertagName } from '../../domain/feiertage.js';
 import { monatVor } from '../../domain/konto.js';
 import { SCHICHT_PERSONEN, aktiveArten, artFuer, istNacht, monatZaehlung, schichtAm, standardKatalog, tageImMonat } from '../../domain/schicht.js';
-import { WOCHENTAGE_KURZ, monatTitel } from '../format-de.js';
+import { WOCHENTAGE_KURZ, datumLang, monatTitel } from '../format-de.js';
 
 export const SCHICHT_FILTER = Object.freeze(['beide', 'papa', 'mama']);
 export const SCHICHT_FILTER_SCHLUESSEL = 'fk.schicht.filter.v1';
@@ -172,4 +172,41 @@ export function pinselAktion(state, jm, tag, { person, k }) {
   const liste = state.schicht?.monate?.[jm]?.z?.[person]?.[tag] ?? [];
   const da = liste.find((z) => z.k === k && z.von === art.von) ?? liste.find((z) => z.k === k);
   return da ? { aktion: 'zusatzWeg', k, von: da.von } : { aktion: 'zusatzDazu', k, von: art.von, bis: art.bis };
+}
+
+// ---------- Tagesblatt (ein Tag, beide Personen) ----------
+
+const PERSONEN_TAG = { papa: { name: 'Papa', emoji: '👨' }, mama: { name: 'Mama', emoji: '👩' } };
+const UNBEKANNT = { kuerzel: '?', name: 'Unbekannte Art', farbe: 'grau' };
+
+/** Eine Person im Tagesblatt: Kopf (Art mit Zeiten, Nacht), Knöpfe der aktiven Dienst-Arten, Notiz, Zusätze und Zusatz-Arten zum Hinzufügen. */
+function tagPerson(katalog, monat, person, tag) {
+  const k = schichtAm(monat, person, tag);
+  const art = k === null ? null : artFuer(katalog, person, k);
+  const arten = aktiveArten(katalog, person, 'dienst').map((a) => ({ k: a.k, kuerzel: a.kuerzel, name: a.name, farbe: a.farbe, urlaub: a.muster === 'urlaub', aktiv: a.k === k }));
+  let schicht = { text: 'Frei', nacht: false };
+  if (k !== null) schicht = art ? { text: zeitenText(art) ? `${art.name} ${zeitenText(art)}` : art.name, nacht: istNacht(art) } : { text: UNBEKANNT.name, nacht: false };
+  // Eingetragen, aber nicht (mehr) wählbar: archiviert, unbekannt oder inzwischen ein Zusatz – sichtbar, aber kein Knopf
+  let nichtWaehlbar = null;
+  if (k !== null && !arten.some((a) => a.aktiv)) {
+    nichtWaehlbar = art ? { kuerzel: art.kuerzel, name: art.archiv ? `${art.name} (ausgeblendet)` : art.name, farbe: art.farbe, urlaub: art.muster === 'urlaub' } : { ...UNBEKANNT, urlaub: false };
+  }
+  const zusaetze = (monat?.z?.[person]?.[tag] ?? []).map((z) => {
+    const a = artFuer(katalog, person, z.k) ?? UNBEKANNT;
+    return { k: z.k, von: z.von, bis: z.bis, kuerzel: a.kuerzel, name: a.name, farbe: a.farbe, text: `${a.name} ${z.von}–${z.bis}` };
+  });
+  const zusatzArten = aktiveArten(katalog, person, 'zusatz').map((a) => ({ k: a.k, kuerzel: a.kuerzel, name: a.name, farbe: a.farbe, von: a.von ?? '', bis: a.bis ?? '' }));
+  return { person, ...PERSONEN_TAG[person], schicht, arten, frei: k === null, nichtWaehlbar, notiz: monat?.n?.[person]?.[tag] ?? '', zusaetze, zusatzArten };
+}
+
+/**
+ * Tagesblatt für `datum` ('JJJJ-MM-TT'): Titel wie „Mittwoch, 21. Oktober“ und immer beide Personen (der Filter der Seite gilt hier
+ * nicht). Ohne gelesene Schichtarten gelten die Standardarten; ein nicht geladener Monat zeigt beide frei (`geladen: false`).
+ */
+export function schichtTagModel(state, datum) {
+  const jm = datum.slice(0, 7);
+  const tag = Number(datum.slice(8));
+  const katalog = katalogVon(state);
+  const monat = state.schicht?.monate?.[jm] ?? null;
+  return { titel: datumLang(datum), jm, tag, geladen: monat !== null, personen: SCHICHT_PERSONEN.map((p) => tagPerson(katalog, monat, p, tag)) };
 }

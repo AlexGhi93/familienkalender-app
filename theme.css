@@ -3201,7 +3201,8 @@ html:has(.screen.einkauf) {
 
 .sp-streifen.urlaub,
 .sp-lg-kuerzel.urlaub,
-.sp-pinsel-kuerzel.urlaub {
+.sp-pinsel-kuerzel.urlaub,
+.sp-tag-kuerzel.urlaub {
   background-image: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.35) 0 4px, transparent 4px 8px);
 }
 
@@ -3333,7 +3334,9 @@ html:has(.screen.einkauf) {
   gap: 5px;
 }
 
-.sp-pinsel-art {
+/* Art-Knöpfe: Pinsel-Leiste und Tagesblatt sehen gleich aus */
+.sp-pinsel-art,
+.sp-tag-art {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -3347,14 +3350,16 @@ html:has(.screen.einkauf) {
   white-space: nowrap;
 }
 
-.sp-pinsel-art.aktiv {
+.sp-pinsel-art.aktiv,
+.sp-tag-art.aktiv {
   border-color: var(--akzent);
   box-shadow: 0 0 0 2px var(--akzent);
   background: color-mix(in srgb, var(--akzent) 10%, var(--karte));
   font-weight: 800;
 }
 
-.sp-pinsel-kuerzel {
+.sp-pinsel-kuerzel,
+.sp-tag-kuerzel {
   font-style: normal;
   font-weight: 900;
   font-size: 0.64rem;
@@ -3364,7 +3369,8 @@ html:has(.screen.einkauf) {
   text-align: center;
 }
 
-.sp-pinsel-kuerzel.frei {
+.sp-pinsel-kuerzel.frei,
+.sp-tag-kuerzel.frei {
   background: transparent;
   border: 1.5px dashed var(--ink-2);
   color: var(--ink-2);
@@ -3373,4 +3379,112 @@ html:has(.screen.einkauf) {
 .sp-pinsel-hinweis {
   font-size: 0.72rem;
   color: var(--ink-2);
+}
+
+/* ---------- Schichtplan: Tagesblatt (ein Tag, beide Personen) ---------- */
+
+.sp-tag-karte {
+  gap: 10px;
+  padding: 12px;
+}
+
+.blatt-inhalt h3.sp-tag-kopf {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.95rem;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink);
+}
+
+.sp-tag-kopf small {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--ink-2);
+  text-align: right;
+}
+
+.sp-tag-arten,
+.sp-tag-zusatzarten {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sp-tag-art {
+  min-height: 40px; /* im Blatt ist Platz: etwas größer als in der Pinsel-Leiste */
+  font-size: 0.8rem;
+}
+
+/* eingetragen, aber nicht mehr wählbar (ausgeblendet oder unbekannt): sichtbar, kein Knopf */
+.sp-tag-art.inaktiv {
+  border-style: dashed;
+  border-color: var(--ink-2);
+  color: var(--ink-2);
+  white-space: normal;
+}
+
+.sp-tag-notiz input {
+  min-height: 44px;
+  font: inherit;
+}
+
+.sp-tag-zusaetze {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sp-tag-zusatz {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 2px 4px 2px 10px;
+  border-radius: var(--radius-klein);
+  background: color-mix(in srgb, var(--ink-2) 10%, var(--karte));
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.sp-tag-zusatz-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.sp-tag-weg {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink-2);
+  font-size: 1rem;
+}
+
+.sp-tag-plus {
+  align-self: flex-start;
+  color: var(--akzent);
+}
+
+.sp-tag-zusatz-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  border: 1.5px dashed var(--linie);
+  border-radius: var(--radius-klein);
+}
+
+.sp-tag-zeiten {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
 }

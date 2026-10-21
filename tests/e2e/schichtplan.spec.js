@@ -334,3 +334,205 @@ test.describe('Pinsel', () => {
     expect(await page.evaluate(() => window.scrollY)).toBe(ganzUnten);
   });
 });
+
+test.describe('Tagesblatt (ein Tag)', () => {
+  test.use({ viewport: { width: 375, height: 812 } });
+
+  const blattAm = (page, titel) => page.getByRole('dialog', { name: titel });
+  const karte = (page, person) => page.locator(`.sp-tag-karte[data-person="${person}"]`);
+  const knopf = (page, person, name) => karte(page, person).getByRole('button', { name, exact: true });
+  const notizFeld = (page, person) => karte(page, person).getByRole('textbox', { name: 'Notiz (optional)' });
+  const kopfText = (page, person) => karte(page, person).locator('.sp-tag-kopf small');
+  const demo = (page) => page.evaluate(() => JSON.parse(localStorage.getItem('fk.demo.v1')).schicht.monate['2026-10']);
+  const PAPA_DIENSTE = ['F Frühdienst', 'M Mittagsdienst', 'NM Nachmittagsdienst', 'N Nacht', '2T 2Teiler', 'Ü Überstunde', 'S Schulung', 'U Urlaub', '– Frei'];
+
+  test('ein Tipp auf den 21. zeigt beide (auch mit Filter „Papa“); NM setzen, Notiz „Dienst 47“ → nach dem Schließen ✎', async ({ page }) => {
+    await starteDemo(page, { route: '#/schicht' });
+    await page.locator('.sp-filter').getByRole('button', { name: '👨 Papa' }).click();
+    await zelle(page, '2026-10-21').click();
+    const blatt = blattAm(page, 'Mittwoch, 21. Oktober');
+    await expect(blatt).toBeVisible();
+    await expect(blatt.getByRole('heading', { name: 'Mittwoch, 21. Oktober' })).toBeVisible();
+    await expect(page.locator('.sp-tag-karte')).toHaveCount(2); // der Filter gilt hier nicht
+    await expect(karte(page, 'papa').locator('.sp-tag-kopf')).toContainText('👨 Papa');
+    await expect(karte(page, 'mama').locator('.sp-tag-kopf')).toContainText('👩 Mama');
+    // Mama (Beispiel): Tagdienst mit Zeiten, Dienstbesprechung 18:00–19:30
+    await expect(kopfText(page, 'mama')).toHaveText('Tagdienst 07:00–17:45');
+    await expect(knopf(page, 'mama', 'T Tagdienst')).toHaveAttribute('aria-pressed', 'true');
+    await expect(knopf(page, 'mama', 'T Tagdienst')).toHaveClass(/aktiv/);
+    await expect(karte(page, 'mama').locator('.sp-tag-zusatz')).toHaveText(['DB Dienstbesprechung 18:00–19:30 ✕']);
+    // Dienstarten in Katalog-Reihenfolge und „Frei“; die Zusatz-Art DB gehört nicht dazu
+    await expect(karte(page, 'papa').locator('.sp-tag-arten > *')).toHaveText(PAPA_DIENSTE);
+    await expect(karte(page, 'mama').locator('.sp-tag-arten > *')).toHaveText(['T Tagdienst', 'N Nachtdienst', 'S Schulung', 'Ü Überstunde', 'U Urlaub', '– Frei']);
+    await expect(knopf(page, 'papa', 'F Frühdienst').locator('.sp-tag-kuerzel')).toHaveClass(/sf-gruen/);
+
+    await knopf(page, 'papa', 'NM Nachmittagsdienst').click();
+    await expect(knopf(page, 'papa', 'NM Nachmittagsdienst')).toHaveAttribute('aria-pressed', 'true');
+    await expect(kopfText(page, 'papa')).toHaveText('Nachmittagsdienst');
+    await expect(streifen(page, '2026-10-21', 'papa')).toHaveText('NM'); // die Seite darunter zeigt es sofort
+    await knopf(page, 'papa', 'N Nacht').click();
+    await expect(kopfText(page, 'papa')).toHaveText('Nacht ☾');
+    await knopf(page, 'papa', '– Frei').click();
+    await expect(knopf(page, 'papa', '– Frei')).toHaveAttribute('aria-pressed', 'true');
+    await expect(kopfText(page, 'papa')).toHaveText('Frei');
+    await expect(streifen(page, '2026-10-21', 'papa')).toHaveClass(/leer/);
+    await knopf(page, 'papa', 'NM Nachmittagsdienst').click();
+    await expect(streifen(page, '2026-10-21', 'papa')).toHaveText('NM');
+
+    // Notiz: wird beim Verlassen gespeichert (hier: Schließen), die Marke ✎ erscheint im Raster
+    await expect(notizFeld(page, 'papa')).toHaveValue('');
+    await expect(zelle(page, '2026-10-21').locator('.sp-notiz')).toHaveCount(0);
+    await notizFeld(page, 'papa').fill('Dienst 47');
+    await blatt.getByRole('button', { name: 'Schließen' }).click();
+    await expect(blatt).toHaveCount(0);
+    await expect(zelle(page, '2026-10-21').locator('.sp-notiz')).toHaveText('✎');
+    await expect.poll(async () => (await demo(page)).n.papa['21']).toBe('Dienst 47');
+
+    // wieder öffnen: alles steht da; Notiz mit Enter ändern
+    await zelle(page, '2026-10-21').click();
+    await expect(notizFeld(page, 'papa')).toHaveValue('Dienst 47');
+    await expect(knopf(page, 'papa', 'NM Nachmittagsdienst')).toHaveAttribute('aria-pressed', 'true');
+    await notizFeld(page, 'papa').fill('Dienst 47 · Linie 6');
+    await notizFeld(page, 'papa').press('Enter');
+    await expect.poll(async () => (await demo(page)).n.papa['21']).toBe('Dienst 47 · Linie 6');
+    await expect(notizFeld(page, 'papa')).toHaveValue('Dienst 47 · Linie 6');
+    // geleert und verlassen (Tipp daneben): Notiz weg; Escape schließt
+    await notizFeld(page, 'papa').fill('');
+    await karte(page, 'papa').locator('.sp-tag-kopf').click();
+    await expect.poll(async () => (await demo(page)).n.papa['21'] ?? null).toBeNull();
+    await page.keyboard.press('Escape');
+    await expect(blatt).toHaveCount(0);
+    await expect(zelle(page, '2026-10-21').locator('.sp-notiz')).toHaveCount(0);
+  });
+
+  test('Notiz schreiben und gleich einen anderen Knopf tippen: der Tipp wirkt, die Notiz ist gespeichert', async ({ page }) => {
+    await starteDemo(page, { route: '#/schicht' });
+    await zelle(page, '2026-10-22').click();
+    await notizFeld(page, 'papa').fill('Dienst 47');
+    await karte(page, 'mama').getByRole('button', { name: '＋ Zusatz' }).click();
+    await expect(karte(page, 'mama').locator('.sp-tag-zusatz-form')).toBeVisible();
+    await expect.poll(async () => (await demo(page)).n.papa['22']).toBe('Dienst 47');
+    await notizFeld(page, 'papa').fill('Dienst 48');
+    await knopf(page, 'papa', 'M Mittagsdienst').click();
+    await expect(knopf(page, 'papa', 'M Mittagsdienst')).toHaveAttribute('aria-pressed', 'true');
+    await expect.poll(async () => (await demo(page)).n.papa['22']).toBe('Dienst 48');
+    await expect(notizFeld(page, 'papa')).toHaveValue('Dienst 48');
+  });
+
+  test('Notiz: höchstens 40 Zeichen lassen sich schreiben; Escape mitten im Schreiben speichert sie trotzdem', async ({ page }) => {
+    await starteDemo(page, { route: '#/schicht' });
+    await zelle(page, '2026-10-22').click();
+    await expect(notizFeld(page, 'mama')).toHaveAttribute('maxlength', '40');
+    await notizFeld(page, 'mama').click();
+    await page.keyboard.type('x'.repeat(41));
+    await expect(notizFeld(page, 'mama')).toHaveValue('x'.repeat(40));
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect.poll(async () => (await demo(page)).n.mama['22']).toBe('x'.repeat(40));
+  });
+
+  test('Mama „＋ Zusatz“: DB mit 18:30–20:00 hinzufügen (Liste und Marke im Raster), ✕ nimmt ihn weg; höchstens drei', async ({ page }) => {
+    await starteDemo(page, { route: '#/schicht' });
+    await zelle(page, '2026-10-22').click();
+    const zusaetze = karte(page, 'mama').locator('.sp-tag-zusatz');
+    const plus = karte(page, 'mama').getByRole('button', { name: '＋ Zusatz' });
+    const form = karte(page, 'mama').locator('.sp-tag-zusatz-form');
+    const von = form.getByRole('textbox', { name: 'Von', exact: true });
+    const bis = form.getByRole('textbox', { name: 'Bis', exact: true });
+    await expect(zusaetze).toHaveCount(0);
+    await expect(karte(page, 'papa').getByRole('button', { name: '＋ Zusatz' })).toHaveCount(0); // Papa hat (noch) keine Zusatz-Art
+    await plus.click();
+    await expect(form.getByRole('button', { name: 'DB Dienstbesprechung' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(von).toHaveValue('18:00'); // vorbelegt mit den Zeiten der Art
+    await expect(bis).toHaveValue('19:30');
+    await von.fill('18:30');
+    await bis.fill('20:00');
+    await form.getByRole('button', { name: 'Hinzufügen' }).click();
+    await expect(form).toHaveCount(0);
+    await expect(zusaetze).toHaveText(['DB Dienstbesprechung 18:30–20:00 ✕']);
+    await expect(zelle(page, '2026-10-22').locator('.sp-zusatz')).toHaveText('DB');
+    await expect.poll(async () => (await demo(page)).z.mama['22']).toEqual([{ k: expect.any(String), von: '18:30', bis: '20:00' }]);
+
+    // „Abbrechen“ schließt das Formular, ohne etwas einzutragen
+    await plus.click();
+    await form.getByRole('button', { name: 'Abbrechen' }).click();
+    await expect(form).toHaveCount(0);
+    await expect(zusaetze).toHaveCount(1);
+
+    // zwei weitere (mit den vorbelegten Zeiten bzw. 07:00–08:00), ein vierter wird abgelehnt
+    await plus.click();
+    await form.getByRole('button', { name: 'Hinzufügen' }).click();
+    await expect(zusaetze).toHaveCount(2);
+    await plus.click();
+    await von.fill('07:00');
+    await bis.fill('08:00');
+    await form.getByRole('button', { name: 'Hinzufügen' }).click();
+    await expect(zusaetze).toHaveText(['DB Dienstbesprechung 18:30–20:00 ✕', 'DB Dienstbesprechung 18:00–19:30 ✕', 'DB Dienstbesprechung 07:00–08:00 ✕']);
+    await plus.click();
+    await von.fill('12:00');
+    await form.getByRole('button', { name: 'Hinzufügen' }).click();
+    await expect(page.locator('.toast.fehler')).toHaveText('Höchstens 3 Zusätze pro Tag.');
+    await expect(von).toHaveValue('12:00'); // das Formular bleibt mit der Eingabe offen
+    await form.getByRole('button', { name: 'Abbrechen' }).click();
+
+    // ✕ entfernt genau diesen Zusatz
+    await karte(page, 'mama').getByRole('button', { name: 'Dienstbesprechung 18:00–19:30 entfernen' }).click();
+    await karte(page, 'mama').getByRole('button', { name: 'Dienstbesprechung 07:00–08:00 entfernen' }).click();
+    await expect(zusaetze).toHaveText(['DB Dienstbesprechung 18:30–20:00 ✕']);
+    await karte(page, 'mama').getByRole('button', { name: 'Dienstbesprechung 18:30–20:00 entfernen' }).click();
+    await expect(zusaetze).toHaveCount(0);
+    await expect(zelle(page, '2026-10-22').locator('.sp-zusatz')).toHaveCount(0);
+    await expect.poll(async () => (await demo(page)).z.mama['22'] ?? null).toBeNull();
+  });
+
+  test('eine ausgeblendete (archivierte) Art des Tages steht da, ist aber kein Knopf; eine unbekannte heißt „Unbekannte Art“', async ({ page }) => {
+    await starteDemo(page, { route: '#/schicht' });
+    await expect(zelle(page, '2026-10-21')).toBeVisible();
+    await page.evaluate(() => {
+      const daten = JSON.parse(localStorage.getItem('fk.demo.v1'));
+      const s = daten.schicht.katalog.arten.papa.find((a) => a.kuerzel === 'S');
+      s.archiv = true;
+      const monat = daten.schicht.monate['2026-10'];
+      monat.t.papa = monat.t.papa.slice(0, 20) + s.k + monat.t.papa.slice(21); // 21.10. Papa: Schulung (ausgeblendet)
+      monat.t.mama = monat.t.mama.slice(0, 20) + 'z' + monat.t.mama.slice(21); // 21.10. Mama: eine Art, die es nicht gibt
+      localStorage.setItem('fk.demo.v1', JSON.stringify(daten));
+    });
+    await page.reload();
+    await zelle(page, '2026-10-21').click();
+    await expect(kopfText(page, 'papa')).toHaveText('Schulung');
+    await expect(karte(page, 'papa').locator('.sp-tag-arten > *')).toHaveText([...PAPA_DIENSTE.filter((t) => t !== 'S Schulung' && t !== '– Frei'), 'S Schulung (ausgeblendet)', '– Frei']);
+    await expect(karte(page, 'papa').getByRole('button', { name: /Schulung/ })).toHaveCount(0);
+    await expect(karte(page, 'papa').locator('.sp-tag-art.inaktiv')).toHaveText('S Schulung (ausgeblendet)');
+    await expect(kopfText(page, 'mama')).toHaveText('Unbekannte Art');
+    await expect(karte(page, 'mama').locator('.sp-tag-art.inaktiv')).toHaveText('? Unbekannte Art');
+    // eine andere Art wählen: die ausgeblendete verschwindet aus der Reihe
+    await knopf(page, 'papa', 'F Frühdienst').click();
+    await expect(karte(page, 'papa').locator('.sp-tag-art.inaktiv')).toHaveCount(0);
+    await expect(streifen(page, '2026-10-21', 'papa')).toHaveText('F');
+  });
+
+  test('mit dem Pinsel malt ein Tipp; nach „Fertig“ öffnet ein Tipp das Tagesblatt', async ({ page }) => {
+    await starteDemo(page, { route: '#/schicht' });
+    await page.getByRole('button', { name: '✏️ Eintragen' }).click();
+    await page.locator('.sp-pinsel').getByRole('button', { name: 'F Frühdienst', exact: true }).click();
+    await zelle(page, '2026-10-08').click();
+    await expect(streifen(page, '2026-10-08', 'papa')).toHaveText('F');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await page.locator('.sp-pinsel').getByRole('button', { name: 'Fertig' }).click();
+    await zelle(page, '2026-10-08').click();
+    await expect(blattAm(page, 'Donnerstag, 8. Oktober')).toBeVisible();
+    await expect(knopf(page, 'papa', 'F Frühdienst')).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  test('auf 375 px ragt im Tagesblatt nichts seitwärts hinaus', async ({ page }) => {
+    await starteDemo(page, { route: '#/schicht' });
+    await zelle(page, '2026-10-21').click();
+    await karte(page, 'mama').getByRole('button', { name: '＋ Zusatz' }).click();
+    const masse = await page.evaluate(() => {
+      const b = document.querySelector('.blatt');
+      return { scroll: b.scrollWidth, breite: b.clientWidth, rechts: Math.max(...[...b.querySelectorAll('button, input:not(.picker-unsichtbar)')].map((e) => e.getBoundingClientRect().right)) };
+    });
+    expect(masse.scroll).toBeLessThanOrEqual(masse.breite);
+    expect(masse.rechts).toBeLessThanOrEqual(375);
+  });
+});
