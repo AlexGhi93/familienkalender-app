@@ -3488,3 +3488,185 @@ html:has(.screen.einkauf) {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 10px;
 }
+
+/* ---------- Schichtplan: Blatt „Schichtarten“ (anlegen, ändern, ausblenden, ordnen) ---------- */
+
+.sp-arten-blatt {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sp-arten-person,
+.sp-art-form {
+  gap: 10px;
+  padding: 12px;
+}
+
+.blatt-inhalt .sp-arten-person h3,
+.blatt-inhalt .sp-art-form h3 {
+  font-size: 0.95rem;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink);
+}
+
+.sp-arten-liste {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* eine Zeile: Kürzel, Text, ↑ ↓; darunter „Bearbeiten“ und „Entfernen“ */
+.sp-art-zeile {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    'kuerzel text pfeile'
+    '. aktionen aktionen';
+  align-items: center;
+  gap: 4px 8px;
+  padding: 6px 0;
+  border-top: 1px solid var(--linie);
+}
+
+.sp-art-zeile:first-child {
+  border-top: 0;
+}
+
+.sp-art-zeile.aus {
+  grid-template-areas: 'kuerzel text pfeile';
+}
+
+.sp-art-kuerzel {
+  grid-area: kuerzel;
+  font-style: normal;
+  font-weight: 900;
+  font-size: 0.72rem;
+  min-width: 30px;
+  padding: 3px 6px;
+  border-radius: 999px;
+  text-align: center;
+}
+
+.sp-art-kuerzel.urlaub {
+  background-image: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.35) 0 4px, transparent 4px 8px);
+}
+
+.sp-art-text {
+  grid-area: text;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.sp-art-pfeile {
+  grid-area: pfeile;
+  display: flex;
+  gap: 4px;
+}
+
+.sp-art-zeile.aus > .knopf {
+  grid-area: pfeile;
+}
+
+.sp-art-pfeil {
+  width: 40px;
+  height: 40px;
+  border: 1.5px solid var(--linie);
+  border-radius: 50%;
+  background: var(--karte);
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.sp-art-pfeil:disabled {
+  opacity: 0.35;
+}
+
+.sp-art-aktionen {
+  grid-area: aktionen;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sp-art-aktionen .knopf.klein,
+.sp-art-zeile.aus > .knopf.klein {
+  min-height: 36px;
+  padding: 4px 12px;
+  font-size: 0.85rem;
+}
+
+.sp-arten-aus summary {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  font-weight: 800;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.sp-arten-aus .leise {
+  font-size: 0.8rem;
+}
+
+.sp-arten-neu {
+  align-self: flex-start;
+  color: var(--akzent);
+}
+
+.sp-art-felder {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 84px;
+  gap: 10px;
+}
+
+.sp-art-felder input {
+  width: 100%;
+  font: inherit;
+}
+
+/* Farbwahl: 16 runde Flächen; die gewählte trägt ✓ und einen Ring (nicht nur Farbe) */
+.sp-farben {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr)); /* zwei gleiche Reihen zu acht */
+  gap: 6px;
+}
+
+.sp-farbe {
+  aspect-ratio: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  font-size: 1.05rem;
+  font-weight: 900;
+}
+
+.sp-farbe.aktiv {
+  box-shadow:
+    0 0 0 2px var(--karte),
+    0 0 0 4px var(--ink);
+}
+
+.sp-art-nacht {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  font-weight: 800;
+}
+
+.sp-art-nacht input {
+  width: 22px;
+  height: 22px;
+  accent-color: var(--akzent);
+}
+
+.sp-art-form .leise {
+  font-size: 0.8rem;
+}

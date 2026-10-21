@@ -1,8 +1,8 @@
 // Ansicht des Schichtplans ohne DOM: Monatsraster mit zwei Streifen je Tag, Filter, Zählung, Legende, gemerkter Filter.
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { SCHICHT_FILTER_SCHLUESSEL, pinselAktion, pinselModel, pinselStart, rasterFilter, schichtFilterLesen, schichtFilterSpeichern, schichtMonatModel, schichtTagModel } from '../../src/app/views/schicht-model.js';
-import { artArchivieren, leererMonat, setzeNotiz, setzeSchicht, standardKatalog, zusatzHinzufuegen } from '../../src/domain/schicht.js';
+import { SCHICHT_FILTER_SCHLUESSEL, artEntwurf, artEntwurfFehler, pinselAktion, pinselModel, pinselStart, rasterFilter, schichtFilterLesen, schichtFilterSpeichern, schichtArtenModel, schichtMonatModel, schichtTagModel } from '../../src/app/views/schicht-model.js';
+import { artArchivieren, artHinzufuegen, artVerschieben, leererMonat, setzeNotiz, setzeSchicht, standardKatalog, zusatzHinzufuegen } from '../../src/domain/schicht.js';
 import { speicherAttrappe, zustand } from './hilfen.js';
 
 const JM = '2026-10';
@@ -339,5 +339,79 @@ describe('schichtTagModel (Tagesblatt)', () => {
     assert.deepEqual(person(m, 'papa').arten.map((a) => a.kuerzel), ['F', 'M', 'NM', 'N', '2T', 'Ü', 'S', 'U']);
     assert.equal(person(m, 'mama').frei, true);
     assert.equal(person(m, 'mama').zusatzArten.length, 1);
+  });
+});
+
+describe('Schichtarten bearbeiten', () => {
+  const artenModel = (kat = katalog) => schichtArtenModel(zustand({ schicht: { katalog: kat, monate: {}, status: {} } }));
+  const personIn = (m, p) => m.find((x) => x.person === p);
+
+  test('je Person die aktiven Arten (Kürzel, Name, Text mit Zeiten, ☾ und „Zusatz“) und keine ausgeblendeten', () => {
+    const m = artenModel();
+    assert.deepEqual(m.map((p) => [p.person, p.emoji, p.name]), [['papa', '👨', 'Papa'], ['mama', '👩', 'Mama']]);
+    const papa = personIn(m, 'papa');
+    assert.deepEqual(papa.aktiv.map((a) => a.text), ['Frühdienst', 'Mittagsdienst', 'Nachmittagsdienst', 'Nacht ☾', '2Teiler', 'Überstunde', 'Schulung', 'Urlaub']);
+    assert.deepEqual(papa.aktiv[0], { k: k('papa', 'F'), kuerzel: 'F', name: 'Frühdienst', farbe: 'gruen', urlaub: false, text: 'Frühdienst', hoch: 0, runter: 1 });
+    assert.equal(papa.aktiv.at(-1).urlaub, true);
+    assert.equal(papa.aktiv.at(-1).runter, 0);
+    assert.deepEqual(papa.ausgeblendet, []);
+    assert.deepEqual(personIn(m, 'mama').aktiv.map((a) => a.text), [
+      'Tagdienst 07:00–17:45',
+      'Nachtdienst 17:30–07:00 ☾',
+      'Schulung',
+      'Überstunde',
+      'Urlaub',
+      'Dienstbesprechung 18:00–19:30 · Zusatz',
+    ]);
+  });
+
+  test('ausgeblendete stehen extra; ↑/↓ überspringen sie (Anzahl der Tauschschritte)', () => {
+    const kat = artArchivieren(katalog, 'papa', k('papa', 'NM'), true);
+    const papa = personIn(artenModel(kat), 'papa');
+    assert.deepEqual(papa.aktiv.map((a) => a.kuerzel), ['F', 'M', 'N', '2T', 'Ü', 'S', 'U']);
+    assert.deepEqual(papa.ausgeblendet.map((a) => a.kuerzel), ['NM']);
+    const m = papa.aktiv.find((a) => a.kuerzel === 'M');
+    const n = papa.aktiv.find((a) => a.kuerzel === 'N');
+    assert.deepEqual([m.hoch, m.runter, n.hoch, n.runter], [1, 2, 2, 1]);
+    // M zwei Schritte nach unten: steht danach hinter N, die ausgeblendete NM davor
+    let neu = kat;
+    for (let i = 0; i < m.runter; i += 1) neu = artVerschieben(neu, 'papa', m.k, 1);
+    assert.deepEqual(personIn(artenModel(neu), 'papa').aktiv.map((a) => a.kuerzel), ['F', 'N', 'M', '2T', 'Ü', 'S', 'U']);
+  });
+
+  test('ohne gelesene Schichtarten gelten die Standardarten', () => {
+    const m = schichtArtenModel(zustand());
+    assert.equal(personIn(m, 'papa').aktiv.length, 8);
+  });
+
+  test('Entwurf zum Bearbeiten: Felder der Art, leere Zeiten als „“, Nacht nur wenn angehakt; Muster bleibt draußen', () => {
+    const state = zustand({ schicht: { katalog, monate: {}, status: {} } });
+    assert.deepEqual(artEntwurf(state, 'papa', k('papa', 'N')), { name: 'Nacht', kuerzel: 'N', farbe: 'dunkelblau', gruppe: 'dienst', von: '', bis: '', nacht: true });
+    assert.deepEqual(artEntwurf(state, 'mama', k('mama', 'DB')), { name: 'Dienstbesprechung', kuerzel: 'DB', farbe: 'schiefer', gruppe: 'zusatz', von: '18:00', bis: '19:30', nacht: false });
+    assert.equal('muster' in artEntwurf(state, 'papa', k('papa', 'U')), false);
+  });
+
+  test('Entwurf für eine neue Art: leer, Dienst, die erste Farbe, die bei der Person noch frei ist (sonst Grau)', () => {
+    const state = zustand({ schicht: { katalog, monate: {}, status: {} } });
+    // Papa nutzt grün, orange, hellblau, dunkelblau, rosa, rot, violett, türkis → gelb ist die erste freie
+    assert.deepEqual(artEntwurf(state, 'papa', null), { name: '', kuerzel: '', farbe: 'gelb', gruppe: 'dienst', von: '', bis: '', nacht: false });
+    let voll = katalog;
+    for (const [i, farbe] of ['gelb', 'dunkellila', 'schiefer', 'braun', 'oliv', 'cyan', 'magenta', 'grau'].entries()) {
+      voll = artHinzufuegen(voll, 'papa', { name: `Art ${i}`, kuerzel: `A${i}`, farbe });
+    }
+    assert.equal(artEntwurf(zustand({ schicht: { katalog: voll, monate: {}, status: {} } }), 'papa', null).farbe, 'grau');
+  });
+
+  test('Prüfung vor dem Speichern: die deutschen Meldungen der Schichtarten, null wenn alles passt', () => {
+    const state = zustand({ schicht: { katalog, monate: {}, status: {} } });
+    const neu = { name: 'Bergbahn', kuerzel: 'B', farbe: 'braun', gruppe: 'dienst', von: '', bis: '', nacht: false };
+    assert.equal(artEntwurfFehler(state, 'papa', null, neu), null);
+    assert.equal(artEntwurfFehler(state, 'papa', null, { ...neu, kuerzel: 'f' }), 'Dieses Kürzel gibt es schon.');
+    assert.equal(artEntwurfFehler(state, 'papa', null, { ...neu, name: '  ' }), 'Bitte einen Namen eingeben.');
+    assert.equal(artEntwurfFehler(state, 'papa', null, { ...neu, kuerzel: 'ABCD' }), 'Das Kürzel muss 1 bis 3 Zeichen haben.');
+    assert.equal(artEntwurfFehler(state, 'papa', null, { ...neu, gruppe: 'zusatz' }), 'Ein Zusatz braucht Von und Bis.');
+    // beim Bearbeiten darf die Art ihr eigenes Kürzel behalten, nicht aber das einer anderen nehmen
+    assert.equal(artEntwurfFehler(state, 'papa', k('papa', 'F'), { ...artEntwurf(state, 'papa', k('papa', 'F')), farbe: 'oliv' }), null);
+    assert.equal(artEntwurfFehler(state, 'papa', k('papa', 'F'), { ...artEntwurf(state, 'papa', k('papa', 'F')), kuerzel: 'm' }), 'Dieses Kürzel gibt es schon.');
   });
 });

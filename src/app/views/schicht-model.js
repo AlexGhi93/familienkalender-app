@@ -4,7 +4,7 @@
 import { addDays, eachDay, weekday } from '../../domain/dates.js';
 import { feiertagName } from '../../domain/feiertage.js';
 import { monatVor } from '../../domain/konto.js';
-import { SCHICHT_PERSONEN, aktiveArten, artFuer, istNacht, monatZaehlung, schichtAm, standardKatalog, tageImMonat } from '../../domain/schicht.js';
+import { PALETTE, SCHICHT_PERSONEN, aktiveArten, artAendern, artFuer, artHinzufuegen, istNacht, monatZaehlung, schichtAm, standardKatalog, tageImMonat } from '../../domain/schicht.js';
 import { WOCHENTAGE_KURZ, datumLang, monatTitel } from '../format-de.js';
 
 export const SCHICHT_FILTER = Object.freeze(['beide', 'papa', 'mama']);
@@ -209,4 +209,64 @@ export function schichtTagModel(state, datum) {
   const katalog = katalogVon(state);
   const monat = state.schicht?.monate?.[jm] ?? null;
   return { titel: datumLang(datum), jm, tag, geladen: monat !== null, personen: SCHICHT_PERSONEN.map((p) => tagPerson(katalog, monat, p, tag)) };
+}
+
+// ---------- Schichtarten bearbeiten ----------
+
+/** Text einer Art in der Liste: „Name 07:00–17:45 ☾ · Zusatz“ (Zeiten, Nacht und Gruppe nur, wenn es sie gibt). */
+function artListenText(a) {
+  const zeiten = zeitenText(a);
+  return `${a.name}${zeiten ? ` ${zeiten}` : ''}${istNacht(a) ? ' ☾' : ''}${a.gruppe === 'zusatz' ? ' · Zusatz' : ''}`;
+}
+
+const artZeile = (a) => ({ k: a.k, kuerzel: a.kuerzel, name: a.name, farbe: a.farbe, urlaub: a.muster === 'urlaub', text: artListenText(a) });
+
+/**
+ * Blatt „Schichtarten“: je Person die aktiven Arten in Katalog-Reihenfolge und die ausgeblendeten. `hoch`/`runter` = so viele
+ * Tauschschritte (artVerschieben) braucht eine Art, um an der nächsten aktiven vorbeizukommen – ausgeblendete dazwischen werden
+ * übersprungen, sonst täte ein Tipp sichtbar nichts; 0 = schon ganz oben bzw. unten.
+ */
+export function schichtArtenModel(state) {
+  const katalog = katalogVon(state);
+  return SCHICHT_PERSONEN.map((person) => {
+    const alle = katalog.arten[person] ?? [];
+    const aktiv = alle.filter((a) => !a.archiv);
+    const index = (a) => alle.indexOf(a);
+    return {
+      person,
+      ...PERSONEN_TAG[person],
+      aktiv: aktiv.map((a, i) => ({
+        ...artZeile(a),
+        hoch: i > 0 ? index(a) - index(aktiv[i - 1]) : 0,
+        runter: i < aktiv.length - 1 ? index(aktiv[i + 1]) - index(a) : 0,
+      })),
+      ausgeblendet: alle.filter((a) => a.archiv).map(artZeile),
+    };
+  });
+}
+
+/**
+ * Formular-Entwurf: die Felder der Art `k` zum Bearbeiten, mit `k` null für eine neue Art (leer, „Dienst“, die erste Farbe, die bei
+ * der Person noch keine aktive Art hat, sonst Grau). Zeiten fehlen als '', „Nacht“ nur wenn angehakt (über Mitternacht gilt ohnehin
+ * als Nacht). Muster und Archiv gehören nicht dazu: artAendern lässt sie unverändert.
+ */
+export function artEntwurf(state, person, k) {
+  const katalog = katalogVon(state);
+  const art = k === null ? null : artFuer(katalog, person, k);
+  if (art) return { name: art.name, kuerzel: art.kuerzel, farbe: art.farbe, gruppe: art.gruppe, von: art.von ?? '', bis: art.bis ?? '', nacht: art.nacht === true };
+  const belegt = new Set(aktiveArten(katalog, person).map((a) => a.farbe));
+  const farbe = PALETTE.find((f) => !belegt.has(f.id))?.id ?? 'grau';
+  return { name: '', kuerzel: '', farbe, gruppe: 'dienst', von: '', bis: '', nacht: false };
+}
+
+/** Prüft einen Entwurf wie beim Speichern (neu: `k` null) und gibt die deutsche Meldung zurück, oder null, wenn alles passt. */
+export function artEntwurfFehler(state, person, k, entwurf) {
+  const katalog = katalogVon(state);
+  try {
+    if (k === null) artHinzufuegen(katalog, person, entwurf);
+    else artAendern(katalog, person, k, entwurf);
+    return null;
+  } catch (fehler) {
+    return fehler.message;
+  }
 }
