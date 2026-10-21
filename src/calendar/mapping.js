@@ -10,6 +10,7 @@ import { notizAusBeschreibung } from '../domain/notiz.js';
 import { normalisiereRegister, registerText } from '../push/geraete.js';
 import { einkaufAusText, einkaufText } from '../domain/einkauf.js';
 import { kontoAusText, kontoText } from '../domain/konto.js';
+import { katalogAusText, katalogText, monatAusText, monatText } from '../domain/schicht.js';
 import { classifyEvent } from '../domain/classify.js';
 import { zeitAusDateTime } from '../domain/format.js';
 import { DEFAULT_SETTINGS, normalizeSettings } from '../domain/settings.js';
@@ -20,6 +21,7 @@ export const EINSTELLUNGEN_ID = 'fkeinstellungen';
 export const GERAETE_ID = 'fkgeraete'; // Register der Telefone für Push-Erinnerungen (siehe push/geraete.js)
 export const EINKAUF_ID = 'fkeinkauf'; // gemeinsame Einkaufsliste (siehe domain/einkauf.js)
 export const KONTO_ID = 'fkkonto'; // monatliche Kontostände von Papa und Mama (siehe domain/konto.js)
+export const SCHICHTARTEN_ID = 'fkschichtarten'; // Schichtarten von Papa und Mama (siehe domain/schicht.js)
 export const TEST_ID = 'fktest'; // „🔔 Test-Erinnerung“ aus Konto & App → Erinnerungen: für die App unsichtbar
 export const MAX_EINSTELLUNGEN_ZEICHEN = 6000; // Google kürzt `description` still bei 8192 Zeichen (Vertragsprobe C11b)
 const TERMIN_MINUTEN = 30;
@@ -217,6 +219,53 @@ export function kontoAusEreignis(event) {
   return { konto: kontoAusText(event?.description) };
 }
 
+/** ID des Schichtplans eines Monats: 'JJJJ-MM' → `fksch<JJJJMM>` (Google erlaubt in IDs nur 0-9 und a-v). */
+export function schichtMonatId(jm) {
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(jm))) throw new Error(`Ungültiger Monat: ${jm}`);
+  return `fksch${jm.replace('-', '')}`;
+}
+
+/** Schichtarten und alle Schichtmonate beginnen mit „fksch“ und sind für die übrige App unsichtbar. */
+export const istSchichtId = (id) => typeof id === 'string' && id.startsWith('fksch');
+
+/** Verstecktes Schicht-Ereignis (JSON in `description`, wie der Kontostand am 2000-01-01 in „Anwesenheit“, ohne Erinnerung). */
+function schichtEreignis(id, summary, description, typ) {
+  return {
+    kalender: 'anwesenheit',
+    id,
+    body: {
+      id,
+      summary,
+      description,
+      start: { date: '2000-01-01' },
+      end: { date: '2000-01-02' },
+      transparency: 'transparent',
+      reminders: { useDefault: false, overrides: [] },
+      extendedProperties: { private: versteckt(typ) },
+    },
+  };
+}
+
+/** Schichtarten als verstecktes Ereignis „fkschichtarten“; ein zu großer Katalog wird vor dem Schreiben abgelehnt. */
+export function schichtartenZuEreignis(katalog) {
+  return schichtEreignis(SCHICHTARTEN_ID, '🗓️ fk Schichtarten (nicht löschen)', katalogText(katalog), 'schichtarten');
+}
+
+/** Liest die Schichtarten; fehlendes JSON ergibt die Standardarten, kaputtes die Standardarten mit Warnung. */
+export function schichtartenAusEreignis(event) {
+  return katalogAusText(event?.description);
+}
+
+/** Schichtplan eines Monats als verstecktes Ereignis „fksch<JJJJMM>“; ein zu großer Monat wird vor dem Schreiben abgelehnt. */
+export function schichtMonatZuEreignis(monat) {
+  return schichtEreignis(schichtMonatId(monat?.jm), '🗓️ fk Schichtplan (nicht löschen)', monatText(monat), 'schicht');
+}
+
+/** Liest den Monat `jm`; fehlendes JSON ergibt den leeren Monat, kaputtes den leeren Monat mit Warnung. */
+export function schichtMonatAusEreignis(event, jm) {
+  return monatAusText(event?.description, jm);
+}
+
 /** Liest das Register; unbrauchbares JSON ergibt `register: null` (nichts wird gelöscht oder erraten). */
 export function geraeteAusEreignis(event) {
   const text = event?.description;
@@ -267,7 +316,7 @@ export function einstellungenAusEreignis(event) {
 export function ereignisZuEintrag(event, kalender, settings) {
   if (event.status === 'cancelled' || !event.start) return { art: 'ignorieren' };
   if (event.id === EINSTELLUNGEN_ID) return { art: 'einstellungen', ...einstellungenAusEreignis(event) };
-  if (event.id === TEST_ID || event.id === GERAETE_ID || event.id === EINKAUF_ID || event.id === KONTO_ID) return { art: 'ignorieren' };
+  if (event.id === TEST_ID || event.id === GERAETE_ID || event.id === EINKAUF_ID || event.id === KONTO_ID || istSchichtId(event.id)) return { art: 'ignorieren' };
 
   const { typ, subtyp, quelle } = classifyEvent(event, kalender);
   if (TAGES_TYPEN.includes(typ)) return { art: 'tag', id: event.id, typ, tage: spanDays(eventSpan(event)), quelle };

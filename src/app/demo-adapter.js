@@ -2,9 +2,24 @@ import { todayVienna } from '../domain/dates.js';
 import { normalizeSettings } from '../domain/settings.js';
 import { leereListe, normalisiereListe } from '../domain/einkauf.js';
 import { leeresKonto, normalisiereKonto } from '../domain/konto.js';
+import { katalogText, leererMonat, monatText, normalisiereKatalog, normalisiereMonat, standardKatalog } from '../domain/schicht.js';
 import { seedDemo } from './seed.js';
 
 const KEY = 'fk.demo.v1';
+
+/** Schichtdaten aus dem Speicher nachsichtig lesen: { katalog | null, monate: { 'JJJJ-MM': Monat } }; Unbrauchbares fällt weg. */
+function schichtAusSpeicher(roh) {
+  const katalog = roh?.katalog == null ? null : normalisiereKatalog(roh.katalog).katalog;
+  const monate = {};
+  for (const [jm, monat] of Object.entries(roh?.monate && typeof roh.monate === 'object' ? roh.monate : {})) {
+    try {
+      monate[jm] = normalisiereMonat(monat, jm).monat;
+    } catch {
+      // kein gültiger Monat als Schlüssel: weglassen
+    }
+  }
+  return { katalog, monate };
+}
 
 /**
  * Kalender-Adapter für den Demo-Modus: hält alles in `localStorage` und kennt weder Google noch das Netz.
@@ -47,6 +62,7 @@ export function createDemoAdapter({ speicher = globalThis.localStorage, jetzt = 
         else {
           daten.einkauf = normalisiereListe(daten.einkauf ?? leereListe()); // Demo-Speicher aus einer älteren Version hat noch keine Liste
           daten.konto = normalisiereKonto(daten.konto ?? leeresKonto()); // … und noch keine Kontostände
+          daten.schicht = schichtAusSpeicher(daten.schicht); // … und noch keinen Schichtplan
         }
       }
       return structuredClone(daten);
@@ -80,6 +96,32 @@ export function createDemoAdapter({ speicher = globalThis.localStorage, jetzt = 
       const neu = aenderung(daten.konto ?? leeresKonto());
       if (!neu) return null;
       daten.konto = neu;
+      sichern();
+      return structuredClone(neu);
+    },
+    /** Schichtarten lesen (wie beim Google-Adapter): { katalog | null }. */
+    async leseSchichtarten() {
+      return { katalog: structuredClone(daten?.schicht?.katalog ?? null) };
+    },
+    /** Schichtarten ändern: `aenderung(katalog)` → neuer Katalog (fehlt er: Standardarten); zu große Kataloge werden wie bei Google abgelehnt. */
+    async aendereSchichtarten(aenderung) {
+      const neu = aenderung(structuredClone(daten.schicht.katalog ?? standardKatalog()));
+      if (!neu) return null;
+      katalogText(neu); // wirft, wenn er nicht in den Kalender passen würde
+      daten.schicht.katalog = structuredClone(neu);
+      sichern();
+      return structuredClone(neu);
+    },
+    /** Schichtplan eines Monats 'JJJJ-MM' lesen (wie beim Google-Adapter): { monat | null }. */
+    async leseSchichtMonat(jm) {
+      return { monat: structuredClone(daten?.schicht?.monate?.[jm] ?? null) };
+    },
+    /** Monat ändern: `aenderung(monat)` → neuer Monat (fehlt er: leerer Monat); zu große Monate werden wie bei Google abgelehnt. */
+    async aendereSchichtMonat(jm, aenderung) {
+      const neu = aenderung(structuredClone(daten.schicht.monate[jm] ?? leererMonat(jm)));
+      if (!neu) return null;
+      monatText({ ...neu, jm }); // wirft, wenn er nicht in den Kalender passen würde
+      daten.schicht.monate[jm] = structuredClone({ ...neu, jm });
       sichern();
       return structuredClone(neu);
     },

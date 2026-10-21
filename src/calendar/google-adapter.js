@@ -4,7 +4,8 @@ import { addDays, todayVienna } from '../domain/dates.js';
 import { kindergartenjahr } from '../domain/urlaub.js';
 import { normalizeSettings } from '../domain/settings.js';
 import { beendeTestErinnerung, pruefeErinnerungen, repariereErinnerungen, starteTestErinnerung } from './erinnerungen.js';
-import { EINKAUF_ID, EINSTELLUNGEN_ID, GERAETE_ID, KONTO_ID, einkaufAusEreignis, einkaufZuEreignis, kontoAusEreignis, kontoZuEreignis, einstellungenAusEreignis, einstellungenZuEreignis, geraeteAusEreignis, geraeteZuEreignis, tagZuEreignis, terminZuEreignis, urlaubCheckZuEreignis, urlaubZuEreignis } from './mapping.js';
+import { EINKAUF_ID, EINSTELLUNGEN_ID, GERAETE_ID, KONTO_ID, SCHICHTARTEN_ID, einkaufAusEreignis, einkaufZuEreignis, kontoAusEreignis, kontoZuEreignis, einstellungenAusEreignis, einstellungenZuEreignis, geraeteAusEreignis, geraeteZuEreignis, schichtartenAusEreignis, schichtartenZuEreignis, schichtMonatAusEreignis, schichtMonatId, schichtMonatZuEreignis, tagZuEreignis, terminZuEreignis, urlaubCheckZuEreignis, urlaubZuEreignis } from './mapping.js';
+import { leererMonat, standardKatalog } from '../domain/schicht.js';
 import { istUrlaubCheckId } from '../domain/ids.js';
 import { ereignisseZuZustand } from './zustand.js';
 
@@ -189,6 +190,26 @@ export function createGoogleAdapter({ api, kalender, jetzt = () => new Date(), a
     /** Ändert die Kontostände: `aenderung(konto)` → neues Konto, angewendet auf die NEUESTE Fassung bei Google; gibt das gespeicherte Konto zurück. */
     aendereKonto: (aenderung) =>
       aendereVersteckt({ id: KONTO_ID, lesen: (e) => kontoAusEreignis(e).konto, bauen: kontoZuEreignis, fehler: 'Der Kontostand konnte nicht gespeichert werden. Bitte noch einmal versuchen.', leer: () => kontoAusEreignis(null).konto }, aenderung),
+
+    /** Schichtarten (verstecktes Ereignis „fkschichtarten“): { katalog, warnungen }, oder { katalog: null }, wenn es noch keine gibt. Nicht beim Start geladen. */
+    async leseSchichtarten() {
+      const e = await api.ereignisse.holen(kalender.anwesenheit, SCHICHTARTEN_ID);
+      return !e || e.status === 'cancelled' ? { katalog: null } : schichtartenAusEreignis(e);
+    },
+
+    /** Ändert die Schichtarten: `aenderung(katalog)` → neuer Katalog, angewendet auf die NEUESTE Fassung (fehlt sie: Standardarten); gibt den gespeicherten zurück. */
+    aendereSchichtarten: (aenderung) =>
+      aendereVersteckt({ id: SCHICHTARTEN_ID, lesen: (e) => schichtartenAusEreignis(e).katalog, bauen: schichtartenZuEreignis, fehler: 'Die Schichtarten konnten nicht gespeichert werden. Bitte noch einmal versuchen.', leer: standardKatalog }, aenderung),
+
+    /** Schichtplan eines Monats 'JJJJ-MM' (verstecktes Ereignis „fksch<JJJJMM>“): { monat, warnungen }, oder { monat: null }, wenn es ihn noch nicht gibt. */
+    async leseSchichtMonat(jm) {
+      const e = await api.ereignisse.holen(kalender.anwesenheit, schichtMonatId(jm));
+      return !e || e.status === 'cancelled' ? { monat: null } : schichtMonatAusEreignis(e, jm);
+    },
+
+    /** Ändert einen Monat: `aenderung(monat)` → neuer Monat, angewendet auf die NEUESTE Fassung (fehlt sie: leerer Monat); gibt den gespeicherten zurück. */
+    aendereSchichtMonat: (jm, aenderung) =>
+      aendereVersteckt({ id: schichtMonatId(jm), lesen: (e) => schichtMonatAusEreignis(e, jm).monat, bauen: (monat) => schichtMonatZuEreignis({ ...monat, jm }), fehler: 'Der Schichtplan konnte nicht gespeichert werden. Bitte noch einmal versuchen.', leer: () => leererMonat(jm) }, aenderung),
 
     /** Erinnerungen dieses Kontos prüfen/reparieren und eine Test-Erinnerung auslösen (siehe erinnerungen.js). */
     pruefeErinnerungen: () => pruefeErinnerungen(api, kalender),

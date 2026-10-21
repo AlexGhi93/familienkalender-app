@@ -2,6 +2,7 @@ import { addDays, eachDay, isWerktag, weekday } from '../domain/dates.js';
 import { isFeiertag } from '../domain/feiertage.js';
 import { normalizeSettings } from '../domain/settings.js';
 import { ARZT_SUBTYPEN } from '../domain/types.js';
+import { leererMonat, setzeNotiz, setzeSchicht, standardKatalog, tageImMonat, zusatzHinzufuegen } from '../domain/schicht.js';
 import { naechsterKitaTag, wochenSerie } from './serie.js';
 
 const MUSTER = ['kita_essen', 'kita_essen', 'kita_essen', 'kita_ohne', 'kita_essen', 'kita_essen', 'kita_essen', 'kita_essen'];
@@ -118,7 +119,44 @@ export function seedDemo(heute) {
     konto.p.mama[monatVor(5 - i)] = mamaWerte[i];
   });
   konto.x.push({ i: 'demoex01', p: 'mama', m: monatVor(3), c: 60000, t: 'Steuerrückzahlung' }, { i: 'demoex02', p: 'papa', m: monatVor(2), c: -45000, t: 'Autoreparatur' });
-  return { settings, tage, urlaub, termine: [...termine, ...sachenDemo({ settings, tage, urlaub }, heute)], einkauf, konto };
+  const schicht = schichtDemo([monatVor(1), monatVor(0), monatVor(-1)]);
+  return { settings, tage, urlaub, termine: [...termine, ...sachenDemo({ settings, tage, urlaub }, heute)], einkauf, konto, schicht };
+}
+
+// Papa: Blöcke aus 4 Diensten, dann 2 Tage frei (fortlaufend über Monatsgrenzen); jeder Block mit anderen Arten.
+const PAPA_BLOECKE = [
+  ['F', 'F', 'M', 'M'],
+  ['NM', 'NM', 'N', 'N'],
+  ['F', '2T', '2T', 'M'],
+  ['M', 'NM', 'N', 'N'],
+  ['S', 'F', 'F', 'Ü'],
+  ['N', 'N', 'F', 'F'],
+  ['M', 'M', 'NM', 'NM'],
+]; // 7 Blöcke à 6 Tage: der Rhythmus wiederholt sich erst nach 42 Tagen, kein Monat sieht aus wie der vorige
+// Mama: wöchentlich zwei Tagdienste und ein Nachtdienst (Wochentag 0 = Montag).
+const MAMA_WOCHE = { 1: 'T', 2: 'T', 4: 'N' };
+
+/** Erfundener Schichtplan für den Vormonat, diesen und den nächsten Monat (`monate` in dieser Reihenfolge); keine echten Daten. */
+function schichtDemo([vorher, jetzt, danach]) {
+  const katalog = standardKatalog();
+  const k = (person, kuerzel) => katalog.arten[person].find((a) => a.kuerzel === kuerzel).k;
+  const monate = {};
+  for (const jm of [vorher, jetzt, danach]) {
+    let monat = leererMonat(jm);
+    for (let tag = 1; tag <= tageImMonat(jm); tag += 1) {
+      const datum = `${jm}-${String(tag).padStart(2, '0')}`;
+      const nr = Math.floor(Date.parse(`${datum}T00:00:00Z`) / 86400000); // Tage seit 1970: gleicher Rhythmus über Monatsgrenzen
+      const imBlock = nr % 6;
+      if (imBlock < 4) monat = setzeSchicht(monat, { person: 'papa', tag, k: k('papa', PAPA_BLOECKE[Math.floor(nr / 6) % PAPA_BLOECKE.length][imBlock]) });
+      const mama = MAMA_WOCHE[weekday(datum)];
+      if (mama) monat = setzeSchicht(monat, { person: 'mama', tag, k: k('mama', mama) });
+    }
+    monate[jm] = monat;
+  }
+  monate[jetzt] = setzeNotiz(monate[jetzt], { person: 'mama', tag: 13, text: 'Dienst 12' });
+  monate[jetzt] = zusatzHinzufuegen(monate[jetzt], { person: 'mama', tag: 21, k: k('mama', 'DB'), von: '18:00', bis: '19:30' });
+  for (const tag of [10, 11, 12]) monate[danach] = setzeSchicht(monate[danach], { person: 'mama', tag, k: k('mama', 'U') });
+  return { katalog, monate };
 }
 
 /** Sachen für die Krabbelstube: Hinbringen in der nächsten Woche, Heimholen am Freitag danach, später Windeln und Socken. */

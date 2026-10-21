@@ -8,6 +8,7 @@ import {
   GERAETE_ID,
   KONTO_ID,
   MAX_EINSTELLUNGEN_ZEICHEN,
+  SCHICHTARTEN_ID,
   TEST_ID,
   einkaufAusEreignis,
   einkaufZuEreignis,
@@ -19,6 +20,12 @@ import {
   geraeteZuEreignis,
   kontoAusEreignis,
   kontoZuEreignis,
+  istSchichtId,
+  schichtartenAusEreignis,
+  schichtartenZuEreignis,
+  schichtMonatAusEreignis,
+  schichtMonatId,
+  schichtMonatZuEreignis,
   tagZuEreignis,
   terminZuEreignis,
   urlaubCheckZuEreignis,
@@ -28,6 +35,7 @@ import { ereignisseZuZustand } from '../../src/calendar/zustand.js';
 import { normalizeSettings } from '../../src/domain/settings.js';
 import { leereListe } from '../../src/domain/einkauf.js';
 import { leeresKonto } from '../../src/domain/konto.js';
+import { katalogText, leererMonat, monatText, setzeNotiz, setzeSchicht, standardKatalog } from '../../src/domain/schicht.js';
 
 const settings = normalizeSettings();
 const mitName = normalizeSettings({ kindname: 'Iris' });
@@ -217,5 +225,56 @@ describe('ereignisseZuZustand', () => {
 
   test('ohne Ereignisse', () => {
     assert.deepEqual(ereignisseZuZustand({ ereignisse: [], settings }), { tage: {}, urlaub: [], termine: [], einstellungen: null, resync: [], urlaubChecks: [], konflikte: [] });
+  });
+});
+
+describe('Schichtplan: versteckte Ereignisse', () => {
+  const GOOGLE_ID = /^[0-9a-v]+$/; // Google erlaubt in Ereignis-IDs nur 0-9 und a-v
+  const monat = setzeNotiz(setzeSchicht(leererMonat('2026-10'), { person: 'papa', tag: 3, k: 'A' }), { person: 'mama', tag: 13, text: 'Dienst 12' });
+
+  test('IDs: fkschichtarten und fksch<JJJJMM>, nur erlaubte Zeichen', () => {
+    assert.equal(SCHICHTARTEN_ID, 'fkschichtarten');
+    assert.match(SCHICHTARTEN_ID, GOOGLE_ID);
+    assert.equal(schichtMonatId('2026-10'), 'fksch202610');
+    assert.match(schichtMonatId('2026-10'), GOOGLE_ID);
+    assert.equal(schichtMonatId('2027-01'), 'fksch202701');
+    assert.equal(istSchichtId('fksch202610'), true);
+    assert.equal(istSchichtId(SCHICHTARTEN_ID), true);
+    assert.equal(istSchichtId('fk20261014'), false);
+    assert.equal(istSchichtId(undefined), false);
+  });
+
+  test('Ereignisse am 2000-01-01 in „Anwesenheit“, transparent, ohne Erinnerung, mit festen Titeln', () => {
+    const arten = schichtartenZuEreignis(standardKatalog());
+    const mon = schichtMonatZuEreignis(monat);
+    for (const [e, id, titel, typ] of [[arten, 'fkschichtarten', '🗓️ fk Schichtarten (nicht löschen)', 'schichtarten'], [mon, 'fksch202610', '🗓️ fk Schichtplan (nicht löschen)', 'schicht']]) {
+      assert.deepEqual([e.kalender, e.id, e.body.id, e.body.summary], ['anwesenheit', id, id, titel]);
+      assert.deepEqual([e.body.start, e.body.end, e.body.transparency], [{ date: '2000-01-01' }, { date: '2000-01-02' }, 'transparent']);
+      assert.deepEqual(e.body.reminders, { useDefault: false, overrides: [] });
+      assert.deepEqual(e.body.extendedProperties.private, { fk: '1', typ, v: '1' });
+    }
+    assert.equal(arten.body.description, katalogText(standardKatalog()));
+    assert.equal(mon.body.description, monatText(monat));
+  });
+
+  test('zurücklesen: gleicher Katalog, gleicher Monat', () => {
+    assert.deepEqual(schichtartenAusEreignis(schichtartenZuEreignis(standardKatalog()).body), { katalog: standardKatalog(), warnungen: [] });
+    assert.deepEqual(schichtMonatAusEreignis(schichtMonatZuEreignis(monat).body, '2026-10'), { monat, warnungen: [] });
+  });
+
+  test('kaputte Beschreibung: leerer Monat bzw. Standardarten mit Warnung, ohne Ausnahme', () => {
+    const m = schichtMonatAusEreignis({ description: '{kaputt' }, '2026-10');
+    assert.deepEqual(m.monat, leererMonat('2026-10'));
+    assert.equal(m.warnungen.length, 1);
+    const k = schichtartenAusEreignis({ description: '[1,2' });
+    assert.deepEqual(k.katalog, standardKatalog());
+    assert.equal(k.warnungen.length, 1);
+    assert.deepEqual(schichtMonatAusEreignis(undefined, '2026-02'), { monat: leererMonat('2026-02'), warnungen: [] });
+  });
+
+  test('ereignisZuEintrag ignoriert Schichtarten und alle Schichtmonate', () => {
+    for (const e of [schichtartenZuEreignis(standardKatalog()).body, schichtMonatZuEreignis(monat).body, { id: 'fksch209912', summary: 'Krank', start: { date: '2000-01-01' } }]) {
+      assert.deepEqual(ereignisZuEintrag(e, 'anwesenheit', settings), { art: 'ignorieren' });
+    }
   });
 });
