@@ -3200,7 +3200,8 @@ html:has(.screen.einkauf) {
 }
 
 .sp-streifen.urlaub,
-.sp-lg-kuerzel.urlaub {
+.sp-lg-kuerzel.urlaub,
+.sp-pinsel-kuerzel.urlaub {
   background-image: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.35) 0 4px, transparent 4px 8px);
 }
 
@@ -3255,4 +3256,121 @@ html:has(.screen.einkauf) {
 
 .sp-arten {
   align-self: center;
+}
+
+/* Pinsel: feste Leiste über den Registerkarten; die Seite bekommt unten so viel Platz, wie die Leiste hoch ist (--pinsel-hoehe, gemessen) */
+.schicht-seite.mit-pinsel {
+  padding-bottom: calc(var(--tabs-hoehe) + env(safe-area-inset-bottom, 0px) + var(--pinsel-hoehe, 240px) + 16px);
+}
+
+.sp-zelle {
+  touch-action: manipulation; /* schnelles Antippen hintereinander zoomt nicht */
+}
+
+.sp-pinsel {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--tabs-hoehe) + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  width: min(100%, 520px);
+  max-height: 50dvh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  background: var(--karte);
+  border-top: 2px solid var(--akzent);
+  border-radius: 22px 22px 0 0;
+  box-shadow: 0 -10px 24px rgba(20, 16, 36, 0.14);
+  z-index: 39; /* unter den Registerkarten (40) und der Meldung (60) */
+}
+
+.sp-pinsel-kopf {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sp-pinsel-wer {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--akzent) 12%, var(--karte));
+}
+
+.sp-pinsel-wer button {
+  min-height: 38px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  font-size: 0.85rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.sp-pinsel-wer button[aria-pressed='true'] {
+  background: var(--akzent);
+  color: var(--akzent-ink);
+}
+
+.sp-pinsel-fertig {
+  min-height: 44px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--akzent);
+  color: var(--akzent-ink);
+  font-weight: 800;
+}
+
+.sp-pinsel-arten {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sp-pinsel-art {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 40px;
+  padding: 4px 10px 4px 5px;
+  border: 1.5px solid var(--linie);
+  border-radius: 999px;
+  background: var(--karte);
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.sp-pinsel-art.aktiv {
+  border-color: var(--akzent);
+  box-shadow: 0 0 0 2px var(--akzent);
+  background: color-mix(in srgb, var(--akzent) 10%, var(--karte));
+  font-weight: 800;
+}
+
+.sp-pinsel-kuerzel {
+  font-style: normal;
+  font-weight: 900;
+  font-size: 0.68rem;
+  min-width: 22px;
+  padding: 3px 6px;
+  border-radius: 999px;
+  text-align: center;
+}
+
+.sp-pinsel-kuerzel.frei {
+  background: transparent;
+  border: 1.5px dashed var(--ink-2);
+  color: var(--ink-2);
+}
+
+.sp-pinsel-hinweis {
+  font-size: 0.74rem;
+  color: var(--ink-2);
 }

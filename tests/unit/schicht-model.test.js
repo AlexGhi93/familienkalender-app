@@ -1,7 +1,7 @@
 // Ansicht des Schichtplans ohne DOM: Monatsraster mit zwei Streifen je Tag, Filter, Zählung, Legende, gemerkter Filter.
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { SCHICHT_FILTER_SCHLUESSEL, schichtFilterLesen, schichtFilterSpeichern, schichtMonatModel } from '../../src/app/views/schicht-model.js';
+import { SCHICHT_FILTER_SCHLUESSEL, pinselAktion, pinselModel, pinselStart, schichtFilterLesen, schichtFilterSpeichern, schichtMonatModel } from '../../src/app/views/schicht-model.js';
 import { artArchivieren, leererMonat, setzeNotiz, setzeSchicht, standardKatalog, zusatzHinzufuegen } from '../../src/domain/schicht.js';
 import { speicherAttrappe, zustand } from './hilfen.js';
 
@@ -172,5 +172,71 @@ describe('Filter dieses Telefons (localStorage)', () => {
     assert.equal(schichtFilterSpeichern('quatsch', speicher), 'beide');
     assert.equal(speicher.daten.get('fk.schicht.filter.v1'), 'beide');
     assert.equal(schichtFilterSpeichern('papa', speicherAttrappe({}, { kaputt: true })), 'papa');
+  });
+});
+
+describe('Pinsel', () => {
+  test('Start: Person nach Filter (nur „Mama“ → Mama, sonst Papa), gewählt ist ihre erste aktive Art', () => {
+    const state = stateMit();
+    assert.deepEqual(pinselStart(state, 'beide'), { person: 'papa', k: k('papa', 'F') });
+    assert.deepEqual(pinselStart(state, 'papa'), { person: 'papa', k: k('papa', 'F') });
+    assert.deepEqual(pinselStart(state, 'mama'), { person: 'mama', k: k('mama', 'T') });
+    // ohne gelesene Schichtarten gelten die Standardarten; ganz ohne aktive Art bleibt nur „Frei“
+    assert.deepEqual(pinselStart(zustand(), 'beide'), { person: 'papa', k: k('papa', 'F') });
+    let leer = katalog;
+    for (const a of katalog.arten.papa) leer = artArchivieren(leer, 'papa', a.k, true);
+    assert.deepEqual(pinselStart(stateMit({ katalog: leer }), 'beide'), { person: 'papa', k: null });
+  });
+
+  test('Leiste: aktive Arten beider Gruppen in Katalog-Reihenfolge, gewählte markiert, Hinweis passend zur Wahl', () => {
+    const p = pinselModel(stateMit(), { person: 'mama', k: k('mama', 'DB') });
+    assert.equal(p.person, 'mama');
+    assert.deepEqual(p.arten.map((a) => a.kuerzel), ['T', 'N', 'S', 'Ü', 'U', 'DB']);
+    assert.deepEqual(p.arten.find((a) => a.kuerzel === 'DB'), { k: k('mama', 'DB'), kuerzel: 'DB', name: 'Dienstbesprechung', farbe: 'schiefer', urlaub: false, gewaehlt: true });
+    assert.equal(p.arten.filter((a) => a.gewaehlt).length, 1);
+    assert.equal(p.frei, false);
+    assert.equal(p.k, k('mama', 'DB'));
+    assert.match(p.hinweis, /Dienstbesprechung 18:00–19:30/);
+    assert.equal(pinselModel(stateMit(), { person: 'papa', k: k('papa', 'U') }).arten.find((a) => a.kuerzel === 'U').urlaub, true);
+    const frei = pinselModel(stateMit(), { person: 'papa', k: null });
+    assert.equal(frei.frei, true);
+    assert.equal(frei.arten.some((a) => a.gewaehlt), false);
+    assert.match(frei.hinweis, /Notiz und Zusätze bleiben/);
+    assert.match(pinselModel(stateMit(), { person: 'papa', k: k('papa', 'F') }).hinweis, /^F Frühdienst/);
+  });
+
+  test('Leiste: eine inzwischen archivierte (oder unbekannte) gewählte Art fällt auf die erste aktive zurück, nie still auf „Frei“', () => {
+    const archiviert = artArchivieren(katalog, 'papa', k('papa', 'F'), true);
+    const p = pinselModel(stateMit({ katalog: archiviert }), { person: 'papa', k: k('papa', 'F') });
+    assert.equal(p.k, k('papa', 'M'));
+    assert.equal(p.frei, false);
+    assert.equal(p.arten.find((a) => a.gewaehlt).kuerzel, 'M');
+    assert.equal(pinselModel(stateMit(), { person: 'papa', k: 'z' }).k, k('papa', 'F'));
+  });
+
+  test('Tipp mit einem Dienst → Pinsel (ersetzen bzw. bei gleicher Art löschen macht der Store)', () => {
+    assert.deepEqual(pinselAktion(stateMit(), JM, 9, { person: 'papa', k: k('papa', 'F') }), { aktion: 'pinsel', k: k('papa', 'F') });
+  });
+
+  test('Tipp mit „Frei“ → Dienst des Tages löschen', () => {
+    assert.deepEqual(pinselAktion(stateMit(), JM, 1, { person: 'papa', k: null }), { aktion: 'setzen', k: null });
+  });
+
+  test('Tipp mit einem Zusatz: fehlt er → mit den Zeiten der Art dazu; ist er da → weg (bevorzugt der mit den Standardzeiten)', () => {
+    const db = k('mama', 'DB');
+    assert.deepEqual(pinselAktion(stateMit(), JM, 6, { person: 'mama', k: db }), { aktion: 'zusatzDazu', k: db, von: '18:00', bis: '19:30' });
+    assert.deepEqual(pinselAktion(stateMit(), JM, 21, { person: 'mama', k: db }), { aktion: 'zusatzWeg', k: db, von: '18:00' });
+    // nur einer mit anderen Zeiten (z. B. im Tagesblatt geändert) → der wird entfernt
+    const m = zusatzHinzufuegen(leererMonat(JM), { person: 'mama', tag: 5, k: db, von: '08:00', bis: '09:00' });
+    assert.deepEqual(pinselAktion(stateMit({ monate: { [JM]: m } }), JM, 5, { person: 'mama', k: db }), { aktion: 'zusatzWeg', k: db, von: '08:00' });
+    // nur Zusätze derselben Person zählen: ein Papa-Eintrag mit gleichem Schlüssel am selben Tag ändert nichts an Mamas Tipp
+    const mitPapa = { ...m, z: { ...m.z, papa: { 6: [{ k: db, von: '18:00', bis: '19:30' }] } } };
+    assert.equal(pinselAktion(stateMit({ monate: { [JM]: mitPapa } }), JM, 6, { person: 'mama', k: db }).aktion, 'zusatzDazu');
+  });
+
+  test('Tipp mit einer archivierten oder unbekannten Art → nichts', () => {
+    const archiviert = artArchivieren(katalog, 'papa', k('papa', 'F'), true);
+    assert.equal(pinselAktion(stateMit({ katalog: archiviert }), JM, 9, { person: 'papa', k: k('papa', 'F') }), null);
+    assert.equal(pinselAktion(stateMit(), JM, 9, { person: 'papa', k: 'z' }), null);
   });
 });

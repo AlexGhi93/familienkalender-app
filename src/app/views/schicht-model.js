@@ -125,3 +125,42 @@ export function schichtMonatModel(state, jm, { heute, filter = 'beide' } = {}) {
     legende: Object.fromEntries(personen.map((p) => [p, legende(monat, katalog, p)])),
   };
 }
+
+// ---------- Pinsel (Leiste zum schnellen Eintragen) ----------
+
+const katalogVon = (state) => state.schicht?.katalog ?? standardKatalog();
+
+/** Pinsel beim Öffnen: zeigt der Filter nur Mama, malt er Mama, sonst Papa; gewählt ist die erste aktive Art (keine → „Frei“). */
+export function pinselStart(state, filter) {
+  const person = gueltigerFilter(filter) === 'mama' ? 'mama' : 'papa';
+  return { person, k: aktiveArten(katalogVon(state), person)[0]?.k ?? null };
+}
+
+/**
+ * Die Leiste: aktive Arten der Person (beide Gruppen, Katalog-Reihenfolge), die gewählte markiert, und ein Hinweis zur Wahl.
+ * `k` ist die tatsächlich gewählte Art: wurde die gewählte inzwischen archiviert, gilt die erste aktive – nie still „Frei“.
+ */
+export function pinselModel(state, { person, k }) {
+  const aktiv = aktiveArten(katalogVon(state), person);
+  const gewaehlt = k === null ? null : (aktiv.find((a) => a.k === k) ?? aktiv[0] ?? null);
+  const arten = aktiv.map((a) => ({ k: a.k, kuerzel: a.kuerzel, name: a.name, farbe: a.farbe, urlaub: a.muster === 'urlaub', gewaehlt: a === gewaehlt }));
+  let hinweis = 'Tage antippen: der Dienst wird gelöscht, Notiz und Zusätze bleiben.';
+  if (gewaehlt?.gruppe === 'zusatz') hinweis = `${gewaehlt.kuerzel} ${gewaehlt.name} ${zeitenText(gewaehlt)}: Tage antippen zum Dazunehmen, nochmal tippen nimmt sie weg.`;
+  else if (gewaehlt) hinweis = `${gewaehlt.kuerzel} ${gewaehlt.name}: Tage antippen. Nochmal tippen macht den Tag wieder frei.`;
+  return { person, k: gewaehlt?.k ?? null, frei: gewaehlt === null, arten, hinweis };
+}
+
+/**
+ * Was ein Tipp auf Tag `tag` des Monats `jm` tut: „Frei“ → Dienst löschen (`setzen`, k null); ein Dienst → `pinsel` (der Store ersetzt
+ * oder löscht bei gleicher Art); ein Zusatz → `zusatzWeg`, wenn die Person ihn an dem Tag schon hat (bevorzugt den mit den Zeiten der
+ * Art), sonst `zusatzDazu` mit den Zeiten der Art. Eine archivierte oder unbekannte Art tut nichts (null).
+ */
+export function pinselAktion(state, jm, tag, { person, k }) {
+  if (k === null) return { aktion: 'setzen', k: null };
+  const art = aktiveArten(katalogVon(state), person).find((a) => a.k === k);
+  if (!art) return null;
+  if (art.gruppe !== 'zusatz') return { aktion: 'pinsel', k };
+  const liste = state.schicht?.monate?.[jm]?.z?.[person]?.[tag] ?? [];
+  const da = liste.find((z) => z.k === k && z.von === art.von) ?? liste.find((z) => z.k === k);
+  return da ? { aktion: 'zusatzWeg', k, von: da.von } : { aktion: 'zusatzDazu', k, von: art.von, bis: art.bis };
+}

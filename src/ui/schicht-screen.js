@@ -1,9 +1,11 @@
 // Seite „Schichtplan“: ein Monat mit zwei Streifen je Tag (oben Papa, unten Mama), Monatswechsel, Filter „Beide · Papa · Mama“
-// (gemerkt auf diesem Telefon), Zählung je Person und Legende. Ein Tipp auf einen Tag öffnet das Tagesblatt (ui.schichtTag).
+// (gemerkt auf diesem Telefon), Zählung je Person und Legende. Ein Tipp auf einen Tag öffnet das Tagesblatt (ui.schichtTag);
+// mit „✏️ Eintragen“ (Pinsel) trägt er stattdessen die gewählte Art ein.
 import { h } from './dom.js';
 import { datumLang } from '../app/format-de.js';
 import { FEIERTAG_EMOJI } from '../app/views/gemeinsam.js';
 import { schichtMonatModel } from '../app/views/schicht-model.js';
+import { pinselLeiste, pinselTippen, pinselUmschalten } from './schicht-pinsel.js';
 
 const PERSON = { papa: { name: 'Papa', emoji: '👨' }, mama: { name: 'Mama', emoji: '👩' } };
 const FILTER = [
@@ -28,7 +30,7 @@ function beschriftung(z, personen) {
   return `${kopf}: ${teile.join(', ')}`;
 }
 
-function zelle(z, m, ui) {
+function zelle(z, m, { store, ui }) {
   if (!z.imMonat) return h('span', { class: 'sp-leer-feld', 'aria-hidden': 'true' });
   const klassen = ['sp-zelle', z.wochenende ? 'we' : '', z.istHeute ? 'heute' : '', z.feiertag ? 'feiertag' : ''];
   return h(
@@ -40,7 +42,8 @@ function zelle(z, m, ui) {
       'aria-label': beschriftung(z, m.personen),
       'aria-current': z.istHeute ? 'date' : null,
       onClick: () => {
-        if (!ui.schicht.pinsel) ui.schichtTag?.(z.datum); // mit dem Pinsel trägt der Tipp stattdessen ein
+        if (ui.schicht.pinsel) pinselTippen({ store }, ui.schicht.pinsel, z.datum);
+        else ui.schichtTag?.(z.datum);
       },
     },
     h(
@@ -68,18 +71,23 @@ function legendeEintrag(e) {
 }
 
 export function schichtScreen({ store, ui }) {
+  if (ui.seiteBetreten) ui.schicht.pinsel = null; // wer die Seite verlässt und wiederkommt, malt nicht aus Versehen weiter
   const m = schichtMonatModel(store.getState(), ui.schicht.jm, { heute: store.heute(), filter: ui.schicht.filter });
   const rund = (zeichen, text, ziel) => h('button', { class: 'rund', type: 'button', 'aria-label': text, onClick: () => ui.setzeSchichtMonat(ziel) }, zeichen);
   const personZeile = (p, inhalt) => h('div', { class: 'sp-person-zeile' }, h('b', {}, `${PERSON[p].emoji} ${PERSON[p].name}`), inhalt);
 
   return h(
     'section',
-    { class: 'screen schicht-seite' },
+    { class: `screen schicht-seite ${ui.schicht.pinsel ? 'mit-pinsel' : ''}`.trim() },
     h(
       'header',
       { class: 'kopf sp-kopf' },
       h('h1', { class: 'gruss' }, '🗓️ Schichtplan'),
-      h('button', { class: 'chip sp-eintragen', type: 'button' }, '✏️ Eintragen'), // der Pinsel (Leiste zum schnellen Eintragen) hängt sich hier an
+      h(
+        'button',
+        { class: `chip sp-eintragen ${ui.schicht.pinsel ? 'aktiv' : ''}`.trim(), type: 'button', 'aria-pressed': ui.schicht.pinsel ? 'true' : 'false', onClick: () => pinselUmschalten({ store, ui }) },
+        '✏️ Eintragen',
+      ),
     ),
     h('div', { class: 'monat-kopf sp-monat' }, rund('‹', 'Vorheriger Monat', m.vorher), h('h2', {}, m.titel), rund('›', 'Nächster Monat', m.nachher)),
     h(
@@ -92,7 +100,7 @@ export function schichtScreen({ store, ui }) {
     m.geladen
       ? [
           h('div', { class: 'wochentage', 'aria-hidden': 'true' }, m.wochentage.map((t) => h('span', {}, t))),
-          h('div', { class: `sp-raster ${m.personen.length === 1 ? 'eine-person' : ''}`.trim() }, m.zellen.map((z) => zelle(z, m, ui))),
+          h('div', { class: `sp-raster ${m.personen.length === 1 ? 'eine-person' : ''}`.trim() }, m.zellen.map((z) => zelle(z, m, { store, ui }))),
           h('article', { class: 'karte sp-zaehlung' }, m.personen.map((p) => personZeile(p, h('span', {}, m.zaehlung[p])))),
         ]
       : h('article', { class: 'karte hinweis sp-nicht-geladen' }, h('p', {}, m.laedt ? 'Schichtplan wird geladen …' : 'Noch nicht geladen – bitte verbinden.')),
@@ -103,5 +111,6 @@ export function schichtScreen({ store, ui }) {
       h('div', { class: 'sp-lg-liste' }, h('span', { class: 'sp-lg' }, '✎ Notiz'), h('span', { class: 'sp-lg' }, '☾ Nacht bis zum Morgen'), h('span', { class: 'sp-lg' }, `${FEIERTAG_EMOJI} Feiertag`)),
     ),
     h('button', { class: 'knopf sp-arten', type: 'button', onClick: () => ui.schichtArten?.() }, 'Schichtarten bearbeiten'),
+    ui.schicht.pinsel ? pinselLeiste({ store, ui }) : null,
   );
 }
