@@ -3095,7 +3095,7 @@ html:has(.screen.einkauf) {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 2px 2px 3px;
+  padding: 2px 1px 3px;
   border: 1.5px solid var(--linie);
   border-radius: 10px;
   background: var(--karte);
@@ -3113,17 +3113,23 @@ html:has(.screen.einkauf) {
 
 .sp-zkopf {
   display: flex;
+  flex-wrap: wrap; /* ein sehr voller Tag (Feiertag, DB+2, Notiz) bekommt eine zweite Zeile statt über den Rand zu ragen */
   align-items: center;
-  gap: 1px;
-  height: 14px;
+  gap: 1px 1px;
+  min-height: 14px;
   min-width: 0;
+  line-height: 13px;
+}
+
+.sp-zkopf > * {
+  flex: none;
 }
 
 .sp-zkopf .nr {
   font-size: 0.68rem;
   font-weight: 800;
   color: var(--ink-2);
-  padding-left: 2px;
+  padding-left: 1px;
 }
 
 .sp-zelle.heute .nr {
@@ -3134,8 +3140,15 @@ html:has(.screen.einkauf) {
   font-size: 0.55rem;
 }
 
-.sp-zusatz {
+.sp-marken {
   margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  white-space: nowrap;
+}
+
+.sp-zusatz {
   font-size: 0.5rem;
   font-weight: 900;
   border-radius: 5px;
@@ -3144,20 +3157,15 @@ html:has(.screen.einkauf) {
 }
 
 .sp-mehr {
-  font-size: 0.55rem;
+  font-size: 0.5rem;
   font-weight: 900;
   color: var(--ink-2);
+  letter-spacing: -0.02em;
 }
 
 .sp-notiz {
-  margin-left: auto;
   font-size: 0.6rem;
   color: var(--ink-2);
-}
-
-.sp-zusatz + .sp-notiz,
-.sp-mehr + .sp-notiz {
-  margin-left: 1px;
 }
 
 .sp-streifen {

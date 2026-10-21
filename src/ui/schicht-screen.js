@@ -23,7 +23,7 @@ function streifenKnoten(person, s) {
 function beschriftung(z, personen) {
   const kopf = `${datumLang(z.datum)}${z.feiertag ? `, ${z.feiertag}` : ''}`;
   const teile = personen.map((p) => `${PERSON[p].name} ${z.streifen[p]?.name ?? 'frei'}`);
-  if (z.zusatz) teile.push(`Zusatz ${z.zusatz.kuerzel}${z.zusatz.mehr ? ' und weitere' : ''}`);
+  if (z.zusatz) teile.push(`Zusatz ${z.zusatz.kuerzel}${z.zusatz.weitere > 0 ? ` und ${z.zusatz.weitere} weitere` : ''}`);
   if (z.notiz) teile.push('mit Notiz');
   return `${kopf}: ${teile.join(', ')}`;
 }
@@ -48,9 +48,15 @@ function zelle(z, m, ui) {
       { class: 'sp-zkopf', 'aria-hidden': 'true' },
       h('span', { class: 'nr' }, z.tag),
       z.feiertag ? h('span', { class: 'sp-feiertag', title: z.feiertag }, FEIERTAG_EMOJI) : null,
-      z.zusatz ? h('span', { class: `sp-zusatz sf-${z.zusatz.farbe}` }, z.zusatz.kuerzel) : null,
-      z.zusatz?.mehr ? h('span', { class: 'sp-mehr' }, '+') : null,
-      z.notiz ? h('span', { class: 'sp-notiz' }, '✎') : null,
+      z.zusatz || z.notiz
+        ? h(
+            'span',
+            { class: 'sp-marken' }, // bleiben beisammen rechts; ist der Tag sehr voll, rutschen sie gemeinsam in eine zweite Zeile
+            z.zusatz ? h('span', { class: `sp-zusatz sf-${z.zusatz.farbe}` }, z.zusatz.kuerzel) : null,
+            z.zusatz?.weitere > 0 ? h('span', { class: 'sp-mehr' }, `+${z.zusatz.weitere}`) : null,
+            z.notiz ? h('span', { class: 'sp-notiz' }, '✎') : null,
+          )
+        : null,
     ),
     m.personen.map((p) => streifenKnoten(p, z.streifen[p])),
   );

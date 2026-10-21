@@ -68,19 +68,25 @@ describe('schichtMonatModel', () => {
     assert.deepEqual(Object.keys(zelleAm(m, 8).streifen), ['papa', 'mama']);
   });
 
-  test('Zusatz oben rechts: erster Zusatz und „mehr“ bei weiteren; Notiz als Marke', () => {
+  test('Zusatz oben rechts: erster Zusatz und Anzahl der weiteren („DB+1“); Notiz als Marke', () => {
     const m = model();
-    assert.deepEqual(zelleAm(m, 21).zusatz, { kuerzel: 'DB', farbe: 'schiefer', mehr: true });
+    assert.deepEqual(zelleAm(m, 21).zusatz, { kuerzel: 'DB', farbe: 'schiefer', mehr: true, weitere: 1 });
     assert.equal(zelleAm(m, 20).zusatz, null);
     assert.equal(zelleAm(m, 13).notiz, true);
     assert.equal(zelleAm(m, 12).notiz, false);
   });
 
-  test('ein Zusatz allein: mehr = false', () => {
+  test('ein Zusatz allein: keine weiteren; drei Zusätze: zwei weitere („DB+2“), auch über beide Personen', () => {
     let monat = leererMonat(JM);
     monat = zusatzHinzufuegen(monat, { person: 'mama', tag: 2, k: k('mama', 'DB'), von: '18:00', bis: '19:30' });
+    for (const von of ['07:00', '12:00', '18:00']) monat = zusatzHinzufuegen(monat, { person: 'mama', tag: 3, k: k('mama', 'DB'), von, bis: '19:30' });
+    monat = zusatzHinzufuegen(monat, { person: 'papa', tag: 4, k: k('papa', 'S'), von: '08:00', bis: '09:00' }); // Papa zuerst
+    monat = zusatzHinzufuegen(monat, { person: 'mama', tag: 4, k: k('mama', 'DB'), von: '18:00', bis: '19:30' });
     const m = model(zustand({ schicht: { katalog, monate: { [JM]: monat }, status: { [JM]: 'geladen' } } }));
-    assert.deepEqual(zelleAm(m, 2).zusatz, { kuerzel: 'DB', farbe: 'schiefer', mehr: false });
+    assert.deepEqual(zelleAm(m, 2).zusatz, { kuerzel: 'DB', farbe: 'schiefer', mehr: false, weitere: 0 });
+    assert.deepEqual(zelleAm(m, 3).zusatz, { kuerzel: 'DB', farbe: 'schiefer', mehr: true, weitere: 2 });
+    assert.deepEqual(zelleAm(m, 4).zusatz, { kuerzel: 'S', farbe: 'violett', mehr: true, weitere: 1 });
+    assert.deepEqual(model(zustand({ schicht: { katalog, monate: { [JM]: monat }, status: { [JM]: 'geladen' } } }), 'mama').zellen.find((z) => z.datum === '2026-10-04').zusatz.weitere, 0);
   });
 
   test('Zählung je Person (Katalog-Reihenfolge, Urlaub kein Dienst, unbekannte Arten zählen nicht)', () => {

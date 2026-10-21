@@ -105,6 +105,45 @@ test.describe('Telefon mit 375 px Breite', () => {
     expect(masse.abgeschnitten).toEqual([]);
     expect(masse.streifenHoehe).toBeGreaterThanOrEqual(16);
   });
+
+  test('ein voller Tag (Feiertag, DB+2, Notiz) bleibt in seinem Feld; Kürzel und „+2“ bleiben sichtbar', async ({ page }) => {
+    await starteDemo(page, { route: '#/schicht' });
+    await expect(zelle(page, '2026-10-26')).toBeVisible();
+    // 26.10. (Nationalfeiertag): Mama drei Dienstbesprechungen und eine Notiz – direkt im Speicher der Demo, dann neu laden
+    await page.evaluate(() => {
+      const daten = JSON.parse(localStorage.getItem('fk.demo.v1'));
+      const monat = daten.schicht.monate['2026-10'];
+      const db = daten.schicht.katalog?.arten?.mama?.find((a) => a.kuerzel === 'DB')?.k ?? 'F';
+      monat.z.mama['26'] = [['07:00', '08:00'], ['12:00', '13:00'], ['18:00', '19:30']].map(([von, bis]) => ({ k: db, von, bis }));
+      monat.n.mama['26'] = 'Viel los';
+      localStorage.setItem('fk.demo.v1', JSON.stringify(daten));
+    });
+    await page.reload();
+    const kopf = zelle(page, '2026-10-26').locator('.sp-zkopf');
+    await expect(kopf.locator('.sp-zusatz')).toHaveText('DB');
+    await expect(kopf.locator('.sp-mehr')).toHaveText('+2');
+    await expect(kopf.locator('.sp-notiz')).toHaveText('✎');
+    await expect(kopf.locator('.sp-feiertag')).toBeVisible();
+    await expect(zelle(page, '2026-10-26')).toHaveAttribute('aria-label', /Nationalfeiertag: .*Zusatz DB und 2 weitere, mit Notiz$/);
+    const masse = await zelle(page, '2026-10-26').evaluate((z) => {
+      const r = (el) => el.getBoundingClientRect();
+      const k = z.querySelector('.sp-zkopf');
+      const innen = { links: r(z).left + z.clientLeft, rechts: r(z).left + z.clientLeft + z.clientWidth };
+      return {
+        ueberlauf: k.scrollWidth - k.clientWidth,
+        kopf: { links: r(k).left, rechts: r(k).right },
+        innen,
+        teile: ['.nr', '.sp-zusatz', '.sp-mehr'].map((s) => ({ s, links: r(k.querySelector(s)).left, rechts: r(k.querySelector(s)).right })),
+      };
+    });
+    expect(masse.ueberlauf).toBeLessThanOrEqual(0);
+    expect(masse.kopf.links).toBeGreaterThanOrEqual(masse.innen.links - 0.5);
+    expect(masse.kopf.rechts).toBeLessThanOrEqual(masse.innen.rechts + 0.5);
+    for (const t of masse.teile) {
+      expect(t.links, t.s).toBeGreaterThanOrEqual(masse.kopf.links - 0.5);
+      expect(t.rechts, t.s).toBeLessThanOrEqual(masse.kopf.rechts + 0.5);
+    }
+  });
 });
 
 test.describe('ohne Verbindung', () => {

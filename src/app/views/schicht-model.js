@@ -46,13 +46,13 @@ function streifen(katalog, person, k) {
   return { k, kuerzel: art.kuerzel, name: art.name, farbe: art.farbe, nacht: istNacht(art), urlaub: art.muster === 'urlaub', unbekannt: false };
 }
 
-/** Marke oben rechts: der erste Zusatz der angezeigten Personen (Papa vor Mama), `mehr` bei weiteren. */
+/** Marke oben rechts: der erste Zusatz der angezeigten Personen (Papa vor Mama); `weitere` = Anzahl der übrigen (Anzeige „+1“), `mehr` = es gibt welche. */
 function zusatzMarke(monat, katalog, personen, tag) {
   const alle = personen.flatMap((person) => (monat.z?.[person]?.[tag] ?? []).map((z) => ({ person, ...z })));
   if (alle.length === 0) return null;
   const erste = alle[0];
   const art = artFuer(katalog, erste.person, erste.k);
-  return { kuerzel: art?.kuerzel ?? '?', farbe: art?.farbe ?? 'grau', mehr: alle.length > 1 };
+  return { kuerzel: art?.kuerzel ?? '?', farbe: art?.farbe ?? 'grau', mehr: alle.length > 1, weitere: alle.length - 1 };
 }
 
 /** „20 Dienste · 4× F · 4× N · 5× U“ (Katalog-Reihenfolge; Urlaub ist kein Dienst) oder „Noch nichts eingetragen“. */
