@@ -130,6 +130,15 @@ export function schichtMonatModel(state, jm, { heute, filter = 'beide' } = {}) {
 
 const katalogVon = (state) => state.schicht?.katalog ?? standardKatalog();
 
+/**
+ * Der Filter, mit dem das Raster gezeichnet wird: blendet der gemerkte Filter die Person des offenen Pinsels aus, werden beim Malen
+ * beide gezeigt (sonst landete jeder Tipp unsichtbar im Kalender); der gemerkte Filter bleibt unverändert.
+ */
+export function rasterFilter(filter, pinsel) {
+  const f = gueltigerFilter(filter);
+  return pinsel && !personenFuer(f).includes(pinsel.person) ? 'beide' : f;
+}
+
 /** Pinsel beim Öffnen: zeigt der Filter nur Mama, malt er Mama, sonst Papa; gewählt ist die erste aktive Art (keine → „Frei“). */
 export function pinselStart(state, filter) {
   const person = gueltigerFilter(filter) === 'mama' ? 'mama' : 'papa';
@@ -144,9 +153,9 @@ export function pinselModel(state, { person, k }) {
   const aktiv = aktiveArten(katalogVon(state), person);
   const gewaehlt = k === null ? null : (aktiv.find((a) => a.k === k) ?? aktiv[0] ?? null);
   const arten = aktiv.map((a) => ({ k: a.k, kuerzel: a.kuerzel, name: a.name, farbe: a.farbe, urlaub: a.muster === 'urlaub', gewaehlt: a === gewaehlt }));
-  let hinweis = 'Tage antippen: der Dienst wird gelöscht, Notiz und Zusätze bleiben.';
-  if (gewaehlt?.gruppe === 'zusatz') hinweis = `${gewaehlt.kuerzel} ${gewaehlt.name} ${zeitenText(gewaehlt)}: Tage antippen zum Dazunehmen, nochmal tippen nimmt sie weg.`;
-  else if (gewaehlt) hinweis = `${gewaehlt.kuerzel} ${gewaehlt.name}: Tage antippen. Nochmal tippen macht den Tag wieder frei.`;
+  let hinweis = 'Frei: Tage antippen löscht den Dienst; Notiz und Zusätze bleiben.';
+  if (gewaehlt?.gruppe === 'zusatz') hinweis = `${gewaehlt.kuerzel} ${gewaehlt.name} ${zeitenText(gewaehlt)}: Tage antippen. Nochmal tippen: wieder weg.`;
+  else if (gewaehlt) hinweis = `${gewaehlt.kuerzel} ${gewaehlt.name}: Tage antippen. Nochmal tippen: wieder frei.`;
   return { person, k: gewaehlt?.k ?? null, frei: gewaehlt === null, arten, hinweis };
 }
 

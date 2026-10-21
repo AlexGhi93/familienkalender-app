@@ -19,9 +19,10 @@ export function pinselUmschalten({ store, ui }) {
 export function pinselTippen({ store }, pinsel, datum) {
   const jm = datum.slice(0, 7);
   const tag = Number(datum.slice(8));
-  const a = pinselAktion(store.getState(), jm, tag, pinsel);
+  const state = store.getState();
+  const { person, k } = pinselModel(state, pinsel); // eine inzwischen archivierte Art: wie angezeigt die erste aktive
+  const a = pinselAktion(state, jm, tag, { person, k });
   if (!a) return;
-  const { person } = pinsel;
   const aufrufe = {
     setzen: () => store.schichtSetzen(jm, tag, person, null),
     pinsel: () => store.schichtPinsel(jm, tag, person, a.k),
@@ -50,7 +51,6 @@ function hoeheMerken(leiste) {
 
 export function pinselLeiste({ store, ui }) {
   const p = pinselModel(store.getState(), ui.schicht.pinsel);
-  ui.schicht.pinsel = { person: p.person, k: p.k }; // eine inzwischen archivierte Art fällt auf die erste aktive zurück
   const waehle = (k) => {
     ui.schicht.pinsel = { person: p.person, k };
     ui.rendern();

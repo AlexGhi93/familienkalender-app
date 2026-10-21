@@ -1,7 +1,7 @@
 // Ansicht des Schichtplans ohne DOM: Monatsraster mit zwei Streifen je Tag, Filter, Zählung, Legende, gemerkter Filter.
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { SCHICHT_FILTER_SCHLUESSEL, pinselAktion, pinselModel, pinselStart, schichtFilterLesen, schichtFilterSpeichern, schichtMonatModel } from '../../src/app/views/schicht-model.js';
+import { SCHICHT_FILTER_SCHLUESSEL, pinselAktion, pinselModel, pinselStart, rasterFilter, schichtFilterLesen, schichtFilterSpeichern, schichtMonatModel } from '../../src/app/views/schicht-model.js';
 import { artArchivieren, leererMonat, setzeNotiz, setzeSchicht, standardKatalog, zusatzHinzufuegen } from '../../src/domain/schicht.js';
 import { speicherAttrappe, zustand } from './hilfen.js';
 
@@ -232,6 +232,16 @@ describe('Pinsel', () => {
     // nur Zusätze derselben Person zählen: ein Papa-Eintrag mit gleichem Schlüssel am selben Tag ändert nichts an Mamas Tipp
     const mitPapa = { ...m, z: { ...m.z, papa: { 6: [{ k: db, von: '18:00', bis: '19:30' }] } } };
     assert.equal(pinselAktion(stateMit({ monate: { [JM]: mitPapa } }), JM, 6, { person: 'mama', k: db }).aktion, 'zusatzDazu');
+  });
+
+  test('Raster beim Malen: blendet der Filter die Person des Pinsels aus, werden beide gezeigt; sonst gilt der Filter', () => {
+    assert.equal(rasterFilter('papa', null), 'papa');
+    assert.equal(rasterFilter('papa', { person: 'papa', k: 'A' }), 'papa');
+    assert.equal(rasterFilter('papa', { person: 'mama', k: 'A' }), 'beide');
+    assert.equal(rasterFilter('mama', { person: 'papa', k: null }), 'beide');
+    assert.equal(rasterFilter('mama', { person: 'mama', k: null }), 'mama');
+    assert.equal(rasterFilter('beide', { person: 'mama', k: 'A' }), 'beide');
+    assert.equal(rasterFilter('quatsch', null), 'beide');
   });
 
   test('Tipp mit einer archivierten oder unbekannten Art → nichts', () => {

@@ -260,6 +260,46 @@ test.describe('Pinsel', () => {
     await expect(leiste(page)).toHaveCount(0);
   });
 
+  test('Filter „👨 Papa“ und Pinsel auf Mama: beim Malen sind beide zu sehen, nach „Fertig“ wieder nur Papa (auch nach dem Neuladen)', async ({ page }) => {
+    await starteDemo(page, { route: '#/schicht' });
+    await page.locator('.sp-filter').getByRole('button', { name: '👨 Papa' }).click();
+    await expect(page.locator('.sp-streifen.mama')).toHaveCount(0);
+    await page.getByRole('button', { name: '✏️ Eintragen' }).click();
+    await expect(leiste(page).getByRole('button', { name: '👨 Papa' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('.sp-streifen.mama')).toHaveCount(0); // Pinsel auf Papa: der Filter passt, nichts ändert sich
+    await leiste(page).getByRole('button', { name: '👩 Mama' }).click();
+    await expect(page.locator('.sp-streifen.mama')).toHaveCount(31);
+    await expect(page.locator('.sp-streifen.papa')).toHaveCount(31);
+    await art(page, 'U Urlaub').click();
+    await zelle(page, '2026-10-08').click();
+    await expect(streifen(page, '2026-10-08', 'mama')).toHaveText('U');
+    await leiste(page).getByRole('button', { name: 'Fertig' }).click();
+    await expect(page.locator('.sp-filter').getByRole('button', { name: '👨 Papa' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('.sp-streifen.mama')).toHaveCount(0);
+    await expect(page.locator('.sp-streifen.papa')).toHaveCount(31);
+    await page.reload();
+    await expect(page.locator('.sp-filter').getByRole('button', { name: '👨 Papa' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('.sp-streifen.papa').first()).toBeVisible();
+    await expect(page.locator('.sp-streifen.mama')).toHaveCount(0);
+    await page.locator('.sp-filter').getByRole('button', { name: 'Beide' }).click();
+    await expect(streifen(page, '2026-10-08', 'mama')).toHaveText('U'); // gespeichert
+  });
+
+  test('die Leiste ist kompakt (wie die Machette): höchstens 240 px, die erste Woche bleibt darüber zu sehen', async ({ page }) => {
+    await starteDemo(page, { route: '#/schicht' });
+    await page.getByRole('button', { name: '✏️ Eintragen' }).click();
+    await expect(leiste(page)).toBeVisible();
+    const masse = await page.evaluate(() => {
+      const r = (s) => document.querySelector(s).getBoundingClientRect();
+      const knoepfe = [...document.querySelectorAll('.sp-pinsel button')].map((b) => b.getBoundingClientRect().height);
+      return { leiste: r('.sp-pinsel'), ersteWoche: r('.sp-zelle[data-datum="2026-10-01"]'), kleinsterKnopf: Math.min(...knoepfe) };
+    });
+    expect(masse.leiste.height).toBeLessThanOrEqual(240);
+    expect(masse.ersteWoche.top).toBeGreaterThanOrEqual(0);
+    expect(masse.ersteWoche.bottom).toBeLessThanOrEqual(masse.leiste.top);
+    expect(masse.kleinsterKnopf).toBeGreaterThanOrEqual(32);
+  });
+
   test('die Leiste sitzt über den Registerkarten; das Raster bleibt darüber sichtbar und lässt sich bis zum letzten Tag scrollen', async ({ page }) => {
     await starteDemo(page, { route: '#/schicht' });
     await page.getByRole('button', { name: '✏️ Eintragen' }).click();

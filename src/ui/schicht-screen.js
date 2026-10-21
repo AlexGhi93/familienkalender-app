@@ -4,7 +4,7 @@
 import { h } from './dom.js';
 import { datumLang } from '../app/format-de.js';
 import { FEIERTAG_EMOJI } from '../app/views/gemeinsam.js';
-import { schichtMonatModel } from '../app/views/schicht-model.js';
+import { rasterFilter, schichtMonatModel } from '../app/views/schicht-model.js';
 import { pinselLeiste, pinselTippen, pinselUmschalten } from './schicht-pinsel.js';
 
 const PERSON = { papa: { name: 'Papa', emoji: '👨' }, mama: { name: 'Mama', emoji: '👩' } };
@@ -72,7 +72,7 @@ function legendeEintrag(e) {
 
 export function schichtScreen({ store, ui }) {
   if (ui.seiteBetreten) ui.schicht.pinsel = null; // wer die Seite verlässt und wiederkommt, malt nicht aus Versehen weiter
-  const m = schichtMonatModel(store.getState(), ui.schicht.jm, { heute: store.heute(), filter: ui.schicht.filter });
+  const m = schichtMonatModel(store.getState(), ui.schicht.jm, { heute: store.heute(), filter: rasterFilter(ui.schicht.filter, ui.schicht.pinsel) });
   const rund = (zeichen, text, ziel) => h('button', { class: 'rund', type: 'button', 'aria-label': text, onClick: () => ui.setzeSchichtMonat(ziel) }, zeichen);
   const personZeile = (p, inhalt) => h('div', { class: 'sp-person-zeile' }, h('b', {}, `${PERSON[p].emoji} ${PERSON[p].name}`), inhalt);
 
