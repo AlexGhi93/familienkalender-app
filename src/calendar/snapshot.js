@@ -17,21 +17,33 @@ const MONAT = /^\d{4}-(0[1-9]|1[0-2])$/;
 const istObjekt = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 const gueltigesDatum = (d) => typeof d === 'string' && isValidDate(d);
 
-/** Die neuesten Monate (nach 'JJJJ-MM'), höchstens `max`. */
-const neuesteMonate = (monate, max) => Object.fromEntries(Object.entries(monate ?? {}).sort(([a], [b]) => b.localeCompare(a)).slice(0, max));
+const monatsZahl = (jm) => Number(jm.slice(0, 4)) * 12 + Number(jm.slice(5, 7));
+
+/**
+ * Die Monate (Schlüssel 'JJJJ-MM') am nächsten zu `bezug` ('JJJJ-MM…'), höchstens `max`: offline zählt vor allem der laufende Monat und
+ * seine Nachbarn, auch nachdem man weit vor- oder zurückgeblättert hat. Bei gleichem Abstand gewinnt der spätere Monat (das Kommende ist
+ * offline wichtiger als das Vergangene).
+ */
+function naechsteMonate(monate, bezug, max) {
+  const b = monatsZahl(bezug);
+  const abstand = ([jm]) => Math.abs(monatsZahl(jm) - b);
+  const eintraege = Object.entries(monate ?? {}).sort((x, y) => abstand(x) - abstand(y) || y[0].localeCompare(x[0]));
+  return Object.fromEntries(eintraege.slice(0, max));
+}
 
 /**
  * Schichtplan nachsichtig lesen (anders als der Rest: er ist nur eine Kopie und wird beim Öffnen der Seite ohnehin neu geholt):
- * unbrauchbare Monate fallen weg, der Katalog wird normalisiert; nichts davon macht den ganzen Schnappschuss ungültig.
+ * unbrauchbare Monate fallen weg, der Katalog wird normalisiert; nichts davon macht den ganzen Schnappschuss ungültig. Höchstens sechs
+ * Monate bleiben, die nächsten zu `bezug` (dem Monat des Speicherns), nach derselben Regel wie beim Speichern.
  */
-function pruefeSchicht(roh) {
+function pruefeSchicht(roh, bezug) {
   if (!istObjekt(roh)) return { katalog: null, monate: {} };
   const katalog = istObjekt(roh.katalog) ? normalisiereKatalog(roh.katalog).katalog : null;
   const monate = {};
   for (const [jm, monat] of Object.entries(istObjekt(roh.monate) ? roh.monate : {})) {
     if (MONAT.test(jm) && istObjekt(monat)) monate[jm] = normalisiereMonat(monat, jm).monat;
   }
-  return { katalog, monate: neuesteMonate(monate, MAX_SNAPSHOT_SCHICHT_MONATE) };
+  return { katalog, monate: naechsteMonate(monate, bezug, MAX_SNAPSHOT_SCHICHT_MONATE) };
 }
 
 /** Prüft die gelesene Struktur streng; liefert die bereinigten Daten oder null. */
@@ -54,14 +66,14 @@ function pruefe(roh) {
     if (!istObjekt(t) || typeof t.id !== 'string' || !TERMIN_TYPEN.includes(t.typ) || !TYPES[t.typ] || !gueltigesDatum(t.date) || !Array.isArray(t.mitnehmen ?? [])) return null;
   }
   const fenster = istObjekt(roh.fenster) && gueltigesDatum(roh.fenster.von) && gueltigesDatum(roh.fenster.bis) ? { von: roh.fenster.von, bis: roh.fenster.bis } : null;
-  return { daten: { settings, tage: roh.tage, urlaub: roh.urlaub, termine: roh.termine, fenster, einkauf: normalisiereListe(roh.einkauf), konto: normalisiereKonto(roh.konto), schicht: pruefeSchicht(roh.schicht) }, gespeichertAm: roh.gespeichertAm };
+  return { daten: { settings, tage: roh.tage, urlaub: roh.urlaub, termine: roh.termine, fenster, einkauf: normalisiereListe(roh.einkauf), konto: normalisiereKonto(roh.konto), schicht: pruefeSchicht(roh.schicht, new Date(roh.gespeichertAm).toISOString()) }, gespeichertAm: roh.gespeichertAm };
 }
 
 export function createSnapshot({ speicher = globalThis.localStorage ?? null, jetzt = () => new Date() } = {}) {
   return {
     /**
-     * Speichert Tage, Urlaub, Termine und Einstellungen der letzten zwölf Monate, dazu die Schichtarten und die sechs neuesten
-     * geladenen Monate des Schichtplans. Gibt true zurück, wenn gespeichert wurde.
+     * Speichert Tage, Urlaub, Termine und Einstellungen der letzten zwölf Monate, dazu die Schichtarten und von den geladenen Monaten
+     * des Schichtplans die sechs am nächsten zu `heute`. Gibt true zurück, wenn gespeichert wurde.
      */
     speichern(state, heute) {
       if (!speicher) return false;
@@ -76,7 +88,7 @@ export function createSnapshot({ speicher = globalThis.localStorage ?? null, jet
         fenster: state.fenster ?? null,
         einkauf: state.einkauf ?? null,
         konto: state.konto ?? null,
-        schicht: state.schicht ? { katalog: state.schicht.katalog ?? null, monate: neuesteMonate(state.schicht.monate, MAX_SNAPSHOT_SCHICHT_MONATE) } : null,
+        schicht: state.schicht ? { katalog: state.schicht.katalog ?? null, monate: naechsteMonate(state.schicht.monate, heute, MAX_SNAPSHOT_SCHICHT_MONATE) } : null,
       });
       if (text.length > MAX_SNAPSHOT_ZEICHEN) return false;
       try {

@@ -89,6 +89,38 @@ describe('Schnappschuss', () => {
     assert.deepEqual(snap.lesen().daten, { settings: state.settings, tage: {}, urlaub: [], termine: [], fenster: null, einkauf: leereListe(), konto: leeresKonto(), schicht: { katalog: null, monate: {} } });
   });
 
+  describe('Schichtplan: höchstens sechs Monate, die nächsten zu heute (bei gleichem Abstand der spätere)', () => {
+    const monate = (von, anzahl) =>
+      Object.fromEntries(
+        Array.from({ length: anzahl }, (_, i) => {
+          const d = new Date(Date.UTC(Number(von.slice(0, 4)), Number(von.slice(5)) - 1 + i, 1));
+          const jm = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+          return [jm, { v: 1, jm, t: { papa: '', mama: '' }, n: { papa: {}, mama: {} }, z: { papa: {}, mama: {} } }];
+        }),
+      );
+    const NAECHSTE = ['2026-08', '2026-09', '2026-10', '2026-11', '2026-12', '2027-01'];
+
+    test('speichern: geladen 2026-04 … 2027-03, heute 2026-10-22 → der laufende Monat und seine Nachbarn', () => {
+      const s = speicherAttrappe();
+      const snap = createSnapshot({ speicher: s, jetzt: () => new Date('2026-10-22T06:00:00.000Z') });
+      assert.equal(snap.speichern({ ...state, schicht: { katalog: null, monate: monate('2026-04', 12) } }, '2026-10-22'), true);
+      assert.deepEqual(Object.keys(JSON.parse(s.getItem(SNAPSHOT_KEY)).schicht.monate).sort(), NAECHSTE);
+      assert.deepEqual(Object.keys(snap.lesen().daten.schicht.monate).sort(), NAECHSTE);
+    });
+
+    test('speichern: nach einem Blick in die Zukunft (2026-09 … 2027-04) bleibt der laufende Monat dabei', () => {
+      const s = speicherAttrappe();
+      createSnapshot({ speicher: s, jetzt: () => new Date('2026-10-22T06:00:00.000Z') }).speichern({ ...state, schicht: { katalog: null, monate: monate('2026-09', 8) } }, '2026-10-22');
+      assert.deepEqual(Object.keys(JSON.parse(s.getItem(SNAPSHOT_KEY)).schicht.monate).sort(), ['2026-09', '2026-10', '2026-11', '2026-12', '2027-01', '2027-02']);
+    });
+
+    test('lesen: zu viele Monate werden um den Monat des Speicherns gekürzt, nicht auf die neuesten', () => {
+      const roh = { v: 1, gespeichertAm: '2026-10-22T06:00:00.000Z', settings: {}, tage: {}, urlaub: [], termine: [], schicht: { katalog: null, monate: monate('2026-04', 12) } };
+      const g = createSnapshot({ speicher: speicherAttrappe({ [SNAPSHOT_KEY]: JSON.stringify(roh) }) }).lesen();
+      assert.deepEqual(Object.keys(g.daten.schicht.monate).sort(), NAECHSTE);
+    });
+  });
+
   test('zu groß: nichts wird gespeichert', () => {
     const s = speicherAttrappe();
     const riesig = { ...state, termine: Array.from({ length: 3000 }, (_, i) => ({ id: `t${i}`, typ: 'familie', label: 'x'.repeat(30), date: '2026-10-20', time: null, mitnehmen: ['y'.repeat(30)], kosten: null })) };

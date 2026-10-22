@@ -572,7 +572,7 @@ describe('Schichtplan', () => {
     assert.equal(tagK(store.getState().schicht.monate[JM], 'papa', 9), 'A');
   });
 
-  test('Offline-Kopie: ein neuer Store aus dem Schnappschuss hat Katalog und Monate; höchstens die sechs neuesten', async () => {
+  test('Offline-Kopie: ein neuer Store aus dem Schnappschuss hat Katalog und Monate; höchstens die sechs nächsten zu heute', async () => {
     const { store, speicher } = aufbau();
     await store.laden();
     await store.schichtLaden(JM);
