@@ -515,16 +515,15 @@ describe('Schichtplan', () => {
     const { store, speicher } = aufbau({ speicher: ohneSchicht() });
     await store.laden();
     assert.equal(store.getState().schicht.katalog, null);
-    const k = await store.schichtArtSpeichern('papa', { kuerzel: 'BS', name: 'Bereitschaft', farbe: 'grau' });
-    assert.equal(k, 'I');
+    assert.deepEqual(await store.schichtArtSpeichern('papa', { kuerzel: 'BS', name: 'Bereitschaft', farbe: 'grau' }), { ok: true, k: 'I' });
     const papa = () => store.getState().schicht.katalog.arten.papa;
     assert.deepEqual(papa().at(-1), { k: 'I', kuerzel: 'BS', name: 'Bereitschaft', farbe: 'grau', gruppe: 'dienst' });
     assert.deepEqual(gespeichert(speicher).schicht.katalog, store.getState().schicht.katalog);
-    assert.equal(await store.schichtArtSpeichern('papa', { kuerzel: 'BS', name: 'Rufbereitschaft', farbe: 'grau' }, 'I'), 'I');
+    assert.deepEqual(await store.schichtArtSpeichern('papa', { kuerzel: 'BS', name: 'Rufbereitschaft', farbe: 'grau' }, 'I'), { ok: true, k: 'I' });
     assert.equal(papa().at(-1).name, 'Rufbereitschaft');
-    await store.schichtArtArchivieren('papa', 'I', true);
+    assert.deepEqual(await store.schichtArtArchivieren('papa', 'I', true), { ok: true });
     assert.equal(papa().at(-1).archiv, true);
-    await store.schichtArtVerschieben('papa', 'I', -1);
+    assert.deepEqual(await store.schichtArtVerschieben('papa', 'I', -1), { ok: true });
     assert.deepEqual(papa().slice(-2).map((a) => a.k), ['I', 'H']);
     assert.deepEqual(gespeichert(speicher).schicht.katalog, store.getState().schicht.katalog);
     const vorher = store.getState();
@@ -666,9 +665,10 @@ describe('Schichtplan', () => {
     await store.schichtLaden(JM);
     const monate = store.getState().schicht.monate;
     fremd = { ...standardKatalog(), arten: { ...standardKatalog().arten, mama: standardKatalog().arten.mama.slice(0, 2) } };
-    await store.schichtArtSpeichern('papa', { kuerzel: 'BS', name: 'Bereitschaft', farbe: 'grau' });
+    assert.deepEqual(await store.schichtArtSpeichern('papa', { kuerzel: 'BS', name: 'Bereitschaft', farbe: 'grau' }), { ok: false, fehler: 'Speichern hat nicht geklappt. Bitte noch einmal versuchen.' });
     const s = store.getState().schicht;
     assert.deepEqual(s.katalog, fremd);
+    assert.equal(store.getState().fehler, 'Speichern hat nicht geklappt. Bitte noch einmal versuchen.');
     assert.equal(s.monate, monate);
     assert.equal(s.status[JM], 'geladen');
   });
@@ -702,9 +702,44 @@ describe('Schichtplan', () => {
     store.subscribe((s) => zwischenstaende.push(s.schicht.katalog));
     await tor.weiter();
     await tor.weiter();
-    assert.deepEqual(await Promise.all([eins, zwei]), ['I', 'G']);
+    assert.deepEqual(await Promise.all([eins, zwei]), [{ ok: true, k: 'I' }, { ok: true, k: 'G' }]);
     assert.deepEqual([tor.z.aufrufe, tor.z.hoechstens], [2, 1]);
     for (const k of zwischenstaende) assert.deepEqual([k.arten.papa.at(-1).kuerzel, k.arten.mama.at(-1).kuerzel], ['BS', 'BS']);
     assert.deepEqual(gespeichert(speicher).schicht.katalog, store.getState().schicht.katalog);
+  });
+  test('Schichtarten: das andere Telefon hat das Kürzel schon → { ok: false } mit genau dieser Meldung, zurück auf den Stand im Kalender', async () => {
+    const { store, adapter, speicher } = aufbau();
+    await store.laden();
+    await store.schichtLaden(JM);
+    // das andere Telefon legt „B“ an, dieses Telefon hat den alten Katalog noch angezeigt
+    await adapter.aendereSchichtarten((kat) => ({ ...kat, arten: { ...kat.arten, papa: [...kat.arten.papa, { k: 'I', kuerzel: 'B', name: 'Bergbahn', farbe: 'braun', gruppe: 'dienst' }] } }));
+    assert.equal(store.getState().schicht.katalog.arten.papa.some((a) => a.kuerzel === 'B'), false);
+    const r = await store.schichtArtSpeichern('papa', { kuerzel: 'b', name: 'Bereitschaft', farbe: 'grau' });
+    assert.deepEqual(r, { ok: false, fehler: 'Dieses Kürzel gibt es schon.' });
+    assert.equal(store.getState().fehler, 'Dieses Kürzel gibt es schon.'); // die Fehlermeldung (Toast) trägt den genauen Text
+    assert.deepEqual(store.getState().schicht.katalog, gespeichert(speicher).schicht.katalog); // neu gelesen: der Stand im Kalender
+    assert.deepEqual(store.getState().schicht.katalog.arten.papa.at(-1).name, 'Bergbahn');
+  });
+
+  test('Schichtarten: abgelaufene Anmeldung → { ok: false, wartet: true }, gespeichert wird nach dem Anmelden', async () => {
+    let abgelaufen = true;
+    const { store, speicher } = aufbau({ aendern: (a) => ({ ...a, aendereSchichtarten: async (fn) => { if (abgelaufen) throw authFehler(); return a.aendereSchichtarten(fn); } }) });
+    await store.laden();
+    const r = await store.schichtArtArchivieren('papa', 'A', true);
+    assert.equal(r.ok, false);
+    assert.equal(r.wartet, true);
+    assert.match(r.fehler, /anmelden/);
+    abgelaufen = false;
+    await store.wiederholeAusstehende();
+    assert.equal(gespeichert(speicher).schicht.katalog.arten.papa[0].archiv, true);
+  });
+
+  test('Schichtarten: eine schon auf dem angezeigten Stand ungültige Eingabe wirft sofort und ändert nichts', async () => {
+    const { store } = aufbau();
+    await store.laden();
+    const vorher = store.getState();
+    await assert.rejects(store.schichtArtSpeichern('papa', { kuerzel: '', name: 'Ohne', farbe: 'grau' }), { message: 'Das Kürzel muss 1 bis 3 Zeichen haben.' });
+    await assert.rejects(store.schichtArtVerschieben('papa', 'A', 2), { message: 'Ungültige Richtung.' });
+    assert.equal(store.getState(), vorher);
   });
 });

@@ -19,6 +19,8 @@ const SCHICHT_SICHERUNG_VORAUS = 12; // … bis zwölf Monate nach dem laufenden
 const SCHICHT_SICHERUNG_PARALLEL = 6; // so viele Monate werden gleichzeitig gefragt
 
 const TEXT_FEHLER = 'Speichern hat nicht geklappt. Bitte noch einmal versuchen.';
+// Fehler, die eine reine Änderungsfunktion auf der neuesten Fassung geworfen hat (fachliche Ablehnung mit deutscher Meldung).
+const FACHLICH = new WeakSet();
 const TEXT_ANMELDEN = 'Bitte neu anmelden: deine Änderung wird danach gespeichert.';
 const TEXT_UNKLAR = 'Möglicherweise teilweise gespeichert – bitte aktualisieren.';
 
@@ -117,7 +119,10 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
         melden();
         return 'auth';
       }
-      const text = gesamt > 1 && erledigt > 0 ? `Gespeichert: ${erledigt} von ${gesamt}. Bitte noch einmal versuchen; Gespeichertes bleibt erhalten.` : TEXT_FEHLER;
+      // Lehnt eine reine Änderung auf der neuesten Fassung ab (z. B. das andere Telefon hat dasselbe Kürzel schon vergeben), zählt ihre Meldung.
+      let text = gesamt > 1 && erledigt > 0 ? `Gespeichert: ${erledigt} von ${gesamt}. Bitte noch einmal versuchen; Gespeichertes bleibt erhalten.` : TEXT_FEHLER;
+      if (FACHLICH.has(fehler)) text = fehler.message;
+      optionen.beiFehler?.(fehler, text);
       if (optionen.zurueck) {
         state = { ...optionen.zurueck(), fortschritt: null, fehler: text };
         melden();
@@ -255,8 +260,18 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     const aufraeumen = () => {
       if (eintrag.offen.length === 0 && schichtOffen.get(teil) === eintrag) schichtOffen.delete(teil);
     };
+    // Wirft `fn` auf der neuesten Fassung, ist das eine fachliche Ablehnung (deutsche Meldung), kein Netzfehler.
+    const aufNeuester = (wert) => {
+      try {
+        return fn(wert);
+      } catch (e) {
+        if (e instanceof Error) FACHLICH.add(e);
+        throw e;
+      }
+    };
+    let fehlerText = null;
     const schreibe = async () => {
-      const gespeichert = await speichern(fn);
+      const gespeichert = await speichern(aufNeuester);
       herausnehmen();
       if (gespeichert) eintrag.basis = normalisiere(gespeichert);
       state = anzeigen();
@@ -264,6 +279,9 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       melden();
     };
     const optionen = {
+      beiFehler: (_fehler, text) => {
+        fehlerText = text;
+      },
       zurueck: () => {
         herausnehmen();
         return anzeigen();
@@ -279,28 +297,36 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     };
     const lauf = eintrag.kette.then(() => ausfuehren(schreibe, state, optionen));
     eintrag.kette = lauf;
-    await lauf;
-    return neu;
+    const ergebnis = await lauf;
+    return { neu, ergebnis, fehler: ergebnis === 'auth' ? TEXT_ANMELDEN : fehlerText };
   }
 
   /** Ändert einen Monat des Schichtplans (siehe `schichtAendern`). */
-  function schichtMonatAendern(jm, fn) {
-    return schichtAendern(jm, fn, {
+  async function schichtMonatAendern(jm, fn) {
+    const { neu } = await schichtAendern(jm, fn, {
       leer: () => leererMonat(jm),
       speichern: (f) => adapter.aendereSchichtMonat(jm, f),
       lesen: async () => (await adapter.leseSchichtMonat(jm)).monat ?? null,
       normalisiere: (m) => normalisiereMonat(m, jm).monat,
     });
+    return neu;
   }
 
-  /** Ändert die Schichtarten (siehe `schichtAendern`); gibt es noch keine, wird von den Standardarten ausgegangen. Gibt den neuen Katalog zurück. */
-  function schichtKatalogAendern(fn) {
-    return schichtAendern('katalog', fn, {
+  /**
+   * Ändert die Schichtarten (siehe `schichtAendern`); gibt es noch keine, wird von den Standardarten ausgegangen. Ergebnis:
+   * { ok: true } nach dem Speichern im Kalender, sonst { ok: false, fehler } (fachliche Meldung wie „Dieses Kürzel gibt es schon.“ oder
+   * der allgemeine Text; zurückgenommen und neu gelesen) bzw. { ok: false, wartet: true, fehler } (wird nach dem Anmelden gespeichert).
+   * Wirft nur, wenn die Eingabe schon auf dem angezeigten Stand abgelehnt wird (dann ändert sich nichts).
+   */
+  async function schichtKatalogAendern(fn) {
+    const { ergebnis, fehler } = await schichtAendern('katalog', fn, {
       leer: standardKatalog,
       speichern: (f) => adapter.aendereSchichtarten(f),
       lesen: async () => (await adapter.leseSchichtarten()).katalog ?? null,
       normalisiere: (k) => normalisiereKatalog(k).katalog,
     });
+    if (ergebnis === 'ok') return { ok: true };
+    return ergebnis === 'auth' ? { ok: false, wartet: true, fehler } : { ok: false, fehler };
   }
 
   /** Schichtplan für die Sicherung: Katalog und alle vorhandenen Monate von Jänner 2026 bis zwölf Monate nach heute (fehlende übersprungen). */
@@ -785,24 +811,23 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     schichtZusatzEntfernen: (jm, tag, person, { k, von, bis }) => schichtMonatAendern(jm, (m) => zusatzEntfernen(m, { person, tag, k, von, bis })),
 
     /**
-     * Schichtart anlegen (ohne `k`) oder ändern (mit `k`). Gibt den Schlüssel zurück; eine neue Art wird nach dem Speichern an ihrem
-     * Kürzel wiedergefunden (hat das andere Telefon gleichzeitig eine angelegt, kann ihr Schlüssel ein anderer sein).
+     * Schichtart anlegen (ohne `k`) oder ändern (mit `k`): { ok: true, k } nach dem Speichern im Kalender, sonst { ok: false, fehler }
+     * (siehe `schichtKatalogAendern`). Eine neue Art wird nach dem Speichern an ihrem Kürzel im gespeicherten Katalog wiedergefunden
+     * (hat das andere Telefon gleichzeitig eine angelegt, kann ihr Schlüssel ein anderer sein). Wirft bei einer ungültigen Eingabe.
      */
     async schichtArtSpeichern(person, entwurf, k) {
-      if (k !== undefined && k !== null) {
-        await schichtKatalogAendern((kat) => artAendern(kat, person, k, entwurf));
-        return k;
-      }
-      const neu = await schichtKatalogAendern((kat) => artHinzufuegen(kat, person, entwurf));
-      const art = neu.arten[person].at(-1);
-      return state.schicht.katalog?.arten?.[person]?.find((a) => a.kuerzel === art.kuerzel)?.k ?? art.k;
+      const aendern = k !== undefined && k !== null;
+      const r = await schichtKatalogAendern((kat) => (aendern ? artAendern(kat, person, k, entwurf) : artHinzufuegen(kat, person, entwurf)));
+      if (!r.ok) return r;
+      if (aendern) return { ok: true, k };
+      const kuerzel = String(entwurf.kuerzel ?? '').normalize('NFC').replace(/\s+/g, ' ').trim().toLocaleLowerCase('de');
+      const art = state.schicht.katalog?.arten?.[person]?.find((a) => a.kuerzel.toLocaleLowerCase('de') === kuerzel);
+      return { ok: true, k: art?.k ?? null };
     },
-    async schichtArtArchivieren(person, k, archiv) {
-      await schichtKatalogAendern((kat) => artArchivieren(kat, person, k, archiv));
-    },
-    async schichtArtVerschieben(person, k, richtung) {
-      await schichtKatalogAendern((kat) => artVerschieben(kat, person, k, richtung));
-    },
+    /** Art ausblenden (`archiv` true) oder zurückholen; Ergebnis wie `schichtKatalogAendern`. */
+    schichtArtArchivieren: (person, k, archiv) => schichtKatalogAendern((kat) => artArchivieren(kat, person, k, archiv)),
+    /** Art mit der Nachbarin tauschen (−1 hoch, 1 runter); Ergebnis wie `schichtKatalogAendern`. */
+    schichtArtVerschieben: (person, k, richtung) => schichtKatalogAendern((kat) => artVerschieben(kat, person, k, richtung)),
 
     async einstellungen(teil) {
       const settings = normalizeSettings({ ...state.settings, ...teil });

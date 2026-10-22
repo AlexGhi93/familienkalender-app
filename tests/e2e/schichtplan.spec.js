@@ -1,6 +1,7 @@
 // Schichtplan (Demo): Registerkarte „Schicht“, Monatsraster mit zwei Streifen je Tag (oben Papa, unten Mama), Monatswechsel,
 // Filter (gemerkt auf diesem Telefon), Zählung und Legende; auf 375 px ragt nichts hinaus.
-import { test, expect, starteDemo, starteGoogleAusSnapshot, tab, NETZFEHLER } from './hilfen.js';
+import { test, expect, starteDemo, starteGoogleAusSnapshot, starteGoogleVerbunden, tab, NETZFEHLER } from './hilfen.js';
+import { standardKatalog } from '../../src/domain/schicht.js';
 
 const zelle = (page, datum) => page.locator(`.sp-zelle[data-datum="${datum}"]`);
 const streifen = (page, datum, person) => zelle(page, datum).locator(`.sp-streifen.${person}`);
@@ -723,5 +724,71 @@ test.describe('Schichtarten bearbeiten', () => {
     await formular(page).getByRole('button', { name: 'Abbrechen' }).click();
     await expect(formular(page)).toHaveCount(0);
     await expect(zeilen(page, 'mama').first().locator('.sp-art-text')).toHaveText('Tagdienst 07:00–17:45');
+  });
+  test.describe('mit Google (Attrappe)', () => {
+    test.use({ erlaubteFehler: NETZFEHLER }); // fehlende versteckte Ereignisse antworten 404
+
+    test('das andere Telefon hat „B“ gerade vergeben (Google): „Dieses Kürzel gibt es schon.“, das Formular bleibt mit der Eingabe offen', async ({ page }) => {
+      const google = await starteGoogleVerbunden(page, { route: '#/schicht' });
+      await oeffnen(page);
+      await abschnitt(page, 'papa').getByRole('button', { name: '＋ Neue Art' }).click();
+      await formular(page).getByRole('textbox', { name: 'Name' }).fill('Bergbahn');
+      await formular(page).getByRole('textbox', { name: 'Kürzel' }).fill('B');
+      await formular(page).getByRole('button', { name: 'Braun' }).click();
+      // inzwischen legt das andere Telefon „B Bereitschaft“ an; dieses Telefon zeigt noch die alten Arten
+      const fremd = standardKatalog();
+      fremd.arten.papa.push({ k: 'I', kuerzel: 'B', name: 'Bereitschaft', farbe: 'grau', gruppe: 'dienst' });
+      google.setzeSchichtarten(fremd);
+      await formular(page).getByRole('button', { name: 'Speichern' }).click();
+      await expect(page.locator('.toast.fehler')).toHaveText('Dieses Kürzel gibt es schon.');
+      await expect(formular(page)).toBeVisible();
+      await expect(formular(page).getByRole('textbox', { name: 'Name' })).toHaveValue('Bergbahn');
+      await expect(formular(page).getByRole('textbox', { name: 'Kürzel' })).toHaveValue('B');
+      await expect(formular(page).getByRole('button', { name: 'Braun' })).toHaveAttribute('aria-pressed', 'true');
+      await expect(formular(page).getByRole('button', { name: 'Speichern' })).toBeEnabled();
+      // ein anderes Kürzel: gespeichert, das Formular schließt; beide Arten stehen in der Liste
+      await formular(page).getByRole('textbox', { name: 'Kürzel' }).fill('BB');
+      await formular(page).getByRole('button', { name: 'Speichern' }).click();
+      await expect(formular(page)).toHaveCount(0);
+      await expect(zeilen(page, 'papa').locator('.sp-art-text')).toContainText(['Bereitschaft', 'Bergbahn']);
+    });
+  });
+
+  test('eine unlesbare Uhrzeit wird gemeldet und nie still weggelassen', async ({ page }) => {
+    await starteDemo(page, { route: '#/schicht' });
+    await oeffnen(page);
+    await abschnitt(page, 'papa').getByRole('button', { name: '＋ Neue Art' }).click();
+    await formular(page).getByRole('textbox', { name: 'Name' }).fill('Spät');
+    await formular(page).getByRole('textbox', { name: 'Kürzel' }).fill('SP');
+    await formular(page).getByRole('textbox', { name: 'Von', exact: true }).fill('99');
+    await formular(page).getByRole('textbox', { name: 'Bis', exact: true }).fill('99');
+    await formular(page).getByRole('button', { name: 'Speichern' }).click();
+    await expect(page.locator('.toast.fehler')).toHaveText('Bitte eine Uhrzeit wie 07:30 eingeben.');
+    await expect(formular(page)).toBeVisible();
+    await formular(page).getByRole('textbox', { name: 'Von', exact: true }).fill('');
+    await formular(page).getByRole('textbox', { name: 'Bis', exact: true }).fill('');
+    await formular(page).getByRole('button', { name: 'Speichern' }).click();
+    await expect(formular(page)).toHaveCount(0);
+    await expect(zeilen(page, 'papa').last().locator('.sp-art-text')).toHaveText('Spät');
+  });
+
+  test('nach dem Neuladen ist alles noch da: neue Art, Reihenfolge, ausgeblendet', async ({ page }) => {
+    await starteDemo(page, { route: '#/schicht' });
+    await oeffnen(page);
+    await abschnitt(page, 'papa').getByRole('button', { name: '＋ Neue Art' }).click();
+    await formular(page).getByRole('textbox', { name: 'Name' }).fill('Bergbahn');
+    await formular(page).getByRole('textbox', { name: 'Kürzel' }).fill('B');
+    await formular(page).getByRole('button', { name: 'Speichern' }).click();
+    await expect(formular(page)).toHaveCount(0);
+    await blatt(page).getByRole('button', { name: 'Frühdienst nach unten' }).click();
+    await abschnitt(page, 'papa').getByRole('button', { name: 'Schulung entfernen' }).click();
+    await expect(zeilen(page, 'papa').locator('.sp-art-kuerzel')).toHaveText(['M', 'F', 'NM', 'N', '2T', 'Ü', 'U', 'B']);
+    await page.reload();
+    await oeffnen(page);
+    await expect(zeilen(page, 'papa').locator('.sp-art-kuerzel')).toHaveText(['M', 'F', 'NM', 'N', '2T', 'Ü', 'U', 'B']);
+    await expect(abschnitt(page, 'papa').locator('.sp-arten-aus summary')).toHaveText('Ausgeblendet (1)');
+    await schliessen(page);
+    await page.getByRole('button', { name: '✏️ Eintragen' }).click();
+    await expect(pinselArten(page)).toHaveText(['M Mittagsdienst', 'F Frühdienst', 'NM Nachmittagsdienst', 'N Nacht', '2T 2Teiler', 'Ü Überstunde', 'U Urlaub', 'B Bergbahn', '– Frei']);
   });
 });

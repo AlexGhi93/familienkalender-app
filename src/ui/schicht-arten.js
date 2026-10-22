@@ -1,7 +1,8 @@
 // Blatt „Schichtarten“ (Knopf „Schichtarten bearbeiten“ auf der Schichtplan-Seite): je Person die Arten mit farbigem Kürzel, Name und
 // Zeiten, ↑ ↓ für die Reihenfolge, „Bearbeiten“, „Entfernen“ (ausblenden; aufklappbar unter „Ausgeblendet (n)“ mit „Wiederherstellen“)
 // und „＋ Neue Art“. Das Formular (Name, Kürzel, Farbe, Gruppe, Nacht, Von/Bis) ersetzt die Liste, bis gespeichert oder abgebrochen
-// wird; abgelehnte Eingaben melden sich als Fehler und das Formular bleibt mit der Eingabe offen.
+// wird. Es schließt sich erst, wenn die Art im Kalender gespeichert ist; abgelehnte Eingaben (auch erst auf der neuesten Fassung, z. B.
+// das andere Telefon hat dasselbe Kürzel schon vergeben) melden sich als Fehler und das Formular bleibt mit der Eingabe offen.
 import { h } from './dom.js';
 import { blatt, toast } from './components.js';
 import { zeitFeld } from './eingabefelder.js';
@@ -9,6 +10,7 @@ import { artEntwurf, artEntwurfFehler, schichtArtenModel } from '../app/views/sc
 import { MAX_KUERZEL, MAX_NAME, PALETTE } from '../domain/schicht.js';
 
 const ALLGEMEINER_FEHLER = 'Das hat nicht geklappt. Bitte noch einmal versuchen.';
+const FALSCHE_UHRZEIT = 'Bitte eine Uhrzeit wie 07:30 eingeben.';
 const GRUPPEN = [
   ['dienst', 'Dienst'],
   ['zusatz', 'Zusatz'],
@@ -34,7 +36,8 @@ export function oeffneSchichtarten({ store }) {
   let abmelden = () => {};
 
   const fehler = (e) => toast(e?.message ?? ALLGEMEINER_FEHLER, { art: 'fehler' });
-  // Abgelehnte Änderungen landen hier; Speicherfehler meldet der Store selbst (und nimmt die Änderung zurück).
+  // Schon auf dem angezeigten Stand abgelehnte Änderungen landen hier; Speicherfehler (auch fachliche auf der neuesten Fassung) meldet
+  // der Store selbst über seine Fehlermeldung, nimmt nur diese Änderung zurück und liest die Schichtarten neu.
   const aendern = (lauf) => lauf.catch(fehler);
 
   /** Neu zeichnen; der Fokus bleibt auf demselben Knopf (z. B. ↓ nach dem Verschieben), sonst geht er nach `fokusNachher`. */
@@ -49,7 +52,9 @@ export function oeffneSchichtarten({ store }) {
   function formOeffnen(person, k) {
     const p = schichtArtenModel(store.getState()).find((x) => x.person === person);
     const art = k === null ? null : [...p.aktiv, ...p.ausgeblendet].find((a) => a.k === k);
-    form = { person, k, titel: `${art ? art.name : 'Neue Art'} · ${p.emoji} ${p.name}`, entwurf: artEntwurf(store.getState(), person, k) };
+    const entwurf = artEntwurf(store.getState(), person, k);
+    // `start`: der Stand beim Öffnen; beim Bearbeiten gehen nur geänderte Felder raus (Änderungen des anderen Telefons an den übrigen bleiben)
+    form = { person, k, titel: `${art ? art.name : 'Neue Art'} · ${p.emoji} ${p.name}`, entwurf, start: { ...entwurf }, zeiten: {}, speichert: false };
     neuZeichnen();
     document.querySelector('.sp-art-form input')?.focus();
   }
@@ -61,23 +66,42 @@ export function oeffneSchichtarten({ store }) {
     neuZeichnen();
   }
 
-  function speichern() {
+  /** Eine getippte, aber unlesbare Uhrzeit (das Zeitfeld meldet dann '') wird nie still verworfen. */
+  const unlesbareZeit = (offen) => ['von', 'bis'].some((feld) => offen.zeiten[feld]?.value.trim() && !offen.entwurf[feld]);
+
+  async function speichern() {
     const offen = form;
-    const meldung = artEntwurfFehler(store.getState(), offen.person, offen.k, offen.entwurf);
+    if (!offen || offen.speichert) return;
+    const meldung = unlesbareZeit(offen) ? FALSCHE_UHRZEIT : artEntwurfFehler(store.getState(), offen.person, offen.k, offen.entwurf);
     if (meldung) {
       toast(meldung, { art: 'fehler' }); // das Formular bleibt mit der Eingabe offen
       return;
     }
-    const lauf = store.schichtArtSpeichern(offen.person, { ...offen.entwurf }, offen.k ?? undefined);
-    formSchliessen();
-    // Nur möglich, wenn das andere Telefon inzwischen z. B. dasselbe Kürzel vergeben hat: Formular mit der Eingabe wieder öffnen.
-    lauf.catch((e) => {
-      if (!form) {
-        form = offen;
-        neuZeichnen();
-      }
-      fehler(e);
-    });
+    const geaendert = offen.k === null ? { ...offen.entwurf } : Object.fromEntries(Object.entries(offen.entwurf).filter(([feld, wert]) => wert !== offen.start[feld]));
+    const knopf = document.querySelector('.sp-art-form .sp-art-speichern');
+    offen.speichert = true;
+    if (knopf) {
+      knopf.disabled = true;
+      knopf.textContent = 'Speichert …';
+    }
+    let r;
+    try {
+      r = await store.schichtArtSpeichern(offen.person, geaendert, offen.k ?? undefined);
+    } catch (e) {
+      r = { ok: false, fehler: e?.message ?? ALLGEMEINER_FEHLER };
+    }
+    offen.speichert = false;
+    if (form !== offen) return; // inzwischen abgebrochen oder das Blatt geschlossen
+    // gespeichert, oder es wartet nur auf die Anmeldung (dann speichert der Store es danach selbst): Formular zu
+    if (r.ok || r.wartet) {
+      formSchliessen();
+      return;
+    }
+    if (knopf) {
+      knopf.disabled = false;
+      knopf.textContent = 'Speichern';
+    }
+    toast(r.fehler ?? ALLGEMEINER_FEHLER, { art: 'fehler' }); // z. B. „Dieses Kürzel gibt es schon.“: Eingabe bleibt stehen
   }
 
   function verschieben(person, a, richtung) {
@@ -252,19 +276,23 @@ export function oeffneSchichtarten({ store }) {
       h(
         'div',
         { class: 'feld' },
-        h('span', { 'aria-hidden': 'true' }, 'Zeiten (optional, bei Zusatz nötig)'),
+        h('span', { id: 'sp-art-zeiten-hinweis' }, 'Zeiten (optional, bei Zusatz nötig)'),
         h(
           'div',
-          { class: 'sp-tag-zeiten' },
-          h('div', { class: 'feld' }, h('span', { 'aria-hidden': 'true' }, 'Von'), zeitFeld({ wert: e.von, beschriftung: 'Von', beiAenderung: (w) => (e.von = w) })),
-          h('div', { class: 'feld' }, h('span', { 'aria-hidden': 'true' }, 'Bis'), zeitFeld({ wert: e.bis, beschriftung: 'Bis', beiAenderung: (w) => (e.bis = w) })),
+          { class: 'sp-tag-zeiten', role: 'group', 'aria-labelledby': 'sp-art-zeiten-hinweis' },
+          ['von', 'bis'].map((feld) => {
+            const beschriftung = feld === 'von' ? 'Von' : 'Bis';
+            const knoten = zeitFeld({ wert: e[feld], beschriftung, beiAenderung: (w) => (e[feld] = w) });
+            form.zeiten[feld] = knoten.querySelector('input[type="text"]');
+            return h('div', { class: 'feld' }, h('span', { 'aria-hidden': 'true' }, beschriftung), knoten);
+          }),
         ),
       ),
       h(
         'div',
         { class: 'knopfzeile' },
         h('button', { class: 'knopf klein', type: 'button', onClick: formSchliessen }, 'Abbrechen'),
-        h('button', { class: 'knopf klein primaer', type: 'button', onClick: speichern }, 'Speichern'),
+        h('button', { class: 'knopf klein primaer sp-art-speichern', type: 'button', onClick: speichern }, 'Speichern'),
       ),
     );
   }

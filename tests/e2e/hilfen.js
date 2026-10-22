@@ -1,6 +1,6 @@
 // Gemeinsame Helfer der End-to-End-Tests: feste Uhrzeit, Demo-/Google-Start (auch mit einer Attrappe von Google) und eine Wache, die jeden Fehler im Browser meldet.
 import { test as basis, expect } from '@playwright/test';
-import { einkaufZuEreignis } from '../../src/calendar/mapping.js';
+import { einkaufZuEreignis, schichtartenZuEreignis } from '../../src/calendar/mapping.js';
 
 /** Mittwoch, 14. Oktober 2026, 08:00 in Wien: ein gewöhnlicher Werktag (kein Feiertag, kein Urlaub in der Demo). */
 export const WERKTAG = '2026-10-14T08:00:00+02:00';
@@ -103,7 +103,8 @@ async function loginDienstAntwort(route) {
 /**
  * Google ohne Netz, aber anmeldbar: das Anmeldeskript ist eine Attrappe (siehe oben), die Kalender-API ein kleiner Speicher im Test
  * (Ereignisse nach ID; Listen sind leer). `einkauf` = Einkaufsliste, die schon im Kalender steht.
- * Ergebnis: { anfragen: ['GET /calendars/…/events/fkeinkauf', …], dienste, setzeEinkauf(liste) } – `setzeEinkauf` spielt das andere Telefon.
+ * Ergebnis: { anfragen: ['GET /calendars/…/events/fkeinkauf', …], dienste, setzeEinkauf(liste), setzeSchichtarten(katalog) } – die beiden
+ * `setze…` spielen das andere Telefon.
  * Der Login-Dienst ist eine Attrappe (siehe oben; mit `loginDienst: false` nicht erreichbar), der Push-Dienst ist nicht erreichbar.
  * Alle Anfragen an beide Dienste landen in `dienste`.
  */
@@ -114,6 +115,7 @@ export async function googleAttrappe(page, { einkauf = null, loginDienst = true 
   let etag = 1;
   const merke = (e) => ereignisse.set(e.id, { ...e, status: 'confirmed', etag: `"${(etag += 1)}"` });
   const setzeEinkauf = (liste) => merke(einkaufZuEreignis(liste).body);
+  const setzeSchichtarten = (katalog) => merke(schichtartenZuEreignis(katalog).body);
   if (einkauf) setzeEinkauf(einkauf);
 
   await page.route('https://accounts.google.com/gsi/client', (r) => r.fulfill({ contentType: 'text/javascript', body: GIS_ATTRAPPE }));
@@ -147,7 +149,7 @@ export async function googleAttrappe(page, { einkauf = null, loginDienst = true 
     if (methode === 'DELETE') return ereignisse.delete(id) ? antwort(204) : fehlt();
     return antwort(405, { error: { code: 405, message: 'Nicht in der Attrappe' } });
   });
-  return { anfragen, dienste, setzeEinkauf };
+  return { anfragen, dienste, setzeEinkauf, setzeSchichtarten };
 }
 
 /**
