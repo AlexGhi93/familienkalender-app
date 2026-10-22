@@ -1,3 +1,4 @@
+import { blattZiehenAnbinden } from './blatt-ziehen.js';
 import { fuelle, h, svg } from './dom.js';
 
 /** Farbe eines Typs als CSS-Variable `--c`; die Tönung kommt aus dem Stylesheet (color-mix). */
@@ -41,7 +42,10 @@ export function urlaubRing({ genommen, geplant, ziel, groesse = 66 }) {
   );
 }
 
-/** Blatt von unten (Tagesdetails, Bestätigungen). `render` baut den Inhalt; `neuZeichnen()` aktualisiert ihn. */
+/**
+ * Blatt von unten (Tagesdetails, Bestätigungen). `render` baut den Inhalt; `neuZeichnen()` aktualisiert ihn.
+ * Schließen mit ✕, Escape, Tipp auf den Hintergrund oder nach unten wischen; `beimSchliessen` läuft dabei genau einmal.
+ */
 export function blatt({ titel, render, beimSchliessen = () => {} }) {
   const inhalt = h('div', { class: 'blatt-inhalt' });
   const schliessenKnopf = h('button', { class: 'blatt-zu', type: 'button', 'aria-label': 'Schließen', onClick: () => schliessen() }, '✕');
@@ -62,9 +66,12 @@ export function blatt({ titel, render, beimSchliessen = () => {} }) {
     offen = false;
     document.removeEventListener('keydown', beiTaste);
     huelle.classList.add('zu');
-    setTimeout(() => huelle.remove(), 180);
+    // Bei reduzierter Bewegung gibt es nichts hinauszugleiten: gleich weg, damit nichts unsichtbar über der Seite liegt.
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) huelle.remove();
+    else setTimeout(() => huelle.remove(), 180);
     beimSchliessen();
   }
+  blattZiehenAnbinden({ tafel, hintergrund, schliessen });
   document.addEventListener('keydown', beiTaste);
   neuZeichnen();
   document.body.append(huelle);

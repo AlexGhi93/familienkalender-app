@@ -800,6 +800,7 @@ small.notiz {
 .blatt-hintergrund {
   position: absolute;
   inset: 0;
+  touch-action: none; /* Ziehen auf dem Hintergrund bewegt nicht die Seite darunter */
   background: rgba(20, 16, 36, 0.45);
   opacity: 0;
   transition: opacity 0.18s ease;
@@ -818,6 +819,14 @@ small.notiz {
   transform: translate(-50%, 100%);
   transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
   box-shadow: 0 -10px 40px rgba(20, 16, 36, 0.25);
+  overscroll-behavior: contain; /* Scrollen im Blatt reicht nie an die Seite weiter */
+}
+
+/* Solange ein Blatt offen ist (auch mehrere), lädt Herunterziehen die Seite nicht neu; Wischen schließt das Blatt (blatt-ziehen.js).
+   Der Selektor ist bewusst spezifischer als die Regel der Einkaufsliste (html:has(.screen.einkauf)). */
+html:has(.blatt-huelle > .blatt[role='dialog']),
+html:has(.blatt-huelle > .blatt[role='dialog']) body {
+  overscroll-behavior-y: none;
 }
 
 .blatt-huelle.auf .blatt-hintergrund {
@@ -837,6 +846,7 @@ small.notiz {
 }
 
 .blatt-griff {
+  touch-action: none;
   width: 44px;
   height: 5px;
   border-radius: 3px;
