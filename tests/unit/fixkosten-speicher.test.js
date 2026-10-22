@@ -5,7 +5,7 @@ import { createDemoAdapter } from '../../src/app/demo-adapter.js';
 import { createGoogleAdapter } from '../../src/calendar/google-adapter.js';
 import { seedDemo } from '../../src/app/seed.js';
 import { FIX_SHARDS, faelligIn, istAktiv, kuendigungsfristen, leererShard, neueFixId, normalisiereShard, postenArchivieren, postenPruefen, postenSetzen, shardFuer, shardText, vertragStatus } from '../../src/domain/fixkosten.js';
-import { speicherAttrappe } from './hilfen.js';
+import { apiAttrappe, speicherAttrappe } from './hilfen.js';
 
 const JETZT = () => new Date('2026-10-22T08:00:00+02:00');
 const KEY = 'fk.demo.v1';
@@ -33,7 +33,7 @@ describe('Demo-Adapter: Fixkosten', () => {
     const daten = await adapter.laden();
     assert.deepEqual(daten.fixkosten, { shards: LEER4 });
     assert.equal(daten.settings.kindname, 'Lena');
-    assert.deepEqual(await adapter.leseFixkosten(), { shards: LEER4, warnungen: [] });
+    assert.deepEqual(await adapter.leseFixkosten(), { shards: LEER4, warnungen: [], unlesbar: [] });
     const { a, nr } = kennungen();
     let gesehen;
     const shard = await adapter.aendereFixShard(nr, (alt) => ((gesehen = alt), postenSetzen(alt, posten(a))));
@@ -45,7 +45,7 @@ describe('Demo-Adapter: Fixkosten', () => {
 
   test('vor dem Laden: vier fehlende Teile', async () => {
     const adapter = createDemoAdapter({ speicher: speicherAttrappe(), jetzt: JETZT });
-    assert.deepEqual(await adapter.leseFixkosten(), { shards: LEER4, warnungen: [] });
+    assert.deepEqual(await adapter.leseFixkosten(), { shards: LEER4, warnungen: [], unlesbar: [] });
   });
 
   test('gespeichert und gleich zurückgelesen, auch nach neuem Start; null = nichts tun; Ergebnis ist eine Kopie', async () => {
@@ -80,7 +80,11 @@ describe('Demo-Adapter: Fixkosten', () => {
     const speicher = speicherAttrappe({ [KEY]: JSON.stringify({ settings: {}, tage: {}, urlaub: [], termine: [], fixkosten }) });
     const adapter = createDemoAdapter({ speicher, jetzt: JETZT });
     const daten = await adapter.laden();
-    assert.deepEqual(daten.fixkosten.shards, [{ v: 1, posten: [gut] }, leererShard(), null, null]);
+    assert.deepEqual(daten.fixkosten.shards, [{ v: 1, posten: [gut] }, 'kaputt', null, null]); // unlesbar: bleibt roh stehen
+    const gelesen = await adapter.leseFixkosten();
+    assert.deepEqual(gelesen.shards, [{ v: 1, posten: [gut] }, leererShard(), null, null]);
+    assert.deepEqual(gelesen.unlesbar, [{ nr: 1, text: '"kaputt"' }]);
+    assert.equal(gelesen.warnungen.length, 1);
     const unsinn = speicherAttrappe({ [KEY]: JSON.stringify({ settings: {}, tage: {}, urlaub: [], termine: [], fixkosten: 'quatsch' }) });
     assert.deepEqual((await createDemoAdapter({ speicher: unsinn, jetzt: JETZT }).laden()).fixkosten, { shards: LEER4 });
   });
@@ -151,43 +155,6 @@ describe('Beispieldaten: Fixkosten', () => {
   });
 });
 
-/** Attrappe der Google-API: Ereignisse je Kalender im Arbeitsspeicher, `aendere` wie die echte (Lesen, Ändern, Schreiben); zählt gleichzeitige GETs. */
-function apiAttrappe() {
-  const kalender = new Map();
-  const von = (k) => (kalender.has(k) || kalender.set(k, new Map()), kalender.get(k));
-  const log = [];
-  let laufend = 0;
-  const zaehler = { maxGleichzeitig: 0 };
-  const ereignisse = {
-    async holen(k, id) {
-      log.push(`GET ${id}`);
-      laufend += 1;
-      zaehler.maxGleichzeitig = Math.max(zaehler.maxGleichzeitig, laufend);
-      await new Promise((r) => setImmediate(r));
-      laufend -= 1;
-      const e = von(k).get(id);
-      return e ? structuredClone(e) : null;
-    },
-    async einfuegen(k, body) {
-      if (von(k).has(body.id)) return { bereitsVorhanden: true };
-      log.push(`POST ${body.id}`);
-      von(k).set(body.id, { status: 'confirmed', ...structuredClone(body) });
-      return {};
-    },
-    async schreibe(k, body) {
-      log.push(`PUT ${body.id}`);
-      von(k).set(body.id, { status: 'confirmed', ...structuredClone(body) });
-    },
-    async aendere(k, id, aenderung) {
-      const patch = aenderung(await ereignisse.holen(k, id));
-      if (patch) {
-        log.push(`PATCH ${id}`);
-        von(k).set(id, { ...von(k).get(id), ...patch });
-      }
-    },
-  };
-  return { api: { ereignisse }, roh: (k, id) => von(k).get(id) ?? null, log, zaehler };
-}
 
 describe('Google-Adapter: Fixkosten', () => {
   const kalender = { termine: 'kt', abwesenheit: 'kab', anwesenheit: 'kan' };
@@ -195,7 +162,7 @@ describe('Google-Adapter: Fixkosten', () => {
   test('fehlende Teile: null; die vier Teile werden gleichzeitig gelesen', async () => {
     const { api, log, zaehler } = apiAttrappe();
     const adapter = createGoogleAdapter({ api, kalender, jetzt: JETZT });
-    assert.deepEqual(await adapter.leseFixkosten(), { shards: LEER4, warnungen: [] });
+    assert.deepEqual(await adapter.leseFixkosten(), { shards: LEER4, warnungen: [], unlesbar: [] });
     assert.deepEqual(log.sort(), ['GET fkfest0', 'GET fkfest1', 'GET fkfest2', 'GET fkfest3']);
     assert.equal(zaehler.maxGleichzeitig, 4);
   });

@@ -1,6 +1,6 @@
 // Welche Push-Erinnerungen es für die nächsten Tage geben soll: reine Berechnung aus dem Zustand der App (ohne Netz, ohne Verschlüsselung).
 // Regeln wie bei Google Kalender: Termin mit Uhrzeit = 1 Tag und 1 Stunde vorher; ohne Uhrzeit = am Vortag um 09:00.
-import { addDays, todayVienna } from '../domain/dates.js';
+import { addDays, isValidDate, todayVienna } from '../domain/dates.js';
 import { PERSONEN, fehlendePersonen, leeresKonto, letzterTag } from '../domain/konto.js';
 import { FUER } from '../domain/types.js';
 import { dienstFuer } from '../domain/dienst.js';
@@ -119,32 +119,44 @@ async function zusatzErinnerungen(state, von, bis) {
  * `nur`); öffnet „Konto“. Nur aktive Posten (am Tag der Erinnerung nicht archiviert) mit laufendem Vertrag, der sich nicht oder um
  * mindestens drei Monate verlängert. Fällt auch die Erinnerung der nächsten Periode ins Fenster, kommt sie mit. Kennung = Posten und
  * „Kündbar bis“: bleibt bei Neuberechnung gleich, auf beiden Telefonen. Der Text nennt Name und Datum, keinen Betrag.
+ * Ein Posten, der sich nicht berechnen lässt, wird übersprungen; nichts hier darf den übrigen Plan verhindern.
  */
 async function fristErinnerungen(state, von, bis) {
-  const shards = state.fixkosten?.shards;
-  if (!Array.isArray(shards)) return [];
-  const heute = todayVienna(new Date(von));
   const plan = [];
-  for (const posten of shards.flatMap((s) => s?.posten ?? [])) {
-    const v = posten.vertrag;
-    if (!v || (v.verlaengerung > 0 && v.verlaengerung < FRIST_AB_VERLAENGERUNG)) continue;
-    let tag = heute;
-    for (let runde = 0; runde < 4; runde += 1) {
-      const status = vertragStatus(posten, tag);
-      if (!status || status.beendet) break;
-      let um;
+  try {
+    const shards = state.fixkosten?.shards;
+    if (!Array.isArray(shards)) return [];
+    const heute = todayVienna(new Date(von));
+    for (const posten of shards.flatMap((s) => (Array.isArray(s?.posten) ? s.posten : []))) {
       try {
-        um = wienZuInstant(status.erinnerung, '09:00');
+        plan.push(...(await fristenEinesPostens(posten, heute, von, bis)));
       } catch {
-        break;
+        // dieser Posten lässt sich nicht berechnen: die anderen trotzdem
       }
-      if (um > bis) break;
-      if (um > von && istAktiv(posten, status.erinnerung)) {
-        plan.push({ id: await kennung(`frist-${posten.id}-${status.kuendbarBis}`, 'frist'), um, art: 'frist', titel: '📝 Kündigungsfrist', text: `${posten.name}: kündbar bis ${datumAnzeige(status.kuendbarBis)} (in 1 Monat)`, ttl: TTL.frist, ziel: '#/konto' });
-      }
-      if (!(v.verlaengerung > 0)) break; // ohne Verlängerung gibt es nur diese eine Frist
-      tag = addDays(status.kuendbarBis, 1); // die nächste Periode
     }
+  } catch {
+    // unbrauchbare Fixkosten im Zustand: ohne Kündigungsfristen weiter
+  }
+  return plan;
+}
+
+/** Die Erinnerungen eines Postens im Fenster (siehe fristErinnerungen); wirft bei unbrauchbaren Daten. */
+async function fristenEinesPostens(posten, heute, von, bis) {
+  const v = posten?.vertrag;
+  if (!v || (v.verlaengerung > 0 && v.verlaengerung < FRIST_AB_VERLAENGERUNG)) return [];
+  if (typeof v.bis !== 'string' || !isValidDate(v.bis)) return []; // sonst fände die Verlängerung kein Ende
+  const plan = [];
+  let tag = heute;
+  for (let runde = 0; runde < 4; runde += 1) {
+    const status = vertragStatus(posten, tag);
+    if (!status || status.beendet) break;
+    const um = wienZuInstant(status.erinnerung, '09:00');
+    if (um > bis) break;
+    if (um > von && istAktiv(posten, status.erinnerung)) {
+      plan.push({ id: await kennung(`frist-${posten.id}-${status.kuendbarBis}`, 'frist'), um, art: 'frist', titel: '📝 Kündigungsfrist', text: `${posten.name}: kündbar bis ${datumAnzeige(status.kuendbarBis)} (in 1 Monat)`, ttl: TTL.frist, ziel: '#/konto' });
+    }
+    if (!(v.verlaengerung > 0)) break; // ohne Verlängerung gibt es nur diese eine Frist
+    tag = addDays(status.kuendbarBis, 1); // die nächste Periode
   }
   return plan;
 }

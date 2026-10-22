@@ -6,7 +6,7 @@ import { normalizeSettings } from '../domain/settings.js';
 import { beendeTestErinnerung, pruefeErinnerungen, repariereErinnerungen, starteTestErinnerung } from './erinnerungen.js';
 import { EINKAUF_ID, EINSTELLUNGEN_ID, FIX_IDS, GERAETE_ID, KONTO_ID, SCHICHTARTEN_ID, einkaufAusEreignis, einkaufZuEreignis, kontoAusEreignis, kontoZuEreignis, einstellungenAusEreignis, einstellungenZuEreignis, fixShardAusEreignis, fixShardId, fixShardZuEreignis, geraeteAusEreignis, geraeteZuEreignis, schichtartenAusEreignis, schichtartenZuEreignis, schichtMonatAusEreignis, schichtMonatId, schichtMonatZuEreignis, tagZuEreignis, terminZuEreignis, urlaubCheckZuEreignis, urlaubZuEreignis } from './mapping.js';
 import { leererMonat, standardKatalog } from '../domain/schicht.js';
-import { leererShard } from '../domain/fixkosten.js';
+import { leererShard, teilGesperrtFehler } from '../domain/fixkosten.js';
 import { istUrlaubCheckId } from '../domain/ids.js';
 import { ereignisseZuZustand } from './zustand.js';
 
@@ -213,18 +213,29 @@ export function createGoogleAdapter({ api, kalender, jetzt = () => new Date(), a
       aendereVersteckt({ id: schichtMonatId(jm), lesen: (e) => schichtMonatAusEreignis(e, jm).monat, bauen: (monat) => schichtMonatZuEreignis({ ...monat, jm }), fehler: 'Der Schichtplan konnte nicht gespeichert werden. Bitte noch einmal versuchen.', leer: () => leererMonat(jm) }, aenderung),
 
     /**
-     * Fixkosten (4 versteckte Ereignisse „fkfest0“ … „fkfest3“, gleichzeitig gelesen): { shards: [Teil | null ×4], warnungen }.
-     * null = den Teil gibt es (noch) nicht. Nicht beim Start geladen.
+     * Fixkosten (4 versteckte Ereignisse „fkfest0“ … „fkfest3“, gleichzeitig gelesen): { shards: [Teil | null ×4], warnungen, unlesbar }.
+     * null = den Teil gibt es (noch) nicht. `unlesbar` = [{ nr, text }]: Teile, deren Text diese Version nicht lesen kann (beschädigt
+     * oder neuere Version; leer gezeigt, nie überschrieben), mit dem Rohtext für die Sicherung. Nicht beim Start geladen.
      */
     async leseFixkosten() {
       const ereignisse = await Promise.all(FIX_IDS.map((id) => api.ereignisse.holen(kalender.anwesenheit, id)));
       const gelesen = ereignisse.map((e) => (!e || e.status === 'cancelled' ? null : fixShardAusEreignis(e)));
-      return { shards: gelesen.map((g) => g?.shard ?? null), warnungen: gelesen.flatMap((g) => g?.warnungen ?? []) };
+      const unlesbar = gelesen.flatMap((g, nr) => (g?.unlesbar ? [{ nr, text: ereignisse[nr].description }] : []));
+      return { shards: gelesen.map((g) => g?.shard ?? null), warnungen: gelesen.flatMap((g) => g?.warnungen ?? []), unlesbar };
     },
 
-    /** Ändert Teil `nr` (0 … 3): `aenderung(teil)` → neuer Teil, angewendet auf die NEUESTE Fassung (fehlt sie: leerer Teil); gibt den gespeicherten zurück. Ungültiges `nr` → abgelehntes Versprechen. */
+    /**
+     * Ändert Teil `nr` (0 … 3): `aenderung(teil)` → neuer Teil, angewendet auf die NEUESTE Fassung (fehlt sie: leerer Teil); gibt den
+     * gespeicherten zurück. Ist die neueste Fassung unlesbar, wird nichts geschrieben (Fehler „FixTeilGesperrt“): sonst ginge ihr Inhalt
+     * verloren. Ungültiges `nr` → abgelehntes Versprechen.
+     */
     async aendereFixShard(nr, aenderung) {
-      return aendereVersteckt({ id: fixShardId(nr), lesen: (e) => fixShardAusEreignis(e).shard, bauen: (shard) => fixShardZuEreignis(nr, shard), fehler: 'Die Fixkosten konnten nicht gespeichert werden. Bitte noch einmal versuchen.', leer: leererShard }, aenderung);
+      const lesen = (e) => {
+        const g = fixShardAusEreignis(e);
+        if (g.unlesbar) throw teilGesperrtFehler();
+        return g.shard;
+      };
+      return aendereVersteckt({ id: fixShardId(nr), lesen, bauen: (shard) => fixShardZuEreignis(nr, shard), fehler: 'Die Fixkosten konnten nicht gespeichert werden. Bitte noch einmal versuchen.', leer: leererShard }, aenderung);
     },
 
     /** Erinnerungen dieses Kontos prüfen/reparieren und eine Test-Erinnerung auslösen (siehe erinnerungen.js). */

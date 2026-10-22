@@ -293,6 +293,32 @@ describe('Kündigungsfristen (Fixkosten): einen Monat vor „Kündbar bis“ um 
     assert.deepEqual(kurz(plan), [['frist', '2026-12-17T08:00:00.000Z', 'Quartalsvertrag: kündbar bis 17.01.2027 (in 1 Monat)']]);
   });
 
+  test('im Voraus archiviert (Datum in der Zukunft): keine Erinnerung am oder nach dem Archivdatum, davor schon', async () => {
+    const jetzt = { jetzt: JETZT };
+    assert.deepEqual(await planeErinnerungen(mitPosten(kfz({ archiv: '2026-10-20' })), jetzt), []); // archiviert ab 20.10., Erinnerung 30.10.
+    assert.deepEqual(await planeErinnerungen(mitPosten(kfz({ archiv: '2026-10-30' })), jetzt), []); // am Tag selbst
+    assert.equal((await planeErinnerungen(mitPosten(kfz({ archiv: '2026-10-31' })), jetzt)).length, 1); // erst danach archiviert
+  });
+
+  test('Zeitumstellung: 09:00 Wien am Tag der Umstellung im Oktober (Winterzeit) und Ende März (Sommerzeit)', async () => {
+    const okt = await planeErinnerungen(mitPosten(vertrag('okt00001', 'Oktober', { bis: '2026-12-25', verlaengerung: 0, frist: '1m' })), { jetzt: JETZT });
+    assert.deepEqual(kurz(okt), [['frist', '2026-10-25T08:00:00.000Z', 'Oktober: kündbar bis 25.11.2026 (in 1 Monat)']]);
+    const vor = await planeErinnerungen(mitPosten(vertrag('okt00002', 'Vorher', { bis: '2026-12-24', verlaengerung: 0, frist: '1m' })), { jetzt: JETZT });
+    assert.deepEqual(kurz(vor).map((x) => x[1]), ['2026-10-24T07:00:00.000Z']); // Samstag davor: noch Sommerzeit
+    const maerz = await planeErinnerungen(mitPosten(vertrag('mar00001', 'März', { bis: '2027-05-28', verlaengerung: 12, frist: '1m' })), { jetzt: new Date('2027-03-20T08:00:00+01:00') });
+    assert.deepEqual(kurz(maerz.filter((p) => p.art === 'frist')), [['frist', '2027-03-28T07:00:00.000Z', 'März: kündbar bis 28.04.2027 (in 1 Monat)']]); // 28.03.2027: Umstellung auf Sommerzeit
+  });
+
+  test('ein kaputter Posten verhindert weder die anderen Kündigungsfristen noch den übrigen Plan', async () => {
+    const ohneDatum = vertrag('kaputt01', 'Ohne Datum', { bis: null, verlaengerung: 12, frist: '1m' });
+    const wirft = vertrag('kaputt02', 'Wirft', { bis: '2026-12-31', verlaengerung: 0, frist: 'xx' }); // vertragStatus wirft
+    const s = { ...mitPosten(ohneDatum, wirft, kfz(), null), termine: [arzt('t1', '2026-10-20', '09:00')] };
+    const plan = await planeErinnerungen(s, { jetzt: JETZT });
+    assert.deepEqual(plan.map((p) => p.art), ['tag', 'stunde', 'frist']);
+    const ganzKaputt = { ...s, fixkosten: { shards: [{ v: 1, posten: 'quatsch' }, null, null, null] } };
+    assert.deepEqual((await planeErinnerungen(ganzKaputt, { jetzt: JETZT })).map((p) => p.art), ['tag', 'stunde']);
+  });
+
   test('ohne Fixkosten im Zustand (noch nicht gelesen): keine, kein Fehler', async () => {
     assert.deepEqual(await planeErinnerungen(zustand({ settings: ohneKonto }), { jetzt: JETZT }), []);
     assert.deepEqual(await planeErinnerungen(zustand({ settings: ohneKonto, fixkosten: { shards: null, status: null, warnungen: [] } }), { jetzt: JETZT }), []);

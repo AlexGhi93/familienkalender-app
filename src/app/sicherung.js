@@ -22,11 +22,16 @@ function schichtSicherung(schicht) {
 
 /**
  * Fixkosten: alle Posten aller vier Teile (auch archivierte) in einer Liste, nach Name sortiert (lesbar; der Teil eines Postens ergibt
- * sich ohnehin aus seiner Kennung). `fixkosten` = { shards } wie im Zustand; ohne → leere Liste.
+ * sich ohnehin aus seiner Kennung). `fixkosten` = { shards, unlesbar? } wie aus store.sicherungsDaten; ohne → leere Liste.
+ * Was diese Version nicht versteht, fehlt nicht unbemerkt: `fremd` = solche Posten roh (Speicherformat), `unlesbar` = [{ teil, text }]
+ * mit dem Rohtext unlesbarer Teile (beide nur, wenn es welche gibt; die Sicherung wird nie zurückgeschrieben).
  */
 function fixSicherung(fixkosten) {
-  const posten = (fixkosten?.shards ?? []).flatMap((s) => (s ? normalisiereShard(s).posten : []));
-  return { posten: posten.sort((a, b) => a.name.localeCompare(b.name, 'de') || a.id.localeCompare(b.id)) };
+  const teile = (fixkosten?.shards ?? []).filter(Boolean).map((s) => normalisiereShard(s));
+  const posten = teile.flatMap((s) => s.posten).sort((a, b) => a.name.localeCompare(b.name, 'de') || a.id.localeCompare(b.id));
+  const fremd = teile.flatMap((s) => s.fremd ?? []);
+  const unlesbar = (Array.isArray(fixkosten?.unlesbar) ? fixkosten.unlesbar : []).map((u) => (typeof u === 'number' ? { teil: u, text: null } : { teil: u.nr, text: u.text ?? null }));
+  return { posten, ...(fremd.length > 0 ? { fremd } : {}), ...(unlesbar.length > 0 ? { unlesbar } : {}) };
 }
 
 const nachDatum = (a, b) => a.date.localeCompare(b.date) || (a.time ?? '').localeCompare(b.time ?? '');
@@ -65,7 +70,9 @@ export function sicherungAnzahlText(s) {
   const schichtMonate = Object.keys(s.schicht?.monate ?? {}).length;
   const teile = [zahl(Object.keys(s.tage).length, 'Tag', 'Tage'), zahl(s.urlaub.length, 'Urlaub', 'Urlaube'), zahl(s.termine.length, 'Termin', 'Termine'), `${s.einkauf.e.length} Artikel auf der Einkaufsliste`, zahl(kontoEintraege, 'Kontostand', 'Kontostände')];
   if (schichtMonate > 0) teile.push(zahl(schichtMonate, 'Monat Schichtplan', 'Monate Schichtplan'));
-  const fixPosten = s.fixkosten?.posten?.length ?? 0;
+  const fixPosten = (s.fixkosten?.posten?.length ?? 0) + (s.fixkosten?.fremd?.length ?? 0);
   if (fixPosten > 0) teile.push(`${fixPosten} Fixkosten-Posten`);
+  const unlesbar = s.fixkosten?.unlesbar?.length ?? 0;
+  if (unlesbar > 0) teile.push(`${zahl(unlesbar, 'unlesbarer Teil', 'unlesbare Teile')} der Fixkosten (als Text gesichert)`);
   return teile.join(' · ');
 }

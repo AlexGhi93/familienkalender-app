@@ -105,6 +105,16 @@ const FRISTEN = FIX_FRISTEN.map((f) => f.id);
 const ZU_VOLL = 'Dieser Teil der Fixkosten ist voll. Bitte Notizen kürzen oder archivierte Posten endgültig löschen.';
 const ZU_VIELE = `Höchstens ${MAX_FIX_POSTEN} Fixkosten-Posten (mit Archiv). Bitte archivierte Posten endgültig löschen.`;
 
+/** Meldung, wenn ein Teil unlesbar ist (beschädigt oder von einer neueren App-Version): er wird dann nie überschrieben. */
+export const TEXT_TEIL_GESPERRT = 'Dieser Teil der Fixkosten ist unlesbar (beschädigt oder von einer neueren App-Version). Damit nichts verloren geht, lässt er sich hier nicht ändern – bitte die App auf beiden Telefonen aktualisieren.';
+
+/** Fehler „Teil gesperrt“ (Name 'FixTeilGesperrt'): ein Adapter wirft ihn, statt einen unlesbaren Teil zu überschreiben. */
+export const teilGesperrtFehler = () => Object.assign(new Error(TEXT_TEIL_GESPERRT), { name: 'FixTeilGesperrt' });
+
+// Bekannte Schlüssel eines Postens im Speicherformat (und seines Vertrags); ein Posten mit anderen stammt von einer neueren Version.
+const KURZ_SCHLUESSEL = new Set(['i', 'n', 'c', 'u', 'm', 'd', 's', 'k', 'w', 'r', 't', 'a']);
+const VERTRAG_SCHLUESSEL = new Set(['b', 'l', 'f']);
+
 const pad2 = (n) => String(n).padStart(2, '0');
 /** Bereinigter Text; was kein Text ist (auch beschädigtes JSON wie {"toString":1}), ergibt '' – nie ein Fehler. */
 const sauber = (text) => (typeof text === 'string' ? text.normalize('NFC').replace(/\s+/g, ' ').trim() : '');
@@ -223,10 +233,16 @@ export function shardFuer(id) {
 
 export const leererShard = () => ({ v: 1, posten: [] });
 
-/** Prüft einen Teil im Speicherformat nachsichtig: ungültige oder doppelte Posten fallen einzeln weg; Unbrauchbares → leerer Teil. */
+/**
+ * Teil mit dieser Liste und den fremden Einträgen von `alt` (Posten, die diese Version nicht versteht – unbekannte Kategorie, unbekanntes
+ * Feld, beschädigt –, roh im Speicherformat: sie werden nicht gezeigt und nicht gezählt, aber unverändert wieder geschrieben).
+ */
+const teil = (posten, alt) => (Array.isArray(alt?.fremd) && alt.fremd.length > 0 ? { v: 1, posten, fremd: alt.fremd } : { v: 1, posten });
+
+/** Prüft einen Teil im Speicherformat nachsichtig: ungültige oder doppelte Posten fallen einzeln weg; Unbrauchbares → leerer Teil. Fremde Einträge bleiben. */
 export function normalisiereShard(roh) {
   if (!istObjekt(roh) || roh.v !== 1 || !Array.isArray(roh.posten)) return leererShard();
-  return { v: 1, posten: gueltigePosten(roh.posten).posten };
+  return teil(gueltigePosten(roh.posten).posten, Array.isArray(roh.fremd) ? { fremd: JSON.parse(JSON.stringify(roh.fremd)) } : null);
 }
 
 /** Gültige Posten einer Liste (doppelte Kennungen und alles über MAX_FIX_POSTEN fallen weg) und die Zahl der verworfenen. */
@@ -275,7 +291,8 @@ function lang(k) {
 
 /** Der Teil als Text für die Beschreibung des Kalenderereignisses (kurze Schlüssel); ein zu voller Teil wird vor dem Schreiben abgelehnt. */
 export function shardText(shard) {
-  const text = JSON.stringify({ v: 1, p: normalisiereShard(shard).posten.map(kurz) });
+  const s = normalisiereShard(shard);
+  const text = JSON.stringify({ v: 1, p: [...s.posten.map(kurz), ...(s.fremd ?? [])] });
   if (text.length > MAX_FIX_ZEICHEN) throw new Error(ZU_VOLL);
   return text;
 }
@@ -304,10 +321,20 @@ function retten(k, warnungen) {
   return r;
 }
 
+/** Versteht diese Version einen Eintrag im Speicherformat? (Objekt nur mit bekannten Schlüsseln, auch im Vertrag.) */
+function bekannt(k) {
+  if (!istObjekt(k) || Object.keys(k).some((s) => !KURZ_SCHLUESSEL.has(s))) return false;
+  return !istObjekt(k.r) || Object.keys(k.r).every((s) => VERTRAG_SCHLUESSEL.has(s));
+}
+
 /**
- * Text aus dem Kalender → { shard, warnungen }. Wirft nie: fehlender Text → leerer Teil; unlesbarer Text → leerer Teil mit Warnung;
- * beschädigte Posten fallen einzeln weg (eine Warnung mit der Anzahl), zu lange Texte werden gekürzt.
- * Achtung: Was verworfen wurde, fehlt auch beim nächsten Schreiben dieses Teils (wie beim Kontostand).
+ * Text aus dem Kalender → { shard, warnungen, unlesbar? }. Wirft nie:
+ * - fehlender Text → leerer Teil;
+ * - unlesbarer Text (kein JSON, andere Version `v`, keine Liste) → leerer Teil mit Warnung und `unlesbar: true` – ein solcher Teil
+ *   darf NIE überschrieben werden (die Adapter lehnen das Schreiben ab, siehe teilGesperrtFehler);
+ * - Einträge, die diese Version nicht versteht (unbekannte Kategorie oder unbekanntes Feld, z. B. von einer neueren Version, oder
+ *   beschädigt) → `shard.fremd` (roh, nicht gezeigt, nicht gezählt, beim Schreiben unverändert mitgeschrieben; eine Warnung mit der Anzahl);
+ * - zu lange Namen/Notizen werden gekürzt; doppelte Kennungen und alles über MAX_FIX_POSTEN fallen weg.
  */
 export function shardLesen(text) {
   if (typeof text !== 'string' || text.trim() === '') return { shard: leererShard(), warnungen: [] };
@@ -317,12 +344,25 @@ export function shardLesen(text) {
   } catch {
     roh = null;
   }
-  if (!istObjekt(roh) || roh.v !== 1 || !Array.isArray(roh.p)) return { shard: leererShard(), warnungen: ['Ein Teil der Fixkosten war unlesbar; er wird leer gezeigt.'] };
+  if (!istObjekt(roh) || roh.v !== 1 || !Array.isArray(roh.p)) return { shard: leererShard(), warnungen: ['Ein Teil der Fixkosten ist unlesbar (beschädigt oder von einer neueren App-Version); er wird leer gezeigt und lässt sich nicht ändern.'], unlesbar: true };
   const warnungen = [];
-  const { posten, verworfen } = gueltigePosten(roh.p.map((k) => lang(retten(k, warnungen))));
-  if (verworfen === 1) warnungen.unshift('1 Fixkosten-Posten war beschädigt und wird nicht gezeigt.');
-  if (verworfen > 1) warnungen.unshift(`${verworfen} Fixkosten-Posten waren beschädigt und werden nicht gezeigt.`);
-  return { shard: { v: 1, posten }, warnungen };
+  const fremd = [];
+  const posten = [];
+  const gesehen = new Set();
+  let verworfen = 0;
+  for (const k of roh.p) {
+    const p = bekannt(k) ? normalisierePosten(lang(retten(k, warnungen))) : null;
+    if (!p) fremd.push(k);
+    else if (gesehen.has(p.id) || posten.length >= MAX_FIX_POSTEN) verworfen += 1;
+    else {
+      gesehen.add(p.id);
+      posten.push(p);
+    }
+  }
+  if (fremd.length === 1) warnungen.unshift('1 Fixkosten-Posten konnte nicht gelesen werden (beschädigt oder von einer neueren App-Version); er bleibt gespeichert, wird hier aber nicht gezeigt.');
+  if (fremd.length > 1) warnungen.unshift(`${fremd.length} Fixkosten-Posten konnten nicht gelesen werden (beschädigt oder von einer neueren App-Version); sie bleiben gespeichert, werden hier aber nicht gezeigt.`);
+  if (verworfen > 0) warnungen.unshift(`${verworfen} doppelte Fixkosten-Posten wurden entfernt.`);
+  return { shard: teil(posten, { fremd }), warnungen };
 }
 
 /** Text aus dem Kalender → Teil im Speicherformat (wie shardLesen, ohne Warnungen). */
@@ -335,7 +375,8 @@ export const shardAusText = (text) => shardLesen(text).shard;
 export function postenAnzahlPruefen(shards, id) {
   const alle = (shards ?? []).flatMap((s) => s?.posten ?? []);
   if (alle.some((p) => p.id === id)) return null;
-  return alle.length >= MAX_FIX_POSTEN ? ZU_VIELE : null;
+  const fremd = (shards ?? []).reduce((n, s) => n + (s?.fremd?.length ?? 0), 0); // auch, was nur eine neuere Version versteht
+  return alle.length + fremd >= MAX_FIX_POSTEN ? ZU_VIELE : null;
 }
 
 // ---------------------------------------------------------------- Änderungen (rein, wiederholbar)
@@ -350,8 +391,8 @@ const ARCHIV_ZEICHEN = JSON.stringify({ a: '2000-01-01' }).length - 1;
  * deshalb gelingen diese drei in jedem so gebauten Teil, ohne die 6000 Zeichen zu überschreiten, und ein voller Teil lässt sich
  * stets leeren (archivieren, dann endgültig löschen).
  */
-function mitPosten(liste, reserve) {
-  const neu = { v: 1, posten: liste };
+function mitPosten(alt, liste, reserve) {
+  const neu = teil(liste, alt);
   const laenge = shardText(neu).length;
   if (reserve && laenge + ARCHIV_ZEICHEN * liste.filter((p) => !p.archiv).length > MAX_FIX_ZEICHEN) throw new Error(ZU_VOLL);
   return neu;
@@ -363,7 +404,7 @@ function ersetze(shard, id, aendern, reserve = false) {
   if (i < 0) return shard; // unbekannt (z. B. vom anderen Gerät gelöscht) → nichts zu tun
   const neu = aendern(liste[i]);
   if (JSON.stringify(neu) === JSON.stringify(liste[i])) return shard;
-  return mitPosten(liste.map((p, j) => (j === i ? neu : p)), reserve);
+  return mitPosten(shard, liste.map((p, j) => (j === i ? neu : p)), reserve);
 }
 
 /** Legt einen Posten an oder ersetzt den mit derselben Kennung (an derselben Stelle). Wirft mit der Meldung aus postenPruefen. */
@@ -375,7 +416,7 @@ export function postenSetzen(shard, posten) {
   const liste = shard.posten ?? [];
   if (!liste.some((p) => p.id === neu.id)) {
     if (liste.length >= MAX_FIX_POSTEN) throw new Error(ZU_VIELE);
-    return mitPosten([...liste, neu], true);
+    return mitPosten(shard, [...liste, neu], true);
   }
   return ersetze(shard, neu.id, () => neu, true);
 }
@@ -397,7 +438,7 @@ export function postenLoeschen(shard, id) {
   const p = liste.find((x) => x.id === id);
   if (!p) return shard;
   if (!p.archiv) throw new Error('Nur archivierte Posten lassen sich endgültig löschen.');
-  return { v: 1, posten: liste.filter((x) => x.id !== id) };
+  return teil(liste.filter((x) => x.id !== id), shard);
 }
 
 // ---------------------------------------------------------------- Berechnungen

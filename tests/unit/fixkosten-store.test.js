@@ -5,8 +5,9 @@ import assert from 'node:assert/strict';
 import { createStore } from '../../src/app/store.js';
 import { createDemoAdapter } from '../../src/app/demo-adapter.js';
 import { createSnapshot } from '../../src/calendar/snapshot.js';
-import { MAX_FIX_POSTEN, leererShard, neueFixId, postenSetzen, shardFuer } from '../../src/domain/fixkosten.js';
-import { speicherAttrappe } from './hilfen.js';
+import { createGoogleAdapter } from '../../src/calendar/google-adapter.js';
+import { MAX_FIX_POSTEN, TEXT_TEIL_GESPERRT, leererShard, neueFixId, postenSetzen, shardFuer, shardText } from '../../src/domain/fixkosten.js';
+import { apiAttrappe, speicherAttrappe } from './hilfen.js';
 
 const JETZT = new Date('2026-10-22T08:00:00+02:00');
 const KEY = 'fk.demo.v1';
@@ -63,7 +64,7 @@ describe('Fixkosten lesen', () => {
   test('vor dem ersten Lesen: keine Teile; fixLaden liest alle vier auf einmal (Beispieldaten: 13 Posten)', async () => {
     const { store, log } = aufbau({ speicher: speicherAttrappe() });
     await store.laden();
-    assert.deepEqual(store.getState().fixkosten, { shards: null, status: null, warnungen: [] });
+    assert.deepEqual(store.getState().fixkosten, { shards: null, status: null, warnungen: [], unlesbar: [] });
     assert.equal(await store.fixLaden(), true);
     const f = store.getState().fixkosten;
     assert.equal(f.status, 'geladen');
@@ -77,7 +78,7 @@ describe('Fixkosten lesen', () => {
     const { store } = aufbau({ aendern: (a) => ({ ...a, leseFixkosten: async () => ({ shards: [null, null, null, null], warnungen: ['Ein Teil der Fixkosten war unlesbar; er wird leer gezeigt.'] }) }) });
     await store.laden();
     await store.fixLaden();
-    assert.deepEqual(store.getState().fixkosten, { shards: [leererShard(), leererShard(), leererShard(), leererShard()], status: 'geladen', warnungen: ['Ein Teil der Fixkosten war unlesbar; er wird leer gezeigt.'] });
+    assert.deepEqual(store.getState().fixkosten, { shards: [leererShard(), leererShard(), leererShard(), leererShard()], status: 'geladen', warnungen: ['Ein Teil der Fixkosten war unlesbar; er wird leer gezeigt.'], unlesbar: [] });
   });
 
   test('Lesefehler: Status „fehler“, false; abgelaufene Anmeldung setzt anmeldungNoetig', async () => {
@@ -436,5 +437,117 @@ describe('Fixkosten offline und in der Sicherung', () => {
     await store.zuruecksetzen();
     assert.equal(allePosten(store).length, 13);
     assert.ok(Array.isArray(store.getState().fixkosten.warnungen));
+  });
+});
+
+describe('Unlesbare Teile werden nie überschrieben, fremde Posten bleiben erhalten', () => {
+  const KALENDER = { termine: 'kt', abwesenheit: 'kab', anwesenheit: 'kan' };
+  const posten = (id, mehr = {}) => ({ ...entwurf(), id, start: '2026-01', ...mehr });
+
+  /** Store auf dem Google-Adapter (API im Arbeitsspeicher); Teil `nr` enthält vorher `text`. Neue Posten bekommen Kennungen aus `idsFuer()`. */
+  async function google({ texte = {}, idsFuer = () => [] } = {}) {
+    const { api, roh, log } = apiAttrappe();
+    for (const [nr, text] of Object.entries(texte)) await api.ereignisse.schreibe('kan', { id: `fkfest${nr}`, description: text });
+    const adapter = createGoogleAdapter({ api, kalender: KALENDER, jetzt: () => JETZT });
+    const ids = idsFuer();
+    const store = createStore(adapter, { jetzt: () => JETZT, fixId: () => ids.shift() });
+    const text = (nr) => roh('kan', `fkfest${nr}`)?.description ?? null;
+    const geschrieben = () => log.filter((x) => !x.startsWith('GET'));
+    return { api, adapter, store, text, geschrieben, log };
+  }
+
+  for (const [art, kaputt] of [
+    ['kaputtes JSON', '{"v":1,"p":[{"i":"aaaa3","n":"Mie'],
+    ['neuere Version (v: 2)', JSON.stringify({ v: 2, p: [{ i: 'aaaa3', n: 'Miete', z: 'neu' }] })],
+  ]) {
+    test(`${art}: Anlegen, Archivieren, Löschen in diesem Teil werden abgelehnt, der Text bleibt; andere Teile gehen; nach der Reparatur wieder`, async () => {
+      const ids = kennungen();
+      const [in2, in0, nochIn2] = [ids.imTeil(2), ids.imTeil(0), ids.imTeil(2)];
+      const t = await google({ texte: { 2: kaputt }, idsFuer: () => [in2, in0, nochIn2] });
+      assert.equal(await t.store.fixLaden(), true);
+      const f = t.store.getState().fixkosten;
+      assert.deepEqual(f.unlesbar, [2]);
+      assert.equal(f.warnungen.length, 1);
+
+      const vorher = t.store.getState();
+      assert.deepEqual(await t.store.fixPostenSpeichern(entwurf({ name: 'Strom' })), { ok: false, fehler: TEXT_TEIL_GESPERRT });
+      assert.deepEqual(await t.store.fixPostenArchivieren('aaaa3', '2026-11-01'), { ok: false, fehler: TEXT_TEIL_GESPERRT });
+      assert.deepEqual(await t.store.fixPostenLoeschen('aaaa3'), { ok: false, fehler: TEXT_TEIL_GESPERRT });
+      assert.deepEqual(await t.store.fixPostenWiederherstellen('aaaa3'), { ok: false, fehler: TEXT_TEIL_GESPERRT });
+      assert.equal(t.store.getState(), vorher, 'nichts angezeigt, nichts geändert');
+      assert.equal(t.text(2), kaputt);
+      assert.deepEqual(t.geschrieben(), ['PUT fkfest2']); // nur das Anlegen des kaputten Teils im Test
+
+      // ein anderer Teil geht weiterhin
+      const r0 = await t.store.fixPostenSpeichern(entwurf({ name: 'Internet' }));
+      assert.deepEqual(r0, { ok: true, id: in0 });
+      assert.equal(t.text(2), kaputt);
+
+      // repariert (z. B. die neuere App hat ihn zurückgeschrieben) und neu gelesen: wieder beschreibbar, nichts geht verloren
+      await t.api.ereignisse.schreibe('kan', { id: 'fkfest2', description: shardText({ v: 1, posten: [posten('aaaa3', { name: 'Miete' })] }) });
+      await t.store.fixLaden();
+      assert.deepEqual(t.store.getState().fixkosten.unlesbar, []);
+      assert.equal((await t.store.fixPostenSpeichern(entwurf({ name: 'Strom' }))).ok, true);
+      assert.deepEqual(JSON.parse(t.text(2)).p.map((x) => x.i).sort(), ['aaaa3', nochIn2].sort());
+    });
+  }
+
+  test('das andere Telefon macht den Teil nach meinem Lesen unlesbar: mein Schreiben wird abgelehnt (Adapter), der Text bleibt', async () => {
+    const t = await google({ texte: { 2: shardText({ v: 1, posten: [posten('aaaa3')] }) } });
+    await t.store.fixLaden();
+    assert.equal(shardFuer('aaaa3'), 2);
+    const neuer = JSON.stringify({ v: 2, p: [{ i: 'aaaa3' }] });
+    await t.api.ereignisse.schreibe('kan', { id: 'fkfest2', description: neuer });
+    const r = await t.store.fixPostenArchivieren('aaaa3', '2026-11-01');
+    assert.deepEqual(r, { ok: false, fehler: TEXT_TEIL_GESPERRT });
+    assert.equal(t.text(2), neuer);
+    assert.ok(!t.geschrieben().includes('PATCH fkfest2'));
+    assert.deepEqual(t.store.getState().fixkosten.unlesbar, [2]);
+    assert.deepEqual(await t.store.fixPostenSpeichern({ ...posten('aaaa3'), cents: 1 }), { ok: false, fehler: TEXT_TEIL_GESPERRT }, 'danach gleich gesperrt');
+  });
+
+  test('ein Posten mit unbekannter Kategorie (neuere Version) bleibt beim Ändern des gültigen unverändert im Text; zählt nicht', async () => {
+    const fremd = { i: 'bbbb1', n: 'Hundefutter', c: 4500, m: 1, d: '1', s: '2026-01', k: 'haustier', w: 'gemeinsam' };
+    const gueltig = JSON.parse(shardText({ v: 1, posten: [posten('aaaa3', { name: 'Miete', cents: 90000 })] })).p[0];
+    const t = await google({ texte: { 2: JSON.stringify({ v: 1, p: [gueltig, fremd] }) } });
+    await t.store.fixLaden();
+    assert.deepEqual(allePosten(t.store).map((p) => p.id), ['aaaa3']);
+    assert.equal(t.store.getState().fixkosten.warnungen.length, 1);
+    const alt = postenMit(t.store, 'aaaa3');
+    assert.deepEqual(await t.store.fixPostenSpeichern({ ...alt, cents: 95000 }), { ok: true, id: 'aaaa3' });
+    const p = JSON.parse(t.text(2)).p;
+    assert.equal(p.find((x) => x.i === 'aaaa3').c, 95000);
+    assert.deepEqual(p.find((x) => x.i === 'bbbb1'), fremd);
+    assert.ok(t.text(2).includes(JSON.stringify(fremd)), 'Byte für Byte');
+  });
+
+  test('Demo: ein unlesbarer Teil im Speicher wird ebenso gesperrt; die anderen bleiben beschreibbar', async () => {
+    const roh = { v: 2, posten: 'neu' };
+    const speicher = speicherAttrappe({ [KEY]: JSON.stringify({ settings: {}, tage: {}, urlaub: [], termine: [], fixkosten: { shards: [null, roh, null, null] } }) });
+    const ids = kennungen();
+    const { store, basis } = aufbau({ speicher, ids: [ids.imTeil(1), ids.imTeil(3)] });
+    await store.laden();
+    const gelesen = await basis.leseFixkosten();
+    assert.deepEqual(gelesen.unlesbar, [{ nr: 1, text: JSON.stringify(roh) }]);
+    await assert.rejects(basis.aendereFixShard(1, (s) => s), (e) => e.message === TEXT_TEIL_GESPERRT);
+    assert.deepEqual(await store.fixPostenSpeichern(entwurf()), { ok: false, fehler: TEXT_TEIL_GESPERRT });
+    assert.deepEqual(gespeichert(speicher).fixkosten.shards[1], roh);
+    assert.equal((await store.fixPostenSpeichern(entwurf())).ok, true);
+  });
+
+  test('Sicherung und Schnappschuss: unlesbare Teile als Rohtext bzw. markiert, fremde Posten roh dabei (nie zurückgeschrieben)', async () => {
+    const fremd = { i: 'bbbb1', k: 'haustier' };
+    const roh = { v: 3 };
+    const speicher = speicherAttrappe({ [KEY]: JSON.stringify({ settings: {}, tage: {}, urlaub: [], termine: [], fixkosten: { shards: [null, roh, { v: 1, posten: [], fremd: [fremd] }, null] } }) });
+    const { store } = aufbau({ speicher });
+    await store.laden();
+    await store.fixLaden();
+    const d = await store.sicherungsDaten();
+    assert.deepEqual(d.fixkosten.unlesbar, [{ nr: 1, text: JSON.stringify(roh) }]);
+    assert.deepEqual(d.fixkosten.shards[2].fremd, [fremd]);
+    const snap = createSnapshot({ speicher, jetzt: () => JETZT });
+    assert.equal(snap.speichern(store.getState(), store.heute()), true);
+    assert.deepEqual(snap.lesen().daten.fixkosten.unlesbar, [1]);
+    assert.deepEqual(snap.lesen().daten.fixkosten.shards[2].fremd, [fremd]);
   });
 });

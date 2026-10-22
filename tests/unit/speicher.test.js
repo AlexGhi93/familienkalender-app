@@ -94,15 +94,15 @@ describe('Schnappschuss', () => {
     const s = speicherAttrappe();
     const snap = createSnapshot({ speicher: s, jetzt });
     snap.speichern({ ...state, fixkosten: { shards: [teil, { v: 1, posten: [] }, { v: 1, posten: [] }, { v: 1, posten: [] }], status: 'geladen', warnungen: ['x'] } }, '2026-10-14');
-    assert.deepEqual(JSON.parse(s.getItem(SNAPSHOT_KEY)).fixkosten, { shards: [teil, { v: 1, posten: [] }, { v: 1, posten: [] }, { v: 1, posten: [] }] });
-    assert.deepEqual(snap.lesen().daten.fixkosten, { shards: [teil, { v: 1, posten: [] }, { v: 1, posten: [] }, { v: 1, posten: [] }] });
+    assert.deepEqual(JSON.parse(s.getItem(SNAPSHOT_KEY)).fixkosten, { shards: [teil, { v: 1, posten: [] }, { v: 1, posten: [] }, { v: 1, posten: [] }], unlesbar: [] });
+    assert.deepEqual(snap.lesen().daten.fixkosten, { shards: [teil, { v: 1, posten: [] }, { v: 1, posten: [] }, { v: 1, posten: [] }], unlesbar: [] });
     // noch nicht gelesen: nichts gespeichert
     snap.speichern({ ...state, fixkosten: { shards: null, status: null, warnungen: [] } }, '2026-10-14');
     assert.equal(snap.lesen().daten.fixkosten, null);
     // kaputt: unbrauchbare Teile werden leer, beschädigte Posten fallen weg; der Rest des Schnappschusses bleibt gültig
     const roh = { v: 1, gespeichertAm: '2026-10-14T06:00:00.000Z', settings: {}, tage: {}, urlaub: [], termine: [] };
     const lies = (fixkosten) => createSnapshot({ speicher: speicherAttrappe({ [SNAPSHOT_KEY]: JSON.stringify({ ...roh, fixkosten }) }) }).lesen().daten.fixkosten;
-    assert.deepEqual(lies({ shards: [teil, 'kaputt', null, { v: 1, posten: [{ id: 'x' }] }] }), { shards: [teil, { v: 1, posten: [] }, null, { v: 1, posten: [] }] });
+    assert.deepEqual(lies({ shards: [teil, 'kaputt', null, { v: 1, posten: [{ id: 'x' }] }], unlesbar: [1, 7, 'x'] }), { shards: [teil, { v: 1, posten: [] }, null, { v: 1, posten: [] }], unlesbar: [1] });
     assert.equal(lies({ shards: [teil] }), null);
     assert.equal(lies('kaputt'), null);
   });

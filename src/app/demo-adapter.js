@@ -3,7 +3,7 @@ import { normalizeSettings } from '../domain/settings.js';
 import { leereListe, normalisiereListe } from '../domain/einkauf.js';
 import { leeresKonto, normalisiereKonto } from '../domain/konto.js';
 import { katalogText, leererMonat, monatText, normalisiereKatalog, normalisiereMonat, standardKatalog } from '../domain/schicht.js';
-import { FIX_SHARDS, leererShard, normalisiereShard, shardText } from '../domain/fixkosten.js';
+import { FIX_SHARDS, leererShard, normalisiereShard, shardText, teilGesperrtFehler } from '../domain/fixkosten.js';
 import { seedDemo } from './seed.js';
 
 const KEY = 'fk.demo.v1';
@@ -22,10 +22,16 @@ function schichtAusSpeicher(roh) {
   return { katalog, monate };
 }
 
-/** Fixkosten aus dem Speicher nachsichtig lesen: { shards: [Teil | null ×4] }; Unbrauchbares wird zum leeren Teil, ungültige Posten fallen weg. */
+/** Kann diese Version einen gespeicherten Teil lesen? (Sonst: beschädigt oder von einer neueren Version – wie bei Google nie überschreiben.) */
+const fixTeilLesbar = (t) => t !== null && typeof t === 'object' && !Array.isArray(t) && t.v === 1 && Array.isArray(t.posten);
+
+/**
+ * Fixkosten aus dem Speicher nachsichtig lesen: { shards: [Teil | null ×4] }; ungültige Posten fallen weg. Ein unlesbarer Teil bleibt
+ * roh stehen (wie bei Google wird er leer gezeigt und nie überschrieben, siehe leseFixkosten/aendereFixShard).
+ */
 function fixkostenAusSpeicher(roh) {
   const liste = Array.isArray(roh?.shards) ? roh.shards : [];
-  return { shards: Array.from({ length: FIX_SHARDS }, (_, nr) => (liste[nr] == null ? null : normalisiereShard(liste[nr]))) };
+  return { shards: Array.from({ length: FIX_SHARDS }, (_, nr) => (liste[nr] == null ? null : fixTeilLesbar(liste[nr]) ? normalisiereShard(liste[nr]) : liste[nr])) };
 }
 
 /**
@@ -133,13 +139,19 @@ export function createDemoAdapter({ speicher = globalThis.localStorage, jetzt = 
       sichern();
       return structuredClone(neu);
     },
-    /** Fixkosten lesen (wie beim Google-Adapter): { shards: [Teil | null ×4], warnungen }. */
+    /** Fixkosten lesen (wie beim Google-Adapter): { shards: [Teil | null ×4], warnungen, unlesbar: [{ nr, text }] }. */
     async leseFixkosten() {
-      return { shards: structuredClone(daten?.fixkosten?.shards ?? Array(FIX_SHARDS).fill(null)), warnungen: [] };
+      const roh = daten?.fixkosten?.shards ?? Array(FIX_SHARDS).fill(null);
+      const unlesbar = roh.flatMap((t, nr) => (t != null && !fixTeilLesbar(t) ? [{ nr, text: JSON.stringify(t) }] : []));
+      const shards = roh.map((t) => (t == null ? null : fixTeilLesbar(t) ? structuredClone(t) : leererShard()));
+      const warnungen = unlesbar.map(() => 'Ein Teil der Fixkosten ist unlesbar (beschädigt oder von einer neueren App-Version); er wird leer gezeigt und lässt sich nicht ändern.');
+      return { shards, warnungen, unlesbar };
     },
     /** Teil `nr` (0 … 3) ändern: `aenderung(teil)` → neuer Teil (fehlt er: leerer Teil); zu volle Teile werden wie bei Google abgelehnt. */
     async aendereFixShard(nr, aenderung) {
       if (!Number.isInteger(nr) || nr < 0 || nr >= FIX_SHARDS) throw new Error(`Ungültiger Teil der Fixkosten: ${nr}`);
+      const alt = daten.fixkosten.shards[nr];
+      if (alt != null && !fixTeilLesbar(alt)) throw teilGesperrtFehler(); // unlesbar: nie überschreiben
       const neu = aenderung(structuredClone(daten.fixkosten.shards[nr] ?? leererShard()));
       if (!neu) return null;
       shardText(neu); // wirft, wenn er nicht in den Kalender passen würde

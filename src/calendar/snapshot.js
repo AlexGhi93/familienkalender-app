@@ -49,11 +49,13 @@ function pruefeSchicht(roh, bezug) {
 
 /**
  * Fixkosten nachsichtig lesen (wie den Schichtplan: nur eine Kopie, das Vorladen holt sie neu): genau vier Teile, sonst null (= keine);
- * ein unbrauchbarer Teil wird leer, beschädigte Posten fallen weg; ein fehlender Teil (null) bleibt null.
+ * ein unbrauchbarer Teil wird leer, beschädigte Posten fallen weg (fremde Posten bleiben roh); ein fehlender Teil (null) bleibt null.
+ * `unlesbar` = Nummern der Teile, die beim letzten Lesen unlesbar waren (nur zur Anzeige; der Schnappschuss wird nie zurückgeschrieben).
  */
 function pruefeFixkosten(roh) {
   if (!istObjekt(roh) || !Array.isArray(roh.shards) || roh.shards.length !== FIX_SHARDS) return null;
-  return { shards: roh.shards.map((s) => (s === null ? null : normalisiereShard(s))) };
+  const unlesbar = Array.isArray(roh.unlesbar) ? roh.unlesbar.filter((nr) => Number.isInteger(nr) && nr >= 0 && nr < FIX_SHARDS) : [];
+  return { shards: roh.shards.map((s) => (s === null ? null : normalisiereShard(s))), unlesbar };
 }
 
 /** Prüft die gelesene Struktur streng; liefert die bereinigten Daten oder null. */
@@ -99,7 +101,8 @@ export function createSnapshot({ speicher = globalThis.localStorage ?? null, jet
         einkauf: state.einkauf ?? null,
         konto: state.konto ?? null,
         schicht: state.schicht ? { katalog: state.schicht.katalog ?? null, monate: naechsteMonate(state.schicht.monate, heute, MAX_SNAPSHOT_SCHICHT_MONATE) } : null,
-        fixkosten: state.fixkosten?.shards ? { shards: state.fixkosten.shards } : null, // höchstens 4 × 6000 Zeichen
+        // im Zustandsformat (lange Schlüssel): etwa 1,5-mal der Kalendertext, also höchstens rund 4 × 9000 Zeichen
+        fixkosten: state.fixkosten?.shards ? { shards: state.fixkosten.shards, unlesbar: state.fixkosten.unlesbar ?? [] } : null,
       });
       if (text.length > MAX_SNAPSHOT_ZEICHEN) return false;
       try {

@@ -507,7 +507,7 @@ describe('Beschädigte Teile lesen (nie werfen)', () => {
 
   test('gültiger Teil → keine Warnung; unlesbarer Teil → leer mit Warnung; fehlender Text → leer ohne Warnung', () => {
     assert.deepEqual(shardLesen(text(k())).warnungen, []);
-    assert.deepEqual(shardLesen('{kaputt'), { shard: leererShard(), warnungen: ['Ein Teil der Fixkosten war unlesbar; er wird leer gezeigt.'] });
+    assert.deepEqual(shardLesen('{kaputt'), { shard: leererShard(), warnungen: ['Ein Teil der Fixkosten ist unlesbar (beschädigt oder von einer neueren App-Version); er wird leer gezeigt und lässt sich nicht ändern.'], unlesbar: true });
     assert.deepEqual(shardLesen('{"v":2,"p":[]}').shard, leererShard());
     assert.equal(shardLesen('{"v":2,"p":[]}').warnungen.length, 1);
     assert.deepEqual(shardLesen(''), { shard: leererShard(), warnungen: [] });
@@ -558,5 +558,51 @@ describe('Voller Teil: Archivieren geht immer', () => {
     shard = postenWiederherstellen(shard, lang(0).id);
     assert.equal(shard.posten[0].archiv, undefined);
     assert.doesNotThrow(() => postenArchivieren(shard, lang(1).id, '2026-11-01'));
+  });
+});
+
+describe('Vorwärts-Verträglichkeit: Unbekanntes bleibt erhalten, Unlesbares wird nicht überschrieben', () => {
+  const k = (aenderung = {}) => ({ i: 'aaaa1', n: 'Miete', c: 100, m: 1, d: '1', s: '2026-01', k: 'wohnen', w: 'papa', ...aenderung });
+  const text = (...p) => JSON.stringify({ v: 1, p });
+
+  test('unlesbarer Teil (kaputtes JSON, andere Version, ohne Liste): leer gezeigt, als unlesbar markiert; leerer Text nicht', () => {
+    for (const t of ['{kaputt', '{"v":2,"p":[]}', '{"v":1}', '[1,2]']) {
+      const r = shardLesen(t);
+      assert.equal(r.unlesbar, true, t);
+      assert.deepEqual(r.shard, leererShard());
+      assert.equal(r.warnungen.length, 1);
+    }
+    assert.equal(shardLesen('').unlesbar, undefined);
+    assert.equal(shardLesen(text(k())).unlesbar, undefined);
+  });
+
+  test('Posten mit unbekannter Kategorie, unbekanntem Feld oder kaputt: nicht gezeigt, aber unverändert wieder geschrieben', () => {
+    const neu = k({ i: 'bbbb1', k: 'haustier' });
+    const feld = k({ i: 'cccc1', x: { neu: true } });
+    const vertragFeld = k({ i: 'dddd1', r: { b: '2026-12-31', l: 12, f: '1m', z: 1 } });
+    const kaputt = { i: 'eeee1', n: '', c: 100 };
+    const { shard, warnungen } = shardLesen(text(k(), neu, feld, vertragFeld, kaputt, 'quatsch'));
+    assert.deepEqual(shard.posten.map((p) => p.id), ['aaaa1']);
+    assert.deepEqual(shard.fremd, [neu, feld, vertragFeld, kaputt, 'quatsch']);
+    assert.equal(warnungen.length, 1);
+    assert.ok(warnungen[0].startsWith('5 Fixkosten-Posten'), warnungen[0]);
+    // den gültigen ändern: die fremden stehen danach unverändert im Text
+    const geaendert = postenSetzen(shard, { ...shard.posten[0], cents: 200 });
+    const p = JSON.parse(shardText(geaendert)).p;
+    assert.deepEqual(p.slice(1), [neu, feld, vertragFeld, kaputt, 'quatsch']);
+    assert.equal(p[0].c, 200);
+    for (const s of [postenArchivieren(geaendert, 'aaaa1', '2026-11-01'), postenWiederherstellen(postenArchivieren(geaendert, 'aaaa1', '2026-11-01'), 'aaaa1'), postenLoeschen(postenArchivieren(geaendert, 'aaaa1', '2026-11-01'), 'aaaa1'), postenSetzen(geaendert, posten({ id: 'ffff1' }))]) {
+      assert.deepEqual(s.fremd, shard.fremd);
+    }
+    // wieder gelesen: gleich
+    assert.deepEqual(shardLesen(shardText(geaendert)).shard.fremd, shard.fremd);
+    assert.deepEqual(normalisiereShard(geaendert), geaendert);
+  });
+
+  test('fremde Posten zählen bei der Höchstzahl mit, nicht in den Summen', () => {
+    const fremd = Array.from({ length: MAX_FIX_POSTEN }, (_, i) => ({ i: `x${i}`, k: 'haustier' }));
+    assert.match(postenAnzahlPruefen([{ v: 1, posten: [], fremd }, null, null, null], 'neu00001'), /Höchstens 100/);
+    const { shard } = shardLesen(text(k(), k({ i: 'bbbb1', k: 'haustier', c: 999999 })));
+    assert.equal(summen(shard.posten, { jm: '2026-10', heute: '2026-10-14' }).monatlich, 100);
   });
 });

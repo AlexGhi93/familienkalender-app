@@ -66,6 +66,14 @@ describe('Sicherung', () => {
     assert.deepEqual(sicherungErstellen({ state: zustand({ fixkosten: { shards: null, status: null, warnungen: [] } }), appVersion: VERSION }).fixkosten, { posten: [] });
   });
 
+  test('Fixkosten: fremde Posten roh und unlesbare Teile als Rohtext dabei (nichts fehlt unbemerkt)', () => {
+    const fremd = { i: 'bbbb1', k: 'haustier' };
+    const fixkosten = { shards: [{ v: 1, posten: [], fremd: [fremd] }, null, null, null], unlesbar: [{ nr: 2, text: '{"v":2}' }] };
+    const s2 = sicherungErstellen({ state: zustand({ fixkosten }), appVersion: VERSION });
+    assert.deepEqual(s2.fixkosten, { posten: [], fremd: [fremd], unlesbar: [{ teil: 2, text: '{"v":2}' }] });
+    assert.equal(sicherungAnzahlText({ ...s2, tage: {}, urlaub: [], termine: [], einkauf: { e: [] }, konto: { p: {} } }), '0 Tage · 0 Urlaube · 0 Termine · 0 Artikel auf der Einkaufsliste · 0 Kontostände · 1 Fixkosten-Posten · 1 unlesbarer Teil der Fixkosten (als Text gesichert)');
+  });
+
   test('Schichtplan: Katalog und Monate (nach Monat sortiert); ohne Schichtplan leer', () => {
     assert.deepEqual(s.schicht.katalog, state.schicht.katalog);
     assert.deepEqual(Object.keys(s.schicht.monate), Object.keys(state.schicht.monate).sort());

@@ -8,7 +8,7 @@ import { normalisiereTermin } from './termin.js';
 import { urlaubChecksAbgleich, urlaubChecksWunsch } from './urlaub-check.js';
 import { entferneExtra, entferneStand, fuegeExtraHinzu, leeresKonto, monatVor, normalisiereKonto, setzeStand } from '../domain/konto.js';
 import { artAendern, artArchivieren, artHinzufuegen, artVerschieben, katalogErgaenzen, leererMonat, normalisiereKatalog, normalisiereMonat, schaltePinsel, schichtAm, setzeNotiz, setzeSchicht, standardKatalog, tageImMonat, vorladeMonate, zusatzEntfernen, zusatzHinzufuegen } from '../domain/schicht.js';
-import { FIX_SHARDS, leererShard, neueFixId, normalisiereShard, postenAnzahlPruefen, postenArchivieren, postenLoeschen, postenPruefen, postenSetzen, postenWiederherstellen, shardFuer } from '../domain/fixkosten.js';
+import { FIX_SHARDS, TEXT_TEIL_GESPERRT, leererShard, neueFixId, normalisiereShard, postenAnzahlPruefen, postenArchivieren, postenLoeschen, postenPruefen, postenSetzen, postenWiederherstellen, shardFuer } from '../domain/fixkosten.js';
 import { MAX_SERIEN_WOCHEN, naechsterWochentag, wochenSerie } from './serie.js';
 
 const KITA_TYPEN = ['kita_essen', 'kita_ohne'];
@@ -56,15 +56,19 @@ function schichtAusDaten(roh) {
 /**
  * Fixkosten im Zustand: `shards` = die vier Teile (null = noch nie gelesen), `status` null (noch nie gelesen) | 'gespeichert' (aus dem
  * Schnappschuss oder den Beispieldaten, noch nicht aus dem Kalender) | 'laedt' | 'geladen' | 'fehler', `warnungen` = Meldungen des
- * letzten Lesens (z. B. ein unlesbarer Teil, der beim nächsten Speichern dieses Teils überschrieben würde) für die Anzeige.
+ * letzten Lesens für die Anzeige, `unlesbar` = Nummern der Teile, die diese Version nicht lesen kann (beschädigt oder von einer neueren
+ * Version): sie werden leer gezeigt und sind gesperrt (kein Schreiben, bis ein späteres Lesen sie wieder lesbar findet).
  */
-const leereFixkosten = () => ({ shards: null, status: null, warnungen: [] });
+const leereFixkosten = () => ({ shards: null, status: null, warnungen: [], unlesbar: [] });
+
+/** Nummern der unlesbaren Teile aus dem, was Adapter ([{ nr, text }]) oder Schnappschuss ([nr]) liefern. */
+const unlesbareNummern = (liste) => [...new Set((Array.isArray(liste) ? liste : []).map((u) => (typeof u === 'number' ? u : u?.nr)).filter((nr) => Number.isInteger(nr) && nr >= 0 && nr < FIX_SHARDS))].sort();
 
 /** Die vier Teile, wie sie ein Adapter, der Schnappschuss oder die Beispieldaten liefern (fehlender Teil → leerer Teil). */
 const fixTeile = (shards) => Array.from({ length: FIX_SHARDS }, (_, nr) => normalisiereShard(shards?.[nr] ?? leererShard()));
 
 /** Fixkosten aus Schnappschuss oder Beispieldaten ({ shards }); ohne → noch nicht gelesen. */
-const fixAusDaten = (roh) => (Array.isArray(roh?.shards) ? { shards: fixTeile(roh.shards), status: 'gespeichert', warnungen: [] } : leereFixkosten());
+const fixAusDaten = (roh) => (Array.isArray(roh?.shards) ? { shards: fixTeile(roh.shards), status: 'gespeichert', warnungen: [], unlesbar: unlesbareNummern(roh.unlesbar) } : leereFixkosten());
 
 /**
  * Übernimmt aus dem, was ein Adapter liefert, nur die Felder des Zustands. Den Schichtplan nicht: er wird erst beim Öffnen seiner Seite
@@ -352,7 +356,18 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       leer: leererShard,
       aktuell: () => state.fixkosten.shards?.[nr] ?? null,
       mit: (shard) => mitFixTeil(nr, shard),
-      speichern: (f) => adapter.aendereFixShard(nr, f),
+      async speichern(f) {
+        try {
+          return await adapter.aendereFixShard(nr, f);
+        } catch (fehler) {
+          // Der Teil ist (inzwischen, z. B. durch das andere Telefon) unlesbar: der Adapter hat nichts geschrieben; ab jetzt gesperrt.
+          if (fehler?.name === 'FixTeilGesperrt') {
+            FACHLICH.add(fehler);
+            state = { ...state, fixkosten: { ...state.fixkosten, unlesbar: unlesbareNummern([...state.fixkosten.unlesbar, nr]) } };
+          }
+          throw fehler;
+        }
+      },
       lesen: async () => (await adapter.leseFixkosten()).shards?.[nr] ?? null,
       normalisiere: (shard) => normalisiereShard(shard ?? leererShard()),
     });
@@ -385,7 +400,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       const frisch = fixTeile(gelesen?.shards);
       // eigene Änderung inzwischen: das Angezeigte bleibt; unverändert: dieselben Teile (kein neuer Push-Plan, kein Neuzeichnen der Liste)
       const shards = f.shards && (eigene || JSON.stringify(frisch) === JSON.stringify(f.shards)) ? f.shards : frisch;
-      state = { ...state, fixkosten: { shards, status: 'geladen', warnungen: gelesen?.warnungen ?? [] } };
+      state = { ...state, fixkosten: { shards, status: 'geladen', warnungen: gelesen?.warnungen ?? [], unlesbar: unlesbareNummern(gelesen?.unlesbar) } };
       fixGelesen = true;
       melden();
       return true;
@@ -410,29 +425,38 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     return nr >= 0 ? nr : shardFuer(id);
   }
 
-  /** Eine neue Kennung, die es in den angezeigten Teilen noch nicht gibt. */
+  /** Eine neue Kennung, die es in den angezeigten Teilen noch nicht gibt (auch nicht unter den fremden Posten). */
   function freieFixId() {
-    const vergeben = new Set((state.fixkosten.shards ?? []).flatMap((s) => s?.posten.map((p) => p.id) ?? []));
+    const vergeben = new Set((state.fixkosten.shards ?? []).flatMap((s) => [...(s?.posten.map((p) => p.id) ?? []), ...(s?.fremd ?? []).map((k) => k?.i)]));
     let id = fixId();
     for (let i = 0; i < 10 && vergeben.has(id); i += 1) id = fixId();
     return id;
   }
 
+  /** Ist Teil `nr` gesperrt, weil diese Version ihn nicht lesen kann? */
+  const fixGesperrt = (nr) => state.fixkosten.unlesbar.includes(nr);
+
   /** Ändert einen vorhandenen Posten mit `fn(teil)` (Archivieren usw.): { ok, fehler?, wartet? }; nie ein Wurf. */
   async function fixPostenAendern(id, fn) {
     const fehler = await fixBereit();
     if (fehler) return { ok: false, fehler };
+    const nr = fixTeilVon(id);
+    if (fixGesperrt(nr)) return { ok: false, fehler: TEXT_TEIL_GESPERRT };
     try {
-      return await fixTeilAendern(fixTeilVon(id), fn);
+      return await fixTeilAendern(nr, fn);
     } catch (e) {
       return { ok: false, fehler: e?.message || TEXT_FEHLER }; // schon auf dem angezeigten Stand abgelehnt: nichts geändert
     }
   }
 
-  /** Fixkosten für die Sicherung: frisch aus dem Kalender (Anmeldefehler laufen nach oben); ohne passenden Adapter der angezeigte Stand. */
+  /**
+   * Fixkosten für die Sicherung: frisch aus dem Kalender (Anmeldefehler laufen nach oben); ohne passenden Adapter der angezeigte Stand.
+   * { shards (mit fremden Posten), unlesbar: [{ nr, text }] } – unlesbare Teile kommen als Rohtext mit, damit nichts unbemerkt fehlt.
+   */
   async function fixFuerSicherung() {
-    if (!adapter.leseFixkosten) return { shards: state.fixkosten.shards ?? fixTeile(null) };
-    return { shards: fixTeile((await adapter.leseFixkosten()).shards) };
+    if (!adapter.leseFixkosten) return { shards: state.fixkosten.shards ?? fixTeile(null), unlesbar: state.fixkosten.unlesbar.map((nr) => ({ nr, text: null })) };
+    const gelesen = await adapter.leseFixkosten();
+    return { shards: fixTeile(gelesen.shards), unlesbar: (gelesen.unlesbar ?? []).map(({ nr, text }) => ({ nr, text })) };
   }
 
   /** Ändert einen Monat des Schichtplans (siehe `schichtAendern`). */
@@ -1088,7 +1112,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
           return false;
         }
         if (stand !== schreibStand || eigene()) return false;
-        const neu = { shards: fixTeile(gelesen?.shards), status: 'geladen', warnungen: gelesen?.warnungen ?? [] };
+        const neu = { shards: fixTeile(gelesen?.shards), status: 'geladen', warnungen: gelesen?.warnungen ?? [], unlesbar: unlesbareNummern(gelesen?.unlesbar) };
         fixGelesen = true;
         if (JSON.stringify(neu) !== JSON.stringify(state.fixkosten)) {
           state = { ...state, fixkosten: neu };
@@ -1126,6 +1150,8 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
         const zuViele = postenAnzahlPruefen(state.fixkosten.shards, posten.id);
         if (zuViele) return { ok: false, fehler: zuViele };
       }
+      const nr = neu ? shardFuer(posten.id) : fixTeilVon(posten.id);
+      if (fixGesperrt(nr)) return { ok: false, fehler: TEXT_TEIL_GESPERRT };
       const fn = neu
         ? (shard) => postenSetzen(shard, posten)
         : (shard) => {
@@ -1134,7 +1160,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
             return postenSetzen(shard, alt.archiv ? { ...posten, archiv: alt.archiv } : posten);
           };
       try {
-        const r = await fixTeilAendern(neu ? shardFuer(posten.id) : fixTeilVon(posten.id), fn);
+        const r = await fixTeilAendern(nr, fn);
         return r.ok ? { ok: true, id: posten.id } : r;
       } catch (e) {
         return { ok: false, fehler: e?.message || TEXT_FEHLER }; // schon auf dem angezeigten Stand abgelehnt (z. B. Teil zu voll): nichts geändert

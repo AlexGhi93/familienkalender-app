@@ -326,8 +326,9 @@ describe('Fixkosten: versteckte Ereignisse (4 Teile)', () => {
     assert.equal(kaputt.warnungen.length, 1);
     assert.deepEqual(fixShardAusEreignis(undefined), { shard: leererShard(), warnungen: [] });
     const beschaedigt = fixShardAusEreignis({ description: JSON.stringify({ v: 1, p: [{ i: 'aaaa1', n: { toString: 1 }, c: 1 }] }) });
-    assert.deepEqual(beschaedigt.shard, leererShard());
+    assert.deepEqual(beschaedigt.shard, { ...leererShard(), fremd: [{ i: 'aaaa1', n: { toString: 1 }, c: 1 }] }); // nicht gezeigt, aber beim Schreiben erhalten
     assert.equal(beschaedigt.warnungen.length, 1);
+    assert.equal(kaputt.unlesbar, true);
   });
 
   test('ereignisZuEintrag ignoriert alle vier Teile (auch mit fremdem Titel)', () => {
