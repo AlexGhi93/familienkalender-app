@@ -224,6 +224,7 @@ test.describe('Pinsel', () => {
       'Ü Überstunde',
       'S Schulung',
       'U Urlaub',
+      'E Ersatzdienst',
       '– Frei',
     ]);
     await expect(art(page, 'F Frühdienst').locator('.sp-pinsel-kuerzel')).toHaveClass(/sf-gruen/);
@@ -387,7 +388,7 @@ test.describe('Tagesblatt (ein Tag)', () => {
   const notizFeld = (page, person) => karte(page, person).getByRole('textbox', { name: 'Notiz (optional)' });
   const kopfText = (page, person) => karte(page, person).locator('.sp-tag-kopf small');
   const demo = (page) => page.evaluate(() => JSON.parse(localStorage.getItem('fk.demo.v1')).schicht.monate['2026-10']);
-  const PAPA_DIENSTE = ['F Frühdienst', 'M Mittagsdienst', 'NM Nachmittagsdienst', 'N Nacht', '2T 2Teiler', 'Ü Überstunde', 'S Schulung', 'U Urlaub', '– Frei'];
+  const PAPA_DIENSTE = ['F Frühdienst', 'M Mittagsdienst', 'NM Nachmittagsdienst', 'N Nacht', '2T 2Teiler', 'Ü Überstunde', 'S Schulung', 'U Urlaub', 'E Ersatzdienst', '– Frei'];
 
   test('ein Tipp auf den 21. zeigt beide (auch mit Filter „Papa“); NM setzen, Notiz „Dienst 12“ → nach dem Schließen ✎', async ({ page }) => {
     await starteDemo(page, { route: '#/schicht' });
@@ -619,7 +620,7 @@ test.describe('Schichtarten bearbeiten', () => {
     await expect(blatt(page).getByRole('heading', { name: 'Schichtarten' })).toBeVisible();
     await expect(abschnitt(page, 'papa').locator('h3')).toHaveText('👨 Papa');
     await expect(abschnitt(page, 'mama').locator('h3')).toHaveText('👩 Mama');
-    await expect(zeilen(page, 'papa').locator('.sp-art-text')).toHaveText(['Frühdienst', 'Mittagsdienst', 'Nachmittagsdienst', 'Nacht ☾', '2Teiler', 'Überstunde', 'Schulung', 'Urlaub']);
+    await expect(zeilen(page, 'papa').locator('.sp-art-text')).toHaveText(['Frühdienst', 'Mittagsdienst', 'Nachmittagsdienst', 'Nacht ☾', '2Teiler', 'Überstunde', 'Schulung', 'Urlaub', 'Ersatzdienst']);
     await expect(zeilen(page, 'mama').locator('.sp-art-text')).toHaveText([
       'Tagdienst 07:00–17:45',
       'Nachtdienst 17:30–07:00 ☾',
@@ -630,9 +631,9 @@ test.describe('Schichtarten bearbeiten', () => {
     ]);
     await expect(zeilen(page, 'papa').first().locator('.sp-art-kuerzel')).toHaveText('F');
     await expect(zeilen(page, 'papa').first().locator('.sp-art-kuerzel')).toHaveClass(/sf-gruen/);
-    await expect(zeilen(page, 'papa').last().locator('.sp-art-kuerzel')).toHaveClass(/urlaub/);
+    await expect(zeilen(page, 'papa').filter({ hasText: 'Urlaub' }).locator('.sp-art-kuerzel')).toHaveClass(/urlaub/);
     await expect(blatt(page).getByRole('button', { name: 'Frühdienst nach oben' })).toBeDisabled();
-    await expect(abschnitt(page, 'papa').getByRole('button', { name: 'Urlaub nach unten' })).toBeDisabled();
+    await expect(abschnitt(page, 'papa').getByRole('button', { name: 'Ersatzdienst nach unten' })).toBeDisabled(); // E steht als letzte Art von Papa
     await expect(abschnitt(page, 'papa').getByRole('button', { name: '＋ Neue Art' })).toBeVisible();
     await expect(abschnitt(page, 'papa').locator('.sp-arten-aus')).toHaveCount(0); // nichts ausgeblendet: kein Abschnitt
     const masse = await page.evaluate(() => {
@@ -716,7 +717,7 @@ test.describe('Schichtarten bearbeiten', () => {
     await formular(page).getByRole('textbox', { name: 'Name' }).fill('Ferien');
     await formular(page).getByRole('button', { name: 'Speichern' }).click();
     await expect.poll(async () => (await katalog(page)).arten.papa.find((a) => a.kuerzel === 'U')).toMatchObject({ name: 'Ferien', muster: 'urlaub' });
-    await expect(zeilen(page, 'papa').last().locator('.sp-art-kuerzel')).toHaveClass(/urlaub/);
+    await expect(zeilen(page, 'papa').filter({ hasText: 'Ferien' }).locator('.sp-art-kuerzel')).toHaveClass(/urlaub/);
   });
 
   test('↓ auf der ersten Art ändert die Reihenfolge im Pinsel; eine ausgeblendete dazwischen wird übersprungen', async ({ page }) => {
@@ -824,13 +825,13 @@ test.describe('Schichtarten bearbeiten', () => {
     await expect(formular(page)).toHaveCount(0);
     await blatt(page).getByRole('button', { name: 'Frühdienst nach unten' }).click();
     await abschnitt(page, 'papa').getByRole('button', { name: 'Schulung entfernen' }).click();
-    await expect(zeilen(page, 'papa').locator('.sp-art-kuerzel')).toHaveText(['M', 'F', 'NM', 'N', '2T', 'Ü', 'U', 'B']);
+    await expect(zeilen(page, 'papa').locator('.sp-art-kuerzel')).toHaveText(['M', 'F', 'NM', 'N', '2T', 'Ü', 'U', 'E', 'B']);
     await page.reload();
     await oeffnen(page);
-    await expect(zeilen(page, 'papa').locator('.sp-art-kuerzel')).toHaveText(['M', 'F', 'NM', 'N', '2T', 'Ü', 'U', 'B']);
+    await expect(zeilen(page, 'papa').locator('.sp-art-kuerzel')).toHaveText(['M', 'F', 'NM', 'N', '2T', 'Ü', 'U', 'E', 'B']);
     await expect(abschnitt(page, 'papa').locator('.sp-arten-aus summary')).toHaveText('Ausgeblendet (1)');
     await schliessen(page);
     await page.getByRole('button', { name: '✏️ Eintragen' }).click();
-    await expect(pinselArten(page)).toHaveText(['M Mittagsdienst', 'F Frühdienst', 'NM Nachmittagsdienst', 'N Nacht', '2T 2Teiler', 'Ü Überstunde', 'U Urlaub', 'B Bergbahn', '– Frei']);
+    await expect(pinselArten(page)).toHaveText(['M Mittagsdienst', 'F Frühdienst', 'NM Nachmittagsdienst', 'N Nacht', '2T 2Teiler', 'Ü Überstunde', 'U Urlaub', 'E Ersatzdienst', 'B Bergbahn', '– Frei']);
   });
 });
