@@ -44,39 +44,66 @@ function gescrollt(ziel, tafel) {
 }
 
 /**
- * Bindet das Wischen an ein Blatt: `tafel` geht mit dem Finger nach unten (nie über 0 nach oben), `hintergrund` wird heller.
+ * Ist Text im Blatt markiert? Dann ist ein Zug im Inhalt eher das Verschieben der Markierung.
+ * Eine Markierung in einem Eingabefeld zählt nicht (ein Uhrzeit-Feld markiert beim Antippen seinen ganzen Wert).
+ */
+function inhaltMarkiert(tafel) {
+  const auswahl = document.getSelection?.();
+  if (!auswahl || auswahl.isCollapsed || auswahl.rangeCount === 0) return false;
+  if (document.activeElement?.matches?.(EINGABE)) return false;
+  return tafel.contains(auswahl.anchorNode);
+}
+
+/**
+ * Bindet das Wischen an ein Blatt: die Hülle bekommt beim Ziehen die Klasse `zieht` und die Variablen `--blatt-zug` (Weg nach unten,
+ * nie über 0 nach oben) und `--blatt-deckkraft` (Hintergrund wird heller); die Transformation selbst steht nur im Stylesheet.
  * Beim Loslassen ruft es `schliessen()` (weit genug oder geworfen) oder lässt das Blatt zurückgleiten.
  */
-export function blattZiehenAnbinden({ tafel, hintergrund, schliessen }) {
-  let zug = null; // { x0, y0, t0, richtung, frei, anker, letzte }
+export function blattZiehenAnbinden({ huelle, tafel, schliessen }) {
+  let zug = null; // { ziel, x0, y0, t0, amGriff, frei, richtung, anker, letzte }
 
   function setze(dy) {
-    tafel.style.transition = 'none';
-    tafel.style.transform = `translate(-50%, ${dy}px)`;
-    hintergrund.style.transition = 'none';
-    hintergrund.style.opacity = String(Math.max(0.15, 1 - dy / Math.max(tafel.offsetHeight, 1)));
+    huelle.classList.add('zieht');
+    huelle.style.setProperty('--blatt-zug', `${dy}px`);
+    huelle.style.setProperty('--blatt-deckkraft', String(Math.max(0.15, 1 - dy / Math.max(tafel.offsetHeight, 1))));
   }
-  // Inline-Werte weg: die Klassen (auf/zu) und ihre Übergänge übernehmen wieder – zurückgleiten bzw. hinausgleiten.
+  // Variablen weg: die Klassen (auf/zu) und ihre Übergänge übernehmen wieder – zurückgleiten bzw. hinausgleiten.
   function freigeben() {
-    for (const el of [tafel, hintergrund]) el.style.removeProperty('transition');
-    tafel.style.removeProperty('transform');
-    hintergrund.style.removeProperty('opacity');
+    huelle.classList.remove('zieht');
+    huelle.style.removeProperty('--blatt-zug');
+    huelle.style.removeProperty('--blatt-deckkraft');
+  }
+  /** Beendet den Zug: Hörer am berührten Element abmelden; gibt den beendeten Zug zurück. */
+  function beenden() {
+    const z = zug;
+    zug = null;
+    if (z) for (const [art, f] of HOERER) z.ziel.removeEventListener(art, f);
+    return z;
   }
 
   function beiBeruehrung(e) {
-    if (zug?.richtung === 'runter') freigeben(); // ein hängengebliebener Zug (z. B. Inhalt neu gezeichnet) springt zurück
-    zug = null;
+    if (zug) {
+      if (beenden().richtung === 'runter') freigeben(); // ein zweiter Finger: zurück, nichts schließen
+      return;
+    }
     if (e.touches.length !== 1) return;
     const ziel = e.target instanceof Element ? e.target : null;
     if (!ziel || ziel.closest(EINGABE)) return;
     const amGriff = Boolean(ziel.closest('.blatt-griff, .blatt-kopf'));
     const p = e.touches[0];
     const t = e.timeStamp;
-    zug = { x0: p.clientX, y0: p.clientY, t0: t, richtung: null, frei: amGriff || !gescrollt(ziel, tafel), anker: { y: p.clientY, t }, letzte: { y: p.clientY, t } };
+    zug = { ziel, x0: p.clientX, y0: p.clientY, t0: t, amGriff, frei: amGriff || !gescrollt(ziel, tafel), richtung: null, anker: { y: p.clientY, t }, letzte: { y: p.clientY, t } };
+    // Bewegung und Loslassen am berührten Element verfolgen: dort kommen sie auch an, wenn der Inhalt inzwischen neu gezeichnet wurde
+    // (das Element ist dann nicht mehr im Blatt, die Ereignisse würden die Tafel nicht mehr erreichen)
+    for (const [art, f] of HOERER) ziel.addEventListener(art, f, { passive: art !== 'touchmove' });
   }
 
   function beiBewegung(e) {
-    if (!zug || e.touches.length !== 1) return;
+    if (!zug) return;
+    if (e.touches.length !== 1) {
+      if (beenden().richtung === 'runter') freigeben();
+      return;
+    }
     const p = e.touches[0];
     const dy = p.clientY - zug.y0;
     if (!zug.richtung) {
@@ -87,9 +114,10 @@ export function blattZiehenAnbinden({ tafel, hintergrund, schliessen }) {
         if (zug.frei && dy > Math.abs(p.clientX - zug.x0) && e.cancelable) e.preventDefault();
         return;
       }
-      const markiert = String(document.getSelection?.() ?? '') !== '';
-      if (richtung !== 'runter' || !zug.frei || markiert || e.timeStamp - zug.t0 > LANG_GEDRUECKT_MS) {
-        zug = null; // Scrollen, seitliches Wischen oder Markieren: das gehört nicht uns
+      // Griff und Kopf ziehen immer; im Inhalt sind langes Drücken und markierter Text das Markieren, nicht das Ziehen
+      const markieren = !zug.amGriff && (e.timeStamp - zug.t0 > LANG_GEDRUECKT_MS || inhaltMarkiert(tafel));
+      if (richtung !== 'runter' || !zug.frei || markieren) {
+        beenden(); // Scrollen, seitliches Wischen oder Markieren: das gehört nicht uns
         return;
       }
       zug.richtung = 'runter';
@@ -104,18 +132,24 @@ export function blattZiehenAnbinden({ tafel, hintergrund, schliessen }) {
   }
 
   function beimLoslassen(e) {
-    const z = zug;
-    zug = null;
+    const z = beenden();
     if (z?.richtung !== 'runter') return;
-    const still = e.type === 'touchcancel' || e.timeStamp - z.letzte.t > WURF_PAUSE_MS;
+    const abgebrochen = e.type === 'touchcancel';
+    const still = abgebrochen || e.timeStamp - z.letzte.t > WURF_PAUSE_MS;
     const dy = Math.max(0, z.letzte.y - z.y0);
-    const zu = e.type !== 'touchcancel' && sollSchliessen({ dy, dt: z.letzte.t - z.anker.t, wurf: still ? 0 : z.letzte.y - z.anker.y });
+    const zu = !abgebrochen && sollSchliessen({ dy, dt: z.letzte.t - z.anker.t, wurf: still ? 0 : z.letzte.y - z.anker.y });
     freigeben();
-    if (zu) schliessen();
+    if (!zu) return;
+    // wie beim ✕: zuerst das Feld verlassen (Tastatur zu, sein „blur“ speichert z. B. eine Notiz), dann schließen
+    const aktiv = document.activeElement;
+    if (aktiv instanceof HTMLElement && tafel.contains(aktiv)) aktiv.blur();
+    schliessen();
   }
 
+  const HOERER = [
+    ['touchmove', beiBewegung],
+    ['touchend', beimLoslassen],
+    ['touchcancel', beimLoslassen],
+  ];
   tafel.addEventListener('touchstart', beiBeruehrung, { passive: true });
-  tafel.addEventListener('touchmove', beiBewegung, { passive: false });
-  tafel.addEventListener('touchend', beimLoslassen);
-  tafel.addEventListener('touchcancel', beimLoslassen);
 }

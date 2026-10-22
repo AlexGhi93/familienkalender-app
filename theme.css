@@ -830,11 +830,18 @@ html:has(.blatt-huelle > .blatt[role='dialog']) body {
 }
 
 .blatt-huelle.auf .blatt-hintergrund {
-  opacity: 1;
+  opacity: var(--blatt-deckkraft, 1);
 }
 
+/* --blatt-zug: Weg nach unten beim Wischen (blatt-ziehen.js), sonst 0 */
 .blatt-huelle.auf .blatt {
-  transform: translate(-50%, 0);
+  transform: translate(-50%, var(--blatt-zug, 0px));
+}
+
+/* Beim Ziehen folgt das Blatt dem Finger ohne Verzögerung */
+.blatt-huelle.zieht .blatt,
+.blatt-huelle.zieht .blatt-hintergrund {
+  transition: none;
 }
 
 .blatt-huelle.zu .blatt-hintergrund {

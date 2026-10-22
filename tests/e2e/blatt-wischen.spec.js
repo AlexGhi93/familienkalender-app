@@ -10,7 +10,7 @@ const warte = (ms) => new Promise((r) => setTimeout(r, ms)); // nur für die Ges
 
 /**
  * Ein Finger auf dem Bildschirm (Touch über CDP, wie auf dem Telefon) bei `ort` ({ x, y } oder ein Locator, dann dessen Mitte).
- * `ziehe(dy, { dx, schritte, pause })` bewegt ihn in Schritten (mit `pause` ms dazwischen), `loslassen()` hebt ihn ab.
+ * `ziehe(dy, { dx, schritte, pause })` bewegt ihn in Schritten (mit `pause` ms dazwischen), `halte(ms)` hält ihn still, `loslassen()` hebt ihn ab.
  */
 async function finger(page, ort) {
   const cdp = await page.context().newCDPSession(page);
@@ -21,21 +21,46 @@ async function finger(page, ort) {
     x = Math.round(box.x + box.width / 2);
     y = Math.round(box.y + box.height / 2);
   } else ({ x, y } = ort);
-  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+  // Aufsetzen nicht abwarten: so geht die erste Bewegung gleich hinterher an den Browser, auch wenn die Maschine voll ausgelastet ist
+  // (sonst sähe ein langsamer Umlauf wie langes Drücken aus, und im Inhalt beginnt dann absichtlich kein Zug)
+  const aufgesetzt = cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
   return {
     async ziehe(dy, { dx = 0, schritte = 5, pause = 0 } = {}) {
       const [x0, y0] = [x, y];
       for (let i = 1; i <= schritte; i += 1) {
         if (pause) await warte(pause);
-        await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: Math.round(x0 + (dx * i) / schritte), y: Math.round(y0 + (dy * i) / schritte) }] });
+        const bewegt = cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: Math.round(x0 + (dx * i) / schritte), y: Math.round(y0 + (dy * i) / schritte) }] });
+        await Promise.all([aufgesetzt, bewegt]);
       }
       [x, y] = [x0 + dx, y0 + dy];
     },
+    /** Finger `ms` lang still halten (langes Drücken) – gezählt erst ab dem tatsächlichen Aufsetzen. */
+    async halte(ms) {
+      await aufgesetzt;
+      await warte(ms);
+    },
     async loslassen() {
+      await aufgesetzt;
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
       await cdp.detach();
     },
   };
+}
+
+/**
+ * Ein kurzer, schneller Wurf: Aufsetzen, `schritte` Bewegungen um insgesamt `dy` px und Loslassen gehen ohne Warten hintereinander an den
+ * Browser (CDP setzt keine eigene Zeit, die Geschwindigkeit ist echte Zeit – so bleibt der Wurf auch bei voller Maschine schnell).
+ */
+async function wurf(page, ort, dy, schritte = 3) {
+  const cdp = await page.context().newCDPSession(page);
+  const box = await ort.boundingBox();
+  const x = Math.round(box.x + box.width / 2);
+  const y = Math.round(box.y + box.height / 2);
+  const befehle = [cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] })];
+  for (let i = 1; i <= schritte; i += 1) befehle.push(cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: Math.round(y + (dy * i) / schritte) }] }));
+  befehle.push(cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }));
+  await Promise.all(befehle);
+  await cdp.detach();
 }
 
 /** Öffnet ein Blatt über die echte Komponente; `window.__zu` zählt die Aufrufe von `beimSchliessen`. */
@@ -53,7 +78,16 @@ async function testBlatt(page, { zeilen = 3, mitFeld = false, titel = 'Testblatt
           window.__zu[titel] += 1;
         },
         render: () => [
-          mitFeld ? h('input', { class: 'test-feld', type: 'text', 'aria-label': 'Testfeld' }) : null,
+          mitFeld
+            ? h('input', {
+                class: 'test-feld',
+                type: 'text',
+                'aria-label': 'Testfeld',
+                onBlur: () => {
+                  window.__blur = (window.__blur ?? 0) + 1;
+                },
+              })
+            : null,
           Array.from({ length: zeilen }, (_, i) => h('p', { class: 'test-zeile' }, `Zeile ${i + 1}`)),
         ],
       });
@@ -118,9 +152,7 @@ test.describe('nach unten wischen', () => {
   test('kurz und schnell nach unten geworfen (50 px) schließt', async ({ page }) => {
     await starteDemo(page, { route: '#/schicht' });
     await testBlatt(page);
-    const f = await finger(page, page.locator('.blatt-griff'));
-    await f.ziehe(50, { schritte: 3 });
-    await f.loslassen();
+    await wurf(page, page.locator('.blatt-griff'), 50);
     await expect(page.getByRole('dialog')).toHaveCount(0);
     expect(await zuGezaehlt(page)).toBe(1);
   });
@@ -251,5 +283,93 @@ test.describe('kein Neuladen durch Herunterziehen', () => {
     await page.keyboard.press('Escape');
     await expect(page.getByRole('dialog')).toHaveCount(0);
     expect((await ueberzug(page))[0]).toBe('contain');
+  });
+});
+
+test.describe('Nachbesserungen (Review Runde 1)', () => {
+  test('Tipp in ein Uhrzeit-Feld markiert dessen Wert; Wischen am Griff schließt trotzdem', async ({ page }) => {
+    await starteDemo(page, { route: '#/schicht' });
+    await zelle(page, '2026-10-23').click();
+    const karteMama = page.locator('.sp-tag-karte[data-person="mama"]');
+    await karteMama.getByRole('button', { name: '＋ Dienstbesprechung', exact: true }).click();
+    const von = karteMama.locator('.sp-tag-zusatz-form').getByRole('textbox', { name: 'Von', exact: true });
+    await von.tap();
+    await expect.poll(() => page.evaluate(() => String(document.getSelection()))).toBe('18:00'); // der ganze Wert ist markiert
+    await tafel(page).evaluate((el) => {
+      el.scrollTop = 0; // der Griff ist zu sehen (das Feld bleibt markiert)
+    });
+    const f = await finger(page, page.locator('.blatt-griff'));
+    await f.ziehe(150);
+    await f.loslassen();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+  });
+
+  test('markierter Text im Inhalt verhindert das Ziehen aus dem Inhalt, nicht aber am Griff', async ({ page }) => {
+    await starteDemo(page, { route: '#/schicht' });
+    await testBlatt(page);
+    await page.locator('.test-zeile').first().evaluate((el) => document.getSelection().selectAllChildren(el));
+    const ausInhalt = await finger(page, page.locator('.test-zeile').nth(1));
+    await ausInhalt.ziehe(150);
+    expect(await verschiebung(page)).toBe(0);
+    await ausInhalt.loslassen();
+    await expect(page.getByRole('dialog', { name: 'Testblatt' })).toBeVisible();
+    const amGriff = await finger(page, page.locator('.blatt-griff'));
+    await amGriff.ziehe(150);
+    await amGriff.loslassen();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+  });
+
+  test('wird der Inhalt mitten im Zug neu gezeichnet, folgt das Blatt weiter dem Finger und hängt nie fest', async ({ page }) => {
+    await starteDemo(page, { route: '#/schicht' });
+    await testBlatt(page);
+    const neuZeichnen = () => page.evaluate(() => window.__blaetter.Testblatt.neuZeichnen());
+    // zu kurz (langsam, kein Wurf): zurück auf 0
+    const kurz = await finger(page, page.locator('.test-zeile').nth(1));
+    await kurz.ziehe(60, { pause: 100 });
+    await neuZeichnen();
+    await kurz.loslassen();
+    await expect.poll(() => verschiebung(page)).toBe(0);
+    await expect(page.getByRole('dialog', { name: 'Testblatt' })).toBeVisible();
+    // weiter gezogen: schließt
+    const weit = await finger(page, page.locator('.test-zeile').nth(1));
+    await weit.ziehe(60);
+    await neuZeichnen();
+    await weit.ziehe(90);
+    expect(await verschiebung(page)).toBeGreaterThan(120);
+    await weit.loslassen();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    expect(await zuGezaehlt(page)).toBe(1);
+  });
+
+  test('lang gedrückt und dann gezogen: am Griff schließt es, im Inhalt nicht (dort ist es Markieren)', async ({ page }) => {
+    await starteDemo(page, { route: '#/schicht' });
+    await testBlatt(page);
+    const imInhalt = await finger(page, page.locator('.test-zeile').nth(1));
+    await imInhalt.halte(600);
+    await imInhalt.ziehe(150);
+    expect(await verschiebung(page)).toBe(0);
+    await imInhalt.loslassen();
+    await expect(page.getByRole('dialog', { name: 'Testblatt' })).toBeVisible();
+    const amGriff = await finger(page, page.locator('.blatt-griff'));
+    await amGriff.halte(600);
+    await amGriff.ziehe(150);
+    await amGriff.loslassen();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+  });
+});
+
+test.describe('Nachbesserungen mit Bewegung (Review Runde 1)', () => {
+  test.use({ contextOptions: { reducedMotion: 'no-preference' } });
+
+  test('Schließen durch Wischen verlässt sofort das Eingabefeld (Tastatur geht zu), wie ✕', async ({ page }) => {
+    await starteDemo(page, { route: '#/schicht' });
+    await testBlatt(page, { mitFeld: true });
+    await page.locator('.test-feld').focus();
+    const f = await finger(page, page.locator('.blatt-griff'));
+    await f.ziehe(150);
+    await f.loslassen();
+    // noch während das Blatt hinausgleitet: das Feld hat den Fokus schon abgegeben
+    expect(await page.evaluate(() => [Boolean(document.querySelector('.blatt-huelle.zu')), document.activeElement?.classList.contains('test-feld') ?? false, window.__blur])).toEqual([true, false, 1]);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
   });
 });

@@ -71,7 +71,7 @@ export function blatt({ titel, render, beimSchliessen = () => {} }) {
     else setTimeout(() => huelle.remove(), 180);
     beimSchliessen();
   }
-  blattZiehenAnbinden({ tafel, hintergrund, schliessen });
+  blattZiehenAnbinden({ huelle, tafel, schliessen });
   document.addEventListener('keydown', beiTaste);
   neuZeichnen();
   document.body.append(huelle);
