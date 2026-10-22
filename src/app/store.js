@@ -7,7 +7,7 @@ import { urlaubCheckEventId } from '../domain/ids.js';
 import { normalisiereTermin } from './termin.js';
 import { urlaubChecksAbgleich, urlaubChecksWunsch } from './urlaub-check.js';
 import { entferneExtra, entferneStand, fuegeExtraHinzu, leeresKonto, monatVor, normalisiereKonto, setzeStand } from '../domain/konto.js';
-import { artAendern, artArchivieren, artHinzufuegen, artVerschieben, leererMonat, normalisiereKatalog, normalisiereMonat, schaltePinsel, schichtAm, setzeNotiz, setzeSchicht, standardKatalog, tageImMonat, zusatzEntfernen, zusatzHinzufuegen } from '../domain/schicht.js';
+import { artAendern, artArchivieren, artHinzufuegen, artVerschieben, katalogErgaenzen, leererMonat, normalisiereKatalog, normalisiereMonat, schaltePinsel, schichtAm, setzeNotiz, setzeSchicht, standardKatalog, tageImMonat, zusatzEntfernen, zusatzHinzufuegen } from '../domain/schicht.js';
 import { MAX_SERIEN_WOCHEN, naechsterWochentag, wochenSerie } from './serie.js';
 
 const KITA_TYPEN = ['kita_essen', 'kita_ohne'];
@@ -29,8 +29,11 @@ const zufaelligeId = () => `u${Array.from({ length: 11 }, () => Math.floor(Math.
 
 const istAuthFehler = (fehler) => fehler?.name === 'AuthAbgelaufen';
 
-/** Schichtplan im Zustand: `katalog` null = noch nicht gelesen (die Ansicht zeigt dann die Standardarten). */
-const leererSchichtplan = () => ({ katalog: null, monate: {}, status: {} });
+/**
+ * Schichtplan im Zustand: `katalog` null = noch nicht gelesen (die Ansicht zeigt dann die Standardarten). `vorgeladen` = Schichtarten
+ * und die Monate ab dem laufenden (siehe `schichtVorladen`) wurden seit dem Start aus dem Kalender gelesen, nicht nur aus dem gespeicherten Stand.
+ */
+const leererSchichtplan = () => ({ katalog: null, monate: {}, status: {}, vorgeladen: false });
 
 /** Schichtplan aus Schnappschuss oder Beispieldaten ({ katalog, monate }): normalisiert, alle Monate gelten als geladen. */
 function schichtAusDaten(roh) {
@@ -42,7 +45,7 @@ function schichtAusDaten(roh) {
       // kein gültiger Monat als Schlüssel: weglassen
     }
   }
-  return { katalog: roh?.katalog ? normalisiereKatalog(roh.katalog).katalog : null, monate, status: Object.fromEntries(Object.keys(monate).map((jm) => [jm, 'geladen'])) };
+  return { katalog: roh?.katalog ? normalisiereKatalog(roh.katalog).katalog : null, monate, status: Object.fromEntries(Object.keys(monate).map((jm) => [jm, 'geladen'])), vorgeladen: false };
 }
 
 /**
@@ -83,6 +86,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
   let schreibStand = 0; // zählt begonnene Schreibvorgänge: so erkennt `einkaufAktualisieren`, dass inzwischen selbst etwas geändert wurde
   let einkaufGeprueft = null; // wann die Einkaufsliste zuletzt mit dem Kalender abgeglichen war (ms): Laden, Aktualisieren, eigenes Speichern
   let einkaufHolen = null; // laufende Abfrage der Einkaufsliste: mehrfaches Anstoßen fragt nur einmal
+  let schichtVorladenLaeuft = null; // laufendes Vorladen des Schichtplans: mehrfaches Anstoßen fragt nur einmal
   const melden = () => {
     for (const h of hoerer) h(state);
   };
@@ -329,6 +333,42 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     });
     if (ergebnis === 'ok') return { ok: true };
     return ergebnis === 'auth' ? { ok: false, wartet: true, fehler } : { ok: false, fehler };
+  }
+
+  /**
+   * Liest Monate `jms` des Schichtplans und die Schichtarten (mit `katalogNeu` immer, sonst nur, wenn noch keine gelesen sind), alles
+   * gleichzeitig. Status je Monat: 'laedt' → 'geladen' oder 'fehler' (abgelaufene Anmeldung setzt zusätzlich `anmeldungNoetig`). Fehlt
+   * der Katalog im Kalender, gelten die Standardarten. Wurde inzwischen selbst etwas geändert, bleibt Vorhandenes, wie es ist (die
+   * Antwort könnte älter sein). Ergebnis: { katalogGelesen, monateGelesen } – ob die Schichtarten bzw. alle Monate gelesen werden konnten.
+   */
+  async function schichtLesen(jms, { katalogNeu = false } = {}) {
+    const mitKatalog = katalogNeu || state.schicht.katalog === null;
+    const stand = schreibStand;
+    state = { ...state, schicht: { ...state.schicht, status: { ...state.schicht.status, ...Object.fromEntries(jms.map((m) => [m, 'laedt'])) } } };
+    melden();
+    const [katalog, ...monate] = await Promise.allSettled([mitKatalog ? adapter.leseSchichtarten() : null, ...jms.map((m) => adapter.leseSchichtMonat(m))]);
+    const eigene = stand !== schreibStand || schreibend > 0 || wartend.length > 0 || schichtSchreibtNoch();
+    const s = state.schicht;
+    const neueMonate = { ...s.monate };
+    const status = { ...s.status };
+    let auth = false;
+    jms.forEach((m, i) => {
+      const r = monate[i];
+      if (r.status === 'rejected') {
+        status[m] = 'fehler';
+        auth ||= istAuthFehler(r.reason);
+        return;
+      }
+      if (!(eigene && s.monate[m])) neueMonate[m] = normalisiereMonat(r.value?.monat ?? null, m).monat;
+      status[m] = 'geladen';
+    });
+    let kat = s.katalog;
+    const katalogGelesen = mitKatalog && katalog.status === 'fulfilled';
+    if (mitKatalog && katalog.status === 'rejected') auth ||= istAuthFehler(katalog.reason);
+    else if (katalogGelesen && (kat === null || (katalogNeu && !eigene))) kat = normalisiereKatalog(katalog.value?.katalog ?? null).katalog;
+    state = { ...state, schicht: { ...s, katalog: kat, monate: neueMonate, status }, ...(auth ? { anmeldungNoetig: true } : {}) };
+    melden();
+    return { katalogGelesen, monateGelesen: jms.every((m) => status[m] === 'geladen') };
   }
 
   /** Schichtplan für die Sicherung: Katalog und alle vorhandenen Monate von Jänner 2026 bis zwölf Monate nach heute (fehlende übersprungen). */
@@ -736,38 +776,40 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
 
     /**
      * Schichtplan beim Öffnen seiner Seite: die Schichtarten (falls noch nicht gelesen) und der Monat `jm` mit seinem Vor- und
-     * Folgemonat, alles gleichzeitig. Status je Monat: 'laedt' → 'geladen' oder 'fehler' (abgelaufene Anmeldung setzt zusätzlich
-     * `anmeldungNoetig`). Fehlt der Katalog im Kalender, gelten die Standardarten. Wurde inzwischen selbst etwas geändert, bleiben
-     * schon vorhandene Monate, wie sie sind (die Antwort könnte älter sein).
+     * Folgemonat, alles gleichzeitig (Status, Fehler und eigene Änderungen siehe `schichtLesen`).
      */
     async schichtLaden(jm) {
       tageImMonat(jm); // wirft bei einem ungültigen Monat
-      const jms = [monatVor(jm, 1), jm, monatVor(jm, -1)];
-      const mitKatalog = state.schicht.katalog === null;
-      const stand = schreibStand;
-      state = { ...state, schicht: { ...state.schicht, status: { ...state.schicht.status, ...Object.fromEntries(jms.map((m) => [m, 'laedt'])) } } };
-      melden();
-      const [katalog, ...monate] = await Promise.allSettled([mitKatalog ? adapter.leseSchichtarten() : null, ...jms.map((m) => adapter.leseSchichtMonat(m))]);
-      const eigene = stand !== schreibStand || schreibend > 0 || wartend.length > 0 || schichtSchreibtNoch();
-      const s = state.schicht;
-      const neueMonate = { ...s.monate };
-      const status = { ...s.status };
-      let auth = false;
-      jms.forEach((m, i) => {
-        const r = monate[i];
-        if (r.status === 'rejected') {
-          status[m] = 'fehler';
-          auth ||= istAuthFehler(r.reason);
-          return;
+      await schichtLesen([monatVor(jm, 1), jm, monatVor(jm, -1)]);
+    },
+
+    /**
+     * Schichtplan im Hintergrund nach dem Start (Google und Demo), damit die Erinnerungen von jedem Telefon aus stimmen: liest die
+     * Schichtarten (immer neu) und den laufenden Monat mit den zwei folgenden; danach `schicht.vorgeladen` (bleibt, auch wenn ein
+     * späteres Vorladen scheitert). Fehlt Papa noch eine später dazugekommene Standardart (E – Ersatzdienst), wird sie einmal ergänzt –
+     * als reine Änderung auf der neuesten Fassung, so ergänzt auch das zweite Telefon nichts doppelt. Tut nichts vor dem Laden, solange nur
+     * der gespeicherte Stand zu sehen ist oder die Anmeldung fehlt (danach erneut anstoßen). Wirft nicht; Lesefehler stehen im Status.
+     */
+    schichtVorladen() {
+      if (schichtVorladenLaeuft) return schichtVorladenLaeuft;
+      if (!adapter.leseSchichtMonat || !state.geladen || state.nurSnapshot || state.anmeldungNoetig) return Promise.resolve();
+      const jm = todayVienna(jetzt()).slice(0, 7);
+      schichtVorladenLaeuft = (async () => {
+        const { katalogGelesen, monateGelesen } = await schichtLesen([jm, monatVor(jm, -1), monatVor(jm, -2)], { katalogNeu: true });
+        if (katalogGelesen && monateGelesen && !state.schicht.vorgeladen) {
+          state = { ...state, schicht: { ...state.schicht, vorgeladen: true } };
+          melden();
         }
-        if (!(eigene && s.monate[m])) neueMonate[m] = normalisiereMonat(r.value?.monat ?? null, m).monat;
-        status[m] = 'geladen';
-      });
-      let kat = s.katalog;
-      if (mitKatalog && katalog.status === 'rejected') auth ||= istAuthFehler(katalog.reason);
-      else if (mitKatalog && kat === null) kat = normalisiereKatalog(katalog.value?.katalog ?? null).katalog;
-      state = { ...state, schicht: { katalog: kat, monate: neueMonate, status }, ...(auth ? { anmeldungNoetig: true } : {}) };
-      melden();
+        // nur auf einen frisch gelesenen Katalog: sonst würde aus einem unbekannten Stand heraus geschrieben
+        if (katalogGelesen && state.schicht.katalog && katalogErgaenzen(state.schicht.katalog).geaendert) {
+          await schichtKatalogAendern((kat) => katalogErgaenzen(kat).katalog);
+        }
+      })()
+        .catch(() => {}) // Hintergrund: ein Fehler darf nichts stören
+        .finally(() => {
+          schichtVorladenLaeuft = null;
+        });
+      return schichtVorladenLaeuft;
     },
 
     /**
@@ -793,7 +835,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       if (stand !== schreibStand || schreibend > 0 || wartend.length > 0 || schichtSchreibtNoch()) return false;
       const [katalog, ...monate] = gelesen;
       const s = state.schicht;
-      const neu = { katalog: normalisiereKatalog(katalog?.katalog ?? null).katalog, monate: { ...s.monate }, status: { ...s.status } };
+      const neu = { ...s, katalog: normalisiereKatalog(katalog?.katalog ?? null).katalog, monate: { ...s.monate }, status: { ...s.status } };
       jms.forEach((jm, i) => {
         neu.monate[jm] = normalisiereMonat(monate[i]?.monat ?? null, jm).monat;
         neu.status[jm] = 'geladen';

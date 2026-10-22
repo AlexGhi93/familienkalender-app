@@ -58,6 +58,9 @@ const BANNER_INTERVALL_MS = 30_000;
 const SNAPSHOT_VERZOEGERUNG_MS = 1000;
 const CHECKS_VERZOEGERUNG_MS = 2500; // Urlaub-Checks erst abgleichen, wenn sich der Urlaub kurz nicht mehr ändert
 
+/** Unterscheiden sich zwei Zustände nur im Schichtplan? */
+const nurSchichtGeaendert = (a, b) => a.schicht !== b.schicht && [...new Set([...Object.keys(a), ...Object.keys(b)])].every((k) => k === 'schicht' || a[k] === b[k]);
+
 /**
  * `auth` und `snapshot` gibt es nur im Google-Modus; `konto` bündelt, was „Konto & App“ dafür braucht
  * ({ rolle, kalenderCode, zuruecksetzen }); `push` = Push-Erinnerungen dieses Telefons (src/push/client.js). Im Demo-Modus sind alle null.
@@ -269,6 +272,17 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
     jetzt: () => store.jetzt().getTime(),
   });
 
+  // Schichtplan im Hintergrund vorladen (Schichtarten und drei Monate ab heute; für die Erinnerungen, siehe store.schichtVorladen):
+  // jedes Mal, wenn die App frisch geladen und nutzbar wird (Start, Verbinden), nie aus dem gespeicherten Stand allein. Ohne `await`:
+  // der Start wartet nicht darauf; Fehler stehen im Status der Monate. Hat es nicht geklappt, noch einmal beim Zurückkehren in die App.
+  let schichtVorladenBereit = false;
+  const schichtVorladenAnstossen = ({ nochmal = false } = {}) => {
+    const bereit = auth ? googleBereit() : store.getState().geladen;
+    const neu = bereit && (!schichtVorladenBereit || (nochmal && !store.getState().schicht.vorgeladen));
+    schichtVorladenBereit = bereit;
+    if (neu) Promise.resolve().then(() => store.schichtVorladen()).catch(() => {}); // erst nach dem laufenden Zeichnen/Melden
+  };
+
   const schichtAbgleich = createSchichtAbgleich({
     aktiv: () => ui.seite() === 'schicht' && document.visibilityState === 'visible' && googleBereit(),
     holen: () => store.schichtAktualisieren(ui.schichtMonate()),
@@ -286,7 +300,12 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
   let checksTage = null;
   let checksSettings = null;
   let checksZeitgeber = null;
+  let gemeldet = store.getState(); // zuletzt gemeldeter (bzw. beim Start gezeichneter) Zustand
   store.subscribe((state) => {
+    // Hat sich nur der Schichtplan geändert (z. B. das Vorladen im Hintergrund), bleibt jede andere Seite, wie sie ist: sie zeigt ihn nicht,
+    // und neu gezeichnet würde sie z. B. die Animationen in „Mehr“ abbrechen. Offene Blätter melden sich selbst an.
+    const nurSchicht = ui.seite() !== 'schicht' && nurSchichtGeaendert(gemeldet, state);
+    gemeldet = state;
     if (state.fehler && state.fehler !== letzterFehler) toast(state.fehler, { art: 'fehler', dauer: 6000 });
     else if (!state.fehler && letzterFehler) entferneFehlerToast();
     letzterFehler = state.fehler;
@@ -306,7 +325,8 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
       clearTimeout(checksZeitgeber);
       checksZeitgeber = setTimeout(() => store.urlaubChecksAbgleichen(), CHECKS_VERZOEGERUNG_MS);
     }
-    ui.rendern();
+    schichtVorladenAnstossen();
+    if (!nurSchicht) ui.rendern();
     if (snapshot && state.geladen && !state.nurSnapshot) {
       clearTimeout(speicherZeitgeber);
       speicherZeitgeber = setTimeout(() => snapshot.speichern(store.getState(), store.heute()), SNAPSHOT_VERZOEGERUNG_MS);
@@ -334,6 +354,7 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
     if (auth?.dauerAnmeldung?.()?.dauerhaft) stillVerbinden().catch(() => {});
     else if (auth) store.aktualisieren();
     einkaufAbgleich.sofort(); // zurück auf der Einkaufsliste: gleich einmal nachsehen
+    schichtVorladenAnstossen({ nochmal: true });
     const jetzt = store.jetzt().getTime();
     if (ui.seite() === 'schicht' && googleBereit() && schichtAktualisierenFaellig(schichtRueckkehr, jetzt)) {
       schichtRueckkehr = jetzt; // zurück auf dem Schichtplan: nachsehen, was das andere Telefon eingetragen hat (höchstens einmal pro Minute)
@@ -350,5 +371,6 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
   }
 
   ui.rendern();
+  schichtVorladenAnstossen(); // schon geladen (Demo; Google mit gültiger Anmeldung): gleich im Hintergrund
   return ui;
 }

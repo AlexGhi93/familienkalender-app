@@ -57,7 +57,8 @@ const zeichen = (text) => [...text].length; // Zeichen (nicht UTF-16-Einheiten),
 const kuerzen = (text, max) => [...text].slice(0, max).join('').trimEnd();
 const istSchluessel = (k) => typeof k === 'string' && k.length === 1 && SCHLUESSEL_ZEICHEN.includes(k);
 const istObjekt = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
-const gleichesKuerzel = (a, b) => a.toLocaleLowerCase('de') === b.toLocaleLowerCase('de');
+// Kürzel vergleichen wie angezeigt: geputzt (Leerzeichen, NFC) und ohne Groß-/Kleinschreibung – ein ungeputztes „ E“ ist dasselbe wie „E“
+const gleichesKuerzel = (a, b) => sauber(a).toLocaleLowerCase('de') === sauber(b).toLocaleLowerCase('de');
 
 function pruefePerson(person) {
   if (!SCHICHT_PERSONEN.includes(person)) throw new Error('Ungültige Person (Papa oder Mama).');

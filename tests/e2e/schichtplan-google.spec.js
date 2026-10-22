@@ -1,5 +1,6 @@
-// Schichtplan mit Google (Attrappe der Kalender-API, siehe hilfen.js): erst die Seite liest die versteckten Ereignisse
-// „fkschichtarten“ und „fksch<JJJJMM>“ (drei Monate), der Pinsel schreibt den Monat als JSON ohne Inhalt im Titel,
+// Schichtplan mit Google (Attrappe der Kalender-API, siehe hilfen.js): beim Start liest die App im Hintergrund die versteckten Ereignisse
+// „fkschichtarten“ und „fksch<JJJJMM>“ (laufender und zwei folgende Monate; alten Schichtarten fehlt E: einmal ergänzt), die Seite liest
+// Vor- und Folgemonat des angezeigten Monats, der Pinsel schreibt den Monat als JSON ohne Inhalt im Titel,
 // Monat und Verlauf zeigen davon nichts, und ohne Netz zeigt die Offline-Kopie besuchte Monate, unbesuchte nicht.
 import { test, expect, starteGoogleVerbunden, tab, NETZFEHLER } from './hilfen.js';
 import { schichtartenZuEreignis, schichtMonatZuEreignis } from '../../src/calendar/mapping.js';
@@ -26,13 +27,14 @@ function oktoberBeiGoogle() {
   return schichtMonatZuEreignis({ ...m, jm: '2026-10' }).body;
 }
 
-test('erst die Seite liest: Schichtarten und Vor-, laufender und Folgemonat (fkschichtarten, fksch202609–11); Gelesenes ist zu sehen', async ({ page }) => {
+test('beim Start im Hintergrund: Schichtarten, laufender und zwei folgende Monate (fksch202610–12); die Seite liest den Vormonat dazu; Gelesenes ist zu sehen', async ({ page }) => {
   const google = await starteGoogleVerbunden(page, { ereignisse: [oktoberBeiGoogle()] });
-  expect(schichtGelesen(google), 'beim Start wird nichts vom Schichtplan gelesen').toEqual([]);
+  await expect.poll(() => schichtGelesen(google).sort(), 'beim Start im Hintergrund').toEqual(['GET fksch202610', 'GET fksch202611', 'GET fksch202612', 'GET fkschichtarten']);
 
   await tab(page, 'Schicht');
   await expect(monatTitel(page)).toHaveText('Oktober 2026');
-  await expect.poll(() => schichtGelesen(google).sort()).toEqual(['GET fksch202609', 'GET fksch202610', 'GET fksch202611', 'GET fkschichtarten']);
+  await expect.poll(() => schichtGelesen(google)).toContain('GET fksch202609');
+  expect(schichtGelesen(google).filter((a) => a === 'GET fkschichtarten'), 'die Schichtarten sind schon da').toHaveLength(1);
   await expect(page.locator('.sp-zelle')).toHaveCount(31);
   await expect(streifen(page, '2026-10-05', 'papa')).toHaveText('F');
   await expect(streifen(page, '2026-10-05', 'papa')).toHaveClass(/sf-gruen/);
@@ -128,12 +130,34 @@ test('nach dem Neuladen ohne Netz: der besuchte Monat aus der Offline-Kopie, ein
   await expect(monatTitel(page)).toHaveText('Oktober 2026');
   await expect(streifen(page, '2026-10-08', 'papa')).toHaveText('N☾');
   await expect(page.getByText('Noch nicht geladen – bitte verbinden.')).toHaveCount(0);
-  // November war als Folgemonat mitgeladen; Dezember nie
+  // November und Dezember waren beim Start im Hintergrund mitgeladen; Januar nie
   await page.getByRole('button', { name: 'Nächster Monat' }).click();
   await expect(monatTitel(page)).toHaveText('November 2026');
   await expect(page.locator('.sp-zelle')).toHaveCount(30);
   await page.getByRole('button', { name: 'Nächster Monat' }).click();
   await expect(monatTitel(page)).toHaveText('Dezember 2026');
+  await expect(page.locator('.sp-zelle')).toHaveCount(31);
+  await page.getByRole('button', { name: 'Nächster Monat' }).click();
+  await expect(monatTitel(page)).toHaveText('Januar 2027');
   await expect(page.getByText('Noch nicht geladen – bitte verbinden.')).toBeVisible();
   await expect(page.locator('.sp-zelle')).toHaveCount(0);
+});
+
+test('alte Schichtarten ohne „E – Ersatzdienst“: beim Start einmal ergänzt (ein PATCH), danach im Pinsel; nach dem Neuladen nicht noch einmal', async ({ page }) => {
+  const k = standardKatalog();
+  const ohneE = { ...k, arten: { ...k.arten, papa: k.arten.papa.filter((a) => a.kuerzel !== 'E') } };
+  const google = await starteGoogleVerbunden(page, { ereignisse: [schichtartenZuEreignis(ohneE).body] });
+  await expect.poll(() => schichtGeschrieben(google)).toEqual(['PATCH fkschichtarten']);
+  const gespeichert = JSON.parse(google.ereignis('fkschichtarten').description);
+  expect(gespeichert.arten.papa.filter((a) => a.kuerzel === 'E')).toEqual([{ k: 'I', kuerzel: 'E', name: 'Ersatzdienst', farbe: 'gelb', gruppe: 'dienst', muster: 'offen' }]);
+  expect(gespeichert.arten.mama).toEqual(ohneE.arten.mama);
+
+  await tab(page, 'Schicht');
+  await page.getByRole('button', { name: '✏️ Eintragen' }).click();
+  await expect(leiste(page).getByRole('button', { name: 'E Ersatzdienst', exact: true })).toBeVisible();
+
+  await page.reload();
+  await expect(page.locator('nav.tabs')).toBeVisible();
+  await expect.poll(() => schichtGelesen(google).filter((a) => a === 'GET fkschichtarten').length).toBeGreaterThan(1); // wieder gelesen …
+  expect(schichtGeschrieben(google)).toEqual(['PATCH fkschichtarten']); // … aber nicht noch einmal geschrieben
 });

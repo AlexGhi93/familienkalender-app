@@ -380,6 +380,16 @@ describe('Katalog', () => {
     assert.deepEqual(katalogErgaenzen(voll), { katalog: voll, geaendert: false });
   });
 
+  test('katalogErgaenzen: ein ungeputztes „ E “ (Leerzeichen, NFC) zählt als E – kein zweites E', () => {
+    const roh = (kuerzel) => ({ v: 1, arten: { papa: [{ k: 'A', kuerzel, name: 'Eigenes', farbe: 'gelb', gruppe: 'dienst' }], mama: [] } });
+    for (const kuerzel of [' E', 'E ', ' e\t', ' E']) {
+      const k = roh(kuerzel);
+      assert.deepEqual(katalogErgaenzen(k), { katalog: k, geaendert: false }, JSON.stringify(kuerzel));
+    }
+    // ein anderes Kürzel mit Leerzeichen bleibt ein anderes
+    assert.equal(katalogErgaenzen(roh(' EX ')).geaendert, true);
+  });
+
   test('katalogText lehnt zu große Kataloge ab', () => {
     const lang = (i) => ({ k: SCHLUESSEL_ZEICHEN[i], kuerzel: `${i}`.padStart(3, 'Q'), name: 'N'.repeat(24), farbe: 'dunkelblau', gruppe: 'dienst', von: '07:00', bis: '17:45', nacht: true, muster: 'urlaub', archiv: true });
     const riesig = { v: 1, arten: { papa: Array.from({ length: 24 }, (_, i) => lang(i)), mama: Array.from({ length: 24 }, (_, i) => lang(i)) } };

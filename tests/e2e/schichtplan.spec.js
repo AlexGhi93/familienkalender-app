@@ -81,6 +81,27 @@ test('Filter „👨 Papa“ blendet Mama aus und bleibt nach dem Neuladen', asy
   await expect(page.locator('.sp-streifen.mama')).toHaveCount(31);
 });
 
+test('Demo mit alten Schichtarten ohne E: beim Start im Hintergrund einmal ergänzt, auch ohne den Schichtplan zu öffnen', async ({ page }) => {
+  await starteDemo(page);
+  const papaE = () => page.evaluate(() => JSON.parse(localStorage.getItem('fk.demo.v1')).schicht.katalog?.arten?.papa?.filter((a) => a.kuerzel === 'E').length ?? 0);
+  await expect.poll(papaE).toBe(1); // die Beispieldaten haben E schon
+  await page.evaluate(() => {
+    const daten = JSON.parse(localStorage.getItem('fk.demo.v1'));
+    daten.schicht.katalog.arten.papa = daten.schicht.katalog.arten.papa.filter((a) => a.kuerzel !== 'E');
+    localStorage.setItem('fk.demo.v1', JSON.stringify(daten));
+  });
+  expect(await papaE()).toBe(0);
+  await page.reload();
+  await expect(page.locator('nav.tabs')).toBeVisible();
+  await expect.poll(papaE).toBe(1);
+  await page.reload();
+  await expect(page.locator('nav.tabs')).toBeVisible();
+  await tab(page, 'Schicht');
+  await page.getByRole('button', { name: '✏️ Eintragen' }).click();
+  await expect(page.locator('.sp-pinsel').getByRole('button', { name: 'E Ersatzdienst', exact: true })).toHaveCount(1);
+  expect(await papaE()).toBe(1);
+});
+
 test.describe('Telefon mit 375 px Breite', () => {
   test.use({ viewport: { width: 375, height: 812 } });
 

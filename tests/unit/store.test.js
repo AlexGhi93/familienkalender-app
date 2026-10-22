@@ -361,7 +361,7 @@ describe('Schichtplan', () => {
   test('am Anfang leer; schichtLaden holt Katalog und drei Monate (Standardarten, wenn noch keine gespeichert sind)', async () => {
     const { store } = aufbau({ speicher: ohneSchicht() });
     await store.laden();
-    assert.deepEqual(store.getState().schicht, { katalog: null, monate: {}, status: {} });
+    assert.deepEqual(store.getState().schicht, { katalog: null, monate: {}, status: {}, vorgeladen: false });
     const zusage = store.schichtLaden(JM);
     assert.deepEqual(store.getState().schicht.status, { '2026-09': 'laedt', '2026-10': 'laedt', '2026-11': 'laedt' });
     await zusage;
@@ -600,7 +600,7 @@ describe('Schichtplan', () => {
     assert.deepEqual(d.schicht, { katalog: seed.katalog, monate: seed.monate });
     gefragt.sort();
     assert.deepEqual([gefragt.length, gefragt[0], gefragt.at(-1)], [22, '2026-01', '2027-10']);
-    assert.deepEqual(store.getState().schicht, { katalog: null, monate: {}, status: {} }); // der Zustand bleibt unverändert
+    assert.deepEqual(store.getState().schicht, { katalog: null, monate: {}, status: {}, vorgeladen: false }); // der Zustand bleibt unverändert
   });
 
   test('Zurücksetzen (Demo): der Schichtplan kommt aus den neuen Beispieldaten', async () => {
@@ -785,5 +785,172 @@ describe('Schichtplan', () => {
     await assert.rejects(store.schichtArtSpeichern('papa', { kuerzel: '', name: 'Ohne', farbe: 'grau' }), { message: 'Das Kürzel muss 1 bis 3 Zeichen haben.' });
     await assert.rejects(store.schichtArtVerschieben('papa', 'A', 2), { message: 'Ungültige Richtung.' });
     assert.equal(store.getState(), vorher);
+  });
+});
+
+describe('Schichtplan im Hintergrund vorladen', () => {
+  /** Schichtarten aus einer Version vor „E – Ersatzdienst“. */
+  const ohneE = () => {
+    const k = standardKatalog();
+    return { ...k, arten: { ...k.arten, papa: k.arten.papa.filter((a) => a.kuerzel !== 'E') } };
+  };
+  const speicherMit = (katalog) => speicherAttrappe({ 'fk.demo.v1': JSON.stringify({ settings: {}, tage: {}, urlaub: [], termine: [], schicht: { katalog, monate: {} } }) });
+  const anzahlE = (katalog) => katalog.arten.papa.filter((a) => a.kuerzel === 'E').length;
+  const geschrieben = (log) => log.filter((x) => x.startsWith('schreibe'));
+  /** Merkt sich Lese- und Schreibzugriffe auf den Schichtplan in `log`. */
+  const protokolliert = (log) => (a) => ({
+    ...a,
+    leseSchichtarten: async () => (log.push('arten'), a.leseSchichtarten()),
+    leseSchichtMonat: async (jm) => (log.push(jm), a.leseSchichtMonat(jm)),
+    aendereSchichtarten: async (fn) => (log.push('schreibe arten'), a.aendereSchichtarten(fn)),
+    aendereSchichtMonat: async (jm, fn) => (log.push(`schreibe ${jm}`), a.aendereSchichtMonat(jm, fn)),
+  });
+
+  test('liest die Schichtarten und genau den laufenden und die zwei folgenden Monate; danach vorgeladen', async () => {
+    const log = [];
+    const { store, speicher } = aufbau({ aendern: protokolliert(log) });
+    await store.laden();
+    assert.equal(store.getState().schicht.vorgeladen, false);
+    await store.schichtVorladen();
+    assert.deepEqual([...log].sort(), ['2026-10', '2026-11', '2026-12', 'arten']); // nichts geschrieben: die Beispieldaten haben schon E
+    const s = store.getState().schicht;
+    assert.equal(s.vorgeladen, true);
+    assert.deepEqual(s.status, { '2026-10': 'geladen', '2026-11': 'geladen', '2026-12': 'geladen' });
+    assert.deepEqual(s.monate['2026-10'], gespeichert(speicher).schicht.monate['2026-10']);
+    assert.deepEqual(s.katalog, gespeichert(speicher).schicht.katalog);
+  });
+
+  test('Jahreswechsel: im Dezember Dezember, Januar und Februar', async () => {
+    const log = [];
+    const { store } = aufbau({ jetzt: () => new Date('2026-12-31T22:00:00+01:00'), aendern: protokolliert(log) });
+    await store.laden();
+    await store.schichtVorladen();
+    assert.deepEqual(log.filter((x) => x !== 'arten').sort(), ['2026-12', '2027-01', '2027-02']);
+  });
+
+  test('alte Schichtarten ohne E: genau ein Schreiben fügt E hinzu; ein zweites Vorladen schreibt nicht mehr', async () => {
+    const log = [];
+    const { store, speicher } = aufbau({ speicher: speicherMit(ohneE()), aendern: protokolliert(log) });
+    await store.laden();
+    await store.schichtVorladen();
+    assert.deepEqual(geschrieben(log), ['schreibe arten']);
+    assert.deepEqual(gespeichert(speicher).schicht.katalog, standardKatalog());
+    assert.deepEqual(store.getState().schicht.katalog, standardKatalog());
+    assert.equal(store.getState().schicht.vorgeladen, true);
+    assert.equal(store.getState().fehler, null);
+    await store.schichtVorladen();
+    assert.equal(log.filter((x) => x === 'arten').length, 2); // das zweite Mal wurde wieder gelesen …
+    assert.deepEqual(geschrieben(log), ['schreibe arten']); // … aber nicht mehr geschrieben
+  });
+
+  test('noch keine Schichtarten gespeichert: die Standardarten haben E, nichts wird geschrieben', async () => {
+    const log = [];
+    const { store } = aufbau({ speicher: speicherMit(null), aendern: protokolliert(log) });
+    await store.laden();
+    await store.schichtVorladen();
+    assert.deepEqual(geschrieben(log), []);
+    assert.deepEqual(store.getState().schicht.katalog, standardKatalog());
+  });
+
+  test('zwei Telefone (zwei Stores, ein Kalender): E nur einmal – nacheinander und gleichzeitig', async () => {
+    for (const gleichzeitig of [false, true]) {
+      const adapter = createDemoAdapter({ speicher: speicherMit(ohneE()), jetzt: () => JETZT });
+      const papa = createStore(adapter, { jetzt: () => JETZT });
+      const mama = createStore(adapter, { jetzt: () => JETZT });
+      await papa.laden();
+      await mama.laden();
+      if (gleichzeitig) await Promise.all([papa.schichtVorladen(), mama.schichtVorladen()]);
+      else {
+        await papa.schichtVorladen();
+        await mama.schichtVorladen();
+      }
+      const { katalog } = await adapter.leseSchichtarten();
+      assert.equal(anzahlE(katalog), 1, `gleichzeitig: ${gleichzeitig}`);
+      assert.equal(anzahlE(papa.getState().schicht.katalog), 1);
+      assert.equal(anzahlE(mama.getState().schicht.katalog), 1);
+    }
+  });
+
+  test('nur der gespeicherte Stand (noch nicht angemeldet): nichts lesen, nichts setzen; nach dem Laden klappt es', async () => {
+    const log = [];
+    const { store } = aufbau({ speicher: speicherMit(ohneE()), aendern: protokolliert(log) });
+    store.starteAusSnapshot({ daten: { settings: undefined, tage: {}, urlaub: [], termine: [], schicht: { katalog: ohneE(), monate: {} } }, gespeichertAm: '2026-10-14T06:00:00.000Z' });
+    await store.schichtVorladen();
+    assert.deepEqual(log, []);
+    assert.equal(store.getState().schicht.vorgeladen, false);
+    await store.laden();
+    await store.schichtVorladen();
+    assert.equal(store.getState().schicht.vorgeladen, true);
+    // die Schichtarten werden neu gelesen, auch wenn der gespeicherte Stand schon welche hatte, und ergänzt
+    assert.ok(log.includes('arten'));
+    assert.equal(anzahlE(store.getState().schicht.katalog), 1);
+  });
+
+  test('vor dem Laden oder mit abgelaufener Anmeldung: nichts', async () => {
+    const log = [];
+    const { store } = aufbau({ aendern: protokolliert(log) });
+    await store.schichtVorladen();
+    assert.deepEqual(log, []);
+    let abgelaufen = false;
+    const zwei = aufbau({ aendern: (a) => protokolliert(log)({ ...a, laden: async () => { if (abgelaufen) throw authFehler(); return a.laden(); } }) });
+    await zwei.store.laden();
+    abgelaufen = true;
+    await zwei.store.laden(); // → anmeldungNoetig
+    await zwei.store.schichtVorladen();
+    assert.deepEqual(log, []);
+    assert.equal(zwei.store.getState().schicht.vorgeladen, false);
+  });
+
+  test('Lesefehler: wirft nicht, kein vorgeladen, ohne lesbare Schichtarten kein Schreiben; abgelaufene Anmeldung setzt anmeldungNoetig', async () => {
+    let fehler = () => new Error('Netz');
+    let welcher = '2026-12';
+    const log = [];
+    const { store } = aufbau({
+      speicher: speicherMit(ohneE()),
+      aendern: (a) => protokolliert(log)({
+        ...a,
+        leseSchichtMonat: async (jm) => { if (jm === welcher) throw fehler(); return a.leseSchichtMonat(jm); },
+        leseSchichtarten: async () => { if (welcher === 'arten') throw fehler(); return a.leseSchichtarten(); },
+      }),
+    });
+    await store.laden();
+    await store.schichtVorladen();
+    assert.equal(store.getState().schicht.vorgeladen, false);
+    assert.equal(store.getState().schicht.status['2026-12'], 'fehler');
+    assert.equal(store.getState().fehler, null);
+    assert.deepEqual(geschrieben(log), ['schreibe arten']); // die Schichtarten waren lesbar: E ist ergänzt
+    // jetzt sind die Schichtarten nicht lesbar
+    const zweiter = aufbau({ speicher: speicherMit(ohneE()), aendern: (a) => protokolliert(log)({ ...a, leseSchichtarten: async () => { throw new Error('Netz'); } }) });
+    await zweiter.store.laden();
+    await zweiter.store.schichtVorladen();
+    assert.equal(zweiter.store.getState().schicht.vorgeladen, false);
+    assert.deepEqual(geschrieben(log), ['schreibe arten']); // nichts auf einen unbekannten Stand geschrieben
+    fehler = authFehler;
+    welcher = '2026-11';
+    await store.schichtVorladen();
+    assert.equal(store.getState().anmeldungNoetig, true);
+    assert.equal(store.getState().schicht.vorgeladen, false);
+  });
+
+  test('vorgeladen bleibt beim Öffnen der Seite, beim Aktualisieren und bei einem späteren Lesefehler', async () => {
+    let kaputt = false;
+    const { store } = aufbau({ aendern: (a) => ({ ...a, leseSchichtMonat: async (jm) => { if (kaputt) throw new Error('Netz'); return a.leseSchichtMonat(jm); } }) });
+    await store.laden();
+    await store.schichtVorladen();
+    await store.schichtLaden('2026-10');
+    assert.equal(store.getState().schicht.vorgeladen, true);
+    assert.equal(await store.schichtAktualisieren(['2026-10']), true);
+    assert.equal(store.getState().schicht.vorgeladen, true);
+    kaputt = true;
+    await store.schichtVorladen();
+    assert.equal(store.getState().schicht.vorgeladen, true); // die Monate von vorhin sind ja da
+  });
+
+  test('zweimal gleichzeitig angestoßen: nur einmal gelesen', async () => {
+    const log = [];
+    const { store } = aufbau({ aendern: protokolliert(log) });
+    await store.laden();
+    await Promise.all([store.schichtVorladen(), store.schichtVorladen()]);
+    assert.equal(log.filter((x) => x === 'arten').length, 1);
   });
 });
