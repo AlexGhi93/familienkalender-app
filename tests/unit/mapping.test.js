@@ -5,6 +5,7 @@ import {
   EINKAUF_ID,
   EINSTELLUNGEN_ID,
   ERINNERUNG_VORHER,
+  FIX_IDS,
   GERAETE_ID,
   KONTO_ID,
   MAX_EINSTELLUNGEN_ZEICHEN,
@@ -15,6 +16,10 @@ import {
   einstellungenAusEreignis,
   einstellungenZuEreignis,
   endeAus,
+  fixShardAusEreignis,
+  fixShardId,
+  fixShardZuEreignis,
+  istFixId,
   ereignisZuEintrag,
   geraeteAusEreignis,
   geraeteZuEreignis,
@@ -35,6 +40,7 @@ import { ereignisseZuZustand } from '../../src/calendar/zustand.js';
 import { normalizeSettings } from '../../src/domain/settings.js';
 import { leereListe } from '../../src/domain/einkauf.js';
 import { leeresKonto } from '../../src/domain/konto.js';
+import { leererShard, postenArchivieren, postenSetzen, shardText } from '../../src/domain/fixkosten.js';
 import { katalogText, leererMonat, monatText, setzeNotiz, setzeSchicht, standardKatalog } from '../../src/domain/schicht.js';
 
 const settings = normalizeSettings();
@@ -276,5 +282,56 @@ describe('Schichtplan: versteckte Ereignisse', () => {
     for (const e of [schichtartenZuEreignis(standardKatalog()).body, schichtMonatZuEreignis(monat).body, { id: 'fksch209912', summary: 'Krank', start: { date: '2000-01-01' } }]) {
       assert.deepEqual(ereignisZuEintrag(e, 'anwesenheit', settings), { art: 'ignorieren' });
     }
+  });
+});
+
+describe('Fixkosten: versteckte Ereignisse (4 Teile)', () => {
+  const GOOGLE_ID = /^[a-v0-9]{5,1024}$/;
+  const p = (id, name, aenderung = {}) => ({ id, name, cents: 5900, ungefaehr: false, intervall: 1, tag: '1', start: '2026-10', kategorie: 'versicherung', person: 'papa', ...aenderung });
+  const shard = postenArchivieren(postenSetzen(postenSetzen(leererShard(), p('kfa00001', 'Kfz-Versicherung Papa', { vertrag: { bis: '2026-12-31', verlaengerung: 12, frist: '1m' }, notiz: 'Polizze 47' })), p('aaaa0001', 'Altvertrag')), 'aaaa0001', '2026-09-01');
+
+  test('IDs: fkfest0 … fkfest3 (fkfix ginge nicht: x ist bei Google verboten), nur erlaubte Zeichen; andere Nummern werden abgelehnt', () => {
+    assert.deepEqual(FIX_IDS, ['fkfest0', 'fkfest1', 'fkfest2', 'fkfest3']);
+    assert.ok(Object.isFrozen(FIX_IDS));
+    for (const [nr, id] of FIX_IDS.entries()) {
+      assert.equal(fixShardId(nr), id);
+      assert.match(id, GOOGLE_ID);
+      assert.equal(istFixId(id), true);
+    }
+    for (const falsch of [-1, 4, 1.5, '1', null, undefined]) assert.throws(() => fixShardId(falsch), /Ungültiger Teil der Fixkosten/);
+    for (const andere of ['fk20261014', 'fkc20261014', 'fkkonto', 'fksch202610', 'fkfe', 'fkfix0', undefined, null]) assert.equal(istFixId(andere), false, String(andere));
+  });
+
+  test('Ereignis am 2000-01-01 in „Anwesenheit“, transparent, ohne Erinnerung; der Titel nennt weder Namen noch Beträge', () => {
+    for (const nr of [0, 1, 2, 3]) {
+      const e = fixShardZuEreignis(nr, shard);
+      assert.deepEqual([e.kalender, e.id, e.body.id, e.body.summary], ['anwesenheit', `fkfest${nr}`, `fkfest${nr}`, '💶 fk Fixkosten (nicht löschen)']);
+      assert.deepEqual([e.body.start, e.body.end, e.body.transparency], [{ date: '2000-01-01' }, { date: '2000-01-02' }, 'transparent']);
+      assert.deepEqual(e.body.reminders, { useDefault: false, overrides: [] });
+      assert.deepEqual(e.body.extendedProperties.private, { fk: '1', typ: 'fixkosten', v: '1' });
+      assert.equal(e.body.description, shardText(shard));
+      for (const inhalt of ['Kfz', 'Papa', '59', 'Polizze']) assert.ok(!e.body.summary.includes(inhalt), inhalt);
+    }
+  });
+
+  test('zu voller Teil wird vor dem Schreiben abgelehnt', () => {
+    const riesig = { v: 1, posten: Array.from({ length: 60 }, (_, i) => p(`v${String(i).padStart(7, '0')}`, 'N'.repeat(40), { notiz: 'Z'.repeat(80) })) };
+    assert.throws(() => fixShardZuEreignis(0, riesig), /Dieser Teil der Fixkosten ist voll/);
+  });
+
+  test('zurücklesen: gleicher Teil, ohne Warnung; kaputt → leerer Teil mit Warnung, ohne Ausnahme', () => {
+    assert.deepEqual(fixShardAusEreignis(fixShardZuEreignis(2, shard).body), { shard, warnungen: [] });
+    const kaputt = fixShardAusEreignis({ description: '{kaputt' });
+    assert.deepEqual(kaputt.shard, leererShard());
+    assert.equal(kaputt.warnungen.length, 1);
+    assert.deepEqual(fixShardAusEreignis(undefined), { shard: leererShard(), warnungen: [] });
+    const beschaedigt = fixShardAusEreignis({ description: JSON.stringify({ v: 1, p: [{ i: 'aaaa1', n: { toString: 1 }, c: 1 }] }) });
+    assert.deepEqual(beschaedigt.shard, leererShard());
+    assert.equal(beschaedigt.warnungen.length, 1);
+  });
+
+  test('ereignisZuEintrag ignoriert alle vier Teile (auch mit fremdem Titel)', () => {
+    for (const nr of [0, 1, 2, 3]) assert.deepEqual(ereignisZuEintrag(fixShardZuEreignis(nr, shard).body, 'anwesenheit', settings), { art: 'ignorieren' });
+    assert.deepEqual(ereignisZuEintrag({ id: 'fkfest1', summary: 'Krank', start: { date: '2000-01-01' } }, 'anwesenheit', settings), { art: 'ignorieren' });
   });
 });

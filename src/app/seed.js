@@ -3,6 +3,7 @@ import { isFeiertag } from '../domain/feiertage.js';
 import { normalizeSettings } from '../domain/settings.js';
 import { ARZT_SUBTYPEN } from '../domain/types.js';
 import { leererMonat, setzeNotiz, setzeSchicht, standardKatalog, tageImMonat, zusatzHinzufuegen } from '../domain/schicht.js';
+import { FIX_SHARDS, leererShard, postenSetzen, shardFuer } from '../domain/fixkosten.js';
 import { naechsterKitaTag, wochenSerie } from './serie.js';
 
 const MUSTER = ['kita_essen', 'kita_essen', 'kita_essen', 'kita_ohne', 'kita_essen', 'kita_essen', 'kita_essen', 'kita_essen'];
@@ -120,7 +121,8 @@ export function seedDemo(heute) {
   });
   konto.x.push({ i: 'demoex01', p: 'mama', m: monatVor(3), c: 60000, t: 'Steuerrückzahlung' }, { i: 'demoex02', p: 'papa', m: monatVor(2), c: -45000, t: 'Autoreparatur' });
   const schicht = schichtDemo([monatVor(1), monatVor(0), monatVor(-1)]);
-  return { settings, tage, urlaub, termine: [...termine, ...sachenDemo({ settings, tage, urlaub }, heute)], einkauf, konto, schicht };
+  const fixkosten = fixkostenDemo(monatVor);
+  return { settings, tage, urlaub, termine: [...termine, ...sachenDemo({ settings, tage, urlaub }, heute)], einkauf, konto, schicht, fixkosten };
 }
 
 // Papa: Blöcke aus 4 Diensten, dann 2 Tage frei (fortlaufend über Monatsgrenzen); jeder Block mit anderen Arten.
@@ -157,6 +159,34 @@ function schichtDemo([vorher, jetzt, danach]) {
   monate[jetzt] = zusatzHinzufuegen(monate[jetzt], { person: 'mama', tag: 21, k: k('mama', 'DB'), von: '18:00', bis: '19:30' });
   for (const tag of [10, 11, 12]) monate[danach] = setzeSchicht(monate[danach], { person: 'mama', tag, k: k('mama', 'U') });
   return { katalog, monate };
+}
+
+/**
+ * Erfundene Fixkosten (keine echten Namen oder Beträge), relativ zu heute: 12 aktive Posten und ein archivierter, zwei davon Verträge –
+ * die Kfz-Versicherung ist in höchstens 60 Tagen kündbar (⚠), das Fitnessstudio erst in etwa einem halben Jahr.
+ * Jeder Posten liegt in seinem Teil shardFuer(id). `monatVor(n)` = 'JJJJ-MM' n Monate vor heute (negativ = danach).
+ */
+function fixkostenDemo(monatVor) {
+  const monatsende = (jm) => `${jm}-${String(tageImMonat(jm)).padStart(2, '0')}`;
+  const p = (nr, name, cents, kategorie, person, mehr = {}) => ({ id: `demofk${String(nr).padStart(2, '0')}`, name, cents, ungefaehr: false, intervall: 1, tag: '1', start: monatVor(12), kategorie, person, ...mehr });
+  const posten = [
+    p(1, 'Miete', 105000, 'wohnen', 'gemeinsam'),
+    p(2, 'Strom', 7400, 'wohnen', 'gemeinsam', { ungefaehr: true, tag: '15' }),
+    p(3, 'Fernwärme', 17800, 'wohnen', 'gemeinsam', { ungefaehr: true, intervall: 2, tag: '20', start: monatVor(10) }), // diesen Monat fällig
+    p(4, 'ORF-Beitrag', 18360, 'wohnen', 'gemeinsam', { intervall: 12, tag: '15', start: monatVor(9) }), // in 3 Monaten fällig
+    p(5, 'Kfz-Versicherung Papa', 5900, 'versicherung', 'papa', { vertrag: { bis: monatsende(monatVor(-2)), verlaengerung: 12, frist: '1m' } }),
+    p(6, 'Krankenversicherung Kind', 3200, 'versicherung', 'kind', { tag: '5' }),
+    p(7, 'Handy Mama', 1500, 'kommunikation', 'mama', { tag: '10' }),
+    p(8, 'Internet', 3990, 'kommunikation', 'gemeinsam', { tag: '10' }),
+    p(9, 'Fitnessstudio', 2990, 'freizeit', 'mama', { tag: 'letzter', vertrag: { bis: monatsende(monatVor(-8)), verlaengerung: 12, frist: '2m' } }),
+    p(10, 'Streaming', 1399, 'freizeit', 'gemeinsam', { tag: '28' }),
+    p(11, 'Friseur', 3500, 'sonstiges', 'papa', { ungefaehr: true, tag: '25' }),
+    p(12, 'Kontoführung', 1890, 'bank', 'papa', { intervall: 3, tag: 'letzter', start: monatVor(6) }),
+    p(13, 'Babyschwimmen', 4500, 'kind', 'kind', { tag: '3', archiv: `${monatVor(1)}-01` }), // im Archiv
+  ];
+  const shards = Array.from({ length: FIX_SHARDS }, leererShard);
+  for (const x of posten) shards[shardFuer(x.id)] = postenSetzen(shards[shardFuer(x.id)], x);
+  return { shards };
 }
 
 /** Sachen für die Krabbelstube: Hinbringen in der nächsten Woche, Heimholen am Freitag danach, später Windeln und Socken. */

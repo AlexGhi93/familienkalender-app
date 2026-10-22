@@ -3,6 +3,7 @@ import { normalizeSettings } from '../domain/settings.js';
 import { leereListe, normalisiereListe } from '../domain/einkauf.js';
 import { leeresKonto, normalisiereKonto } from '../domain/konto.js';
 import { katalogText, leererMonat, monatText, normalisiereKatalog, normalisiereMonat, standardKatalog } from '../domain/schicht.js';
+import { FIX_SHARDS, leererShard, normalisiereShard, shardText } from '../domain/fixkosten.js';
 import { seedDemo } from './seed.js';
 
 const KEY = 'fk.demo.v1';
@@ -19,6 +20,12 @@ function schichtAusSpeicher(roh) {
     }
   }
   return { katalog, monate };
+}
+
+/** Fixkosten aus dem Speicher nachsichtig lesen: { shards: [Teil | null ×4] }; Unbrauchbares wird zum leeren Teil, ungültige Posten fallen weg. */
+function fixkostenAusSpeicher(roh) {
+  const liste = Array.isArray(roh?.shards) ? roh.shards : [];
+  return { shards: Array.from({ length: FIX_SHARDS }, (_, nr) => (liste[nr] == null ? null : normalisiereShard(liste[nr]))) };
 }
 
 /**
@@ -63,6 +70,7 @@ export function createDemoAdapter({ speicher = globalThis.localStorage, jetzt = 
           daten.einkauf = normalisiereListe(daten.einkauf ?? leereListe()); // Demo-Speicher aus einer älteren Version hat noch keine Liste
           daten.konto = normalisiereKonto(daten.konto ?? leeresKonto()); // … und noch keine Kontostände
           daten.schicht = schichtAusSpeicher(daten.schicht); // … und noch keinen Schichtplan
+          daten.fixkosten = fixkostenAusSpeicher(daten.fixkosten); // … und noch keine Fixkosten
         }
       }
       return structuredClone(daten);
@@ -122,6 +130,20 @@ export function createDemoAdapter({ speicher = globalThis.localStorage, jetzt = 
       if (!neu) return null;
       monatText({ ...neu, jm }); // wirft, wenn er nicht in den Kalender passen würde
       daten.schicht.monate[jm] = structuredClone({ ...neu, jm });
+      sichern();
+      return structuredClone(neu);
+    },
+    /** Fixkosten lesen (wie beim Google-Adapter): { shards: [Teil | null ×4], warnungen }. */
+    async leseFixkosten() {
+      return { shards: structuredClone(daten?.fixkosten?.shards ?? Array(FIX_SHARDS).fill(null)), warnungen: [] };
+    },
+    /** Teil `nr` (0 … 3) ändern: `aenderung(teil)` → neuer Teil (fehlt er: leerer Teil); zu volle Teile werden wie bei Google abgelehnt. */
+    async aendereFixShard(nr, aenderung) {
+      if (!Number.isInteger(nr) || nr < 0 || nr >= FIX_SHARDS) throw new Error(`Ungültiger Teil der Fixkosten: ${nr}`);
+      const neu = aenderung(structuredClone(daten.fixkosten.shards[nr] ?? leererShard()));
+      if (!neu) return null;
+      shardText(neu); // wirft, wenn er nicht in den Kalender passen würde
+      daten.fixkosten.shards[nr] = structuredClone(neu);
       sichern();
       return structuredClone(neu);
     },

@@ -10,7 +10,7 @@
 //   vertrag    bis 'JJJJ-MM-TT' (läuft bis), verlaengerung (Monate aus FIX_VERLAENGERUNG, 0 = endet), frist (FIX_FRISTEN[].id) – vor Ende
 //   notiz      ≤ 80 Zeichen; archiv 'JJJJ-MM-TT' = ab diesem Tag nicht mehr aktiv (Zahlungen davor zählen noch)
 //
-// Gespeichert wird in FIX_SHARDS (4) versteckten Kalenderereignissen; jeder Teil ist ein JSON ≤ MAX_FIX_ZEICHEN mit KURZEN Schlüsseln:
+// Gespeichert wird in FIX_SHARDS (4) versteckten Kalenderereignissen („fkfest0“ … „fkfest3“, siehe calendar/mapping.js); jeder Teil ist ein JSON ≤ MAX_FIX_ZEICHEN mit KURZEN Schlüsseln:
 //   Teil:    { v: 1, p: [ … ] }                         (im Speicher: { v: 1, posten: [ … ] })
 //   Posten:  i=id  n=name  c=cents  u=ungefaehr (nur 1, false fällt weg)  m=intervall  d=tag  s=start  k=kategorie  w=person (wer)
 //            r=vertrag { b=bis, l=verlaengerung, f=frist }  t=notiz  a=archiv
@@ -106,7 +106,8 @@ const ZU_VOLL = 'Dieser Teil der Fixkosten ist voll. Bitte Notizen kürzen oder 
 const ZU_VIELE = `Höchstens ${MAX_FIX_POSTEN} Fixkosten-Posten (mit Archiv). Bitte archivierte Posten endgültig löschen.`;
 
 const pad2 = (n) => String(n).padStart(2, '0');
-const sauber = (text) => String(text ?? '').normalize('NFC').replace(/\s+/g, ' ').trim();
+/** Bereinigter Text; was kein Text ist (auch beschädigtes JSON wie {"toString":1}), ergibt '' – nie ein Fehler. */
+const sauber = (text) => (typeof text === 'string' ? text.normalize('NFC').replace(/\s+/g, ' ').trim() : '');
 const zeichen = (text) => [...text].length; // Zeichen, nicht UTF-16-Einheiten
 const istObjekt = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 const tageImMonat = (jahr, monat) => new Date(Date.UTC(jahr, monat, 0)).getUTCDate();
@@ -166,7 +167,7 @@ export function postenPruefen(entwurf) {
     const f = vertragFehler(e.vertrag);
     if (f) return f;
   }
-  if (e.notiz !== undefined && e.notiz !== null && zeichen(sauber(e.notiz)) > MAX_FIX_NOTIZ) return `Die Notiz darf höchstens ${MAX_FIX_NOTIZ} Zeichen haben.`;
+  if (zeichen(sauber(e.notiz)) > MAX_FIX_NOTIZ) return `Die Notiz darf höchstens ${MAX_FIX_NOTIZ} Zeichen haben.`;
   if (e.id !== undefined && (typeof e.id !== 'string' || !KENNUNG.test(e.id))) return 'Ungültige Kennung.';
   if (e.archiv !== undefined && e.archiv !== null && (typeof e.archiv !== 'string' || !isValidDate(e.archiv))) return 'Ungültiges Archivdatum.';
   return null;
@@ -225,16 +226,23 @@ export const leererShard = () => ({ v: 1, posten: [] });
 /** Prüft einen Teil im Speicherformat nachsichtig: ungültige oder doppelte Posten fallen einzeln weg; Unbrauchbares → leerer Teil. */
 export function normalisiereShard(roh) {
   if (!istObjekt(roh) || roh.v !== 1 || !Array.isArray(roh.posten)) return leererShard();
+  return { v: 1, posten: gueltigePosten(roh.posten).posten };
+}
+
+/** Gültige Posten einer Liste (doppelte Kennungen und alles über MAX_FIX_POSTEN fallen weg) und die Zahl der verworfenen. */
+function gueltigePosten(liste) {
   const gesehen = new Set();
   const posten = [];
-  for (const r of roh.posten) {
+  let verworfen = 0;
+  for (const r of liste) {
     const p = normalisierePosten(r);
-    if (!p || gesehen.has(p.id)) continue;
-    gesehen.add(p.id);
-    posten.push(p);
-    if (posten.length >= MAX_FIX_POSTEN) break;
+    if (!p || gesehen.has(p.id) || posten.length >= MAX_FIX_POSTEN) verworfen += 1;
+    else {
+      gesehen.add(p.id);
+      posten.push(p);
+    }
   }
-  return { v: 1, posten };
+  return { posten, verworfen };
 }
 
 function kurz(p) {
@@ -272,18 +280,53 @@ export function shardText(shard) {
   return text;
 }
 
-/** Text aus dem Kalender → Teil im Speicherformat (leer oder kaputt → leerer Teil; ungültige Posten fallen einzeln weg). */
-export function shardAusText(text) {
-  if (typeof text !== 'string' || text.trim() === '') return leererShard();
+const kuerzen = (text, max) => [...text].slice(0, max).join('').trim();
+
+/**
+ * Repariert beim Lesen, was sich retten lässt, statt den Posten zu verwerfen: zu langer Name oder zu lange Notiz → gekürzt,
+ * eine Notiz, die kein Text ist → entfernt (jeweils mit Warnung). Alles andere prüft normalisierePosten.
+ */
+function retten(k, warnungen) {
+  if (!istObjekt(k)) return k;
+  const r = { ...k };
+  const name = sauber(r.n);
+  if (zeichen(name) > MAX_FIX_NAME) {
+    r.n = kuerzen(name, MAX_FIX_NAME);
+    warnungen.push(`Der Name „${r.n}…“ war zu lang und wurde gekürzt.`);
+  }
+  if ('t' in r && typeof r.t !== 'string') {
+    delete r.t;
+    if (name !== '') warnungen.push(`Die Notiz bei „${name}“ war unlesbar und wurde entfernt.`);
+  } else if (zeichen(sauber(r.t)) > MAX_FIX_NOTIZ) {
+    r.t = kuerzen(sauber(r.t), MAX_FIX_NOTIZ);
+    warnungen.push(`Die Notiz bei „${sauber(r.n)}“ war zu lang und wurde gekürzt.`);
+  }
+  return r;
+}
+
+/**
+ * Text aus dem Kalender → { shard, warnungen }. Wirft nie: fehlender Text → leerer Teil; unlesbarer Text → leerer Teil mit Warnung;
+ * beschädigte Posten fallen einzeln weg (eine Warnung mit der Anzahl), zu lange Texte werden gekürzt.
+ * Achtung: Was verworfen wurde, fehlt auch beim nächsten Schreiben dieses Teils (wie beim Kontostand).
+ */
+export function shardLesen(text) {
+  if (typeof text !== 'string' || text.trim() === '') return { shard: leererShard(), warnungen: [] };
   let roh;
   try {
     roh = JSON.parse(text);
   } catch {
-    return leererShard();
+    roh = null;
   }
-  if (!istObjekt(roh) || roh.v !== 1 || !Array.isArray(roh.p)) return leererShard();
-  return normalisiereShard({ v: 1, posten: roh.p.map(lang) });
+  if (!istObjekt(roh) || roh.v !== 1 || !Array.isArray(roh.p)) return { shard: leererShard(), warnungen: ['Ein Teil der Fixkosten war unlesbar; er wird leer gezeigt.'] };
+  const warnungen = [];
+  const { posten, verworfen } = gueltigePosten(roh.p.map((k) => lang(retten(k, warnungen))));
+  if (verworfen === 1) warnungen.unshift('1 Fixkosten-Posten war beschädigt und wird nicht gezeigt.');
+  if (verworfen > 1) warnungen.unshift(`${verworfen} Fixkosten-Posten waren beschädigt und werden nicht gezeigt.`);
+  return { shard: { v: 1, posten }, warnungen };
 }
+
+/** Text aus dem Kalender → Teil im Speicherformat (wie shardLesen, ohne Warnungen). */
+export const shardAusText = (text) => shardLesen(text).shard;
 
 /**
  * Darf ein Posten mit dieser Kennung gespeichert werden? Ein neuer nur, solange es insgesamt (alle Teile, archivierte mitgezählt)
@@ -297,20 +340,30 @@ export function postenAnzahlPruefen(shards, id) {
 
 // ---------------------------------------------------------------- Änderungen (rein, wiederholbar)
 
-/** Neuer Teil mit dieser Liste; wirft, wenn er nicht mehr in den Kalender passt. */
-function mitPosten(liste) {
+/** So viele Zeichen kostet das Archivdatum im Text: ,"a":"JJJJ-MM-TT" (17). */
+const ARCHIV_ZEICHEN = JSON.stringify({ a: '2000-01-01' }).length - 1;
+
+/**
+ * Neuer Teil mit dieser Liste; wirft, wenn er nicht mehr in den Kalender passt.
+ * Regel für einen vollen Teil: Anlegen und Ändern (`reserve`) müssen Platz lassen, um JEDEN aktiven Posten später zu archivieren
+ * (17 Zeichen je Posten). Archivieren verbraucht genau diese Reserve, Wiederherstellen gibt sie zurück, Löschen macht Platz –
+ * deshalb gelingen diese drei in jedem so gebauten Teil, ohne die 6000 Zeichen zu überschreiten, und ein voller Teil lässt sich
+ * stets leeren (archivieren, dann endgültig löschen).
+ */
+function mitPosten(liste, reserve) {
   const neu = { v: 1, posten: liste };
-  shardText(neu);
+  const laenge = shardText(neu).length;
+  if (reserve && laenge + ARCHIV_ZEICHEN * liste.filter((p) => !p.archiv).length > MAX_FIX_ZEICHEN) throw new Error(ZU_VOLL);
   return neu;
 }
 
-function ersetze(shard, id, aendern) {
+function ersetze(shard, id, aendern, reserve = false) {
   const liste = shard.posten ?? [];
   const i = liste.findIndex((p) => p.id === id);
   if (i < 0) return shard; // unbekannt (z. B. vom anderen Gerät gelöscht) → nichts zu tun
   const neu = aendern(liste[i]);
   if (JSON.stringify(neu) === JSON.stringify(liste[i])) return shard;
-  return mitPosten(liste.map((p, j) => (j === i ? neu : p)));
+  return mitPosten(liste.map((p, j) => (j === i ? neu : p)), reserve);
 }
 
 /** Legt einen Posten an oder ersetzt den mit derselben Kennung (an derselben Stelle). Wirft mit der Meldung aus postenPruefen. */
@@ -322,9 +375,9 @@ export function postenSetzen(shard, posten) {
   const liste = shard.posten ?? [];
   if (!liste.some((p) => p.id === neu.id)) {
     if (liste.length >= MAX_FIX_POSTEN) throw new Error(ZU_VIELE);
-    return mitPosten([...liste, neu]);
+    return mitPosten([...liste, neu], true);
   }
-  return ersetze(shard, neu.id, () => neu);
+  return ersetze(shard, neu.id, () => neu, true);
 }
 
 /** Archiviert einen Posten ab `datum` ('JJJJ-MM-TT'): ab diesem Tag zählt er nicht mehr (Zahlungen davor bleiben in früheren Monaten). */

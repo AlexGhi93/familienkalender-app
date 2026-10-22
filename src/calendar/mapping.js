@@ -11,6 +11,7 @@ import { normalisiereRegister, registerText } from '../push/geraete.js';
 import { einkaufAusText, einkaufText } from '../domain/einkauf.js';
 import { kontoAusText, kontoText } from '../domain/konto.js';
 import { katalogAusText, katalogText, monatAusText, monatText } from '../domain/schicht.js';
+import { FIX_SHARDS, shardLesen, shardText } from '../domain/fixkosten.js';
 import { classifyEvent } from '../domain/classify.js';
 import { zeitAusDateTime } from '../domain/format.js';
 import { DEFAULT_SETTINGS, normalizeSettings } from '../domain/settings.js';
@@ -228,7 +229,7 @@ export function schichtMonatId(jm) {
 /** Schichtarten und alle Schichtmonate beginnen mit „fksch“ und sind für die übrige App unsichtbar. */
 export const istSchichtId = (id) => typeof id === 'string' && id.startsWith('fksch');
 
-/** Verstecktes Schicht-Ereignis (JSON in `description`, wie der Kontostand am 2000-01-01 in „Anwesenheit“, ohne Erinnerung). */
+/** Verstecktes Ereignis für Schichtplan und Fixkosten (JSON in `description`, wie der Kontostand am 2000-01-01 in „Anwesenheit“, ohne Erinnerung). */
 function schichtEreignis(id, summary, description, typ) {
   return {
     kalender: 'anwesenheit',
@@ -264,6 +265,31 @@ export function schichtMonatZuEreignis(monat) {
 /** Liest den Monat `jm`; fehlendes JSON ergibt den leeren Monat, kaputtes den leeren Monat mit Warnung. */
 export function schichtMonatAusEreignis(event, jm) {
   return monatAusText(event?.description, jm);
+}
+
+/**
+ * Die vier Teile der Fixkosten: `fkfest0` … `fkfest3` („Festkosten“; „fkfix“ ginge nicht, x liegt außerhalb von 0-9 und a-v).
+ * Ein Posten liegt immer im Teil shardFuer(id), siehe domain/fixkosten.js.
+ */
+export const FIX_IDS = Object.freeze(Array.from({ length: FIX_SHARDS }, (_, nr) => `fkfest${nr}`));
+
+/** ID des Teils `nr` (0 … 3). */
+export function fixShardId(nr) {
+  if (!Number.isInteger(nr) || nr < 0 || nr >= FIX_SHARDS) throw new Error(`Ungültiger Teil der Fixkosten: ${nr}`);
+  return FIX_IDS[nr];
+}
+
+/** Alle Teile der Fixkosten beginnen mit „fkfest“ und sind für die übrige App unsichtbar. */
+export const istFixId = (id) => typeof id === 'string' && id.startsWith('fkfest');
+
+/** Teil `nr` der Fixkosten als verstecktes Ereignis (wie die Schichtmonate); der Titel nennt keine Posten oder Beträge, ein zu voller Teil wird abgelehnt. */
+export function fixShardZuEreignis(nr, shard) {
+  return schichtEreignis(fixShardId(nr), '💶 fk Fixkosten (nicht löschen)', shardText(shard), 'fixkosten');
+}
+
+/** Liest einen Teil: { shard, warnungen }; fehlendes JSON → leerer Teil, kaputtes → leerer Teil mit Warnung, beschädigte Posten fallen einzeln weg. */
+export function fixShardAusEreignis(event) {
+  return shardLesen(event?.description);
 }
 
 /** Liest das Register; unbrauchbares JSON ergibt `register: null` (nichts wird gelöscht oder erraten). */
@@ -316,7 +342,7 @@ export function einstellungenAusEreignis(event) {
 export function ereignisZuEintrag(event, kalender, settings) {
   if (event.status === 'cancelled' || !event.start) return { art: 'ignorieren' };
   if (event.id === EINSTELLUNGEN_ID) return { art: 'einstellungen', ...einstellungenAusEreignis(event) };
-  if (event.id === TEST_ID || event.id === GERAETE_ID || event.id === EINKAUF_ID || event.id === KONTO_ID || istSchichtId(event.id)) return { art: 'ignorieren' };
+  if (event.id === TEST_ID || event.id === GERAETE_ID || event.id === EINKAUF_ID || event.id === KONTO_ID || istSchichtId(event.id) || istFixId(event.id)) return { art: 'ignorieren' };
 
   const { typ, subtyp, quelle } = classifyEvent(event, kalender);
   if (TAGES_TYPEN.includes(typ)) return { art: 'tag', id: event.id, typ, tage: spanDays(eventSpan(event)), quelle };

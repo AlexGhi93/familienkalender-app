@@ -28,6 +28,7 @@ import {
   postenWiederherstellen,
   shardAusText,
   shardFuer,
+  shardLesen,
   shardText,
   summen,
   vertragStatus,
@@ -411,7 +412,8 @@ describe('Teile (Shards)', () => {
     assert.ok(i >= 15, `nur ${i} Posten`);
     assert.equal(shard.posten.length, i);
     assert.ok(shardText(shard).length <= MAX_FIX_ZEICHEN);
-    assert.throws(() => shardText({ v: 1, posten: [...shard.posten, lang(999)] }), /Dieser Teil der Fixkosten ist voll/);
+    assert.throws(() => postenSetzen(shard, lang(999)), /Dieser Teil der Fixkosten ist voll/);
+    assert.throws(() => shardText({ v: 1, posten: Array.from({ length: 40 }, (_, n) => lang(n)) }), /Dieser Teil der Fixkosten ist voll/); // harte Grenze beim Schreiben
   });
 
   test('postenAnzahlPruefen: höchstens 100 Posten insgesamt (archivierte mitgezählt); bestehender darf geändert werden', () => {
@@ -472,5 +474,89 @@ describe('Änderungen: rein und wiederholbar', () => {
         ['bbbb1', null],
       ],
     );
+  });
+});
+
+describe('Beschädigte Teile lesen (nie werfen)', () => {
+  const k = (aenderung = {}) => ({ i: 'aaaa1', n: 'Miete', c: 100, m: 1, d: '1', s: '2026-01', k: 'wohnen', w: 'papa', ...aenderung });
+  const text = (...p) => JSON.stringify({ v: 1, p });
+
+  test('Name oder Notiz als Objekt ohne toString → kein Fehler; ohne Namen fällt der Posten weg, die Notiz wird entfernt', () => {
+    const t = text(k({ i: 'aaaa1', n: {} }), k({ i: 'aaaa2', n: { toString: 1 } }), k({ i: 'aaaa3', n: 'Strom', t: { toString: 1 } }), k({ i: 'aaaa4', n: 'Handy', t: 123 }));
+    assert.doesNotThrow(() => shardAusText(t));
+    const shard = shardAusText(t);
+    assert.deepEqual(
+      shard.posten.map((p) => [p.id, p.name, p.notiz ?? null]),
+      [
+        ['aaaa3', 'Strom', null],
+        ['aaaa4', 'Handy', null],
+      ],
+    );
+    const { warnungen } = shardLesen(t);
+    assert.equal(warnungen.length, 3, warnungen.join(' | ')); // 2 Posten weg (eine Meldung), 2 Notizen entfernt
+    assert.ok(warnungen.some((w) => w.includes('2 Fixkosten-Posten')), warnungen.join(' | '));
+  });
+
+  test('zu langer Name oder zu lange Notiz wird beim Lesen gekürzt (mit Warnung), der Posten bleibt', () => {
+    const { shard, warnungen } = shardLesen(text(k({ n: `${'N'.repeat(39)}😀xyz`, t: 'Z'.repeat(100) })));
+    assert.equal(shard.posten.length, 1);
+    assert.equal(shard.posten[0].name, `${'N'.repeat(39)}😀`); // Zeichen, nicht UTF-16-Einheiten
+    assert.equal(shard.posten[0].notiz, 'Z'.repeat(80));
+    assert.equal(warnungen.length, 2);
+  });
+
+  test('gültiger Teil → keine Warnung; unlesbarer Teil → leer mit Warnung; fehlender Text → leer ohne Warnung', () => {
+    assert.deepEqual(shardLesen(text(k())).warnungen, []);
+    assert.deepEqual(shardLesen('{kaputt'), { shard: leererShard(), warnungen: ['Ein Teil der Fixkosten war unlesbar; er wird leer gezeigt.'] });
+    assert.deepEqual(shardLesen('{"v":2,"p":[]}').shard, leererShard());
+    assert.equal(shardLesen('{"v":2,"p":[]}').warnungen.length, 1);
+    assert.deepEqual(shardLesen(''), { shard: leererShard(), warnungen: [] });
+    assert.deepEqual(shardLesen(undefined), { shard: leererShard(), warnungen: [] });
+  });
+
+  test('Prüfen: Name muss Text sein; eine Notiz, die kein Text ist, zählt als keine Notiz', () => {
+    assert.equal(postenPruefen(posten({ name: 123 })), 'Bitte einen Namen eingeben.');
+    assert.equal(postenPruefen(posten({ name: {} })), 'Bitte einen Namen eingeben.');
+    assert.doesNotThrow(() => postenPruefen(posten({ name: { toString: 1 } })));
+    assert.equal(postenPruefen(posten({ notiz: { toString: 1 } })), null);
+    assert.equal('notiz' in normalisierePosten(posten({ notiz: 42 })), false);
+  });
+});
+
+describe('Voller Teil: Archivieren geht immer', () => {
+  const lang = (n) => posten({ id: `v${String(n).padStart(7, '0')}`, name: 'N'.repeat(40), notiz: 'Z'.repeat(80), vertrag: { bis: '2026-12-31', verlaengerung: 12, frist: '1m' } });
+  function voll() {
+    let shard = leererShard();
+    for (let i = 0; ; i += 1) {
+      try {
+        shard = postenSetzen(shard, lang(i));
+      } catch (e) {
+        assert.match(e.message, /Dieser Teil der Fixkosten ist voll/);
+        return shard;
+      }
+    }
+  }
+
+  test('bis zum Rand gefüllt → jeder Posten lässt sich archivieren (bleibt ≤ 6000 Zeichen), danach löschen', () => {
+    let shard = voll();
+    const anzahl = shard.posten.length;
+    for (const p of shard.posten) {
+      shard = postenArchivieren(shard, p.id, '2026-11-01');
+      assert.ok(shardText(shard).length <= MAX_FIX_ZEICHEN);
+    }
+    assert.ok(shard.posten.every((p) => p.archiv === '2026-11-01'));
+    shard = postenLoeschen(shard, lang(0).id);
+    assert.equal(shard.posten.length, anzahl - 1);
+    shard = postenSetzen(shard, lang(0)); // Platz ist wieder frei
+    assert.equal(shard.posten.length, anzahl);
+  });
+
+  test('Wiederherstellen eines archivierten Postens im vollen Teil klappt ebenfalls', () => {
+    let shard = voll();
+    shard = postenArchivieren(shard, lang(0).id, '2026-11-01');
+    assert.throws(() => postenSetzen(shard, lang(9999)), /Dieser Teil der Fixkosten ist voll/); // die Reserve ist kein neuer Platz
+    shard = postenWiederherstellen(shard, lang(0).id);
+    assert.equal(shard.posten[0].archiv, undefined);
+    assert.doesNotThrow(() => postenArchivieren(shard, lang(1).id, '2026-11-01'));
   });
 });
