@@ -39,7 +39,7 @@ const SEITEN = {
   mehr: mehrScreen,
   einkauf: einkaufScreen, // Registerkarte; auch erreichbar von „Heute“ (Karte) und „Neu“ (Kachel)
   verlauf: verlaufScreen, // erreichbar von „Mehr“
-  konto: kontoScreen, // Registerkarte „Konto“ mit „Kontostand · Fixkosten · Sparziele“; auch erreichbar von „Mehr“, „Heute“ (am letzten Tag) und den Erinnerungen (#/konto/kontostand, #/konto/fixkosten, #/konto/sparziele)
+  konto: kontoScreen, // Registerkarte „Konto“ mit „Kontostand · Fixkosten · Sparziele“; auch erreichbar von „Mehr“, „Heute“ (am letzten Tag) und den Erinnerungen (#/konto/kontostand, #/konto/fixkosten); #/konto/sparziele öffnet die Sparziele direkt
   app: appScreen, // „Konto & App“: erreichbar von „Mehr“
 };
 
@@ -348,6 +348,7 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
   fenster.addEventListener('hashchange', () => ui.rendern());
 
   let letzterFehler = null;
+  let letzteFehlerNr = store.getState().fehlerNr ?? 0;
   let speicherZeitgeber = null;
   let pushQuellen = null; // wovon der zuletzt angestoßene Push-Plan abhing (siehe planQuellen)
   let checksUrlaub = null;
@@ -356,13 +357,14 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
   let checksZeitgeber = null;
   let gemeldet = store.getState(); // zuletzt gemeldeter (bzw. beim Start gezeichneter) Zustand
   store.subscribe((state) => {
-    // Hat sich nur der Schichtplan oder die Fixkosten geändert (z. B. das Vorladen im Hintergrund), bleibt jede Seite, die sie nicht zeigt,
+    // Hat sich nur der Schichtplan, die Fixkosten oder die Sparziele geändert (z. B. das Vorladen im Hintergrund), bleibt jede Seite, die sie nicht zeigt,
     // wie sie ist; neu gezeichnet würde sie z. B. die Animationen in „Mehr“ abbrechen. Offene Blätter melden sich selbst an.
     const nurHintergrund = nurHintergrundGeaendert(gemeldet, state, { seite: ui.seite(), kontoAnsicht: ui.kontoAnsicht });
     gemeldet = state;
-    if (state.fehler && state.fehler !== letzterFehler) toast(state.fehler, { art: 'fehler', dauer: 6000 });
+    if (state.fehler && (state.fehler !== letzterFehler || (state.fehlerNr ?? 0) !== letzteFehlerNr)) toast(state.fehler, { art: 'fehler', dauer: 6000 });
     else if (!state.fehler && letzterFehler) entferneFehlerToast();
     letzterFehler = state.fehler;
+    letzteFehlerNr = state.fehlerNr ?? 0;
     // Push-Plan abgleichen, sobald frisch aus Google geladen und der Schichtplan vorgeladen wurde und sich Termine, Einstellungen, Urlaub
     // (Urlaub-Checks), Kontostand (Erinnerung am Monatsende), Schichtplan (Zusätze) oder Fixkosten (Kündigungsfristen) geändert haben; nie aus dem gespeicherten Stand
     const quellen = push ? planQuellen(state, store.jetzt()) : null;

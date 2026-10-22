@@ -11,6 +11,7 @@ import {
   MAX_ZIELE_ZEICHEN,
   MIN_ZIEL_CENTS,
   TEXT_NICHT_LOESCHBAR,
+  TEXT_NUR_MIT_NEUEM_DATUM,
   TEXT_VERSCHIEBUNGEN_VOLL,
   TEXT_ZIELE_VOLL,
   ZIEL_EMOJIS,
@@ -222,9 +223,19 @@ describe('zielSetzen, zielBeenden, zielLoeschen, freiVerschieben', () => {
     assert.equal(neu.z[0], d.z[0]);
   });
 
-  test('abgeschlossenes Ziel lässt sich nicht mehr ändern', () => {
-    const d = daten([auto({ datum: '2026-08' })]);
-    assert.throws(() => zielSetzen(d, auto({ datum: '2027-08' }), { heute }), /abgeschlossenes Ziel/);
+  test('von Hand beendetes Ziel lässt sich nicht mehr ändern; nur automatisch abgeschlossenes wird mit neuem Datum wieder geöffnet', () => {
+    const vonHand = daten([auto({ beendet: { monat: '2026-10', art: 'ausgegeben' } })]);
+    assert.throws(() => zielSetzen(vonHand, auto({ datum: '2027-08' }), { heute }), /abgeschlossenes Ziel/);
+    const automatisch = daten([{ ...auto({ datum: '2026-08', erstellt: '2026-01' }), aus: true }]);
+    const offen = zielSetzen(automatisch, auto({ datum: '2027-08', erstellt: '2026-01' }), { heute });
+    assert.equal(offen.z[0].datum, '2027-08');
+    assert.equal(offen.z[0].erstellt, '2026-01');
+    assert.equal('aus' in offen.z[0], false, 'wieder offen → nicht mehr ausgeblendet');
+    // das Datum muss ab dem laufenden Monat liegen
+    assert.throws(() => zielSetzen(automatisch, auto({ datum: '2026-09', erstellt: '2026-01' }), { heute }), { message: TEXT_NUR_MIT_NEUEM_DATUM });
+    // höchstens 20 laufende – auch beim Wiederöffnen
+    const zwanzig = Array.from({ length: 20 }, (_, i) => auto({ id: `ab${String(i).padStart(4, '0')}` }));
+    assert.throws(() => zielSetzen(daten([...zwanzig, auto({ datum: '2026-08' })]), auto({ datum: '2027-08' }), { heute }), /Höchstens 20 laufende/);
   });
 
   test('zielBeenden: setzt { monat, art }; wiederholbar; unbekannte Kennung ändert nichts; ungültige Art wirft', () => {
@@ -778,12 +789,14 @@ describe('sparVerlauf – Regeln', () => {
     assert.deepEqual(v.monate.map((m) => m.monat), ['2026-11', '2026-10']);
     const nov = monatVon(v, '2026-11');
     assert.deepEqual(nov.zuteilung, []);
-    assert.equal(nov.frei.cents, 100000);
     assert.deepEqual(nov.abschluss, [{ ziel: 'url00001', art: 'ausgegeben', cents: 100000 }]);
-    assert.equal(v.frei, 100000);
+    // im November gab es keine Zahlung (der Kontostand stieg um 1.000 €): der Ausgleich bringt die 1.000 € zurück
+    assert.equal(nov.ausgleich, 100000);
+    assert.equal(nov.frei.cents, 200000);
+    assert.equal(v.frei, 200000);
     assert.equal(v.summeZiele, 0);
     // ohne Ziele: nichts
-    assert.deepEqual(sparVerlauf(leereZiele(), k, '2026-12-05'), { monate: [], ziele: [], frei: 0, summeZiele: 0, noetigGesamt: 0, standMonat: '2026-11' });
+    assert.deepEqual(sparVerlauf(leereZiele(), k, '2026-12-05'), { monate: [], ziele: [], frei: 0, summeZiele: 0, noetigGesamt: 0, standMonat: '2026-11', ausgleichOffen: 0 });
     assert.equal(sparVerlauf(leereZiele(), null, '2026-12-05').standMonat, null);
   });
 
@@ -829,6 +842,7 @@ describe('Eigenschaft: Σ Zuteilung + ΔFrei = Ersparnis (auf den Cent), nichts 
     let minusMonate = 0;
     let ungedeckteMonate = 0;
     let geloeschte = 0;
+    let offeneAusgleiche = 0;
     for (let fall = 0; fall < 200; fall += 1) {
       const anzahl = ganz(2, 30);
       const papa = {};
@@ -858,6 +872,7 @@ describe('Eigenschaft: Σ Zuteilung + ΔFrei = Ersparnis (auf den Cent), nichts 
 
       let ersparnis = 0;
       let verfallen = 0;
+      let ausgeglichen = 0;
       for (const mo of v.monate) {
         const zu = mo.zuteilung.map((t) => t.cents);
         assert.ok(mo.frei.vorher >= 0 && mo.frei.nachher >= 0, `Fall ${fall} ${mo.monat}: Frei nie negativ`);
@@ -868,20 +883,23 @@ describe('Eigenschaft: Σ Zuteilung + ΔFrei = Ersparnis (auf den Cent), nichts 
           continue;
         }
         gepruefteMonate += 1;
-        assert.equal(summe(zu) + mo.frei.cents, mo.gespart + mo.ungedeckt, `Fall ${fall} ${mo.monat}: auf den Cent`);
+        assert.equal(summe(zu) + mo.frei.cents, mo.gespart + mo.ausgleich + mo.ungedeckt, `Fall ${fall} ${mo.monat}: auf den Cent`);
+        assert.ok(mo.ausgleich >= 0 && mo.ausgleich === summe(mo.ausgleichVon.map((a) => a.cents)), `Fall ${fall} ${mo.monat}: Ausgleich`);
         ersparnis += mo.gespart;
         verfallen += mo.ungedeckt;
-        if (mo.gespart >= 0) {
+        ausgeglichen += mo.ausgleich;
+        const verteilt = mo.gespart + mo.ausgleich;
+        if (verteilt >= 0) {
           assert.equal(mo.ungedeckt, 0);
           assert.ok(mo.frei.cents >= 0);
           const noetig = mo.zuteilung.map((t) => t.noetig);
-          if (summe(noetig) >= mo.gespart) mo.zuteilung.forEach((t) => assert.ok(t.cents >= 0 && t.cents <= t.noetig, `Fall ${fall} ${mo.monat}: anteilig ≤ nötig`));
+          if (summe(noetig) >= verteilt) mo.zuteilung.forEach((t) => assert.ok(t.cents >= 0 && t.cents <= t.noetig, `Fall ${fall} ${mo.monat}: anteilig ≤ nötig`));
           else mo.zuteilung.forEach((t) => assert.equal(t.cents, t.noetig));
         } else {
           minusMonate += 1;
           assert.ok(zu.every((c) => c <= 0) && mo.frei.cents <= 0);
           if (mo.ungedeckt > 0) ungedeckteMonate += 1;
-          if (zu.some((c) => c < 0)) assert.equal(mo.frei.vorher + ausAbschluss + mo.frei.cents, 0, `Fall ${fall} ${mo.monat}: erst Frei leeren`);
+          if (zu.some((c) => c < 0)) assert.equal(mo.frei.nachher, 0, `Fall ${fall} ${mo.monat}: erst Frei leeren`);
         }
       }
       for (const z of v.ziele) assert.ok(z.gespart >= 0 && z.gespart <= z.zielCents && z.offen >= 0 && z.noetigProMonat >= 0, `Fall ${fall} ${z.id}: nie unter 0, nie über dem Ziel`);
@@ -897,8 +915,12 @@ describe('Eigenschaft: Σ Zuteilung + ΔFrei = Ersparnis (auf den Cent), nichts 
       const ausgegeben = v.ziele.filter((z) => z.abgeschlossen?.art === 'ausgegeben');
       assert.equal(v.summeZiele, summe(offen.map((z) => z.gespart)));
       assert.equal(v.noetigGesamt, summe(offen.map((z) => z.noetigProMonat)));
-      assert.equal(v.frei + v.summeZiele + summe(ausgegeben.map((z) => z.gespart)), ersparnis + verfallen, `Fall ${fall}: nichts verloren`);
+      // „ausgegeben“ wurde vom Konto bezahlt (steckt im Kontostand) und kommt als Ausgleich zurück: nichts doppelt abgezogen
+      assert.equal(summe(ausgegeben.map((z) => z.gespart)), ausgeglichen + v.ausgleichOffen, `Fall ${fall}: jeder Abschluss „ausgegeben“ wird ausgeglichen`);
+      assert.equal(v.frei + v.summeZiele, ersparnis + verfallen - v.ausgleichOffen, `Fall ${fall}: zurückgelegt + Frei = Ersparnis seit Beginn`);
+      if (v.ausgleichOffen > 0) offeneAusgleiche += 1;
     }
+    assert.ok(offeneAusgleiche > 5, `genug Fälle mit wartendem Ausgleich (${offeneAusgleiche})`);
     assert.ok(geloeschte > 20, `genug löschbare Ziele (${geloeschte})`);
     assert.ok(gepruefteMonate > 1000 && minusMonate > 300 && ungedeckteMonate > 100, `genug verschiedene Fälle (${gepruefteMonate}/${minusMonate}/${ungedeckteMonate})`);
   });
@@ -968,5 +990,124 @@ describe('Task 3, Fix-Runde 1 (m-1): „ab“ je Ziel und „anteilig“ je Mona
     assert.deepEqual(v.monate.map((m) => [m.monat, m.anteilig]), [['2027-01', false], ['2026-12', false], ['2026-11', false], ['2026-10', true]]);
     const genau = sparVerlauf(daten([auto({ zielCents: 1_200_000, datum: '2027-09' })]), kontoAus({ '2026-09': 800000, '2026-10': 900000 }), '2026-10-31');
     assert.equal(monatVon(genau, '2026-10').anteilig, false);
+  });
+});
+
+// ---------------------------------------------------------------- Ausgleich, Reihenfolge im Abschlussmonat, Wiederöffnen
+
+describe('Ausgleich: was „ausgegeben“ wurde, steckt schon im Kontostand und wird nicht doppelt abgezogen', () => {
+  // Auto 23.000 € bis 07.2028 und Urlaub 1.500 € bis 07.2027, beide ab 02.2027; Februar bis Juni je +2.000 €; im Juli werden 2.000 €
+  // gespart und der Urlaub (1.500 €) vom Konto bezahlt → Juli nur +500 €.
+  const staende = { '2027-01': 1800000, '2027-02': 2000000, '2027-03': 2200000, '2027-04': 2400000, '2027-05': 2600000, '2027-06': 2800000, '2027-07': 2850000 };
+  const autoC = auto({ erstellt: '2027-02' });
+  const urlaubC = (a = {}) => urlaub({ zielCents: 150000, vorlaeufig: false, erstellt: '2027-02', ...a });
+
+  test('Beispiel C, von Hand „Geld wurde ausgegeben“ im Juli: zurückgelegt + Frei = 10.500 € (die echte Ersparnis)', () => {
+    const { '2027-07': _jul, ...bisJuni } = staende;
+    const juni = sparVerlauf(daten([autoC, urlaubC()]), kontoAus(bisJuni), '2027-06-30');
+    assert.equal(juni.summeZiele + juni.frei, 1000000);
+    const urlaubJuni = zielVon(juni, 'url00001').gespart;
+    const v = sparVerlauf(daten([autoC, urlaubC({ beendet: { monat: '2027-07', art: 'ausgegeben' } })]), kontoAus(staende), '2027-07-31');
+    assert.equal(v.summeZiele + v.frei, 1050000);
+    assert.equal(v.ausgleichOffen, 0);
+    const jul = monatVon(v, '2027-07');
+    assert.equal(jul.gespart, 50000);
+    assert.deepEqual(jul.abschluss, [{ ziel: 'url00001', art: 'ausgegeben', cents: urlaubJuni }]);
+    assert.equal(jul.ausgleich, urlaubJuni);
+    assert.deepEqual(jul.ausgleichVon, [{ ziel: 'url00001', cents: urlaubJuni }]);
+    assert.deepEqual(jul.zuteilung.map((t) => t.ziel), ['auto0001'], 'das beendete Ziel ist nicht in der Aufteilung');
+    assert.equal(summe(jul.zuteilung.map((t) => t.cents)) + jul.frei.cents, jul.gespart + jul.ausgleich + jul.ungedeckt);
+    // das Auto verliert nichts: es bekommt im Juli sein Nötiges
+    assert.equal(jul.zuteilung[0].cents, jul.zuteilung[0].noetig);
+  });
+
+  test('Beispiel C, automatisch abgeschlossen am 1. August: Ausgleich wartet auf den August-Kontostand, dann wieder alles da', () => {
+    const d = daten([autoC, urlaubC()]);
+    const juli = sparVerlauf(d, kontoAus(staende), '2027-07-31');
+    assert.equal(juli.summeZiele + juli.frei, 1050000);
+    const urlaubJuli = zielVon(juli, 'url00001').gespart;
+    assert.equal(urlaubJuli, 133181);
+    // 05.08.: abgeschlossen, der Ausgleich wartet
+    const anfangAugust = sparVerlauf(d, kontoAus(staende), '2027-08-05');
+    assert.deepEqual(zielVon(anfangAugust, 'url00001').abgeschlossen, { monat: '2027-08', art: 'ausgegeben', automatisch: true });
+    assert.equal(anfangAugust.ausgleichOffen, urlaubJuli);
+    assert.equal(anfangAugust.summeZiele + anfangAugust.frei, 1050000 - urlaubJuli);
+    // 31.08. mit Kontostand +2.000 €: der Ausgleich ist verteilt
+    const v = sparVerlauf(d, kontoAus({ ...staende, '2027-08': 3050000 }), '2027-08-31');
+    const aug = monatVon(v, '2027-08');
+    assert.equal(aug.ausgleich, urlaubJuli);
+    assert.deepEqual(aug.ausgleichVon, [{ ziel: 'url00001', cents: urlaubJuli }]);
+    assert.equal(v.ausgleichOffen, 0);
+    assert.equal(v.summeZiele + v.frei, 1250000);
+  });
+
+  test('Ziel endet, aber nichts wurde bezahlt (Kontostand steigt weiter) → das Geld kommt als Ersparnis zurück', () => {
+    const v = sparVerlauf(daten([autoC, urlaubC({ beendet: { monat: '2027-07', art: 'ausgegeben' } })]), kontoAus({ ...staende, '2027-07': 3000000 }), '2027-07-31');
+    assert.equal(v.summeZiele + v.frei, 1200000);
+  });
+});
+
+describe('Reihenfolge im Monat des Abschlusses von Hand', () => {
+  // Urlaub 1.800 € bis März: Februar +2.400 € → 900 € fürs Ziel (nötig 1.800 / 2), 1.500 € Frei
+  const k = kontoAus({ '2027-01': 1000000, '2027-02': 1240000 });
+  const ziel = (a = {}) => urlaub({ zielCents: 180000, datum: '2027-03', erstellt: '2027-02', ...a });
+
+  test('erst 600 € aus Frei auffüllen, dann „ausgegeben“ im selben Monat → Abschluss 1.500 €, Frei 900 €', () => {
+    const vorher = sparVerlauf(daten([ziel()]), k, '2027-03-10');
+    assert.equal(zielVon(vorher, 'url00001').gespart, 90000);
+    assert.equal(vorher.frei, 150000);
+    const d = daten([ziel({ beendet: { monat: '2027-03', art: 'ausgegeben' } })], [{ id: 'v0000001', monat: '2027-03', ziel: 'url00001', cents: 60000 }]);
+    const v = sparVerlauf(d, k, '2027-03-10');
+    const mar = monatVon(v, '2027-03');
+    assert.deepEqual(mar.verschoben, [{ id: 'v0000001', ziel: 'url00001', cents: 60000, gewuenscht: 60000 }]);
+    assert.deepEqual(mar.abschluss, [{ ziel: 'url00001', art: 'ausgegeben', cents: 150000 }]);
+    assert.equal(v.frei, 90000);
+    assert.equal(v.ausgleichOffen, 150000);
+    // kommt der März-Kontostand (2.000 € gespart − 1.500 € Urlaub = +500 €), bleibt die Verschiebung, und alles stimmt
+    const spaeter = sparVerlauf(d, kontoAus({ '2027-01': 1000000, '2027-02': 1240000, '2027-03': 1290000 }), '2027-03-31');
+    const m2 = monatVon(spaeter, '2027-03');
+    assert.equal(m2.verschoben[0].cents, 60000);
+    assert.equal(m2.ausgleich, 150000);
+    assert.equal(spaeter.frei, 90000 + 50000 + 150000);
+    assert.equal(spaeter.frei + spaeter.summeZiele, 240000 + 50000);
+  });
+
+  test('„zurück zu Frei“ nach dem Auffüllen: das Aufgefüllte geht mit zurück, nichts verdoppelt', () => {
+    const d = daten([ziel({ beendet: { monat: '2027-03', art: 'frei' } })], [{ id: 'v0000001', monat: '2027-03', ziel: 'url00001', cents: 60000 }]);
+    const v = sparVerlauf(d, k, '2027-03-10');
+    assert.deepEqual(monatVon(v, '2027-03').abschluss, [{ ziel: 'url00001', art: 'frei', cents: 150000 }]);
+    assert.equal(v.frei, 240000);
+    assert.equal(v.ausgleichOffen, 0);
+  });
+});
+
+describe('automatisch abgeschlossenes Ziel korrigieren', () => {
+  const k = kontoAus({ '2027-01': 1000000, '2027-02': 1100000, '2027-03': 1200000 });
+  const ziel = (a = {}) => urlaub({ zielCents: 150000, datum: '2027-02', vorlaeufig: true, erstellt: '2027-02', ...a });
+
+  test('neues Datum ab dem laufenden Monat → wieder offen, das Gesparte bleibt beim Ziel', () => {
+    const d = daten([ziel()]);
+    const zu = sparVerlauf(d, k, '2027-03-31');
+    assert.equal(zielVon(zu, 'url00001').abgeschlossen.automatisch, true);
+    const gespart = zielVon(zu, 'url00001').gespart;
+    const offen = zielSetzen(d, ziel({ datum: '2027-08' }), { heute: '2027-03-31' });
+    const v = sparVerlauf(offen, k, '2027-03-31');
+    const z = zielVon(v, 'url00001');
+    assert.equal(z.abgeschlossen, null);
+    assert.ok(z.gespart > 0 && gespart > 0); // neu gerechnet, als hätte es immer dieses Datum gehabt
+    assert.equal(v.frei + v.summeZiele, 200000, 'nichts verloren, nichts doppelt');
+    assert.equal(v.ausgleichOffen, 0);
+    assert.deepEqual(monatVon(v, '2027-03').abschluss, []);
+  });
+
+  test('„Doch nicht ausgegeben – zurück zu Frei“: zielBeenden mit dem Abschlussmonat und „frei“', () => {
+    const d = daten([ziel()]);
+    const vorher = sparVerlauf(d, k, '2027-03-31');
+    const frei = zielBeenden(d, 'url00001', { monat: zielSchluss(d.z[0]).monat, art: 'frei' });
+    const v = sparVerlauf(frei, k, '2027-03-31');
+    assert.deepEqual(zielVon(v, 'url00001').abgeschlossen, { monat: '2027-03', art: 'frei', automatisch: false });
+    assert.equal(v.frei + v.summeZiele, vorher.frei + vorher.summeZiele, 'beides gleich: Ausgleich oder zurück zu Frei');
+    assert.equal(v.frei + v.summeZiele, 200000);
+    assert.equal(monatVon(v, '2027-03').ausgleich, 0);
   });
 });

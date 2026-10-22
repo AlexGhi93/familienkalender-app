@@ -2,7 +2,7 @@
 // Zusammenfassung, Balken und die Liste der Sonderbeträge.
 import { MAX_EXTRAS, PERSONEN, nachtragMonate, betragText, deltaText, eintragbarerMonat, kontoVerlaufMitExtra, kontoZusammenfassungMitExtra, leeresKonto, letzterTag } from '../../domain/konto.js';
 import { FUER } from '../../domain/types.js';
-import { MONATE } from '../format-de.js';
+import { MONATE, monatText } from '../format-de.js';
 import { verlaufReihen } from './konto-diagramm.js';
 
 const MAX_BALKEN = 36; // bei „Alles“ höchstens so viele Monate im Balkendiagramm
@@ -11,7 +11,6 @@ const BEREICH_TEXT = { 6: '6 Monate', 12: '12 Monate', 0: 'Alles' };
 const FORMULAR_MONATE = 12; // so viele Monate (bis zurück) wählt das Formular für Sonderbeträge an
 const nameText = (person) => FUER[person].label;
 
-const monatText = (monat) => `${MONATE[Number(monat.slice(5)) - 1]} ${monat.slice(0, 4)}`;
 const art = (delta) => (delta > 0 ? 'plus' : delta < 0 ? 'minus' : 'null');
 const veraenderung = (delta) => (delta === null ? null : { text: deltaText(delta), art: art(delta) });
 const seitText = (seit) => (seit ? `seit ${monatText(seit)}` : null);

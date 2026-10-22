@@ -50,6 +50,7 @@ export const ZIEL_ENDE_ARTEN = Object.freeze(['ausgegeben', 'frei']);
 export const TEXT_ZIELE_VOLL = 'Die Sparziele sind voll: im Kalender ist kein Platz für ein weiteres Ziel. Ziele, die nie Geld bekommen haben, lassen sich löschen.';
 export const TEXT_VERSCHIEBUNGEN_VOLL = 'Kein Platz mehr für weitere Verschiebungen aus „Frei“ – der Speicher der Sparziele im Kalender ist voll.';
 export const TEXT_NICHT_LOESCHBAR = 'Dieses Ziel hat schon Geld bekommen – es kann nur ausgeblendet werden.';
+export const TEXT_NUR_MIT_NEUEM_DATUM = 'Ein nach dem Zieldatum abgeschlossenes Ziel lässt sich nur mit einem neuen Datum ab dem laufenden Monat wieder öffnen.';
 export const TEXT_NUR_ABGESCHLOSSENE = 'Nur abgeschlossene Sparziele lassen sich ausblenden.';
 
 /** Meldung, wenn die gespeicherten Sparziele unlesbar sind (beschädigt oder von einer neueren App-Version): sie werden dann nie überschrieben. */
@@ -147,7 +148,6 @@ function normalisiereVerschiebung(roh) {
   if (!istObjekt(roh) || !istKennung(roh.id) || !istMonat(roh.monat) || !istKennung(roh.ziel) || !istBetrag1(roh.cents)) return null;
   return { id: roh.id, monat: roh.monat, ziel: roh.ziel, cents: roh.cents };
 }
-
 
 /** Gültige Einträge einer Liste ohne doppelte Kennungen (der erste gilt). */
 function eindeutig(liste, normalisiere) {
@@ -304,17 +304,26 @@ function mit(alt, z, m, reserve, meldung = TEXT_ZIELE_VOLL) {
 /**
  * Legt ein Ziel an oder ändert das mit derselben Kennung (an derselben Stelle). Wirft mit der Meldung aus zielPruefen.
  * Neu: braucht `erstellt` (startMonat) und ist nie schon beendet. Ändern: Name, Symbol, Betrag, Datum, vorläufig – Startmonat und
- * Abschluss bleiben; ein abgeschlossenes Ziel lässt sich nicht mehr ändern. Gleiche Werte → dieselben Daten zurück.
+ * Abschluss bleiben. Ein von Hand beendetes Ziel lässt sich nicht mehr ändern; ein nur AUTOMATISCH abgeschlossenes (Zielmonat vorbei,
+ * kein `beendet`) wird mit einem neuen Datum ab dem laufenden Monat wieder geöffnet (z. B. vorläufiges Urlaubsdatum verschoben) – es
+ * war nie wirklich abgeschlossen, die Rechnung läuft weiter, als hätte es immer dieses Datum gehabt; „ausgeblendet“ fällt dabei weg.
+ * Gleiche Werte → dieselben Daten zurück.
  */
 export function zielSetzen(daten, ziel, { heute } = {}) {
   heutePruefen(heute);
   if (!istObjekt(ziel) || !istKennung(ziel.id)) throw new Error('Ungültige Kennung.');
   const liste = daten.z ?? [];
   const alt = liste.find((z) => z.id === ziel.id);
-  if (alt && abgeschlossenAm(alt, heute)) throw new Error('Ein abgeschlossenes Ziel lässt sich nicht mehr ändern.');
-  const entwurf = alt ? { ...ziel, erstellt: alt.erstellt, beendet: alt.beendet, aus: alt.aus } : { ...ziel, beendet: undefined, aus: undefined };
+  const wiederOeffnen = Boolean(alt) && abgeschlossenAm(alt, heute);
+  if (wiederOeffnen && alt.beendet) throw new Error('Ein abgeschlossenes Ziel lässt sich nicht mehr ändern.');
+  if (wiederOeffnen && !(istDatum(ziel.datum) && ziel.datum.slice(0, 7) >= heute.slice(0, 7))) throw new Error(TEXT_NUR_MIT_NEUEM_DATUM);
+  const entwurf = alt ? { ...ziel, erstellt: alt.erstellt, beendet: alt.beendet, aus: wiederOeffnen ? undefined : alt.aus } : { ...ziel, beendet: undefined, aus: undefined };
   const fehler = zielPruefen(entwurf, { heute, daten });
   if (fehler) throw new Error(fehler);
+  if (wiederOeffnen) {
+    const laufend = liste.filter((z) => z.id !== alt.id && !abgeschlossenAm(z, heute)).length + (daten.fremd?.z?.length ?? 0);
+    if (laufend >= MAX_ZIELE_AKTIV) throw new Error(`Höchstens ${MAX_ZIELE_AKTIV} laufende Sparziele.`);
+  }
   if (!istMonat(entwurf.erstellt)) throw new Error('Ungültiger Startmonat.');
   const neu = normalisiereZiel(entwurf);
   if (!alt) return mit(daten, [...liste, neu], daten.m ?? [], true);

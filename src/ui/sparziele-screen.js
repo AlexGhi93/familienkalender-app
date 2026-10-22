@@ -5,7 +5,7 @@
 import { h } from './dom.js';
 import { abschnitt } from './components.js';
 import { sparzieleModel } from '../app/views/sparziele-model.js';
-import { erledigt, oeffneVerschieben, oeffneZielFormular, sicher, zielLoeschenFragen } from './sparziele-formular.js';
+import { erledigt, oeffneVerschieben, oeffneZielFormular, sicher, zielLoeschenFragen, zurueckZuFreiFragen } from './sparziele-formular.js';
 
 const MONATE_SICHTBAR = 4; // „Verlauf pro Monat“ zeigt zuerst nur die neuesten Monate
 let ausgeblendeteZeigen = false; // abgeschlossene, ausgeblendete Ziele im Verlauf zeigen
@@ -96,14 +96,18 @@ function monatKarte(x) {
     x.abschluesse.map((z) => zeile(z, 'sz-abschluss')),
     x.teile.map((z) => zeile(z, 'sz-teil')),
     x.keineVeraenderung ? h('p', { class: 'leise sz-hinweis' }, 'Keine Veränderung – nichts verteilt.') : null,
+    x.ausgleich ? h('p', { class: 'leise sz-hinweis sz-ausgleich' }, x.ausgleich) : null,
     x.hinweis ? h('p', { class: 'leise sz-hinweis' }, x.hinweis) : null,
     x.verschoben.map((z) => zeile(z, 'sz-verschoben')),
     h('p', { class: 'leise sz-hinweis sz-frei-danach' }, x.freiDanach),
   );
 }
 
-/** Ein abgeschlossenes Ziel im Verlauf: Ausblenden / Einblenden, „Endgültig löschen“ nur ohne Geld (mit Rückfrage). */
-function abgeschlossenZeile(a, { store }, gesperrt) {
+/**
+ * Ein abgeschlossenes Ziel im Verlauf: Ausblenden / Einblenden, „Endgültig löschen“ nur ohne Geld (mit Rückfrage); nur nach dem
+ * Zieldatum automatisch abgeschlossene zusätzlich ✎ (mit neuem Datum wieder öffnen) und „Doch nicht ausgegeben – zurück zu Frei“.
+ */
+function abgeschlossenZeile(a, { store, ui }, gesperrt) {
   const umschalten = h(
     'button',
     {
@@ -122,12 +126,18 @@ function abgeschlossenZeile(a, { store }, gesperrt) {
   const loeschen = a.loeschbar
     ? h('button', { class: 'knopf klein gefahr', type: 'button', disabled: Boolean(gesperrt), onClick: () => zielLoeschenFragen({ store }, { id: a.id, name: a.name }, () => {}, sperrbar) }, 'Endgültig löschen')
     : null;
-  const sperrbar = [umschalten, loeschen].filter(Boolean);
+  const aendern = a.kannAendern
+    ? h('button', { class: 'knopf klein', type: 'button', 'aria-label': `${a.name} ändern (wieder öffnen)`, onClick: () => oeffneZielFormular({ store, ui }, a.id) }, '✎ Datum ändern')
+    : null;
+  const zurueck = a.kannZurueckZuFrei
+    ? h('button', { class: 'knopf klein', type: 'button', onClick: () => zurueckZuFreiFragen({ store }, { id: a.id, name: a.name }, sperrbar) }, 'Doch nicht ausgegeben – zurück zu Frei')
+    : null;
+  const sperrbar = [umschalten, loeschen, aendern, zurueck].filter(Boolean);
   return h(
     'div',
     { class: `sz-fertig${a.aus ? ' aus' : ''}`, 'data-id': a.id },
     h('div', { class: 'fk-n' }, h('b', {}, `${a.titel}${a.aus ? ' (ausgeblendet)' : ''}`), h('small', {}, a.text)),
-    h('div', { class: 'knopfzeile' }, loeschen, umschalten),
+    h('div', { class: 'knopfzeile' }, aendern, zurueck, loeschen, umschalten),
   );
 }
 
@@ -187,7 +197,7 @@ function verlaufAbschnitt(m, ctx) {
     'Verlauf pro Monat',
     karten,
     mehr ? h('div', { class: 'knopfzeile' }, mehr) : null,
-    karten.length > 0 ? h('p', { class: 'leise sz-hinweis' }, '„Gespart“ = Änderung des Kontostands (Papa + Mama) gegenüber dem Vormonat. Monate mit Minus nehmen zuerst aus „Frei“, dann anteilig aus den Zielen – der nötige Betrag pro Monat steigt dann automatisch.') : null,
+    karten.length > 0 ? h('p', { class: 'leise sz-hinweis' }, '„Gespart“ = Änderung des Kontostands (Papa + Mama) gegenüber dem Vormonat. Monate mit Minus nehmen zuerst aus „Frei“, dann anteilig aus den Zielen – der nötige Betrag pro Monat steigt dann automatisch. Wird ein Ziel bezahlt („Geld wurde ausgegeben“ oder nach dem Zieldatum), steckt die Zahlung schon im Kontostand: der Betrag wird deshalb ausgeglichen und noch einmal mit verteilt – im selben Monat oder höchstens einen Monat später.') : null,
     fertig,
   );
 }

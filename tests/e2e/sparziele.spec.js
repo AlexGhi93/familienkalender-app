@@ -5,7 +5,7 @@
 // oder aus hier erfundenen Beispielen; die Demo-Ziele (src/app/seed.js) sind erfunden.
 import { test, expect, starteDemo, starteGoogleVerbunden, erwarteToast, fehlerToastsZaehlen, NETZFEHLER, WERKTAG_DATUM } from './hilfen.js';
 import { seedDemo } from '../../src/app/seed.js';
-import { TEXT_ZIELE_GESPERRT, TEXT_ZIELE_NICHT_GELADEN, sparVerlauf } from '../../src/domain/sparziele.js';
+import { TEXT_ZIELE_GESPERRT, TEXT_ZIELE_NICHT_GELADEN, sparVerlauf, zielBeenden, zielSchluss } from '../../src/domain/sparziele.js';
 import { betragText, deltaText } from '../../src/domain/konto.js';
 import { kontoZuEreignis, zieleZuEreignis } from '../../src/calendar/mapping.js';
 
@@ -180,6 +180,57 @@ test.describe('Sparziele im Konto-Tab (Demo)', () => {
     await expect(page.locator('.sz-monat[data-monat="2026-06"]')).toContainText('anteilig nach Bedarf aufgeteilt');
     await expect(page.locator('.sz-monat[data-monat="2026-08"] .sz-teil').first()).toHaveText('💜 Frei verfügbar zuerst−0 € (leer)');
     await expect(page.locator('.sz-monat[data-monat="2026-09"] .sz-abschluss')).toContainText('Neues Sofa abgeschlossen (ausgegeben)');
+    // Ausgleich: das Sofa wurde bezahlt, die Zahlung steckt schon im Kontostand → Zeile „… bezahlt (aus dem Ziel)“, Summe stimmt weiter
+    const sept = v.monate.find((m) => m.monat === '2026-09');
+    expect(sept.ausgleich).toBeGreaterThan(0);
+    await expect(page.locator('.sz-monat[data-monat="2026-09"] .sz-teil').first()).toHaveText(`🛋️ Neues Sofa bezahlt (aus dem Ziel)${deltaText(-sept.ausgleich)}`);
+    await expect(page.locator('.sz-monat[data-monat="2026-09"] .sz-ausgleich')).toContainText(`Ausgleich: ${betragText(sept.ausgleich)}`);
+    await expect(page.locator('.sz-hinweis').filter({ hasText: '„Gespart“ =' })).toContainText('höchstens einen Monat später');
+    expect(v.summeZiele + v.frei + v.ausgleichOffen).toBe(v.monate.reduce((a, m) => a + (m.gespart ?? 0) + m.ungedeckt, 0));
+  });
+
+  test('automatisch abgeschlossenes Ziel: ✎ mit neuem Datum öffnet es wieder; „Doch nicht ausgegeben – zurück zu Frei“ mit Rückfrage', async ({ page }) => {
+    await oeffneSparziele(page);
+    const sofa = page.locator('.sz-fertig[data-id="demo0003"]');
+    await expect(sofa.getByRole('button', { name: 'Doch nicht ausgegeben – zurück zu Frei' })).toBeVisible();
+    await sofa.getByRole('button', { name: 'Neues Sofa ändern (wieder öffnen)' }).click();
+    const d = dialog(page, 'Sparziel wieder öffnen');
+    await expect(d).toContainText('Nach dem Zieldatum abgeschlossen');
+    await expect(d.getByRole('button', { name: 'Ziel beenden' })).toHaveCount(0);
+    await d.getByRole('button', { name: 'Speichern' }).click(); // altes Datum → klare Meldung, bleibt offen
+    await expect(page.locator('.toast.fehler')).toContainText('Das Datum liegt in der Vergangenheit');
+    await expect(d).toBeVisible();
+    await page.locator('.toast').evaluateAll((t) => t.forEach((x) => x.remove()));
+    await d.getByLabel('Monat', { exact: true }).selectOption({ label: 'Dezember' });
+    await d.getByLabel('Jahr').selectOption('2026');
+    await d.getByRole('button', { name: 'Speichern' }).click();
+    await erwarteToast(page, 'Gespeichert ✓');
+    await expect(karte(page, 'Neues Sofa')).toHaveCount(1);
+    await expect(page.locator('.sz-fertig[data-id="demo0003"]')).toHaveCount(0);
+    await page.reload();
+    await expect(karte(page, 'Neues Sofa').locator('.sz-ziel-titel small')).toHaveText('bis Dezember 2026');
+  });
+
+  test('„Doch nicht ausgegeben – zurück zu Frei“: das Gesparte geht zu Frei, kein Ausgleich mehr; Summe bleibt', async ({ page }) => {
+    await oeffneSparziele(page);
+    const sofa = demo.ziele.z.find((z) => z.id === 'demo0003');
+    const nachher = sparVerlauf(zielBeenden(demo.ziele, 'demo0003', { monat: zielSchluss(sofa).monat, art: 'frei' }), demo.konto, WERKTAG_DATUM);
+    const zeile = page.locator('.sz-fertig[data-id="demo0003"]');
+    await zeile.getByRole('button', { name: 'Doch nicht ausgegeben – zurück zu Frei' }).click();
+    const frage = dialog(page, 'Doch nicht ausgegeben?');
+    await expect(frage).toContainText('„Neues Sofa“');
+    await frage.getByRole('button', { name: 'Zurück zu Frei' }).click();
+    await erwarteToast(page, 'Zurück zu Frei ✓');
+    await expect(frei(page)).toHaveText(betragText(nachher.frei));
+    expect(nachher.frei + nachher.summeZiele).toBe(v.frei + v.summeZiele);
+    await expect(page.locator('.sz-fertig[data-id="demo0003"]')).toContainText('zurück zu Frei');
+    await expect(page.locator('.sz-fertig[data-id="demo0003"]').getByRole('button', { name: 'Doch nicht ausgegeben – zurück zu Frei' })).toHaveCount(0);
+    for (const karteM of await page.locator('.sz-monat').all()) {
+      const gespart = Number(await karteM.getAttribute('data-gespart'));
+      if (Number.isNaN(gespart)) continue;
+      const teile = await karteM.locator('.sz-teil').evaluateAll((z) => z.map((x) => Number(x.dataset.cents)));
+      expect(teile.reduce((a, b) => a + b, 0)).toBe(gespart);
+    }
   });
 
   test('abgeschlossenes Ziel mit Geld: nur Ausblenden / Einblenden; Ziel ohne Geld: „Endgültig löschen“ mit Rückfrage', async ({ page }) => {

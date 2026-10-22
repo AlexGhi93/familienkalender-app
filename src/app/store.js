@@ -32,6 +32,7 @@ const TEXT_FIX_NEUER = 'Diesen Posten hat das andere Telefon mit einer neueren A
 const TEXT_ZIEL_GELOESCHT = 'Dieses Sparziel gibt es nicht mehr – es wurde wohl auf dem anderen Telefon gelöscht.';
 const TEXT_ZIEL_NEUER = 'Dieses Sparziel hat das andere Telefon mit einer neueren App-Version geändert. Bitte die App aktualisieren.';
 const TEXT_ZIEL_ABGESCHLOSSEN = 'Dieses Sparziel ist schon abgeschlossen.';
+const TEXT_NICHT_AUTOMATISCH = 'Nur ein nach dem Zieldatum automatisch abgeschlossenes Ziel lässt sich so zurück zu Frei geben.';
 
 /** Zufällige ID aus den Zeichen 0-9 und a-v: so darf sie auch als Google-Ereignis-ID dienen. */
 const zufaelligeId = () => `u${Array.from({ length: 11 }, () => Math.floor(Math.random() * 32).toString(32)).join('')}`;
@@ -161,9 +162,22 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
    */
   function zieleNachLaden(daten, stand) {
     if (daten?.ziele === null) return zieleNichtGelesen();
+    if (daten?.ziele?.unlesbar) return zieleUnlesbarUebernehmen(daten.ziele);
     return !daten?.ziele || zieleOffen.size > 0 || stand !== zieleStand ? state.ziele : zieleZustand(daten.ziele, 'geladen');
   }
   /** Ist Ändern gerade verboten? → Meldung oder null (unlesbar, oder nicht (erfolgreich) gelesen). */
+  /**
+   * Frisch gelesene, aber unlesbare Sparziele gehen immer vor: leer und gesperrt, auch wenn eine eigene Änderung unterwegs ist oder auf
+   * die Anmeldung wartet (ihr Speichern würde ohnehin abgelehnt) – die Warteschlange wird geleert.
+   */
+  function zieleUnlesbarUebernehmen(gelesen) {
+    const eintrag = zieleOffen.get('ziele');
+    if (eintrag) {
+      eintrag.basis = leereZiele();
+      eintrag.offen.length = 0;
+    }
+    return zieleZustand(gelesen, 'geladen');
+  }
   const zieleGesperrt = () => (state.ziele.unlesbar ? TEXT_ZIELE_GESPERRT : state.ziele.status === 'geladen' || state.ziele.status === 'gespeichert' ? null : TEXT_ZIELE_NICHT_GELADEN);
   const melden = () => {
     for (const h of hoerer) h(state);
@@ -174,6 +188,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
    * Ohne `optionen` wird bei einem Fehler alles auf `alt` zurückgesetzt und neu geladen. Mit `optionen.zurueck()` (→ neuer Zustand)
    * wird nur das Betroffene zurückgenommen und danach `optionen.neuLesen()` statt des ganzen Ladens ausgeführt (Schichtplan).
    */
+  let fehlerNr = 0; // zählt jeden gemeldeten Schreibfehler (state.fehlerNr): die Shell zeigt auch eine gleichlautende zweite Meldung
   async function ausfuehren(schreibe, alt, optionen = {}) {
     let erledigt = 0;
     let gesamt = 0;
@@ -202,11 +217,12 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
         return 'auth';
       }
       // Lehnt eine reine Änderung auf der neuesten Fassung ab (z. B. das andere Telefon hat dasselbe Kürzel schon vergeben), zählt ihre Meldung.
+      fehlerNr += 1; // dieselbe Meldung zweimal hintereinander wird trotzdem zweimal gezeigt
       let text = gesamt > 1 && erledigt > 0 ? `Gespeichert: ${erledigt} von ${gesamt}. Bitte noch einmal versuchen; Gespeichertes bleibt erhalten.` : TEXT_FEHLER;
       if (FACHLICH.has(fehler)) text = fehler.message;
       optionen.beiFehler?.(fehler, text);
       if (optionen.zurueck) {
-        state = { ...optionen.zurueck(), fortschritt: null, fehler: text };
+        state = { ...optionen.zurueck(), fortschritt: null, fehler: text, fehlerNr };
         melden();
         try {
           await optionen.neuLesen();
@@ -216,7 +232,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
         melden();
         return 'fehler';
       }
-      state = { ...alt, fortschritt: null, fehler: text };
+      state = { ...alt, fortschritt: null, fehler: text, fehlerNr };
       melden();
       try {
         const stand = zieleStand;
@@ -567,12 +583,18 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       const { ergebnis, fehler } = await teilAendern(zieleOffen, 'ziele', fn, {
         leer: leereZiele,
         aktuell: () => state.ziele.daten,
-        mit: (daten) => ({ ...state, ziele: { ...state.ziele, daten } }),
+        // `bestaetigt` = der zuletzt gespeicherte Stand, solange eigene Änderungen offen sind (für den Schnappschuss: eine Änderung, die
+        // auf die Anmeldung wartet, lebt nur im Speicher und darf nach einem Neustart nicht als gespeichert erscheinen)
+        mit: (daten) => {
+          const e = zieleOffen.get('ziele');
+          const { bestaetigt: _alt, ...ziele } = state.ziele;
+          return { ...state, ziele: e && e.offen.length > 0 ? { ...ziele, daten, bestaetigt: e.basis } : { ...ziele, daten } };
+        },
         async speichern(f) {
           try {
             const gespeichert = await adapter.aendereZiele(f);
             // Gespeichert heißt: der Adapter hat die Sparziele eben frisch gelesen (und lesbar gefunden) – eine Sperre nach einem
-            // gescheiterten Lesen ('fehler') ist damit aufgehoben (m-A).
+            // gescheiterten Lesen ('fehler') ist damit aufgehoben.
             if (state.ziele.status !== 'geladen' && state.ziele.status !== 'gespeichert') {
               state = { ...state, ziele: { ...state.ziele, status: 'geladen', warnungen: zieleWarnungen({ daten: gespeichert ?? state.ziele.daten, unlesbar: false }) } };
             }
@@ -603,6 +625,20 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       return ergebnis === 'auth' ? { ok: false, wartet: true, fehler } : { ok: false, fehler, gemeldet: true }; // gemeldet: die Meldung steht schon in state.fehler (die Shell zeigt sie)
     } catch (e) {
       return { ok: false, fehler: e?.message || TEXT_FEHLER };
+    }
+  }
+
+  /**
+   * Der Kontostand frisch aus dem Kalender – für den Startmonat eines neuen Ziels und die Löschprüfung (das andere Telefon könnte den
+   * Monat eben vervollständigt haben); geht das nicht (offline, Demo), der angezeigte.
+   */
+  async function kontoFrisch() {
+    if (!adapter.leseKonto) return state.konto;
+    try {
+      const { konto } = await adapter.leseKonto();
+      return konto ? normalisiereKonto(konto) : state.konto;
+    } catch {
+      return state.konto;
     }
   }
 
@@ -639,15 +675,8 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       }
       const frisch = zieleZustand(g, 'geladen');
       const eigene = zieleOffen.size > 0 || stand !== zieleStand;
-      if (frisch.unlesbar) {
-        // unlesbar geht immer vor (m-C): leer und gesperrt, auch mit eigener Änderung unterwegs (ihr Speichern wird ohnehin abgelehnt)
-        const eintrag = zieleOffen.get('ziele');
-        if (eintrag) {
-          eintrag.basis = leereZiele();
-          eintrag.offen.length = 0;
-        }
-        state = { ...state, ziele: frisch };
-      } else state = { ...state, ziele: eigene ? { ...frisch, daten: state.ziele.daten } : frisch };
+      if (frisch.unlesbar) state = { ...state, ziele: zieleUnlesbarUebernehmen(g) };
+      else state = { ...state, ziele: eigene ? { ...frisch, daten: state.ziele.daten, ...(state.ziele.bestaetigt ? { bestaetigt: state.ziele.bestaetigt } : {}) } : frisch };
       melden();
       return true;
     })()
@@ -1150,14 +1179,15 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       }
       const id = neueZielKennung();
       if (!id) return { ok: false, fehler: TEXT_FEHLER };
-      const ziel = { ...roh, id, erstellt: startMonat(heute, state.konto) };
+      const ziel = { ...roh, id, erstellt: startMonat(heute, await kontoFrisch()) };
       const r = await zieleAendern((d) => zielSetzen(d, ziel, { heute }));
       return r.ok ? { ok: true, id } : r;
     },
 
     /**
-     * Ziel von Hand beenden ab dem laufenden Monat: `art` 'ausgegeben' (das Gesparte ist weg) oder 'frei' (es geht zu „Frei verfügbar“).
-     * Ein schon abgeschlossenes Ziel → Meldung. Ergebnis wie `zielSpeichern` (ohne id).
+     * Ziel von Hand beenden ab dem laufenden Monat: `art` 'ausgegeben' (vom Konto bezahlt) oder 'frei' (es geht zu „Frei verfügbar“).
+     * Ein schon abgeschlossenes Ziel → Meldung (für ein automatisch abgeschlossenes siehe `zielZurueckZuFrei`). Ergebnis wie
+     * `zielSpeichern` (ohne id).
      */
     zielBeenden(id, art) {
       const monat = todayVienna(jetzt()).slice(0, 7);
@@ -1168,10 +1198,27 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       });
     },
 
-    /** Ziel endgültig löschen – nur, wenn es nie Geld bekommen hat (sonst TEXT_NICHT_LOESCHBAR: nur ausblenden). Ergebnis wie `zielBeenden`. */
-    zielLoeschen(id) {
+    /**
+     * „Doch nicht ausgegeben – zurück zu Frei“: ein nur AUTOMATISCH abgeschlossenes Ziel (Zielmonat vorbei) gibt sein Gespartes ab seinem
+     * Abschlussmonat an „Frei“ (`beendet` = { Abschlussmonat, 'frei' }). Sonst → Meldung. Ergebnis wie `zielBeenden`.
+     */
+    zielZurueckZuFrei(id) {
+      const monat = todayVienna(jetzt()).slice(0, 7);
+      return zieleAendern((d) => {
+        const z = zielVorhanden(d, id);
+        const schluss = zielSchluss(z);
+        if (!schluss.automatisch || schluss.monat > monat) throw new Error(TEXT_NICHT_AUTOMATISCH);
+        return zielBeendenRein(d, id, { monat: schluss.monat, art: 'frei' });
+      });
+    },
+
+    /**
+     * Ziel endgültig löschen – nur, wenn es nie Geld bekommen hat (sonst TEXT_NICHT_LOESCHBAR: nur ausblenden). Geprüft mit dem frisch
+     * gelesenen Kontostand (das andere Telefon könnte den Monat eben vervollständigt haben). Ergebnis wie `zielBeenden`.
+     */
+    async zielLoeschen(id) {
       const heute = todayVienna(jetzt());
-      const konto = state.konto;
+      const konto = await kontoFrisch();
       return zieleAendern((d) => (zielVorhanden(d, id), zielLoeschenRein(d, id, { heute, konto })));
     },
 

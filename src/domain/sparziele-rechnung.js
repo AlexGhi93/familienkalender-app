@@ -18,10 +18,19 @@
 //   Anteil); sonst bekommt jedes Ziel das Nötige und der Rest geht zu „Frei“.
 // - Minus: zuerst aus „Frei“, dann anteilig nach dem Gesparten (kein Ziel unter 0); was dann noch fehlt, verfällt („ungedeckt“).
 // - Abschluss: im Monat nach dem Zielmonat automatisch („ausgegeben“), oder vorher von Hand (`beendet`); ab diesem Monat bekommt das
-//   Ziel nichts mehr. „ausgegeben“ = das Gesparte ist weg, „frei“ = es geht zu „Frei“.
+//   Ziel nichts mehr. „frei“ = das Gesparte geht zu „Frei“. „ausgegeben“ = das Gesparte wurde vom Konto bezahlt: diese Zahlung steckt
+//   schon im Kontostand (der Monat der Zahlung fällt kleiner aus). Damit sie nicht zweimal abgezogen wird, bekommt die Aufteilung den
+//   Betrag als AUSGLEICH zurück: im ersten Monat mit Kontostand ab dem Abschluss (im Abschlussmonat selbst, wenn er schon einen hat)
+//   wird gespart + ausgleich verteilt. So gilt: zurückgelegt + Frei = Ersparnis seit Beginn − ungedeckt (höchstens einen Monat versetzt,
+//   solange ein Ausgleich noch auf den nächsten Kontostand wartet: `ausgleichOffen`).
 // - Verschiebungen aus „Frei“ wirken nach der Aufteilung ihres Monats, höchstens bis zum verfügbaren „Frei“ (nie unter 0) und bis
 //   zum noch offenen Betrag des Ziels (ein Ziel bekommt nie mehr als sein Ziel); nur zu einem in dem Monat laufenden Ziel.
-// Reihenfolge in jedem Monat: Abschlüsse → Aufteilung der Ersparnis → Verschiebungen.
+// Reihenfolge in jedem Monat:
+//   1. automatische Abschlüsse (und von Hand beendete aus früheren Monaten, falls noch offen)
+//   2. Verschiebungen zu Zielen, die in diesem Monat VON HAND beendet werden (aus dem „Frei“ vom Monatsanfang – erst auffüllen, dann bezahlen)
+//   3. Abschlüsse von Hand dieses Monats (diese Ziele sind nicht mehr in der Aufteilung des Monats)
+//   4. Aufteilung von gespart + ausgleich
+//   5. die übrigen Verschiebungen.
 
 import { isValidDate } from './dates.js';
 import { kontoVerlauf, monatVor, normalisiereKonto } from './konto.js';
@@ -154,16 +163,18 @@ function teileAuf(gespart, aktiv, stand, frei, monat, ab) {
  *       zuteilung: [{ ziel, cents (mit Vorzeichen), noetig }] (alle in dem Monat laufenden Ziele), anteilig (Plus-Monat mit weniger
  *       als nötig: anteilig nach Bedarf verteilt), ungedeckt (verfallenes Minus, ≥ 0),
  *       frei: { cents (Veränderung durch die Aufteilung), vorher (Monatsanfang), nachher (Monatsende) },
- *       abschluss: [{ ziel, art, cents }], verschoben: [{ id, ziel, cents (tatsächlich), gewuenscht }] }
- *     Es gilt: Σ zuteilung.cents + frei.cents = gespart + ungedeckt, und
+ *       abschluss: [{ ziel, art, cents }], verschoben: [{ id, ziel, cents (tatsächlich), gewuenscht }],
+ *       ausgleich (≥ 0: Beträge von „ausgegeben“-Abschlüssen, die in diesem Monat mit verteilt wurden), ausgleichVon: [{ ziel, cents }] }
+ *     Es gilt: Σ zuteilung.cents + frei.cents = gespart + ausgleich + ungedeckt, und
  *              frei.nachher = frei.vorher + Σ abschluss(art 'frei').cents + frei.cents − Σ verschoben.cents.
  *   ziele: in der Reihenfolge von `daten.z`, jedes { ...ziel, gespart, offen, ab, monateRest, noetigProMonat, plan: { soll, rueckstand },
  *     status: 'imPlan'|'hinter'|'erreicht'|'neu', faellig, abgeschlossen: null | { monat, art, automatisch } } – bei abgeschlossenen
  *     ist gespart der Betrag beim Abschluss; faellig = der Zielmonat ist schon gerechnet, das Ziel schließt im nächsten Monat
  *     (monateRest und noetigProMonat dann 0);
  *   frei, summeZiele (Σ gespart der laufenden Ziele), noetigGesamt (Σ noetigProMonat der laufenden), standMonat (letzter Monat mit
- *   beiden Kontoständen, oder null)
+ *   beiden Kontoständen, oder null), ausgleichOffen (Ausgleich, der noch auf den nächsten Kontostand wartet)
  * }
+ * Gesamt gilt: frei + summeZiele = Σ gespart + Σ ungedeckt − ausgleichOffen.
  * Nach vorn gerechnet wird ab dem Monat `ab` = nach dem letzten Kontostand (frühestens ab dem Startmonat; abgeschlossen: null): monateRest bis zum Zielmonat
  * (mindestens 1), noetigProMonat = offen / monateRest (aufgerundet). Plan: soll = Ziel × vergangene Monate / alle Monate (abgerundet;
  * vergangen = Startmonat bis letzter Kontostand), rueckstand = soll − gespart (≥ 0). Status: erreicht → neu (noch kein Monat
@@ -177,7 +188,7 @@ export function sparVerlauf(daten, konto, heute) {
   const beide = beideMonate(konto);
   const standMonat = beide.at(-1)?.monat ?? null;
   const beginn = zieleBeginn(daten);
-  if (beginn === null) return { monate: [], ziele: [], frei: 0, summeZiele: 0, noetigGesamt: 0, standMonat };
+  if (beginn === null) return { monate: [], ziele: [], frei: 0, summeZiele: 0, noetigGesamt: 0, standMonat, ausgleichOffen: 0 };
 
   const sparListe = sparMonate(konto);
   const letzterKonto = sparListe.at(-1)?.monat ?? beginn;
@@ -189,26 +200,59 @@ export function sparVerlauf(daten, konto, heute) {
   const monate = [];
   let frei = 0;
 
+  let ausgleich = 0; // Beträge von „ausgegeben“-Abschlüssen, die noch nicht verteilt sind
+  let ausgleichVon = [];
+  const schliessen = (z, sch, abschluss) => {
+    const cents = stand.get(z.id);
+    geschlossen.set(z.id, { ...sch, cents });
+    if (sch.art === 'frei') frei += cents;
+    else if (cents > 0) {
+      ausgleich += cents;
+      ausgleichVon.push({ ziel: z.id, cents });
+    }
+    abschluss.push({ ziel: z.id, art: sch.art, cents });
+  };
+  const verschiebe = (v, laufend, ergebnis) => {
+    const ziel = laufend.find((z) => z.id === v.ziel);
+    const cents = ziel ? Math.max(0, Math.min(v.cents, frei, ziel.zielCents - stand.get(ziel.id))) : 0;
+    if (cents > 0) {
+      frei -= cents;
+      stand.set(v.ziel, stand.get(v.ziel) + cents);
+    }
+    ergebnis.set(v, { id: v.id, ziel: v.ziel, cents, gewuenscht: v.cents });
+  };
+
   for (let monat = beginn; monat <= ende && MONAT.test(monat); monat = naechsterMonat(monat)) {
     const vorher = frei;
     const abschluss = [];
+    const vonHand = (z) => !geschlossen.has(z.id) && !schluss.get(z.id).automatisch && schluss.get(z.id).monat === monat;
+    // 1. automatische Abschlüsse (und von Hand beendete früherer Monate)
     for (const z of ziele) {
-      const s = schluss.get(z.id);
-      if (geschlossen.has(z.id) || s.monat > monat) continue;
-      const cents = stand.get(z.id);
-      geschlossen.set(z.id, { ...s, cents });
-      if (s.art === 'frei') frei += cents;
-      abschluss.push({ ziel: z.id, art: s.art, cents });
+      const sch = schluss.get(z.id);
+      if (!geschlossen.has(z.id) && sch.monat <= monat && !vonHand(z)) schliessen(z, sch, abschluss);
     }
+    // 2. Verschiebungen zu Zielen, die in diesem Monat von Hand beendet werden; 3. diese Abschlüsse
+    const endenJetzt = ziele.filter((z) => z.erstellt <= monat && vonHand(z));
+    const imMonat = verschiebungen.filter((v) => v.monat === monat);
+    const ergebnis = new Map();
+    for (const v of imMonat) if (endenJetzt.some((z) => z.id === v.ziel)) verschiebe(v, endenJetzt, ergebnis);
+    for (const z of ziele) if (vonHand(z)) schliessen(z, schluss.get(z.id), abschluss);
+    // 4. Aufteilung von gespart + ausgleich
     const aktiv = ziele.filter((z) => z.erstellt <= monat && !geschlossen.has(z.id));
     const eintrag = ersparnis.get(monat);
     let zuteilung = [];
     let freiCents = 0;
     let ungedeckt = 0;
     let anteilig = false;
+    let ausgleichHier = 0;
+    let ausgleichHierVon = [];
     const ab = eintrag ? spaeter(naechsterMonat(eintrag.basis), beginn) : monat;
     if (eintrag) {
-      const t = teileAuf(eintrag.gespart, aktiv, stand, frei, monat, ab);
+      ausgleichHier = ausgleich;
+      ausgleichHierVon = ausgleichVon;
+      ausgleich = 0;
+      ausgleichVon = [];
+      const t = teileAuf(eintrag.gespart + ausgleichHier, aktiv, stand, frei, monat, ab);
       aktiv.forEach((z, i) => stand.set(z.id, stand.get(z.id) + t.anteile[i]));
       zuteilung = aktiv.map((z, i) => ({ ziel: z.id, cents: t.anteile[i], noetig: t.noetig[i] }));
       freiCents = t.freiCents;
@@ -216,17 +260,9 @@ export function sparVerlauf(daten, konto, heute) {
       anteilig = t.anteilig;
       frei += freiCents;
     }
-    const verschoben = [];
-    for (const v of verschiebungen) {
-      if (v.monat !== monat) continue;
-      const ziel = aktiv.find((z) => z.id === v.ziel);
-      const cents = ziel ? Math.max(0, Math.min(v.cents, frei, ziel.zielCents - stand.get(ziel.id))) : 0;
-      if (cents > 0) {
-        frei -= cents;
-        stand.set(v.ziel, stand.get(v.ziel) + cents);
-      }
-      verschoben.push({ id: v.id, ziel: v.ziel, cents, gewuenscht: v.cents });
-    }
+    // 5. übrige Verschiebungen
+    for (const v of imMonat) if (!ergebnis.has(v)) verschiebe(v, aktiv, ergebnis);
+    const verschoben = imMonat.map((v) => ergebnis.get(v));
     if (!eintrag && abschluss.length === 0 && verschoben.length === 0) continue;
     const gespart = eintrag ? eintrag.gespart : null;
     monate.push({
@@ -238,6 +274,8 @@ export function sparVerlauf(daten, konto, heute) {
       zuteilung,
       anteilig,
       ungedeckt,
+      ausgleich: ausgleichHier,
+      ausgleichVon: ausgleichHierVon,
       frei: { cents: freiCents, vorher, nachher: frei },
       abschluss,
       verschoben,
@@ -254,6 +292,7 @@ export function sparVerlauf(daten, konto, heute) {
     summeZiele: summe(laufend.map((z) => z.gespart)),
     noetigGesamt: summe(laufend.map((z) => z.noetigProMonat)),
     standMonat,
+    ausgleichOffen: ausgleich,
   };
 }
 

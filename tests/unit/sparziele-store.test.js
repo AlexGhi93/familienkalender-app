@@ -8,7 +8,7 @@ import { createDemoAdapter } from '../../src/app/demo-adapter.js';
 import { createSnapshot, SNAPSHOT_KEY } from '../../src/calendar/snapshot.js';
 import { createGoogleAdapter } from '../../src/calendar/google-adapter.js';
 import { sicherungAnzahlText, sicherungErstellen } from '../../src/app/sicherung.js';
-import { TEXT_NICHT_LOESCHBAR, TEXT_NUR_ABGESCHLOSSENE, TEXT_ZIELE_GESPERRT, TEXT_ZIELE_NICHT_GELADEN, leereZiele, sparVerlauf, zieleGesperrtFehler, zieleText } from '../../src/domain/sparziele.js';
+import { TEXT_NICHT_LOESCHBAR, TEXT_NUR_ABGESCHLOSSENE, TEXT_NUR_MIT_NEUEM_DATUM, zielSchluss, TEXT_ZIELE_GESPERRT, TEXT_ZIELE_NICHT_GELADEN, leereZiele, sparVerlauf, zieleGesperrtFehler, zieleText } from '../../src/domain/sparziele.js';
 import { kontoZuEreignis } from '../../src/calendar/mapping.js';
 import { apiAttrappe, speicherAttrappe } from './hilfen.js';
 
@@ -119,12 +119,36 @@ describe('Sparziele anlegen und ändern', () => {
     assert.deepEqual(log, []);
   });
 
-  test('ein abgeschlossenes Ziel lässt sich nicht mehr ändern; unbekannte Kennung → „gibt es nicht mehr“', async () => {
+  test('abgeschlossen: von Hand beendet → nicht mehr änderbar; automatisch (Zielmonat vorbei) → nur mit neuem Datum, dann wieder offen', async () => {
     const { store, log } = aufbau();
     await store.laden();
-    assert.deepEqual(await store.zielSpeichern({ ...zielMit(store, 'demo0003'), name: 'Sofa' }), { ok: false, fehler: 'Ein abgeschlossenes Ziel lässt sich nicht mehr ändern.' });
+    // demo0003 („Neues Sofa“) ist nach seinem Zieldatum automatisch abgeschlossen
+    assert.deepEqual(await store.zielSpeichern({ ...zielMit(store, 'demo0003'), name: 'Sofa' }), { ok: false, fehler: TEXT_NUR_MIT_NEUEM_DATUM });
     assert.deepEqual(await store.zielSpeichern(entwurf({ id: 'gibtsnix' })), { ok: false, fehler: TEXT_GELOESCHT });
     assert.deepEqual(log, []);
+    assert.deepEqual(await store.zielSpeichern({ ...zielMit(store, 'demo0003'), datum: '2026-12' }), { ok: true, id: 'demo0003' });
+    const v = sparVerlauf(store.getState().ziele.daten, store.getState().konto, HEUTE);
+    assert.equal(v.ziele.find((z) => z.id === 'demo0003').abgeschlossen, null, 'wieder offen');
+    // von Hand beendet: bleibt zu
+    assert.deepEqual(await store.zielBeenden('demo0001', 'ausgegeben'), { ok: true });
+    assert.deepEqual(await store.zielSpeichern({ ...zielMit(store, 'demo0001'), datum: '2029-01' }), { ok: false, fehler: 'Ein abgeschlossenes Ziel lässt sich nicht mehr ändern.' });
+  });
+
+  test('„Doch nicht ausgegeben – zurück zu Frei“: nur für automatisch abgeschlossene, ab ihrem Abschlussmonat', async () => {
+    const { store, speicher } = aufbau();
+    await store.laden();
+    const sofa = zielMit(store, 'demo0003');
+    const schluss = zielSchluss(sofa).monat;
+    const vorher = sparVerlauf(store.getState().ziele.daten, store.getState().konto, HEUTE);
+    assert.deepEqual(await store.zielZurueckZuFrei('demo0003'), { ok: true });
+    assert.deepEqual(zielMit(store, 'demo0003').beendet, { monat: schluss, art: 'frei' });
+    assert.deepEqual(gespeicherteZiele(speicher).z[2].b, { m: schluss, a: 'frei' });
+    const v = sparVerlauf(store.getState().ziele.daten, store.getState().konto, HEUTE);
+    assert.equal(v.ziele[2].abgeschlossen.art, 'frei');
+    assert.equal(v.frei + v.summeZiele, vorher.frei + vorher.summeZiele + vorher.ausgleichOffen, 'nichts verloren, nichts doppelt');
+    const text = 'Nur ein nach dem Zieldatum automatisch abgeschlossenes Ziel lässt sich so zurück zu Frei geben.';
+    assert.deepEqual(await store.zielZurueckZuFrei('demo0003'), { ok: false, fehler: text }, 'jetzt von Hand beendet');
+    assert.deepEqual(await store.zielZurueckZuFrei('demo0001'), { ok: false, fehler: text }, 'läuft noch');
   });
 
   test('zwei schnelle Änderungen hintereinander: beide sichtbar und beide gespeichert (eine nach der anderen)', async () => {
@@ -246,6 +270,96 @@ describe('Fehler beim Speichern: zurückgenommen, neu gelesen; abgelaufene Anmel
     assert.equal((await lauf).ok, true);
     await store.laden();
     assert.ok(zielMit(store, 'neu00001'));
+  });
+});
+
+describe('Startmonat und Löschprüfung mit frisch gelesenem Kontostand', () => {
+  test('das andere Telefon hat den Monat eben vervollständigt: Startmonat = nächster Monat, obwohl der angezeigte Kontostand veraltet ist', async () => {
+    const alt = { v: 1, p: { papa: { '2026-09': 100000 }, mama: { '2026-09': 50000 } }, x: [] };
+    const frisch = { v: 1, p: { papa: { '2026-09': 100000, '2026-10': 120000 }, mama: { '2026-09': 50000, '2026-10': 60000 } }, x: [] };
+    const { store } = aufbau({ speicher: leererSpeicher({ konto: alt }), ids: ['neu00001'], aendern: (a) => ({ ...a, leseKonto: async () => ({ konto: frisch }) }) });
+    await store.laden();
+    assert.equal((await store.zielSpeichern(entwurf())).ok, true);
+    assert.equal(zielMit(store, 'neu00001').erstellt, '2026-11');
+  });
+
+  test('Lesen des Kontostands scheitert (offline): der angezeigte gilt', async () => {
+    const { store } = aufbau({ ids: ['neu00001'], aendern: (a) => ({ ...a, leseKonto: async () => { throw new Error('offline'); } }) });
+    await store.laden();
+    assert.equal((await store.zielSpeichern(entwurf())).ok, true);
+    assert.equal(zielMit(store, 'neu00001').erstellt, '2026-10');
+  });
+
+  test('Löschen prüft mit dem frischen Kontostand: hat das Ziel inzwischen Geld bekommen → abgelehnt', async () => {
+    // Ziel ab Oktober; angezeigt nur September (nichts gefördert), frisch auch Oktober (+1.000 €): das Ziel hat Geld bekommen
+    const alt = { v: 1, p: { papa: { '2026-09': 100000 }, mama: { '2026-09': 50000 } }, x: [] };
+    const frisch = { v: 1, p: { papa: { '2026-09': 100000, '2026-10': 200000 }, mama: { '2026-09': 50000, '2026-10': 50000 } }, x: [] };
+    let liefern = alt;
+    const { store } = aufbau({ speicher: leererSpeicher({ konto: alt }), ids: ['neu00001'], aendern: (a) => ({ ...a, leseKonto: async () => ({ konto: liefern }) }) });
+    await store.laden();
+    await store.zielSpeichern(entwurf());
+    liefern = frisch;
+    assert.deepEqual(await store.zielLoeschen('neu00001'), { ok: false, fehler: TEXT_NICHT_LOESCHBAR });
+    liefern = alt;
+    assert.deepEqual(await store.zielLoeschen('neu00001'), { ok: true });
+  });
+});
+
+describe('Laden, Fehlermeldungen, Schnappschuss', () => {
+  test('laden() liest „unlesbar“, während eine eigene Änderung unterwegs ist → leer und gesperrt, Warteschlange geleert', async () => {
+    let freigeben;
+    const halt = new Promise((r2) => (freigeben = r2));
+    let unlesbar = false;
+    const { store } = aufbau({
+      ids: ['neu00001'],
+      aendern: (a) => ({
+        ...a,
+        laden: async () => {
+          const d = await a.laden();
+          return unlesbar ? { ...d, ziele: { daten: leereZiele(), unlesbar: true, warnungen: [], text: '{"v":2}' } } : d;
+        },
+        leseZiele: async () => (unlesbar ? { daten: leereZiele(), unlesbar: true, warnungen: [], text: '{"v":2}' } : a.leseZiele()),
+        aendereZiele: async () => {
+          await halt;
+          throw zieleGesperrtFehler();
+        },
+      }),
+    });
+    await store.laden();
+    const schreiben = store.zielSpeichern(entwurf());
+    unlesbar = true;
+    await store.laden();
+    const z = store.getState().ziele;
+    assert.equal(z.unlesbar, true);
+    assert.deepEqual(z.daten, leereZiele());
+    freigeben();
+    await schreiben;
+    assert.deepEqual(store.getState().ziele.daten, leereZiele());
+  });
+
+  test('zweimal derselbe Speicherfehler hintereinander: der Zähler steigt (die Shell zeigt beide Meldungen)', async () => {
+    const { store } = aufbau({ ids: ['neu00001', 'neu00002'], aendern: (a) => ({ ...a, aendereZiele: async () => { throw new Error('Netz weg'); } }) });
+    await store.laden();
+    await store.zielSpeichern(entwurf());
+    const eins = store.getState();
+    await store.zielSpeichern(entwurf({ name: 'Laptop', emoji: '💻' }));
+    const zwei = store.getState();
+    assert.equal(eins.fehler, zwei.fehler);
+    assert.equal(zwei.fehlerNr, eins.fehlerNr + 1);
+  });
+
+  test('wartet eine Änderung auf die Anmeldung, nimmt der Schnappschuss den zuletzt gespeicherten Stand (nicht die wartende Änderung)', async () => {
+    const { store } = aufbau({ ids: ['neu00001'], aendern: (a) => ({ ...a, aendereZiele: async () => { throw authFehler(); } }) });
+    await store.laden();
+    const vorher = store.getState().ziele.daten.z.map((z) => z.id);
+    assert.equal((await store.zielSpeichern(entwurf())).wartet, true);
+    assert.ok(zielMit(store, 'neu00001'), 'angezeigt');
+    const speicher = speicherAttrappe();
+    const snap = createSnapshot({ speicher, jetzt: () => JETZT });
+    assert.equal(snap.speichern(store.getState(), HEUTE), true);
+    const neustart = createStore(aufbau().adapter, { jetzt: () => JETZT });
+    neustart.starteAusSnapshot(snap.lesen());
+    assert.deepEqual(neustart.getState().ziele.daten.z.map((z) => z.id), vorher);
   });
 });
 

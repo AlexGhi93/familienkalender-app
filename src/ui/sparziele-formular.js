@@ -6,7 +6,7 @@
 import { fuelle, h } from './dom.js';
 import { bestaetigen, blatt, toast } from './components.js';
 import { bedarfVorschau, entwurfZuZiel, sparzieleModel, zielEntwurf, zieleSperre, zielSymbole } from '../app/views/sparziele-model.js';
-import { MAX_ZIEL_NAME, zielLoeschbar } from '../domain/sparziele.js';
+import { MAX_ZIEL_NAME, zielLoeschbar, zielSchluss } from '../domain/sparziele.js';
 import { betragText, centsAusText } from '../domain/konto.js';
 import { MONATE } from '../app/format-de.js';
 
@@ -65,6 +65,8 @@ export function oeffneZielFormular({ store }, id) {
   const symbolListe = zielSymbole(state.settings);
   const e = zielEntwurf(original, heute);
   const loeschbar = original ? zielLoeschbar(state.ziele.daten, state.konto, heute, original.id) : false;
+  // nach dem Zieldatum automatisch abgeschlossen: mit einem neuen Datum ab jetzt wieder öffnen (kein „Ziel beenden“ mehr)
+  const abgeschlossen = original ? zielSchluss(original).monat <= heute.slice(0, 7) : false;
   let speichert = false;
   let b = null;
   let felder = null;
@@ -85,7 +87,7 @@ export function oeffneZielFormular({ store }, id) {
     return [h('span', {}, `Ab ${v.ab} → ${v.monate} → `), h('b', {}, v.proMonat)];
   }
 
-  /** Während gespeichert wird, ist das ganze Blatt aus (Felder, Speichern, Ziel beenden, Löschen); danach wieder an (m-3). */
+  /** Während gespeichert wird, ist das ganze Blatt aus (Felder, Speichern, Ziel beenden, Löschen); danach wieder an. */
   async function speichern() {
     if (speichert) return;
     const { ziel, fehler } = entwurfZuZiel(e, heute, { konto: store.getState().konto });
@@ -178,10 +180,11 @@ export function oeffneZielFormular({ store }, id) {
       h('div', { class: 'feld' }, h('span', { 'aria-hidden': 'true' }, 'Bis wann?'), datumFelder(aktualisieren)),
       h('div', { class: 'fk-box sz-box' }, vorschau),
       h('p', { class: 'leise fk-tipp' }, '„Datum vorläufig“: z. B. „ca. Juli 2027“ – damit wird schon gerechnet; das genaue Datum tragt ihr ein, sobald es fix ist.'),
-      h('p', { class: 'leise fk-tipp' }, 'Ist das Datum vorbei, wird das Ziel automatisch abgeschlossen: das Gesparte gilt als ausgegeben, das Ziel verschwindet aus der Liste und steht nur noch im Verlauf.'),
+      h('p', { class: 'leise fk-tipp' }, 'Ist das Datum vorbei, wird das Ziel automatisch abgeschlossen: das Gesparte gilt als ausgegeben, das Ziel verschwindet aus der Liste und steht nur noch im Verlauf. Hat sich das Datum verschoben, lässt es sich dort mit ✎ und einem neuen Datum wieder öffnen.'),
     );
     return [
       gesperrt ? gesperrtHinweis(gesperrt) : null,
+      abgeschlossen ? h('p', { class: 'blatt-text sz-wieder' }, 'Nach dem Zieldatum abgeschlossen. Mit einem neuen Datum ab dem laufenden Monat läuft es weiter – das Gesparte bleibt beim Ziel.') : null,
       felder,
       h(
         'div',
@@ -189,13 +192,13 @@ export function oeffneZielFormular({ store }, id) {
         original && loeschbar
           ? h('button', { class: 'knopf klein gefahr', type: 'button', disabled: aus, onClick: () => zielLoeschenFragen({ store }, original, () => b.schliessen()) }, 'Endgültig löschen')
           : null,
-        original ? h('button', { class: 'knopf klein', type: 'button', disabled: aus, onClick: () => oeffneZielBeenden({ store }, original, () => b.schliessen()) }, 'Ziel beenden') : null,
+        original && !abgeschlossen ? h('button', { class: 'knopf klein', type: 'button', disabled: aus, onClick: () => oeffneZielBeenden({ store }, original, () => b.schliessen()) }, 'Ziel beenden') : null,
         speichernKnopf,
       ),
     ];
   }
 
-  b = blatt({ titel: original ? 'Sparziel ändern' : 'Neues Sparziel', render });
+  b = blatt({ titel: abgeschlossen ? 'Sparziel wieder öffnen' : original ? 'Sparziel ändern' : 'Neues Sparziel', render });
   return b;
 }
 
@@ -211,7 +214,7 @@ export function oeffneZielBeenden({ store }, ziel, danach = () => {}) {
           danach();
         } else sperren(knoepfe, false); // nochmal versuchen
       };
-      const ausgegeben = h('button', { class: 'knopf sz-wahl', type: 'button', onClick: () => beenden('ausgegeben', 'Ziel beendet ✓') }, h('b', {}, '🛍️ Geld wurde ausgegeben'), h('small', {}, 'Das Gesparte ist weg (z. B. Urlaub bezahlt) und zählt nicht mehr mit.'));
+      const ausgegeben = h('button', { class: 'knopf sz-wahl', type: 'button', onClick: () => beenden('ausgegeben', 'Ziel beendet ✓') }, h('b', {}, '🛍️ Geld wurde ausgegeben'), h('small', {}, 'Das Gesparte wurde vom Konto bezahlt (z. B. Urlaub). Die Zahlung steckt schon im Kontostand – deshalb wird sie ausgeglichen, nichts fehlt doppelt.'));
       const zurueck = h('button', { class: 'knopf sz-wahl', type: 'button', onClick: () => beenden('frei', 'Ziel beendet – Geld zurück zu Frei ✓') }, h('b', {}, '💜 Geld zurück zu Frei'), h('small', {}, 'Das Gesparte geht zu „Frei verfügbar“ und lässt sich anderen Zielen geben.'));
       const knoepfe = [ausgegeben, zurueck];
       return [
@@ -219,6 +222,19 @@ export function oeffneZielBeenden({ store }, ziel, danach = () => {}) {
         h('div', { class: 'sz-wahlen' }, ausgegeben, zurueck),
         h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein', type: 'button', onClick: schliessen }, 'Abbrechen')),
       ];
+    },
+  });
+}
+
+/** Rückfrage „Doch nicht ausgegeben?“ für ein automatisch abgeschlossenes Ziel: das Gesparte geht ab seinem Abschlussmonat zu „Frei“. */
+export function zurueckZuFreiFragen({ store }, ziel, knoepfe = []) {
+  return bestaetigen({
+    titel: 'Doch nicht ausgegeben?',
+    text: `Das Gesparte von „${ziel.name}“ geht zurück zu „Frei verfügbar“ (z. B. wenn der Urlaub ausgefallen ist). Das lässt sich nicht rückgängig machen.`,
+    ja: 'Zurück zu Frei',
+    beiJa: async () => {
+      sperren(knoepfe, true);
+      if (!erledigt(await sicher(store.zielZurueckZuFrei(ziel.id)), 'Zurück zu Frei ✓')) sperren(knoepfe, false); // nochmal versuchen
     },
   });
 }

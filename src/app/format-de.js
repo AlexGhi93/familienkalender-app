@@ -1,5 +1,8 @@
 import { parseDate, weekday } from '../domain/dates.js';
 
+/** 'JJJJ-MM' → „Oktober 2026“. */
+export const monatText = (jm) => `${MONATE[Number(jm.slice(5, 7)) - 1]} ${jm.slice(0, 4)}`;
+
 export const MONATE = [
   'Januar',
   'Februar',

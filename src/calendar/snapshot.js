@@ -71,14 +71,15 @@ function pruefeZiele(roh) {
 }
 
 /**
- * Sparziele für den Schnappschuss: als Kalendertext (kurz, mit fremden Einträgen); nur gelesene (Status 'geladen' oder 'gespeichert') –
+ * Sparziele für den Schnappschuss: als Kalendertext (kurz, mit fremden Einträgen); nur gelesene (Status 'geladen' oder 'gespeichert'),
+ * und zwar der zuletzt GESPEICHERTE Stand (`bestaetigt`, solange eigene Änderungen offen sind – sie leben nur im Speicher) –
  * noch nie gelesen, beim letzten Laden gescheitert ('fehler') oder unbrauchbar → null (bei 'fehler' behält speichern() die Sparziele
  * des bisherigen Schnappschusses).
  */
 function zieleFuerSnapshot(ziele) {
   if (ziele?.status !== 'geladen' && ziele?.status !== 'gespeichert') return null;
   try {
-    return { text: zieleText(ziele.daten), unlesbar: ziele.unlesbar === true };
+    return { text: zieleText(ziele.bestaetigt ?? ziele.daten), unlesbar: ziele.unlesbar === true };
   } catch {
     return null;
   }
@@ -116,7 +117,7 @@ export function createSnapshot({ speicher = globalThis.localStorage ?? null, jet
      */
     speichern(state, heute) {
       if (!speicher) return false;
-      /** Die Sparziele des bisherigen Schnappschusses (roh, nur wenn brauchbar): nach einem gescheiterten Lesen bleiben sie (m-B). */
+      /** Die Sparziele des bisherigen Schnappschusses (roh, nur wenn brauchbar): nach einem gescheiterten Lesen bleiben sie. */
       const letzteZiele = () => {
         try {
           const alt = JSON.parse(speicher.getItem(SNAPSHOT_KEY))?.ziele;

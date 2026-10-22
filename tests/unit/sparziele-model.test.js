@@ -208,7 +208,7 @@ describe('Formular: Entwurf, Prüfung, Bedarf pro Monat', () => {
   test('Entwurf → Ziel (Monat oder Tag); Fehler deutsch', () => {
     const e = { ...zielEntwurf(null, HEUTE), name: ' Neues Rad ', betrag: '1.200', monat: '06', jahr: '2027' };
     assert.deepEqual(entwurfZuZiel(e, HEUTE), { ziel: { name: 'Neues Rad', emoji: '🎯', zielCents: 120_000, datum: '2027-06', vorlaeufig: false }, fehler: null });
-    assert.equal(entwurfZuZiel({ ...e, tag: '31' }, HEUTE).fehler, 'Bitte angeben, bis wann gespart wird.');
+    assert.equal(entwurfZuZiel({ ...e, tag: '31' }, HEUTE).fehler, 'Den 31. gibt es im Juni 2027 nicht.', 'unmöglicher Tag: klare Meldung mit Monat');
     assert.equal(entwurfZuZiel({ ...e, tag: '30', art: 'vorlaeufig' }, HEUTE).ziel.datum, '2027-06-30');
     assert.equal(entwurfZuZiel({ ...e, tag: '30', art: 'vorlaeufig' }, HEUTE).ziel.vorlaeufig, true);
     assert.equal(entwurfZuZiel({ ...e, betrag: 'abc' }, HEUTE).fehler, 'Bitte einen Zielbetrag zwischen 1 € und 999.999 € eingeben.');
@@ -279,5 +279,60 @@ describe('Task 3, Fix-Runde 1 (m-1, m-5, m-7)', () => {
     assert.equal(zieleSperre({ status: 'fehler', unlesbar: false }), TEXT_ZIELE_NICHT_GELADEN);
     assert.equal(zieleSperre({ status: 'geladen', unlesbar: true }), TEXT_ZIELE_GESPERRT);
     assert.deepEqual(zielSymbole({ kindname: 'Kiki' }), sparzieleModel(zustand({ settings: { kindname: 'Kiki' }, ziele: zieleZustand(leer) }), HEUTE).symbole);
+  });
+});
+
+describe('sparzieleModel: Ausgleich, wieder öffnen, vorläufiges Datum', () => {
+  // Auto 23.000 € bis 07.2028, Urlaub 1.500 € bis 07.2027 (ab 02.2027); +2.000 € Februar–Juni, Juli +500 € (Urlaub bezahlt)
+  const k = konto({ '2027-01': 1_800_000, '2027-02': 2_000_000, '2027-03': 2_200_000, '2027-04': 2_400_000, '2027-05': 2_600_000, '2027-06': 2_800_000, '2027-07': 2_850_000 });
+  const autoZ = ziel('auto0001', { name: 'Auto', emoji: '🚗', zielCents: 2_300_000, datum: '2028-07', erstellt: '2027-02' });
+  const urlaubZ = (mehr = {}) => ziel('url00001', { name: 'Urlaub', emoji: '🏖️', zielCents: 150_000, datum: '2027-07', erstellt: '2027-02', ...mehr });
+
+  test('„… bezahlt (aus dem Ziel)“ mit −Betrag: die Zeilen ergeben weiter genau „gespart“; zurückgelegt + Frei = 10.500 €', () => {
+    const daten = { v: 1, beginn: '2027-02', z: [autoZ, urlaubZ({ beendet: { monat: '2027-07', art: 'ausgegeben' } })], m: [] };
+    const v = sparVerlauf(daten, k, '2027-07-31');
+    const m = sparzieleModel(zustand({ konto: k, ziele: zieleZustand(daten) }), '2027-07-31');
+    const jul = m.verlauf[0];
+    const d = v.monate[0];
+    assert.equal(jul.monat, '2027-07');
+    assert.equal(jul.teile[0].text, '🏖️ Urlaub bezahlt (aus dem Ziel)');
+    assert.equal(jul.teile[0].cents, -d.ausgleich);
+    assert.equal(jul.teile.reduce((s2, z) => s2 + z.cents, 0), 50_000);
+    assert.match(jul.ausgleich, /^Ausgleich: /);
+    assert.equal(v.summeZiele + v.frei, 1_050_000);
+    for (const [i, monat] of m.verlauf.entries()) if (v.monate[i].gespart !== null) assert.equal(monat.teile.reduce((s2, z) => s2 + z.cents, 0), v.monate[i].gespart, monat.monat);
+  });
+
+  test('Ausgleich in einem Monat ohne Ersparnis (gespart = −Ausgleich): nur die Zeile „bezahlt“, Summe stimmt', () => {
+    const k2 = konto({ '2027-01': 1_800_000, '2027-02': 2_000_000, '2027-03': 1_900_000 });
+    const daten = { v: 1, beginn: '2027-02', z: [urlaubZ({ zielCents: 100_000, datum: '2027-02' })], m: [] };
+    const m = sparzieleModel(zustand({ konto: k2, ziele: zieleZustand(daten) }), '2027-03-31');
+    const mar = m.verlauf[0];
+    assert.equal(mar.gespartCents, -100_000);
+    assert.deepEqual(mar.teile.map((t) => [t.text, t.cents]), [['🏖️ Urlaub bezahlt (aus dem Ziel)', -100_000]]);
+    assert.equal(mar.keineVeraenderung, false);
+  });
+
+  test('abgeschlossen: nur automatisch abgeschlossene lassen sich ändern (wieder öffnen) und doch zurück zu Frei geben', () => {
+    const daten = { v: 1, beginn: '2027-02', z: [autoZ, urlaubZ(), urlaubZ({ id: 'url00002', name: 'Fest', beendet: { monat: '2027-07', art: 'ausgegeben' } })], m: [] };
+    const m = sparzieleModel(zustand({ konto: k, ziele: zieleZustand(daten) }), '2027-08-05');
+    const auto = m.abgeschlossen.find((a) => a.id === 'url00001');
+    const hand = m.abgeschlossen.find((a) => a.id === 'url00002');
+    assert.equal(auto.automatisch, true);
+    assert.equal(auto.kannAendern, true);
+    assert.equal(auto.kannZurueckZuFrei, true);
+    assert.equal(hand.kannAendern, false);
+    assert.equal(hand.kannZurueckZuFrei, false);
+    const gesperrt = sparzieleModel(zustand({ konto: k, ziele: zieleZustand(daten, { unlesbar: true }) }), '2027-08-05');
+    assert.ok(gesperrt.abgeschlossen.every((a) => !a.kannAendern && !a.kannZurueckZuFrei));
+  });
+
+  test('vorläufiges Datum im Zielmonat: „schließt am 1. … – Datum verschoben? ✎ ändern“', () => {
+    const daten = { v: 1, beginn: '2027-02', z: [autoZ, urlaubZ({ vorlaeufig: true })], m: [] };
+    const juni = sparzieleModel(zustand({ konto: k, ziele: zieleZustand(daten) }), '2027-06-15');
+    assert.equal(juni.ziele[1].hinweis, 'Datum noch vorläufig (✎ ändern, sobald es fix ist)');
+    const juli = sparzieleModel(zustand({ konto: k, ziele: zieleZustand(daten) }), '2027-07-15');
+    assert.equal(juli.ziele[1].hinweis, 'schließt am 1. August 2027 – Datum verschoben? ✎ ändern');
+    assert.equal(juli.ziele[0].hinweis, null);
   });
 });

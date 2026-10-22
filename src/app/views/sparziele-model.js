@@ -4,10 +4,10 @@
 // Gerechnet wird ausschließlich mit src/domain/sparziele.js (sparVerlauf); hier wird nur formatiert.
 import { TEXT_ZIELE_GESPERRT, TEXT_ZIELE_NICHT_GELADEN, ZIEL_EMOJIS, sparVerlauf, startMonat, zielLoeschbar, zielPruefen, zielSchluss } from '../../domain/sparziele.js';
 import { betragText, centsAusText, deltaText, monatVor } from '../../domain/konto.js';
-import { MONATE } from '../format-de.js';
+import { isValidDate } from '../../domain/dates.js';
+import { MONATE, monatText } from '../format-de.js';
 
-/** 'JJJJ-MM' → „Oktober 2026“. */
-export const monatText = (jm) => `${MONATE[Number(jm.slice(5, 7)) - 1]} ${jm.slice(0, 4)}`;
+export { monatText };
 
 const monateText = (n) => (n === 1 ? '1 Monat' : `${n} Monate`);
 const prozentText = (p) => `${String(p).replace('.', ',')} %`;
@@ -41,7 +41,7 @@ function statusVon(z) {
   return { text: '✓ im Plan', art: 'ok' };
 }
 
-function zielKarte(z, i) {
+function zielKarte(z, i, heute) {
   const p = prozent(z.gespart, z.zielCents);
   const status = statusVon(z);
   const stand = `${betragText(z.gespart)} von ${betragText(z.zielCents)} · ${prozentText(p)}`;
@@ -54,7 +54,7 @@ function zielKarte(z, i) {
     titel: `${z.emoji} ${z.name}`,
     bis: zielBisText(z),
     vorlaeufig: z.vorlaeufig,
-    hinweis: z.vorlaeufig ? 'Datum noch vorläufig (✎ ändern, sobald es fix ist)' : null,
+    hinweis: !z.vorlaeufig ? null : z.datum.slice(0, 7) <= heute.slice(0, 7) ? `schließt am 1. ${schluss} – Datum verschoben? ✎ ändern` : 'Datum noch vorläufig (✎ ändern, sobald es fix ist)',
     breite: Math.min(100, p),
     farbe: BALKEN_FARBEN[i % BALKEN_FARBEN.length],
     stand,
@@ -68,7 +68,11 @@ function zielKarte(z, i) {
 
 const zeile = (text, cents, betrag = deltaText(cents)) => ({ text, cents, betrag });
 
-/** Ein Monat im Verlauf: Ersparnis und ihre Aufteilung (Σ teile.cents = gespart), Abschlüsse, Verschiebungen aus Frei. */
+/**
+ * Ein Monat im Verlauf: Ersparnis und ihre Aufteilung (Σ teile.cents = gespart), Abschlüsse, Verschiebungen aus Frei. Wurde in dem
+ * Monat ein Ausgleich verteilt (Ziel „ausgegeben“: die Zahlung steckt schon im Kontostand), steht je Ziel eine Zeile „… bezahlt (aus dem
+ * Ziel)“ mit −Betrag; verteilt wird gespart + Ausgleich.
+ */
 function monatEintrag(m, name) {
   const abschluesse = m.abschluss.map((a) =>
     a.art === 'frei' ? zeile(`${name(a.ziel)} beendet – zurück zu Frei`, a.cents, `+${betragText(a.cents)} → Frei`) : zeile(`${name(a.ziel)} abgeschlossen (ausgegeben)`, a.cents, betragText(a.cents)),
@@ -76,17 +80,21 @@ function monatEintrag(m, name) {
   const verschoben = m.verschoben.map((v) => zeile(`💜 → ${name(v.ziel)} (aus Frei verschoben${v.cents < v.gewuenscht ? `, gewünscht ${betragText(v.gewuenscht)}` : ''})`, v.cents));
   let teile = [];
   let hinweis = null;
-  if (m.gespart !== null && m.gespart > 0) {
+  const ausgleich = m.ausgleich ?? 0;
+  const verteilt = m.gespart === null ? null : m.gespart + ausgleich;
+  const bezahlt = (m.ausgleichVon ?? []).map((a) => zeile(`${name(a.ziel)} bezahlt (aus dem Ziel)`, -a.cents));
+  if (verteilt !== null && verteilt > 0) {
     const noetig = m.zuteilung.reduce((s, t) => s + t.noetig, 0);
     const anteilig = m.anteilig; // aus der Rechnung: Plus-Monat mit weniger als nötig
     teile = m.zuteilung.filter((t) => t.cents !== 0 || t.noetig > 0).map((t) => zeile(anteilig ? name(t.ziel) : `${name(t.ziel)} (nötig ${betragText(t.noetig)})`, t.cents));
     if (m.frei.cents !== 0) teile.push(zeile(m.zuteilung.length > 0 ? '💜 Frei verfügbar (Rest)' : '💜 Frei verfügbar (kein laufendes Ziel)', m.frei.cents));
     if (anteilig) hinweis = `Weniger als nötig (${betragText(noetig)}) → anteilig nach Bedarf aufgeteilt.`;
-  } else if (m.gespart !== null && m.gespart < 0) {
+  } else if (verteilt !== null && verteilt < 0) {
     teile = [zeile('💜 Frei verfügbar zuerst', m.frei.cents, m.frei.cents === 0 ? '−0 € (leer)' : deltaText(m.frei.cents))];
     teile.push(...m.zuteilung.filter((t) => t.cents !== 0).map((t) => zeile(`${name(t.ziel)} (anteilig)`, t.cents)));
     if (m.ungedeckt > 0) teile.push(zeile('Rest nicht gedeckt (Ziele schon leer)', -m.ungedeckt));
   }
+  teile = [...bezahlt, ...teile];
   return {
     monat: m.monat,
     titel: monatText(m.monat),
@@ -97,7 +105,8 @@ function monatEintrag(m, name) {
     abschluesse,
     teile,
     hinweis,
-    keineVeraenderung: m.gespart === 0,
+    keineVeraenderung: m.gespart === 0 && ausgleich === 0,
+    ausgleich: ausgleich > 0 ? `Ausgleich: ${betragText(ausgleich)} wurden aus Zielen bezahlt – das steckt schon im Kontostand und wird hier wieder mit verteilt.` : null,
     verschoben,
     freiDanach: `💜 Frei am Monatsende: ${betragText(m.frei.nachher)}`,
   };
@@ -146,7 +155,7 @@ export function sparzieleModel(state, heute, { ausgeblendeteZeigen = false } = {
     },
     ohneKontostand: v.standMonat === null,
     leer: (daten.z ?? []).length === 0,
-    ziele: laufend.map(zielKarte),
+    ziele: laufend.map((z, i) => zielKarte(z, i, heute)),
     frei: {
       betrag: betragText(v.frei),
       cents: v.frei,
@@ -163,6 +172,10 @@ export function sparzieleModel(state, heute, { ausgeblendeteZeigen = false } = {
         text: `${z.abgeschlossen.automatisch ? 'Nach dem Zieldatum abgeschlossen' : 'Beendet'} im ${monatText(z.abgeschlossen.monat)} · ${betragText(z.gespart)} ${z.abgeschlossen.art === 'frei' ? 'zurück zu Frei' : 'ausgegeben'}${z.status === 'erreicht' ? ' · 🎉 erreicht' : ''}`,
         aus: Boolean(z.aus),
         loeschbar: zielLoeschbar(daten, konto, heute, z.id),
+        automatisch: z.abgeschlossen.automatisch,
+        // nur automatisch abgeschlossen (Zielmonat vorbei, nie von Hand beendet): mit neuem Datum wieder öffnen oder doch zurück zu Frei
+        kannAendern: z.abgeschlossen.automatisch && !gesperrt,
+        kannZurueckZuFrei: z.abgeschlossen.automatisch && z.abgeschlossen.art === 'ausgegeben' && !gesperrt,
       })),
     ausgeblendet: fertig.filter((z) => z.aus).length,
     symbole: zielSymbole(state.settings),
@@ -199,6 +212,7 @@ export function entwurfZuZiel(e, heute, { konto } = {}) {
   const cents = centsAusText(String(e.betrag ?? ''));
   const datum = e.tag ? `${e.jahr}-${e.monat}-${String(e.tag).padStart(2, '0')}` : `${e.jahr}-${e.monat}`;
   const ziel = { ...(e.id ? { id: e.id } : {}), name: String(e.name ?? '').replace(/\s+/g, ' ').trim(), emoji: e.emoji, zielCents: cents ?? NaN, datum, vorlaeufig: e.art === 'vorlaeufig' };
+  if (e.tag && !isValidDate(datum)) return { ziel: null, fehler: `Den ${Number(e.tag)}. gibt es im ${monatText(`${e.jahr}-${e.monat}`)} nicht.` };
   const erstellt = e.erstellt ?? (!e.id && konto ? startMonat(heute, konto) : undefined);
   const fehler = zielPruefen({ ...ziel, ...(erstellt ? { erstellt } : {}) }, { heute });
   return { ziel: fehler ? null : ziel, fehler };
