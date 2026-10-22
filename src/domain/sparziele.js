@@ -4,33 +4,38 @@
 // jedes Mal neu aus dem Kontostand-Verlauf.
 //
 // Im Speicher (lesbare Namen):
-//   { v: 1, z: [Ziel], m: [Verschiebung], fremd?: { z: [roh], m: [roh] } }
-//   Ziel          { id, name, emoji, zielCents, datum, vorlaeufig, erstellt, beendet?: { monat, art } }
+//   { v: 1, beginn?, z: [Ziel], m: [Verschiebung], fremd?: { z: [roh], m: [roh] } }
+//   beginn        'JJJJ-MM' = ab hier wird gerechnet: der Startmonat des ersten Ziels; rückt nie nach hinten (auch nicht, wenn ein
+//                 Ziel gelöscht wird), damit sich die Vergangenheit nie ändert. Fehlt es (alte Daten) → frühester `erstellt`.
+//   Ziel          { id, name, emoji, zielCents, datum, vorlaeufig, erstellt, beendet?: { monat, art }, aus?: true }
 //     id          Kennung aus 0-9 und a-v (4–16 Zeichen, siehe neueZielId)
 //     name        1–30 Zeichen; emoji aus ZIEL_EMOJIS; zielCents MIN_ZIEL_CENTS … MAX_ZIEL_CENTS (1 € … 999.999 €)
 //     datum       'JJJJ-MM-TT' (fest) oder 'JJJJ-MM' (nur Monat); vorlaeufig = Datum noch nicht fix („bis ca.“)
 //     erstellt    'JJJJ-MM' = erster Monat, dessen Ersparnis zählt (startMonat; beim Anlegen festgelegt, danach nie geändert)
 //     beendet     von Hand beendet ab Monat `monat`: art 'ausgegeben' (das Gesparte ist weg) oder 'frei' (es geht zu „Frei“)
+//     aus         im Verlauf ausgeblendet (nur Anzeige; die Rechnung bleibt gleich)
 //   Verschiebung  { id, monat, ziel, cents } = `cents` aus „Frei“ zum Ziel `ziel`, nach der Aufteilung des Monats `monat`
 //   fremd         Einträge, die diese Version nicht versteht (neuere Version, beschädigt): roh, nicht gezeigt, unverändert mitgeschrieben
 //
 // Im Kalender (verstecktes Ereignis „fkziele“, Task 2): JSON ≤ MAX_ZIELE_ZEICHEN mit KURZEN Schlüsseln:
-//   { v: 1, z: [ … ], m: [ … ] }
-//   Ziel:          i=id  n=name  e=emoji  c=zielCents  d=datum  p=vorlaeufig (nur 1)  s=erstellt  b=beendet { m=monat, a=art }
+//   { v: 1, a: beginn, z: [ … ], m: [ … ] }
+//   Ziel:          i=id  n=name  e=emoji  c=zielCents  d=datum  p=vorlaeufig (nur 1)  s=erstellt  b=beendet { m=monat, a=art }  h=aus (nur 1)
 //   Verschiebung:  i=id  m=monat  z=ziel  c=cents
 // Jede Änderung ist eine reine Funktion Daten → Daten, die (nach HTTP 412) auf die NEUESTE Fassung angewendet wird: das Argument wird
 // nie verändert, zweimal angewendet = einmal angewendet. Unlesbare Daten (kaputtes JSON, andere Version) werden nie überschrieben.
+// Endgültig gelöscht werden darf nur ein Ziel, das nie Geld bekommen hat (zielLoeschbar); alle anderen lassen sich nur ausblenden.
+// Alles, was ein Datum „heute“ braucht, wirft sofort bei einem ungültigen (kein Text 'JJJJ-MM-TT'), siehe heutePruefen.
 
 import { isValidDate } from './dates.js';
-import { zielSchluss } from './sparziele-rechnung.js';
+import { heutePruefen, sparVerlauf, zieleBeginn, zielSchluss } from './sparziele-rechnung.js';
 
-export { sparMonate, sparVerlauf, startMonat, zielSchluss, zielMonat } from './sparziele-rechnung.js';
+export { heutePruefen, sparMonate, sparVerlauf, startMonat, zieleBeginn, zielSchluss, zielMonat } from './sparziele-rechnung.js';
 
 export const MAX_ZIELE_AKTIV = 20; // laufende Ziele; abgeschlossene zählen nicht
 export const MAX_ZIEL_NAME = 30;
 export const MIN_ZIEL_CENTS = 100; // 1 €
 export const MAX_ZIEL_CENTS = 99_999_900; // 999.999 €
-export const MAX_MUTARI = 200; // Verschiebungen aus „Frei“ insgesamt
+export const MAX_VERSCHIEBUNGEN = 200; // Verschiebungen aus „Frei“ insgesamt (der Platz im Kalender reicht meist schon früher nicht)
 export const MAX_ZIELE_ZEICHEN = 6000; // wie Kontostand und Fixkosten: Google kürzt Beschreibungen still bei 8192 Zeichen
 
 /** Die Symbole zur Auswahl (fest; 🏖️ 🛋️ ✈️ mit Variantenzeichen U+FE0F). */
@@ -39,7 +44,9 @@ export const ZIEL_EMOJIS = Object.freeze(['🚗', '🏖️', '🏠', '🎁', '�
 /** Arten, ein Ziel von Hand zu beenden. */
 export const ZIEL_ENDE_ARTEN = Object.freeze(['ausgegeben', 'frei']);
 
-export const TEXT_ZIELE_VOLL = 'Die Sparziele sind voll. Bitte abgeschlossene Ziele im Verlauf endgültig löschen.';
+export const TEXT_ZIELE_VOLL = 'Die Sparziele sind voll: im Kalender ist kein Platz für ein weiteres Ziel. Ziele, die nie Geld bekommen haben, lassen sich löschen.';
+export const TEXT_VERSCHIEBUNGEN_VOLL = 'Kein Platz mehr für weitere Verschiebungen aus „Frei“ – der Speicher der Sparziele im Kalender ist voll.';
+export const TEXT_NICHT_LOESCHBAR = 'Dieses Ziel hat schon Geld bekommen – es kann nur ausgeblendet werden.';
 
 /** Meldung, wenn die gespeicherten Sparziele unlesbar sind (beschädigt oder von einer neueren App-Version): sie werden dann nie überschrieben. */
 export const TEXT_ZIELE_GESPERRT = 'Die Sparziele sind unlesbar (beschädigt oder von einer neueren App-Version). Damit nichts verloren geht, lassen sie sich hier nicht ändern – bitte die App auf beiden Telefonen aktualisieren.';
@@ -53,7 +60,7 @@ const MONAT = /^\d{4}-(0[1-9]|1[0-2])$/;
 const KENNUNG = /^[0-9a-v]{4,16}$/;
 const ID_ZEICHEN = '0123456789abcdefghijklmnopqrstuv';
 const ID_LAENGE = 8;
-const ZIEL_SCHLUESSEL = new Set(['i', 'n', 'e', 'c', 'd', 'p', 's', 'b']);
+const ZIEL_SCHLUESSEL = new Set(['i', 'n', 'e', 'c', 'd', 'p', 's', 'b', 'h']);
 const ENDE_SCHLUESSEL = new Set(['m', 'a']);
 const VERSCHIEBUNG_SCHLUESSEL = new Set(['i', 'm', 'z', 'c']);
 
@@ -80,8 +87,8 @@ export function neueZielId(zufall = Math.random) {
   return id;
 }
 
-/** Ist das Ziel am Tag `heute` abgeschlossen (automatisch nach dem Zielmonat oder von Hand)? */
-const abgeschlossenAm = (ziel, heute) => zielSchluss(ziel).monat <= String(heute).slice(0, 7);
+/** Ist das Ziel am Tag `heute` (geprüft) abgeschlossen (automatisch nach dem Zielmonat oder von Hand)? */
+const abgeschlossenAm = (ziel, heute) => zielSchluss(ziel).monat <= heute.slice(0, 7);
 
 // ---------------------------------------------------------------- Prüfen und Normalisieren
 
@@ -101,15 +108,18 @@ function aufbauFehler(e) {
 
 /**
  * Prüft einen Entwurf aus dem Formular → erste Fehlermeldung (deutsch, für die Oberfläche) oder null: Name 1–30 Zeichen, Symbol aus
- * der Liste, Betrag 1 € … 999.999 €, Datum gültig und nicht vor dem laufenden Monat (`heute`), und – mit `daten` – höchstens
- * MAX_ZIELE_AKTIV laufende Ziele (ein bestehendes darf immer geändert werden; fremde Einträge zählen vorsichtshalber mit).
+ * der Liste, Betrag 1 € … 999.999 €, Datum gültig, nicht vor dem laufenden Monat (`heute`, Pflicht) und – wenn `erstellt` da ist –
+ * nicht vor dem ersten Sparmonat, und – mit `daten` – höchstens MAX_ZIELE_AKTIV laufende Ziele (ein bestehendes darf immer
+ * geändert werden; fremde Einträge zählen vorsichtshalber mit).
  */
 export function zielPruefen(entwurf, { heute, daten } = {}) {
+  heutePruefen(heute);
   const e = istObjekt(entwurf) ? entwurf : {};
   const fehler = aufbauFehler(e);
   if (fehler) return fehler;
-  if (heute !== undefined && e.datum.slice(0, 7) < String(heute).slice(0, 7)) return 'Das Datum liegt in der Vergangenheit – bitte einen Monat ab jetzt wählen.';
-  if (daten && heute !== undefined && !(daten.z ?? []).some((z) => z.id === e.id)) {
+  if (e.datum.slice(0, 7) < heute.slice(0, 7)) return 'Das Datum liegt in der Vergangenheit – bitte einen Monat ab jetzt wählen.';
+  if (e.erstellt !== undefined && e.datum.slice(0, 7) < e.erstellt) return 'Das Zieldatum liegt vor dem ersten Sparmonat – bitte einen späteren Monat wählen.';
+  if (daten && !(daten.z ?? []).some((z) => z.id === e.id)) {
     const laufend = (daten.z ?? []).filter((z) => !abgeschlossenAm(z, heute)).length + (daten.fremd?.z?.length ?? 0);
     if (laufend >= MAX_ZIELE_AKTIV) return `Höchstens ${MAX_ZIELE_AKTIV} laufende Sparziele.`;
   }
@@ -121,6 +131,7 @@ function normalisiereZiel(roh) {
   if (!istObjekt(roh) || aufbauFehler(roh) !== null || !istKennung(roh.id) || !istMonat(roh.erstellt)) return null;
   const z = { id: roh.id, name: sauber(roh.name), emoji: roh.emoji, zielCents: roh.zielCents, datum: roh.datum, vorlaeufig: roh.vorlaeufig === true, erstellt: roh.erstellt };
   if (istEnde(roh.beendet)) z.beendet = { monat: roh.beendet.monat, art: roh.beendet.art };
+  if (roh.aus === true) z.aus = true;
   return z;
 }
 
@@ -145,10 +156,16 @@ function eindeutig(liste, normalisiere) {
   return gut;
 }
 
-/** Daten mit diesen Listen und den fremden Einträgen von `alt` (nur, wenn es welche gibt). */
-function mitFremd(z, m, alt) {
+/**
+ * Daten mit diesen Listen, dem Beginn (frühester aus `alt` und den Startmonaten von `z`: rückt nie nach hinten) und den fremden
+ * Einträgen von `alt` (nur, wenn es welche gibt).
+ */
+function baue(alt, z, m) {
+  const beginn = zieleBeginn({ beginn: zieleBeginn(alt), z });
+  const d = beginn === null ? { v: 1, z, m } : { v: 1, beginn, z, m };
   const fremd = alt?.fremd;
-  return fremd && (fremd.z?.length > 0 || fremd.m?.length > 0) ? { v: 1, z, m, fremd } : { v: 1, z, m };
+  if (fremd && (fremd.z?.length > 0 || fremd.m?.length > 0)) d.fremd = fremd;
+  return d;
 }
 
 function kurzZiel(z) {
@@ -156,6 +173,7 @@ function kurzZiel(z) {
   if (z.vorlaeufig) k.p = 1;
   k.s = z.erstellt;
   if (z.beendet) k.b = { m: z.beendet.monat, a: z.beendet.art };
+  if (z.aus) k.h = 1;
   return k;
 }
 
@@ -165,9 +183,10 @@ const kurzVerschiebung = (v) => ({ i: v.id, m: v.monat, z: v.ziel, c: v.cents })
 const bekannt = (k, schluessel) => istObjekt(k) && Object.keys(k).every((s) => schluessel.has(s));
 
 function langZiel(k) {
-  if (!bekannt(k, ZIEL_SCHLUESSEL) || ('b' in k && !bekannt(k.b, ENDE_SCHLUESSEL)) || ('p' in k && k.p !== 1)) return null;
+  if (!bekannt(k, ZIEL_SCHLUESSEL) || ('b' in k && !bekannt(k.b, ENDE_SCHLUESSEL)) || ('p' in k && k.p !== 1) || ('h' in k && k.h !== 1)) return null;
   const z = { id: k.i, name: k.n, emoji: k.e, zielCents: k.c, datum: k.d, vorlaeufig: k.p === 1, erstellt: k.s };
   if ('b' in k) z.beendet = { monat: k.b.m, art: k.b.a };
+  if (k.h === 1) z.aus = true;
   return normalisiereZiel(z);
 }
 
@@ -177,7 +196,8 @@ const langVerschiebung = (k) => (bekannt(k, VERSCHIEBUNG_SCHLUESSEL) ? normalisi
  * Gelesene Daten im Speicherformat (kurze Schlüssel) → { daten, fremd }. Einträge, die diese Version nicht versteht (unbekanntes Feld,
  * unbekanntes Symbol, zu langer Name – vielleicht von einer neueren Version – oder beschädigt), landen roh in `fremd` = { z, m } und
  * bleiben auch in `daten.fremd` (nur wenn es welche gibt), damit sie beim Schreiben unverändert erhalten bleiben; nichts wird gekürzt.
- * Doppelte Kennungen fallen weg (der erste Eintrag gilt). Unbrauchbares ergibt leere Daten.
+ * Doppelte Kennungen fallen weg (der erste Eintrag gilt). Unbrauchbares ergibt leere Daten. `a` = beginn (ungültig oder fehlend →
+ * frühester `erstellt`).
  */
 export function normalisiereZiele(roh) {
   const fremd = { z: [], m: [] };
@@ -202,14 +222,17 @@ export function normalisiereZiele(roh) {
       m.push(v);
     }
   }
-  return { daten: mitFremd(z, m, { fremd: JSON.parse(JSON.stringify(fremd)) }), fremd };
+  const beginn = typeof roh.a === 'string' && MONAT.test(roh.a) ? roh.a : null;
+  return { daten: baue({ beginn, fremd: JSON.parse(JSON.stringify(fremd)) }, z, m), fremd };
 }
 
 /** Die Daten als Text für die Beschreibung des Kalenderereignisses (kurze Schlüssel, fremde Einträge am Ende); zu voll → Fehler. */
 export function zieleText(daten) {
   const z = eindeutig(daten?.z ?? [], normalisiereZiel);
   const m = eindeutig(daten?.m ?? [], normalisiereVerschiebung);
-  const text = JSON.stringify({ v: 1, z: [...z.map(kurzZiel), ...(daten?.fremd?.z ?? [])], m: [...m.map(kurzVerschiebung), ...(daten?.fremd?.m ?? [])] });
+  const beginn = zieleBeginn({ beginn: daten?.beginn, z });
+  const kopf = beginn === null ? { v: 1 } : { v: 1, a: beginn };
+  const text = JSON.stringify({ ...kopf, z: [...z.map(kurzZiel), ...(daten?.fremd?.z ?? [])], m: [...m.map(kurzVerschiebung), ...(daten?.fremd?.m ?? [])] });
   if (text.length > MAX_ZIELE_ZEICHEN) throw new Error(TEXT_ZIELE_VOLL);
   return text;
 }
@@ -233,18 +256,25 @@ export function zieleLesen(text) {
 
 // ---------------------------------------------------------------- Änderungen (rein, wiederholbar)
 
-/** So viele Zeichen kostet ein Abschluss im Text: ,"b":{"m":"JJJJ-MM","a":"ausgegeben"}. */
+/** So viele Zeichen kosten ein Abschluss ,"b":{"m":"JJJJ-MM","a":"ausgegeben"} und das Ausblenden ,"h":1 im Text. */
 const ENDE_ZEICHEN = JSON.stringify({ b: { m: '2000-01', a: 'ausgegeben' } }).length - 1;
+const AUS_ZEICHEN = JSON.stringify({ h: 1 }).length - 1;
 
 /**
- * Neue Daten mit diesen Listen; wirft, wenn sie nicht mehr in den Kalender passen. Mit `reserve` (Anlegen, Ändern, Verschieben) muss
- * zusätzlich Platz bleiben, um JEDES noch nicht beendete Ziel später zu beenden – so gelingt Beenden immer, und weil nur
- * abgeschlossene Ziele gelöscht werden, lassen sich volle Daten stets leeren (beenden, dann im Verlauf löschen).
+ * Neue Daten mit diesen Listen; wirft `meldung`, wenn sie nicht mehr in den Kalender passen. Mit `reserve` (Anlegen, Ändern,
+ * Verschieben) muss zusätzlich Platz bleiben, um JEDES Ziel später zu beenden und auszublenden – so gelingen Beenden und Ausblenden
+ * immer, auch wenn der Speicher voll ist.
  */
-function mit(alt, z, m, reserve) {
-  const neu = mitFremd(z, m, alt);
-  const laenge = zieleText(neu).length;
-  if (reserve && laenge + ENDE_ZEICHEN * z.filter((x) => !x.beendet).length > MAX_ZIELE_ZEICHEN) throw new Error(TEXT_ZIELE_VOLL);
+function mit(alt, z, m, reserve, meldung = TEXT_ZIELE_VOLL) {
+  const neu = baue(alt, z, m);
+  let laenge;
+  try {
+    laenge = zieleText(neu).length;
+  } catch {
+    throw new Error(meldung);
+  }
+  const vorrat = z.reduce((n, x) => n + (x.beendet ? 0 : ENDE_ZEICHEN) + (x.aus ? 0 : AUS_ZEICHEN), 0);
+  if (reserve && laenge + vorrat > MAX_ZIELE_ZEICHEN) throw new Error(meldung);
   return neu;
 }
 
@@ -253,13 +283,13 @@ function mit(alt, z, m, reserve) {
  * Neu: braucht `erstellt` (startMonat) und ist nie schon beendet. Ändern: Name, Symbol, Betrag, Datum, vorläufig – Startmonat und
  * Abschluss bleiben; ein abgeschlossenes Ziel lässt sich nicht mehr ändern. Gleiche Werte → dieselben Daten zurück.
  */
-export function zielSetzen(daten, ziel, { heute }) {
-  if (!isValidDate(String(heute))) throw new Error('Ungültiges Datum (heute).');
+export function zielSetzen(daten, ziel, { heute } = {}) {
+  heutePruefen(heute);
   if (!istObjekt(ziel) || !istKennung(ziel.id)) throw new Error('Ungültige Kennung.');
   const liste = daten.z ?? [];
   const alt = liste.find((z) => z.id === ziel.id);
   if (alt && abgeschlossenAm(alt, heute)) throw new Error('Ein abgeschlossenes Ziel lässt sich nicht mehr ändern.');
-  const entwurf = alt ? { ...ziel, erstellt: alt.erstellt, beendet: alt.beendet } : { ...ziel, beendet: undefined };
+  const entwurf = alt ? { ...ziel, erstellt: alt.erstellt, beendet: alt.beendet, aus: alt.aus } : { ...ziel, beendet: undefined, aus: undefined };
   const fehler = zielPruefen(entwurf, { heute, daten });
   if (fehler) throw new Error(fehler);
   if (!istMonat(entwurf.erstellt)) throw new Error('Ungültiger Startmonat.');
@@ -281,27 +311,78 @@ export function zielBeenden(daten, id, { monat, art } = {}) {
   return mit(daten, liste.map((z) => (z.id === id ? { ...z, beendet: { monat, art } } : z)), daten.m ?? [], false);
 }
 
-/** Löscht ein Ziel endgültig – nur ein am Tag `heute` abgeschlossenes – samt seinen Verschiebungen; eine unbekannte Kennung ändert nichts. */
-export function zielLoeschen(daten, id, { heute }) {
-  if (!isValidDate(String(heute))) throw new Error('Ungültiges Datum (heute).');
-  const liste = daten.z ?? [];
-  const alt = liste.find((z) => z.id === id);
-  if (!alt) return daten;
-  if (!abgeschlossenAm(alt, heute)) throw new Error('Nur abgeschlossene Ziele lassen sich endgültig löschen.');
-  return mitFremd(liste.filter((z) => z.id !== id), (daten.m ?? []).filter((v) => v.ziel !== id), daten);
+/** Der Verlauf ohne jede Spur des Ziels `id` (für den Vergleich in zielLoeschbar). */
+function spurenlos(verlauf, id) {
+  const monate = verlauf.monate
+    .map((m) => ({ ...m, zuteilung: m.zuteilung.filter((t) => t.ziel !== id), abschluss: m.abschluss.filter((a) => a.ziel !== id), verschoben: m.verschoben.filter((v) => v.ziel !== id) }))
+    .filter((m) => m.gespart !== null || m.abschluss.length > 0 || m.verschoben.length > 0);
+  return JSON.stringify({ monate, ziele: verlauf.ziele.filter((z) => z.id !== id), frei: verlauf.frei });
+}
+
+const ohneZiel = (daten, id) => baue(daten, (daten.z ?? []).filter((z) => z.id !== id), (daten.m ?? []).filter((v) => v.ziel !== id));
+
+/**
+ * Darf das Ziel `id` endgültig gelöscht werden? Nur, wenn es in der ganzen Geschichte nie Geld bekommen hat (jede Zuteilung und jede
+ * Verschiebung zu ihm ist 0 – z. B. versehentlich angelegt) UND die Rechnung ohne es in jedem Monat genau gleich bleibt (auch keine
+ * Rundung verschiebt sich). Laufend oder abgeschlossen ist egal. Unbekannte Kennung → false. Rein; `heute` wie bei sparVerlauf.
+ */
+export function zielLoeschbar(daten, konto, heute, id) {
+  heutePruefen(heute);
+  if (!(daten?.z ?? []).some((z) => z.id === id)) return false;
+  const mitZiel = sparVerlauf(daten, konto, heute);
+  const bekommen = mitZiel.monate.some((m) => m.zuteilung.some((t) => t.ziel === id && t.cents !== 0) || m.verschoben.some((v) => v.ziel === id && v.cents !== 0));
+  if (bekommen) return false;
+  return spurenlos(mitZiel, id) === spurenlos(sparVerlauf(ohneZiel(daten, id), konto, heute), id);
 }
 
 /**
- * Verschiebt `cents` aus „Frei“ zum Ziel `ziel`, wirksam nach der Aufteilung des Monats `monat`. Gedeckelt wird erst in der Rechnung
- * (auf das dann verfügbare „Frei“). `id` macht es wiederholbar. Das Ziel muss es (noch) geben.
+ * Löscht ein Ziel endgültig samt seinen Verschiebungen – nur, wenn zielLoeschbar (mit `konto` und `heute`); sonst
+ * TEXT_NICHT_LOESCHBAR. `beginn` bleibt. Eine unbekannte Kennung ändert nichts.
  */
-export function freiVerschieben(daten, { id, monat, ziel, cents } = {}) {
+export function zielLoeschen(daten, id, { heute, konto } = {}) {
+  heutePruefen(heute);
+  if (!(daten.z ?? []).some((z) => z.id === id)) return daten;
+  if (!zielLoeschbar(daten, konto, heute, id)) throw new Error(TEXT_NICHT_LOESCHBAR);
+  return ohneZiel(daten, id);
+}
+
+/**
+ * Blendet ein Ziel im Verlauf aus (`an` = true) oder wieder ein (false). Nur Anzeige – die Rechnung bleibt gleich. Gedacht für
+ * abgeschlossene Ziele; gleicher Zustand oder unbekannte Kennung → dieselben Daten. Passt immer (Platzreserve, siehe mit).
+ */
+export function zielAusblenden(daten, id, an) {
+  const liste = daten.z ?? [];
+  const alt = liste.find((z) => z.id === id);
+  if (!alt || Boolean(alt.aus) === Boolean(an)) return daten;
+  const neu = (z) => {
+    if (an) return { ...z, aus: true };
+    const { aus: _weg, ...rest } = z;
+    return rest;
+  };
+  return mit(daten, liste.map((z) => (z.id === id ? neu(z) : z)), daten.m ?? [], false);
+}
+
+/**
+ * Verschiebt `cents` aus „Frei“ zum Ziel `ziel`, wirksam nach der Aufteilung des Monats `monat`. `id` macht es wiederholbar.
+ * Beim Anlegen wird gedeckelt auf das jetzt verfügbare „Frei“ und den noch offenen Betrag des Ziels (Rechnung mit `konto` und
+ * `heute`, Stand am Ende); bleibt nichts übrig, wirft es. Die Rechnung deckelt später noch einmal (eine Korrektur im Kontostand
+ * kann „Frei“ verkleinern). Das Ziel muss es geben, es darf nicht abgeschlossen sein und muss in `monat` schon laufen.
+ */
+export function freiVerschieben(daten, { id, monat, ziel, cents } = {}, { konto, heute } = {}) {
+  heutePruefen(heute);
   if (!istKennung(id)) throw new Error('Ungültige Kennung.');
   if (!istMonat(monat)) throw new Error('Ungültiger Monat.');
   if (!istBetrag1(cents)) throw new Error('Bitte einen Betrag zwischen 0,01 € und 999.999 € eingeben.');
   const m = daten.m ?? [];
   if (m.some((v) => v.id === id)) return daten;
-  if (!(daten.z ?? []).some((z) => z.id === ziel)) throw new Error('Dieses Sparziel gibt es nicht mehr.');
-  if (m.length + (daten.fremd?.m?.length ?? 0) >= MAX_MUTARI) throw new Error(`Höchstens ${MAX_MUTARI} Verschiebungen. Bitte abgeschlossene Ziele im Verlauf endgültig löschen.`);
-  return mit(daten, daten.z, [...m, { id, monat, ziel, cents }], true);
+  const z = (daten.z ?? []).find((x) => x.id === ziel);
+  if (!z) throw new Error('Dieses Sparziel gibt es nicht mehr.');
+  if (abgeschlossenAm(z, heute)) throw new Error('Dieses Sparziel ist schon abgeschlossen.');
+  if (z.erstellt > monat) throw new Error('Dieses Sparziel beginnt erst später – dann lässt sich Geld dorthin verschieben.');
+  if (m.length + (daten.fremd?.m?.length ?? 0) >= MAX_VERSCHIEBUNGEN) throw new Error(`Höchstens ${MAX_VERSCHIEBUNGEN} Verschiebungen.`);
+  const verlauf = sparVerlauf(daten, konto, heute);
+  const offen = verlauf.ziele.find((x) => x.id === ziel)?.offen ?? 0;
+  const betrag = Math.min(cents, verlauf.frei, offen);
+  if (betrag <= 0) throw new Error(verlauf.frei <= 0 ? 'In „Frei verfügbar“ ist nichts zum Verschieben.' : 'Dieses Sparziel ist schon erreicht.');
+  return mit(daten, daten.z, [...m, { id, monat, ziel, cents: betrag }], true, TEXT_VERSCHIEBUNGEN_VOLL);
 }

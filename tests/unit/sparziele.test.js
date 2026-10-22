@@ -1,13 +1,17 @@
 // Sparziele: Ziele, Monatsaufteilung der echten Ersparnis (Kontostand Papa + Mama), „Frei verfügbar“, Abschluss, Speicherformat.
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 import {
-  MAX_MUTARI,
+  MAX_VERSCHIEBUNGEN,
   MAX_ZIEL_CENTS,
   MAX_ZIEL_NAME,
   MAX_ZIELE_AKTIV,
   MAX_ZIELE_ZEICHEN,
   MIN_ZIEL_CENTS,
+  TEXT_NICHT_LOESCHBAR,
+  TEXT_VERSCHIEBUNGEN_VOLL,
   TEXT_ZIELE_VOLL,
   ZIEL_EMOJIS,
   freiVerschieben,
@@ -17,7 +21,10 @@ import {
   sparMonate,
   sparVerlauf,
   startMonat,
+  zielAusblenden,
   zielBeenden,
+  zieleBeginn,
+  zielLoeschbar,
   zielLoeschen,
   zielPruefen,
   zielSchluss,
@@ -77,7 +84,7 @@ describe('Konstanten', () => {
     assert.equal(MAX_ZIEL_NAME, 30);
     assert.equal(MIN_ZIEL_CENTS, 100);
     assert.equal(MAX_ZIEL_CENTS, 99_999_900);
-    assert.equal(MAX_MUTARI, 200);
+    assert.equal(MAX_VERSCHIEBUNGEN, 200);
     assert.equal(MAX_ZIELE_ZEICHEN, 6000);
     assert.deepEqual(ZIEL_EMOJIS, ['🚗', '🏖️', '🏠', '🎁', '👧', '💍', '🛋️', '🎯', '🇷🇴', '✈️', '💻', '🎄']);
     assert.ok(ZIEL_EMOJIS.includes('\u{1F3D6}️') && ZIEL_EMOJIS.includes('\u{1F6CB}️') && ZIEL_EMOJIS.includes('✈️'));
@@ -87,7 +94,7 @@ describe('Konstanten', () => {
   test('leereZiele und domain/index.js', () => {
     assert.deepEqual(leereZiele(), { v: 1, z: [], m: [] });
     assert.notEqual(leereZiele().z, leereZiele().z);
-    for (const name of ['zielPruefen', 'zielSetzen', 'sparVerlauf', 'sparMonate', 'startMonat', 'zieleLesen', 'zieleText']) assert.equal(typeof domain[name], 'function', name);
+    for (const name of ['zielPruefen', 'zielSetzen', 'sparVerlauf', 'sparMonate', 'startMonat', 'zieleLesen', 'zieleText', 'zielLoeschbar', 'zielAusblenden', 'zieleBeginn']) assert.equal(typeof domain[name], 'function', name);
     assert.equal(domain.MAX_ZIELE_AKTIV, 20);
     assert.equal(typeof domain.postenPruefen, 'function'); // Fixkosten weiter erreichbar
   });
@@ -141,6 +148,9 @@ describe('zielPruefen', () => {
     assert.equal(zielPruefen(entwurf({ datum: undefined }), { heute }), 'Bitte angeben, bis wann gespart wird.');
     assert.equal(zielPruefen(entwurf({ datum: '2026-09' }), { heute }), 'Das Datum liegt in der Vergangenheit – bitte einen Monat ab jetzt wählen.');
     assert.equal(zielPruefen(entwurf({ datum: '2026-09-30' }), { heute }), 'Das Datum liegt in der Vergangenheit – bitte einen Monat ab jetzt wählen.');
+    // am Monatsletzten, wenn der Kontostand schon da ist, beginnt das Ziel erst im nächsten Monat: das Datum darf nicht davor liegen
+    assert.equal(zielPruefen(entwurf({ datum: '2026-10', erstellt: '2026-11' }), { heute: '2026-10-31' }), 'Das Zieldatum liegt vor dem ersten Sparmonat – bitte einen späteren Monat wählen.');
+    assert.equal(zielPruefen(entwurf({ datum: '2026-11-15', erstellt: '2026-11' }), { heute: '2026-10-31' }), null);
   });
 
   test('höchstens 20 laufende Ziele; abgeschlossene zählen nicht; ein bestehendes darf geändert werden', () => {
@@ -180,7 +190,7 @@ describe('zielSetzen, zielBeenden, zielLoeschen, freiVerschieben', () => {
   test('neues Ziel: bereinigt, Argument unverändert, zweimal angewendet = einmal', () => {
     const alt = tiefFrieren(leereZiele());
     const eins = zielSetzen(alt, { ...auto(), name: '  Auto  ', extra: 1 }, { heute });
-    assert.deepEqual(eins, { v: 1, z: [auto()], m: [] });
+    assert.deepEqual(eins, { v: 1, beginn: '2026-10', z: [auto()], m: [] });
     assert.deepEqual(alt, leereZiele());
     assert.equal(zielSetzen(eins, auto(), { heute }), eins);
   });
@@ -227,69 +237,150 @@ describe('zielSetzen, zielBeenden, zielLoeschen, freiVerschieben', () => {
     assert.throws(() => zielBeenden(d, 'auto0001', { monat: '11/2026', art: 'frei' }), /Ungültiger Abschluss/);
   });
 
-  test('zielLoeschen: nur abgeschlossene, mit ihren Verschiebungen; unbekannte Kennung ändert nichts', () => {
-    const d = daten([auto(), urlaub({ beendet: { monat: '2026-10', art: 'ausgegeben' } })], [
-      { id: 'v0000001', monat: '2026-10', ziel: 'url00001', cents: 500 },
-      { id: 'v0000002', monat: '2026-10', ziel: 'auto0001', cents: 700 },
-    ]);
-    assert.throws(() => zielLoeschen(d, 'auto0001', { heute }), /Nur abgeschlossene Ziele/);
-    const neu = zielLoeschen(d, 'url00001', { heute });
-    assert.deepEqual(neu, daten([auto()], [{ id: 'v0000002', monat: '2026-10', ziel: 'auto0001', cents: 700 }]));
-    assert.equal(zielLoeschen(neu, 'url00001', { heute }), neu);
-    // automatisch abgeschlossen (Datum vorbei) zählt auch
-    assert.deepEqual(zielLoeschen(daten([auto({ datum: '2026-08' })]), 'auto0001', { heute }), leereZiele());
+  test('zielLoeschen: nur ein Ziel, das nie Geld bekommen hat (auch das älteste) – kein Monat ändert sich, beginn bleibt', () => {
+    const k = kontoAus(BEISPIEL);
+    const heuteSpaeter = '2027-02-05';
+    // „Fehler“ wurde versehentlich als ältestes Ziel angelegt (Start September, Datum Oktober 2026) und hat nie Geld bekommen:
+    // im September gibt es noch keine Ersparnis, und im Oktober ist es schon abgeschlossen
+    const versehen = urlaub({ id: 'fehl0001', name: 'Fehler', erstellt: '2026-09', datum: '2026-09' });
+    const d = { v: 1, beginn: '2026-09', z: [versehen, auto(), urlaub()], m: [] };
+    const vorher = sparVerlauf(d, k, heuteSpaeter);
+    assert.equal(zielLoeschbar(d, k, heuteSpaeter, 'fehl0001'), true);
+    const neu = zielLoeschen(d, 'fehl0001', { heute: heuteSpaeter, konto: k });
+    assert.deepEqual(neu, { v: 1, beginn: '2026-09', z: [auto(), urlaub()], m: [] });
+    assert.equal(zieleBeginn(neu), '2026-09', 'beginn rückt nicht nach hinten');
+    const nachher = sparVerlauf(neu, k, heuteSpaeter);
+    const ohneSpur = (v) => v.monate.map((m) => ({ ...m, abschluss: m.abschluss.filter((a) => a.ziel !== 'fehl0001') })).filter((m) => m.gespart !== null || m.abschluss.length > 0);
+    assert.deepEqual(nachher.monate, ohneSpur(vorher));
+    assert.equal(nachher.frei, vorher.frei);
+    assert.deepEqual(nachher.ziele, vorher.ziele.slice(1));
+    // ein laufendes, noch nie gefördertes Ziel (eben angelegt) lässt sich auch löschen
+    const frisch = { v: 1, z: [auto(), urlaub({ id: 'neu00001', erstellt: '2027-02' })], m: [] };
+    assert.equal(zielLoeschbar(frisch, k, heuteSpaeter, 'neu00001'), true);
+    // unbekannte Kennung: nichts zu tun
+    assert.equal(zielLoeschen(neu, 'fehl0001', { heute: heuteSpaeter, konto: k }), neu);
+    assert.equal(zielLoeschbar(neu, k, heuteSpaeter, 'fehl0001'), false);
   });
 
-  test('freiVerschieben: wiederholbar über die Kennung, nur zu einem vorhandenen Ziel, gültiger Betrag, Höchstzahl', () => {
-    const d = daten([auto()]);
-    const v = { id: 'v0000001', monat: '2026-12', ziel: 'auto0001', cents: 20000 };
-    const eins = freiVerschieben(d, v);
-    assert.deepEqual(eins.m, [v]);
-    assert.equal(freiVerschieben(eins, v), eins);
-    assert.throws(() => freiVerschieben(d, { ...v, ziel: 'url00001' }), /Sparziel gibt es nicht mehr/);
-    assert.throws(() => freiVerschieben(d, { ...v, cents: 0 }), /Betrag/);
-    assert.throws(() => freiVerschieben(d, { ...v, cents: 12.5 }), /Betrag/);
-    assert.throws(() => freiVerschieben(d, { ...v, monat: '2026-13' }), /Ungültiger Monat/);
-    assert.throws(() => freiVerschieben(d, { ...v, id: 'x' }), /Ungültige Kennung/);
-    const viele = { v: 1, z: [auto()], m: Array.from({ length: MAX_MUTARI }, (_, i) => ({ id: `m${String(i).padStart(4, '0')}`, monat: '2026-12', ziel: 'auto0001', cents: 1 })) };
-    assert.throws(() => freiVerschieben(viele, v), /Höchstens 200 Verschiebungen/);
+  test('zielLoeschen: ein Ziel mit Geld wird abgelehnt (auch abgeschlossen, auch „ausgegeben“) – es lässt sich nur ausblenden', () => {
+    const k = kontoAus(BEISPIEL);
+    const d = daten([auto(), urlaub({ beendet: { monat: '2026-12', art: 'ausgegeben' } })]);
+    assert.equal(zielLoeschbar(d, k, '2027-02-05', 'url00001'), false);
+    assert.throws(() => zielLoeschen(d, 'url00001', { heute: '2027-02-05', konto: k }), { message: TEXT_NICHT_LOESCHBAR });
+    assert.equal(TEXT_NICHT_LOESCHBAR, 'Dieses Ziel hat schon Geld bekommen – es kann nur ausgeblendet werden.');
+    // Geld nur über eine Verschiebung aus „Frei“ zählt genauso
+    // (Start Januar, ein Minusmonat: keine Zuteilung, aber 50 Cent aus „Frei“)
+    const nurVerschoben = { v: 1, z: [auto(), urlaub({ zielCents: 100, erstellt: '2027-01' })], m: [{ id: 'v0000001', monat: '2027-01', ziel: 'url00001', cents: 50 }] };
+    const v = sparVerlauf(nurVerschoben, k, '2027-02-05');
+    assert.deepEqual(monatVon(v, '2027-01').zuteilung.find((t) => t.ziel === 'url00001').cents, 0);
+    assert.equal(zielVon(v, 'url00001').gespart, 50);
+    assert.equal(zielLoeschbar(nurVerschoben, k, '2027-02-05', 'url00001'), false);
   });
 
-  test('Platz im Kalender: Anlegen lässt Raum, jedes laufende Ziel später zu beenden; Beenden und Löschen gehen immer', () => {
-    let d = leereZiele();
-    let i = 0;
-    // Ziele mit langem Namen anlegen (jedes dritte bleibt laufend, die anderen werden gleich beendet), bis kein weiteres mehr passt
-    for (;;) {
-      const z = auto({ id: `a${String(i).padStart(5, '0')}`, name: 'Ü'.repeat(30), datum: '2026-10', zielCents: 99_999_900 });
+  test('zielAusblenden: nur Anzeige – die Zahlen bleiben gleich; wiederholbar; wieder einblenden', () => {
+    const k = kontoAus(BEISPIEL);
+    const d = daten([auto(), urlaub({ beendet: { monat: '2026-12', art: 'ausgegeben' } })]);
+    const aus = zielAusblenden(d, 'url00001', true);
+    assert.equal(aus.z[1].aus, true);
+    assert.equal(zielAusblenden(aus, 'url00001', true), aus);
+    assert.equal(zielAusblenden(d, 'gibtsnicht', true), d);
+    const mit = sparVerlauf(d, k, '2027-02-05');
+    const ohne = sparVerlauf(aus, k, '2027-02-05');
+    assert.deepEqual(ohne.monate, mit.monate);
+    assert.equal(ohne.frei, mit.frei);
+    assert.deepEqual(ohne.ziele.map(({ aus: _a, ...z }) => z), mit.ziele);
+    assert.equal(ohne.ziele[1].aus, true);
+    // gespeichert als h:1, gelesen zurück
+    assert.equal(JSON.parse(zieleText(aus)).z[1].h, 1);
+    assert.equal(zieleLesen(zieleText(aus)).daten.z[1].aus, true);
+    const wieder = zielAusblenden(aus, 'url00001', false);
+    assert.equal('aus' in wieder.z[1], false);
+    // Ändern lässt das Flag stehen
+    assert.equal(zielSetzen(zielAusblenden(d, 'auto0001', true), auto({ name: 'Neues Auto' }), { heute: '2026-10-20' }).z[0].aus, true);
+  });
+
+  test('freiVerschieben: gedeckelt auf „Frei“ und auf das noch Offene; wiederholbar; Prüfungen; Höchstzahl', () => {
+    const k = kontoAus({ '2026-09': 800000, '2026-10': 1000000 }); // Oktober +2.000 €
+    const ctx = { konto: k, heute: '2026-11-05' };
+    const d = daten([auto(), urlaub({ zielCents: 50000 })]); // nötig 104.546 + 5.000, der Rest (90.454) → Frei; Urlaub offen 45.000
+    const v0 = sparVerlauf(d, k, ctx.heute);
+    assert.ok(v0.frei > 0);
+    const offenUrlaub = v0.ziele[1].offen;
+    // mehr als offen → auf offen gedeckelt
+    const v = { id: 'v0000001', monat: '2026-11', ziel: 'url00001', cents: 99_999_900 };
+    const eins = freiVerschieben(d, v, ctx);
+    assert.deepEqual(eins.m, [{ ...v, cents: Math.min(offenUrlaub, v0.frei) }]);
+    assert.equal(freiVerschieben(eins, v, ctx), eins, 'wiederholbar');
+    // mehr als Frei → auf Frei gedeckelt
+    const zuAuto = freiVerschieben(d, { id: 'v0000002', monat: '2026-11', ziel: 'auto0001', cents: 99_999_900 }, ctx);
+    assert.equal(zuAuto.m[0].cents, v0.frei);
+    // nichts mehr da / schon erreicht
+    assert.throws(() => freiVerschieben(zuAuto, { id: 'v0000003', monat: '2026-11', ziel: 'url00001', cents: 100 }, ctx), /nichts zum Verschieben/);
+    assert.throws(() => freiVerschieben(eins, { id: 'v0000004', monat: '2026-11', ziel: 'url00001', cents: 100 }, ctx), /schon erreicht/);
+    // Prüfungen
+    assert.throws(() => freiVerschieben(d, { ...v, ziel: 'gibtsnicht' }, ctx), /Sparziel gibt es nicht mehr/);
+    assert.throws(() => freiVerschieben(d, { ...v, cents: 0 }, ctx), /Betrag/);
+    assert.throws(() => freiVerschieben(d, { ...v, cents: 12.5 }, ctx), /Betrag/);
+    assert.throws(() => freiVerschieben(d, { ...v, monat: '2026-13' }, ctx), /Ungültiger Monat/);
+    assert.throws(() => freiVerschieben(d, { ...v, id: 'x' }, ctx), /Ungültige Kennung/);
+    assert.throws(() => freiVerschieben(d, v, { konto: k }), /Ungültiges Datum/);
+    const beendet = daten([auto(), urlaub({ beendet: { monat: '2026-11', art: 'frei' } })]);
+    assert.throws(() => freiVerschieben(beendet, v, ctx), /schon abgeschlossen/);
+    const spaeter = daten([auto(), urlaub({ erstellt: '2026-12' })]);
+    assert.throws(() => freiVerschieben(spaeter, v, ctx), /beginnt erst später/);
+    const viele = { v: 1, z: [auto()], m: Array.from({ length: MAX_VERSCHIEBUNGEN }, (_, i) => ({ id: `m${String(i).padStart(4, '0')}`, monat: '2026-12', ziel: 'auto0001', cents: 1 })) };
+    assert.throws(() => freiVerschieben(viele, { ...v, ziel: 'auto0001' }, ctx), /Höchstens 200 Verschiebungen/);
+  });
+
+  test('Platz im Kalender: Anlegen und Verschieben lassen Raum, jedes Ziel zu beenden und auszublenden; Löschen ungeförderter Ziele macht Platz', () => {
+    const heute = '2026-10-05';
+    // Oktober +500.000 €: das lange Ziel braucht davon nur ~10.101 €, der Rest ist „Frei“
+    const k = kontoAus({ '2026-09': 100000, '2026-10': 50_100_000 });
+    const lang = auto({ id: 'lang0001', zielCents: 99_999_900, datum: '2034-12' });
+    let d = zielSetzen(leereZiele(), lang, { heute });
+    // Verschiebungen, bis keine mehr passt
+    for (let n = 0; ; n += 1) {
       try {
-        d = zielSetzen(d, z, { heute: '2026-10-01' });
+        d = freiVerschieben(d, { id: `v${String(n).padStart(7, '0')}`, monat: '2026-10', ziel: 'lang0001', cents: 1 }, { konto: k, heute });
+      } catch (e) {
+        assert.equal(e.message, TEXT_VERSCHIEBUNGEN_VOLL);
+        break;
+      }
+      if (n === 30) break; // genug Verschiebungen; der Rest des Platzes für Ziele
+    }
+    // Ziele mit langem Namen (Start November, also nie gefördert; jedes dritte bleibt laufend), bis kein weiteres mehr passt
+    for (let i = 0; ; i += 1) {
+      const z = auto({ id: `a${String(i).padStart(5, '0')}`, name: 'Ü'.repeat(30), erstellt: '2026-11', datum: '2026-11', zielCents: 99_999_900 });
+      try {
+        d = zielSetzen(d, z, { heute });
       } catch (e) {
         assert.equal(e.message, TEXT_ZIELE_VOLL);
         break;
       }
-      if (i % 3 !== 0) d = zielBeenden(d, z.id, { monat: '2026-10', art: 'ausgegeben' });
-      i += 1;
+      if (i % 3 !== 0) d = zielBeenden(d, z.id, { monat: '2026-10', art: 'ausgegeben' }); // sofort abgeschlossen, zählt nicht als laufend
       assert.ok(i < 200, 'muss irgendwann voll sein');
     }
-    assert.ok(d.z.filter((z) => !z.beendet).length >= 5, 'einige laufen noch');
-    assert.ok(zieleText(d).length <= MAX_ZIELE_ZEICHEN);
-    // auch Verschiebungen lassen die Reserve stehen: so viele, bis keine mehr passt
-    for (let n = 0; ; n += 1) {
+    // jetzt auch Verschiebungen bis zum Rand – mit der passenden Meldung
+    for (let n = 100; ; n += 1) {
       try {
-        d = freiVerschieben(d, { id: `v${String(n).padStart(7, '0')}`, monat: '2026-10', ziel: d.z[0].id, cents: 99_999_900 });
+        d = freiVerschieben(d, { id: `v${String(n).padStart(7, '0')}`, monat: '2026-10', ziel: 'lang0001', cents: 1 }, { konto: k, heute });
       } catch (e) {
-        assert.equal(e.message, TEXT_ZIELE_VOLL);
+        assert.equal(e.message, TEXT_VERSCHIEBUNGEN_VOLL);
         break;
       }
       assert.ok(n < 200);
     }
-    // alle laufenden beenden geht, ohne die Grenze zu überschreiten
-    for (const z of d.z) d = zielBeenden(d, z.id, { monat: '2026-10', art: 'ausgegeben' });
-    assert.ok(d.z.every((z) => z.beendet));
+    assert.ok(d.z.filter((z) => !z.beendet).length >= 5, 'einige laufen noch');
+    // alle beenden und ausblenden geht, ohne die Grenze zu überschreiten
+    for (const z of d.z) d = zielBeenden(d, z.id, { monat: '2026-12', art: 'ausgegeben' });
+    for (const z of d.z) d = zielAusblenden(d, z.id, true);
+    assert.ok(d.z.every((z) => z.beendet && z.aus));
     assert.ok(zieleText(d).length <= MAX_ZIELE_ZEICHEN);
-    // Löschen macht wieder Platz (am 01.11. sind alle abgeschlossen)
-    d = zielLoeschen(d, d.z[0].id, { heute: '2026-11-01' });
-    assert.ok(zieleText(d).length < MAX_ZIELE_ZEICHEN);
+    // ein nie gefördertes Ziel löschen macht Platz; das geförderte nicht
+    const laenge = zieleText(d).length;
+    d = zielLoeschen(d, 'a00001', { heute, konto: k });
+    assert.ok(zieleText(d).length < laenge);
+    assert.throws(() => zielLoeschen(d, 'lang0001', { heute, konto: k }), { message: TEXT_NICHT_LOESCHBAR });
   });
 
   test('zieleText: zu voll → deutsche Meldung', () => {
@@ -307,13 +398,32 @@ describe('zieleText / zieleLesen / normalisiereZiele', () => {
     const text = zieleText(d);
     assert.deepEqual(JSON.parse(text), {
       v: 1,
+      a: '2026-10',
       z: [
         { i: 'auto0001', n: 'Auto', e: '🚗', c: 2300000, d: '2028-07', s: '2026-10' },
         { i: 'url00001', n: 'Sommerurlaub', e: '🏖️', c: 300000, d: '2027-07', p: 1, s: '2026-10', b: { m: '2027-02', a: 'frei' } },
       ],
       m: [{ i: 'v0000001', m: '2026-12', z: 'auto0001', c: 20000 }],
     });
-    assert.deepEqual(zieleLesen(text), { daten: d, unlesbar: false });
+    assert.deepEqual(zieleLesen(text), { daten: { ...d, beginn: '2026-10' }, unlesbar: false });
+  });
+
+  test('beginn: gespeichert als „a“, rückt nie nach hinten; alte Daten ohne „a“ → frühester Startmonat', () => {
+    assert.equal(zieleBeginn(leereZiele()), null);
+    assert.equal(zieleBeginn(daten([auto({ erstellt: '2026-12' }), urlaub({ erstellt: '2026-11' })])), '2026-11');
+    assert.equal(zieleBeginn({ v: 1, beginn: '2026-09', z: [auto()], m: [] }), '2026-09');
+    assert.equal(zieleBeginn({ v: 1, beginn: '2026-12', z: [auto()], m: [] }), '2026-10', 'ein früheres Ziel zieht ihn nach vorn');
+    assert.equal(zieleBeginn({ v: 1, beginn: 'quatsch', z: [auto()], m: [] }), '2026-10');
+    const alt = zieleLesen(JSON.stringify({ v: 1, z: [{ i: 'auto0001', n: 'Auto', e: '🚗', c: 2300000, d: '2028-07', s: '2026-11' }], m: [] }));
+    assert.equal(alt.daten.beginn, '2026-11');
+    const mitA = zieleLesen(JSON.stringify({ v: 1, a: '2026-08', z: [], m: [] }));
+    assert.deepEqual(mitA, { daten: { v: 1, beginn: '2026-08', z: [], m: [] }, unlesbar: false });
+    assert.equal(JSON.parse(zieleText(mitA.daten)).a, '2026-08');
+    // ein neues Ziel mit späterem Start ändert beginn nicht
+    assert.equal(zielSetzen(mitA.daten, auto(), { heute: '2026-10-20' }).beginn, '2026-08');
+    // ohne Ziele, aber mit beginn: ab da geht alles zu „Frei“
+    const v = sparVerlauf(mitA.daten, kontoAus(BEISPIEL), '2026-12-05');
+    assert.equal(v.frei, 100000 - 30000 + 200000 - 20000);
   });
 
   test('fehlender Text → leer, nicht unlesbar; kaputtes JSON, v:2, keine Liste → leer und unlesbar', () => {
@@ -537,15 +647,20 @@ describe('sparVerlauf – Regeln', () => {
     assert.deepEqual(monatVon(frueh, '2026-11').zuteilung.map((t) => t.ziel), ['auto0001']);
   });
 
-  test('Verschiebung aus Frei: nach der Aufteilung ihres Monats, gedeckelt auf das verfügbare Frei', () => {
+  test('Verschiebung aus Frei: nach der Aufteilung ihres Monats, gedeckelt auf das verfügbare Frei und auf das noch Offene', () => {
     const k = kontoAus({ '2026-09': 800000, '2026-10': 1000000 });
     const klein = urlaub({ zielCents: 100000 }); // nötig 10.000, Rest 190.000 → Frei
     const v = sparVerlauf(daten([klein], [{ id: 'v0000001', monat: '2026-10', ziel: 'url00001', cents: 500000 }]), k, '2026-11-05');
     const okt = monatVon(v, '2026-10');
-    assert.deepEqual(okt.verschoben, [{ id: 'v0000001', ziel: 'url00001', cents: 190000, gewuenscht: 500000 }]);
-    assert.deepEqual(okt.frei, { cents: 190000, vorher: 0, nachher: 0 });
-    assert.equal(v.frei, 0);
-    assert.equal(zielVon(v, 'url00001').gespart, 200000);
+    assert.deepEqual(okt.verschoben, [{ id: 'v0000001', ziel: 'url00001', cents: 90000, gewuenscht: 500000 }], 'nur das Offene (90.000), nicht alles Freie');
+    assert.deepEqual(okt.frei, { cents: 190000, vorher: 0, nachher: 100000 });
+    assert.equal(v.frei, 100000);
+    assert.equal(zielVon(v, 'url00001').gespart, 100000);
+    assert.equal(zielVon(v, 'url00001').status, 'erreicht');
+    // auf Frei gedeckelt: großes Ziel, 500.000 gewünscht, 190.000 frei
+    const gross = sparVerlauf(daten([urlaub({ zielCents: 1000000 })], [{ id: 'v0000001', monat: '2026-10', ziel: 'url00001', cents: 500000 }]), k, '2026-11-05');
+    assert.equal(monatVon(gross, '2026-10').verschoben[0].cents, 200000 - 100000);
+    assert.equal(gross.frei, 0);
     // im laufenden Monat (noch kein Kontostand) wirkt sie sofort
     const jetzt = sparVerlauf(daten([klein], [{ id: 'v0000002', monat: '2026-11', ziel: 'url00001', cents: 50000 }]), k, '2026-11-05');
     assert.equal(jetzt.frei, 140000);
@@ -556,14 +671,83 @@ describe('sparVerlauf – Regeln', () => {
     assert.equal(monatVon(nichts, '2026-10').verschoben[0].cents, 0);
   });
 
-  test('Lücke bei Mama → der Unterschied zählt im nächsten Monat mit beiden', () => {
+  test('Lücke bei Mama → der Unterschied zählt im nächsten Monat mit beiden; nötig = k × Monatsbedarf ab dem ersten fehlenden Monat', () => {
     const k = kontoAus({ '2026-09': 800000, '2026-10': 900000, '2026-11': 1000000 }, { ohneMama: ['2026-10'] });
     const v = sparVerlauf(daten([auto(), urlaub()]), k, '2026-12-05');
     assert.deepEqual(v.monate.map((m) => m.monat), ['2026-11']);
     const nov = v.monate[0];
     assert.equal(nov.gespart, 200000);
     assert.equal(nov.basis, '2026-09');
-    assert.equal(summe(nov.zuteilung.map((t) => t.cents)) + nov.frei.cents, 200000);
+    assert.equal(nov.luecke, 1);
+    // 2 × 104.546 und 2 × 30.000 (ohne die Regel: nur 1 Monat → 57.142 in Frei)
+    assert.deepEqual(nov.zuteilung, [
+      { ziel: 'auto0001', cents: 155406, noetig: 209092 },
+      { ziel: 'url00001', cents: 44594, noetig: 60000 },
+    ]);
+    assert.equal(nov.frei.cents, 0);
+  });
+
+  test('Lücke über 3 Monate (Mama fehlt Oktober bis Dezember) → Januar trägt 4 Monate; ein Ziel aus der Lücke zählt nur seine Monate', () => {
+    const staende = { '2026-09': 800000, '2026-10': 900000, '2026-11': 1000000, '2026-12': 1100000, '2027-01': 1200000 };
+    const k = kontoAus(staende, { ohneMama: ['2026-10', '2026-11', '2026-12'] });
+    const jan = monatVon(sparVerlauf(daten([auto(), urlaub()]), k, '2027-02-05'), '2027-01');
+    assert.equal(jan.gespart, 400000);
+    assert.equal(jan.luecke, 3);
+    assert.deepEqual(jan.zuteilung.map((t) => t.noetig), [418184, 120000]);
+    assert.deepEqual(jan.zuteilung.map((t) => t.cents), [310812, 89188]);
+    assert.equal(jan.frei.cents, 0);
+    const rumaenien = { id: 'rum00001', name: 'Urlaub Rumänien', emoji: '🇷🇴', zielCents: 150000, datum: '2027-08', vorlaeufig: false, erstellt: '2026-12' };
+    const drei = monatVon(sparVerlauf(daten([auto(), urlaub(), rumaenien]), k, '2027-02-05'), '2027-01');
+    assert.deepEqual(drei.zuteilung.map((t) => t.noetig), [418184, 120000, 33334]); // Rumänien: 2 × 16.667 (Dezember, Januar)
+    assert.deepEqual(drei.zuteilung.map((t) => t.cents), [292684, 83986, 23330]);
+    // höchstens offen: 100 Cent, 3 Monate Rest, Lücke 3 → nicht 3 × 34 = 102
+    const winzig = urlaub({ id: 'aaa1', zielCents: 100, datum: '2026-12' });
+    const w = monatVon(sparVerlauf(daten([winzig]), kontoAus({ '2026-09': 800000, '2026-12': 900000 }, { ohneMama: [] }), '2027-01-05'), '2026-12');
+    assert.deepEqual(w.zuteilung, [{ ziel: 'aaa1', cents: 100, noetig: 100 }]);
+  });
+
+  test('Lücke über den Beginn hinweg: der ganze Unterschied zählt, was die Ziele nicht brauchen, geht zu „Frei“', () => {
+    // beide im August, Mama fehlt September und Oktober, Ziel ab Oktober, beide im November
+    const k = kontoAus({ '2026-08': 700000, '2026-09': 800000, '2026-10': 900000, '2026-11': 1000000 }, { ohneMama: ['2026-09', '2026-10'] });
+    const nov = monatVon(sparVerlauf(daten([urlaub()]), k, '2026-12-05'), '2026-11');
+    assert.equal(nov.basis, '2026-08');
+    assert.equal(nov.gespart, 300000);
+    assert.equal(nov.luecke, 1, 'gezählt ab dem Beginn (Oktober)');
+    assert.deepEqual(nov.zuteilung, [{ ziel: 'url00001', cents: 60000, noetig: 60000 }]);
+    assert.equal(nov.frei.cents, 240000);
+  });
+
+  test('fällig: Zielmonat schon gerechnet → noch 0 Monate, nötig 0, nicht mehr in „nötig gesamt“', () => {
+    const k = kontoAus({ '2026-09': 800000, '2026-10': 900000, '2026-11': 1000000 });
+    const v = sparVerlauf(daten([auto(), urlaub({ datum: '2026-11-20' })]), k, '2026-11-30');
+    const u = zielVon(v, 'url00001');
+    assert.equal(u.faellig, true);
+    assert.equal(u.abgeschlossen, null);
+    assert.equal(u.monateRest, 0);
+    assert.equal(u.noetigProMonat, 0);
+    assert.equal(v.noetigGesamt, zielVon(v, 'auto0001').noetigProMonat);
+    assert.equal(zielVon(v, 'auto0001').faellig, false);
+  });
+
+  test('ungültiges heute (undefined, Date, nur Monat) → sofort ein Fehler, nie eine Endlosschleife', () => {
+    const url = pathToFileURL(`${process.cwd()}/src/domain/sparziele.js`).href;
+    const code = `
+      const s = await import(${JSON.stringify(url)});
+      const d = { v: 1, z: [{ id: 'auto0001', name: 'Auto', emoji: '🚗', zielCents: 2300000, datum: '2028-07', vorlaeufig: false, erstellt: '2026-10' }], m: [] };
+      const k = { v: 1, p: { papa: { '2026-09': 1, '2026-10': 2 }, mama: { '2026-09': 1, '2026-10': 2 } }, x: [] };
+      const faelle = [];
+      for (const heute of [undefined, new Date(), '2026-10', 20261020, '2026-02-30']) {
+        faelle.push(() => s.sparVerlauf(d, k, heute), () => s.startMonat(heute, k), () => s.zielPruefen(d.z[0], { heute }),
+          () => s.zielSetzen(d, d.z[0], { heute }), () => s.zielLoeschen(d, 'auto0001', { heute, konto: k }), () => s.zielLoeschbar(d, k, heute, 'auto0001'),
+          () => s.freiVerschieben(d, { id: 'v0000001', monat: '2026-10', ziel: 'auto0001', cents: 1 }, { konto: k, heute }));
+      }
+      let gut = 0;
+      for (const f of faelle) { try { f(); } catch (e) { if (/Ungültiges Datum/.test(e.message)) gut += 1; } }
+      console.log(gut === faelle.length ? 'ok' : 'nur ' + gut + ' von ' + faelle.length);
+    `;
+    const lauf = spawnSync(process.execPath, ['--input-type=module', '-e', code], { encoding: 'utf8', timeout: 15000 });
+    assert.equal(lauf.error, undefined, 'darf nicht hängen');
+    assert.equal(lauf.stdout.trim(), 'ok', lauf.stderr);
   });
 
   test('Korrektur eines alten Kontostands → alle späteren Monate neu gerechnet, nichts verloren, nichts negativ', () => {
@@ -643,6 +827,7 @@ describe('Eigenschaft: Σ Zuteilung + ΔFrei = Ersparnis (auf den Cent), nichts 
     let gepruefteMonate = 0;
     let minusMonate = 0;
     let ungedeckteMonate = 0;
+    let geloeschte = 0;
     for (let fall = 0; fall < 200; fall += 1) {
       const anzahl = ganz(2, 30);
       const papa = {};
@@ -698,13 +883,22 @@ describe('Eigenschaft: Σ Zuteilung + ΔFrei = Ersparnis (auf den Cent), nichts 
           if (zu.some((c) => c < 0)) assert.equal(mo.frei.vorher + ausAbschluss + mo.frei.cents, 0, `Fall ${fall} ${mo.monat}: erst Frei leeren`);
         }
       }
-      for (const z of v.ziele) assert.ok(z.gespart >= 0 && z.offen >= 0 && z.noetigProMonat >= 0, `Fall ${fall} ${z.id}`);
+      for (const z of v.ziele) assert.ok(z.gespart >= 0 && z.gespart <= z.zielCents && z.offen >= 0 && z.noetigProMonat >= 0, `Fall ${fall} ${z.id}: nie unter 0, nie über dem Ziel`);
+      // jedes löschbare Ziel: ohne es bleiben Frei und alle anderen Ziele gleich
+      for (const z of ziele) {
+        if (!zielLoeschbar(d, k, heute, z.id)) continue;
+        geloeschte += 1;
+        const ohne = sparVerlauf(zielLoeschen(d, z.id, { heute, konto: k }), k, heute);
+        assert.equal(ohne.frei, v.frei, `Fall ${fall}: Löschen ändert Frei nicht`);
+        assert.deepEqual(ohne.ziele, v.ziele.filter((x) => x.id !== z.id), `Fall ${fall}: Löschen ändert die anderen Ziele nicht`);
+      }
       const offen = v.ziele.filter((z) => !z.abgeschlossen);
       const ausgegeben = v.ziele.filter((z) => z.abgeschlossen?.art === 'ausgegeben');
       assert.equal(v.summeZiele, summe(offen.map((z) => z.gespart)));
       assert.equal(v.noetigGesamt, summe(offen.map((z) => z.noetigProMonat)));
       assert.equal(v.frei + v.summeZiele + summe(ausgegeben.map((z) => z.gespart)), ersparnis + verfallen, `Fall ${fall}: nichts verloren`);
     }
+    assert.ok(geloeschte > 20, `genug löschbare Ziele (${geloeschte})`);
     assert.ok(gepruefteMonate > 1000 && minusMonate > 300 && ungedeckteMonate > 100, `genug verschiedene Fälle (${gepruefteMonate}/${minusMonate}/${ungedeckteMonate})`);
   });
 });
