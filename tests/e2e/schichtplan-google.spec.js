@@ -22,7 +22,7 @@ const schluessel = (person, kuerzel) => standardKatalog().arten[person].find((a)
 function oktoberBeiGoogle() {
   let m = leererMonat('2026-10');
   m = setzeSchicht(m, { person: 'papa', tag: 5, k: schluessel('papa', 'F') });
-  m = setzeNotiz(m, { person: 'mama', tag: 13, text: 'Dienst 47' });
+  m = setzeNotiz(m, { person: 'mama', tag: 13, text: 'Dienst 12' });
   return schichtMonatZuEreignis({ ...m, jm: '2026-10' }).body;
 }
 

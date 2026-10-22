@@ -75,7 +75,7 @@ export function oeffneSchichtTag({ store }, datum) {
       maxlength: String(MAX_NOTIZ),
       enterkeyhint: 'done',
       autocomplete: 'off',
-      placeholder: 'z. B. Dienst 47 · Linie 6',
+      placeholder: 'z. B. Dienst 12',
       onInput: (e) => {
         entwurf[p.person] = e.target.value;
       },

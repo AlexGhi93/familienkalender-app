@@ -296,10 +296,10 @@ describe('Monat', () => {
 
   test('setzeNotiz: ein Zeile, höchstens 40 Zeichen, leer löscht', () => {
     const m0 = leererMonat('2026-10');
-    const m1 = setzeNotiz(m0, { person: 'papa', tag: 13, text: '  Dienst 47\n Linie 6 ' });
-    assert.equal(m1.n.papa['13'], 'Dienst 47 Linie 6');
+    const m1 = setzeNotiz(m0, { person: 'papa', tag: 13, text: '  Dienst 12\n Tausch ' });
+    assert.equal(m1.n.papa['13'], 'Dienst 12 Tausch');
     assert.deepEqual(m1.n.mama, {});
-    assert.deepEqual(setzeNotiz(m1, { person: 'papa', tag: 13, text: 'Dienst 47 Linie 6' }), m1);
+    assert.deepEqual(setzeNotiz(m1, { person: 'papa', tag: 13, text: 'Dienst 12 Tausch' }), m1);
     assert.throws(() => setzeNotiz(m0, { person: 'papa', tag: 13, text: 'x'.repeat(41) }), { message: 'Höchstens 40 Zeichen.' });
     assert.doesNotThrow(() => setzeNotiz(m0, { person: 'papa', tag: 13, text: 'Ü'.repeat(40) }));
     const geloescht = setzeNotiz(m1, { person: 'papa', tag: 13, text: '   ' });
@@ -433,11 +433,11 @@ describe('Monat', () => {
     assert.deepEqual(monatAusText(text0, '2026-10'), { monat: m0, warnungen: [] });
 
     let m = setzeSchicht(m0, { person: 'papa', tag: 1, k: 'A' });
-    m = setzeNotiz(m, { person: 'papa', tag: 13, text: 'Dienst 47' });
+    m = setzeNotiz(m, { person: 'papa', tag: 13, text: 'Dienst 12' });
     m = zusatzHinzufuegen(m, { person: 'mama', tag: 21, k: 'F', von: '18:30', bis: '20:00' });
     const text = monatText(m);
     const json = JSON.parse(text);
-    assert.deepEqual(json.n, { papa: { 13: 'Dienst 47' } }); // leere Personen fallen weg
+    assert.deepEqual(json.n, { papa: { 13: 'Dienst 12' } }); // leere Personen fallen weg
     assert.deepEqual(json.z, { mama: { 21: [{ k: 'F', von: '18:30', bis: '20:00' }] } });
     assert.deepEqual(monatAusText(text, '2026-10'), { monat: m, warnungen: [] });
 

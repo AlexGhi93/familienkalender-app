@@ -389,7 +389,7 @@ test.describe('Tagesblatt (ein Tag)', () => {
   const demo = (page) => page.evaluate(() => JSON.parse(localStorage.getItem('fk.demo.v1')).schicht.monate['2026-10']);
   const PAPA_DIENSTE = ['F Frühdienst', 'M Mittagsdienst', 'NM Nachmittagsdienst', 'N Nacht', '2T 2Teiler', 'Ü Überstunde', 'S Schulung', 'U Urlaub', '– Frei'];
 
-  test('ein Tipp auf den 21. zeigt beide (auch mit Filter „Papa“); NM setzen, Notiz „Dienst 47“ → nach dem Schließen ✎', async ({ page }) => {
+  test('ein Tipp auf den 21. zeigt beide (auch mit Filter „Papa“); NM setzen, Notiz „Dienst 12“ → nach dem Schließen ✎', async ({ page }) => {
     await starteDemo(page, { route: '#/schicht' });
     await page.locator('.sp-filter').getByRole('button', { name: '👨 Papa' }).click();
     await zelle(page, '2026-10-21').click();
@@ -425,20 +425,20 @@ test.describe('Tagesblatt (ein Tag)', () => {
     // Notiz: wird beim Verlassen gespeichert (hier: Schließen), die Marke ✎ erscheint im Raster
     await expect(notizFeld(page, 'papa')).toHaveValue('');
     await expect(zelle(page, '2026-10-21').locator('.sp-notiz')).toHaveCount(0);
-    await notizFeld(page, 'papa').fill('Dienst 47');
+    await notizFeld(page, 'papa').fill('Dienst 12');
     await blatt.getByRole('button', { name: 'Schließen' }).click();
     await expect(blatt).toHaveCount(0);
     await expect(zelle(page, '2026-10-21').locator('.sp-notiz')).toHaveText('✎');
-    await expect.poll(async () => (await demo(page)).n.papa['21']).toBe('Dienst 47');
+    await expect.poll(async () => (await demo(page)).n.papa['21']).toBe('Dienst 12');
 
     // wieder öffnen: alles steht da; Notiz mit Enter ändern
     await zelle(page, '2026-10-21').click();
-    await expect(notizFeld(page, 'papa')).toHaveValue('Dienst 47');
+    await expect(notizFeld(page, 'papa')).toHaveValue('Dienst 12');
     await expect(knopf(page, 'papa', 'NM Nachmittagsdienst')).toHaveAttribute('aria-pressed', 'true');
-    await notizFeld(page, 'papa').fill('Dienst 47 · Linie 6');
+    await notizFeld(page, 'papa').fill('Dienst 12 · Tausch');
     await notizFeld(page, 'papa').press('Enter');
-    await expect.poll(async () => (await demo(page)).n.papa['21']).toBe('Dienst 47 · Linie 6');
-    await expect(notizFeld(page, 'papa')).toHaveValue('Dienst 47 · Linie 6');
+    await expect.poll(async () => (await demo(page)).n.papa['21']).toBe('Dienst 12 · Tausch');
+    await expect(notizFeld(page, 'papa')).toHaveValue('Dienst 12 · Tausch');
     // geleert und verlassen (Tipp daneben): Notiz weg; Escape schließt
     await notizFeld(page, 'papa').fill('');
     await karte(page, 'papa').locator('.sp-tag-kopf').click();
@@ -451,10 +451,10 @@ test.describe('Tagesblatt (ein Tag)', () => {
   test('Notiz schreiben und gleich einen anderen Knopf tippen: der Tipp wirkt, die Notiz ist gespeichert', async ({ page }) => {
     await starteDemo(page, { route: '#/schicht' });
     await zelle(page, '2026-10-22').click();
-    await notizFeld(page, 'papa').fill('Dienst 47');
+    await notizFeld(page, 'papa').fill('Dienst 12');
     await karte(page, 'mama').getByRole('button', { name: '＋ Zusatz' }).click();
     await expect(karte(page, 'mama').locator('.sp-tag-zusatz-form')).toBeVisible();
-    await expect.poll(async () => (await demo(page)).n.papa['22']).toBe('Dienst 47');
+    await expect.poll(async () => (await demo(page)).n.papa['22']).toBe('Dienst 12');
     await notizFeld(page, 'papa').fill('Dienst 48');
     await knopf(page, 'papa', 'M Mittagsdienst').click();
     await expect(knopf(page, 'papa', 'M Mittagsdienst')).toHaveAttribute('aria-pressed', 'true');

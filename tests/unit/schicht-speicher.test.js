@@ -24,11 +24,11 @@ describe('Demo-Adapter: Schichtplan', () => {
   });
 
   test('alter Speicher ohne „schicht“: wird ohne Fehler ergänzt', async () => {
-    const speicher = speicherAttrappe({ [KEY]: JSON.stringify({ settings: { kindname: 'Iris' }, tage: {}, urlaub: [], termine: [] }) });
+    const speicher = speicherAttrappe({ [KEY]: JSON.stringify({ settings: { kindname: 'Lena' }, tage: {}, urlaub: [], termine: [] }) });
     const adapter = createDemoAdapter({ speicher, jetzt: JETZT });
     const daten = await adapter.laden();
     assert.deepEqual(daten.schicht, { katalog: null, monate: {} });
-    assert.equal(daten.settings.kindname, 'Iris');
+    assert.equal(daten.settings.kindname, 'Lena');
     const monat = await adapter.aendereSchichtMonat('2026-10', mitSchicht);
     assert.equal(monat.t.papa[0], 'A');
     assert.equal(gespeichert(speicher).schicht.monate['2026-10'].t.papa[0], 'A');
