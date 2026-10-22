@@ -386,14 +386,38 @@ describe('Fixkosten: zwei Telefone auf einem Kalender', () => {
     assert.equal(shards.flatMap((s) => s?.posten ?? []).length, 0);
   });
 
-  test('Mama hat ihn schon gelöscht, Papa archiviert: kein Fehler, Papa sieht ihn danach nicht mehr', async () => {
+  test('Mama hat ihn schon gelöscht, Papa archiviert, holt zurück oder löscht aus einem alten Stand: klare Meldung, Papa sieht den Stand, danach geht alles weiter', async () => {
+    const GELOESCHT = 'Diesen Posten gibt es nicht mehr – er wurde wohl auf dem anderen Telefon gelöscht.';
     const t = await zwei(0);
     const { id } = await t.papa.fixPostenSpeichern(entwurf());
+    await t.papa.fixPostenArchivieren(id, '2026-10-01');
     await t.mama.fixFrischLesen();
-    await t.mama.fixPostenArchivieren(id, '2026-10-01');
     await t.mama.fixPostenLoeschen(id);
-    assert.deepEqual(await t.papa.fixPostenArchivieren(id, '2026-10-05'), { ok: true });
-    assert.equal(postenMit(t.papa, id), undefined);
+    const papasStand = t.papa.getState().fixkosten;
+    for (const [was, aufruf] of [
+      ['löschen', () => t.papa.fixPostenLoeschen(id)],
+      ['zurückholen', () => t.papa.fixPostenWiederherstellen(id)],
+      ['archivieren', () => t.papa.fixPostenArchivieren(id, '2026-10-05')],
+    ]) {
+      t.papa.starteAusSnapshot({ daten: { tage: {}, urlaub: [], termine: [], fixkosten: papasStand }, gespeichertAm: '2026-10-22T05:00:00.000Z' }); // wieder der alte Stand mit dem Posten …
+      await t.papa.laden(); // … aber verbunden (die Teile sind schon gelesen: es wird nicht neu gelesen)
+      assert.ok(postenMit(t.papa, id), `${was}: Papa sieht ihn noch`);
+      assert.deepEqual(await aufruf(), { ok: false, fehler: GELOESCHT }, was);
+      assert.equal(postenMit(t.papa, id), undefined, `${was}: danach der Stand im Kalender`);
+      assert.equal(t.papa.getState().fehler, GELOESCHT);
+    }
+    // nichts hängt: Papa kann gleich weiter speichern, und der Kalender ist unverändert leer bis auf den neuen Posten
+    const r = await t.papa.fixPostenSpeichern(entwurf({ name: 'Neu' }));
+    assert.equal(r.ok, true);
+    assert.deepEqual((await t.kalender.leseFixkosten()).shards.flatMap((x) => x?.posten ?? []).map((p) => p.name), ['Neu']);
+  });
+
+  test('einen Posten, den es nicht (mehr) gibt, archivieren/zurückholen/löschen: { ok: false } ohne zu schreiben', async () => {
+    const t = await zwei(0);
+    for (const aufruf of [() => t.papa.fixPostenArchivieren('nichtda1'), () => t.papa.fixPostenWiederherstellen('nichtda1'), () => t.papa.fixPostenLoeschen('nichtda1')]) {
+      assert.deepEqual(await aufruf(), { ok: false, fehler: 'Diesen Posten gibt es nicht mehr – er wurde wohl auf dem anderen Telefon gelöscht.' });
+    }
+    assert.deepEqual((await t.kalender.leseFixkosten()).shards, [null, null, null, null]);
   });
 });
 
@@ -519,6 +543,20 @@ describe('Unlesbare Teile werden nie überschrieben, fremde Posten bleiben erhal
     assert.equal(p.find((x) => x.i === 'aaaa3').c, 95000);
     assert.deepEqual(p.find((x) => x.i === 'bbbb1'), fremd);
     assert.ok(t.text(2).includes(JSON.stringify(fremd)), 'Byte für Byte');
+  });
+
+  test('das andere Telefon hat den Posten mit einer neueren App-Version geändert (jetzt fremd): Archivieren/Löschen/Ändern abgelehnt, Text unverändert', async () => {
+    const t = await google({ texte: { 2: shardText({ v: 1, posten: [posten('aaaa3', { archiv: '2026-10-01' })] }) } });
+    await t.store.fixLaden();
+    const alt = postenMit(t.store, 'aaaa3');
+    const neuer = JSON.stringify({ v: 1, p: [{ ...JSON.parse(t.text(2)).p[0], x: 'neu' }] });
+    await t.api.ereignisse.schreibe('kan', { id: 'fkfest2', description: neuer });
+    const NEUER = 'Diesen Posten hat das andere Telefon mit einer neueren App-Version geändert. Bitte die App aktualisieren.';
+    assert.deepEqual(await t.store.fixPostenWiederherstellen('aaaa3'), { ok: false, fehler: NEUER });
+    assert.equal(postenMit(t.store, 'aaaa3'), undefined, 'neu gelesen: nicht mehr gezeigt');
+    assert.deepEqual(await t.store.fixPostenSpeichern({ ...alt, cents: 1 }), { ok: false, fehler: NEUER }); // ein altes Formular: ebenso abgelehnt
+    assert.equal(t.text(2), neuer);
+    assert.ok(!t.geschrieben().includes('PATCH fkfest2'));
   });
 
   test('Demo: ein unlesbarer Teil im Speicher wird ebenso gesperrt; die anderen bleiben beschreibbar', async () => {

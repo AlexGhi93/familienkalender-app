@@ -278,8 +278,7 @@ describe('Kündigungsfristen (Fixkosten): einen Monat vor „Kündbar bis“ um 
     await leer({ ...kfz(), vertrag: undefined });
   });
 
-  test('archiviert erst nach dem Tag der Erinnerung: noch erinnert; ohne Verlängerung: einmal vor dem Ende', async () => {
-    assert.equal((await planeErinnerungen(mitPosten(kfz({ archiv: '2026-12-01' })), { jetzt: JETZT })).length, 1);
+  test('ohne Verlängerung (befristet): einmal vor dem Ende', async () => {
     const plan = await planeErinnerungen(mitPosten(vertrag('miete001', 'Befristete Miete', { bis: '2027-01-31', verlaengerung: 0, frist: '3m' })), { jetzt: JETZT });
     assert.deepEqual(kurz(plan), []); // kündbar bis 31.10.2026, Erinnerung 30.09.: schon vorbei
     const spaeter = await planeErinnerungen(mitPosten(vertrag('miete001', 'Befristete Miete', { bis: '2027-02-28', verlaengerung: 0, frist: '3m' })), { jetzt: JETZT });
@@ -293,11 +292,13 @@ describe('Kündigungsfristen (Fixkosten): einen Monat vor „Kündbar bis“ um 
     assert.deepEqual(kurz(plan), [['frist', '2026-12-17T08:00:00.000Z', 'Quartalsvertrag: kündbar bis 17.01.2027 (in 1 Monat)']]);
   });
 
-  test('im Voraus archiviert (Datum in der Zukunft): keine Erinnerung am oder nach dem Archivdatum, davor schon', async () => {
+  test('archiviert (auch mit Datum in der Zukunft = schon gekündigt, läuft bis dahin): nie eine Kündigungs-Erinnerung', async () => {
     const jetzt = { jetzt: JETZT };
-    assert.deepEqual(await planeErinnerungen(mitPosten(kfz({ archiv: '2026-10-20' })), jetzt), []); // archiviert ab 20.10., Erinnerung 30.10.
-    assert.deepEqual(await planeErinnerungen(mitPosten(kfz({ archiv: '2026-10-30' })), jetzt), []); // am Tag selbst
-    assert.equal((await planeErinnerungen(mitPosten(kfz({ archiv: '2026-10-31' })), jetzt)).length, 1); // erst danach archiviert
+    // Erinnerung wäre am 30.10.: Archivdatum davor, am selben Tag, danach, weit danach
+    for (const archiv of ['2026-10-01', '2026-10-20', '2026-10-30', '2026-10-31', '2026-12-01', '2027-12-31']) {
+      assert.deepEqual(await planeErinnerungen(mitPosten(kfz({ archiv })), jetzt), [], archiv);
+    }
+    assert.equal((await planeErinnerungen(mitPosten(kfz()), jetzt)).length, 1); // nicht archiviert: ja
   });
 
   test('Zeitumstellung: 09:00 Wien am Tag der Umstellung im Oktober (Winterzeit) und Ende März (Sommerzeit)', async () => {

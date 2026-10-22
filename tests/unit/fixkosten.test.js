@@ -497,12 +497,16 @@ describe('Beschädigte Teile lesen (nie werfen)', () => {
     assert.ok(warnungen.some((w) => w.includes('2 Fixkosten-Posten')), warnungen.join(' | '));
   });
 
-  test('zu langer Name oder zu lange Notiz wird beim Lesen gekürzt (mit Warnung), der Posten bleibt', () => {
-    const { shard, warnungen } = shardLesen(text(k({ n: `${'N'.repeat(39)}😀xyz`, t: 'Z'.repeat(100) })));
-    assert.equal(shard.posten.length, 1);
-    assert.equal(shard.posten[0].name, `${'N'.repeat(39)}😀`); // Zeichen, nicht UTF-16-Einheiten
-    assert.equal(shard.posten[0].notiz, 'Z'.repeat(80));
-    assert.equal(warnungen.length, 2);
+  test('zu langer Name oder zu lange Notiz (z. B. von einer neueren Version mit höherer Grenze): nicht gekürzt, sondern fremd – beim Schreiben unverändert', () => {
+    const langerName = k({ i: 'aaaa2', n: `${'N'.repeat(39)}😀xyz` });
+    const langeNotiz = k({ i: 'aaaa3', t: 'Z'.repeat(100) });
+    const genau = k({ i: 'aaaa4', n: `${'N'.repeat(39)}😀`, t: 'Z'.repeat(80) }); // genau an der Grenze (Zeichen, nicht UTF-16-Einheiten)
+    const { shard, warnungen } = shardLesen(text(k(), langerName, langeNotiz, genau));
+    assert.deepEqual(shard.posten.map((p) => p.id), ['aaaa1', 'aaaa4']);
+    assert.deepEqual(shard.fremd, [langerName, langeNotiz]);
+    assert.equal(warnungen.length, 1);
+    const geschrieben = shardText(postenArchivieren(shard, 'aaaa1', '2026-11-01'));
+    assert.ok(geschrieben.includes(JSON.stringify(langerName)) && geschrieben.includes(JSON.stringify(langeNotiz)), 'ungekürzt');
   });
 
   test('gültiger Teil → keine Warnung; unlesbarer Teil → leer mit Warnung; fehlender Text → leer ohne Warnung', () => {

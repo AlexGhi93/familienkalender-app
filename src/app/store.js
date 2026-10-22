@@ -27,6 +27,7 @@ const TEXT_UNKLAR = 'Möglicherweise teilweise gespeichert – bitte aktualisier
 const TEXT_FIX_NICHT_GELESEN = 'Die Fixkosten konnten nicht gelesen werden. Bitte noch einmal versuchen.';
 const TEXT_FIX_ANMELDEN = 'Bitte zuerst neu anmelden; danach lassen sich die Fixkosten ändern.';
 const TEXT_FIX_GELOESCHT = 'Diesen Posten gibt es nicht mehr – er wurde wohl auf dem anderen Telefon gelöscht.';
+const TEXT_FIX_NEUER = 'Diesen Posten hat das andere Telefon mit einer neueren App-Version geändert. Bitte die App aktualisieren.';
 
 /** Zufällige ID aus den Zeichen 0-9 und a-v: so darf sie auch als Google-Ereignis-ID dienen. */
 const zufaelligeId = () => `u${Array.from({ length: 11 }, () => Math.floor(Math.random() * 32).toString(32)).join('')}`;
@@ -436,14 +437,25 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
   /** Ist Teil `nr` gesperrt, weil diese Version ihn nicht lesen kann? */
   const fixGesperrt = (nr) => state.fixkosten.unlesbar.includes(nr);
 
-  /** Ändert einen vorhandenen Posten mit `fn(teil)` (Archivieren usw.): { ok, fehler?, wartet? }; nie ein Wurf. */
+  /**
+   * Der Posten `id` in Teil `shard`, sonst ein Wurf mit klarer Meldung: inzwischen gelöscht, oder vom anderen Telefon mit einer neueren
+   * Version geändert (jetzt ein fremder Eintrag, den diese Version nicht anfassen darf). Auf der neuesten Fassung heißt der Wurf:
+   * zurücknehmen, den Teil neu lesen und die Meldung zeigen (siehe teilAendern).
+   */
+  function fixVorhanden(shard, id) {
+    const p = shard.posten.find((x) => x.id === id);
+    if (p) return p;
+    throw new Error((shard.fremd ?? []).some((k) => k?.i === id) ? TEXT_FIX_NEUER : TEXT_FIX_GELOESCHT);
+  }
+
+  /** Ändert einen vorhandenen Posten mit `fn(teil)` (Archivieren usw.): { ok, fehler?, wartet? }; nie ein Wurf. Fehlt er (auch inzwischen), { ok: false, fehler }. */
   async function fixPostenAendern(id, fn) {
     const fehler = await fixBereit();
     if (fehler) return { ok: false, fehler };
     const nr = fixTeilVon(id);
     if (fixGesperrt(nr)) return { ok: false, fehler: TEXT_TEIL_GESPERRT };
     try {
-      return await fixTeilAendern(nr, fn);
+      return await fixTeilAendern(nr, (shard) => (fixVorhanden(shard, id), fn(shard)));
     } catch (e) {
       return { ok: false, fehler: e?.message || TEXT_FEHLER }; // schon auf dem angezeigten Stand abgelehnt: nichts geändert
     }
@@ -1155,8 +1167,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       const fn = neu
         ? (shard) => postenSetzen(shard, posten)
         : (shard) => {
-            const alt = shard.posten.find((p) => p.id === posten.id);
-            if (!alt) throw new Error(TEXT_FIX_GELOESCHT);
+            const alt = fixVorhanden(shard, posten.id);
             return postenSetzen(shard, alt.archiv ? { ...posten, archiv: alt.archiv } : posten);
           };
       try {

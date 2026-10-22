@@ -297,26 +297,18 @@ export function shardText(shard) {
   return text;
 }
 
-const kuerzen = (text, max) => [...text].slice(0, max).join('').trim();
-
 /**
- * Repariert beim Lesen, was sich retten lässt, statt den Posten zu verwerfen: zu langer Name oder zu lange Notiz → gekürzt,
- * eine Notiz, die kein Text ist → entfernt (jeweils mit Warnung). Alles andere prüft normalisierePosten.
+ * Repariert beim Lesen, was sich ohne Datenverlust retten lässt: eine Notiz, die kein Text ist → entfernt (mit Warnung). Zu lange Namen
+ * oder Notizen werden NICHT gekürzt: sie können von einer neueren Version mit höherer Grenze stammen und fallen über normalisierePosten
+ * in die fremden Einträge (unverändert erhalten). Alles andere prüft normalisierePosten.
  */
 function retten(k, warnungen) {
   if (!istObjekt(k)) return k;
   const r = { ...k };
-  const name = sauber(r.n);
-  if (zeichen(name) > MAX_FIX_NAME) {
-    r.n = kuerzen(name, MAX_FIX_NAME);
-    warnungen.push(`Der Name „${r.n}…“ war zu lang und wurde gekürzt.`);
-  }
   if ('t' in r && typeof r.t !== 'string') {
     delete r.t;
+    const name = sauber(r.n);
     if (name !== '') warnungen.push(`Die Notiz bei „${name}“ war unlesbar und wurde entfernt.`);
-  } else if (zeichen(sauber(r.t)) > MAX_FIX_NOTIZ) {
-    r.t = kuerzen(sauber(r.t), MAX_FIX_NOTIZ);
-    warnungen.push(`Die Notiz bei „${sauber(r.n)}“ war zu lang und wurde gekürzt.`);
   }
   return r;
 }
@@ -334,7 +326,8 @@ function bekannt(k) {
  *   darf NIE überschrieben werden (die Adapter lehnen das Schreiben ab, siehe teilGesperrtFehler);
  * - Einträge, die diese Version nicht versteht (unbekannte Kategorie oder unbekanntes Feld, z. B. von einer neueren Version, oder
  *   beschädigt) → `shard.fremd` (roh, nicht gezeigt, nicht gezählt, beim Schreiben unverändert mitgeschrieben; eine Warnung mit der Anzahl);
- * - zu lange Namen/Notizen werden gekürzt; doppelte Kennungen und alles über MAX_FIX_POSTEN fallen weg.
+ * - zu lange Namen/Notizen (vielleicht von einer neueren Version) zählen ebenfalls als fremd, nichts wird gekürzt; doppelte Kennungen
+ *   und alles über MAX_FIX_POSTEN fallen weg.
  */
 export function shardLesen(text) {
   if (typeof text !== 'string' || text.trim() === '') return { shard: leererShard(), warnungen: [] };

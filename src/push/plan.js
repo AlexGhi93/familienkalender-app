@@ -6,7 +6,7 @@ import { FUER } from '../domain/types.js';
 import { dienstFuer } from '../domain/dienst.js';
 import { instantZuWien, wienZuInstant } from '../domain/instant.js';
 import { SCHICHT_PERSONEN, artFuer, standardKatalog, vorladeMonate } from '../domain/schicht.js';
-import { istAktiv, vertragStatus } from '../domain/fixkosten.js';
+import { vertragStatus } from '../domain/fixkosten.js';
 import { datumAnzeige } from '../domain/eingabe.js';
 import { terminAnzeige } from '../app/views/gemeinsam.js';
 import { urlaubChecksWunsch } from '../app/urlaub-check.js';
@@ -116,9 +116,9 @@ async function zusatzErinnerungen(state, von, bis) {
 
 /**
  * Kündigungsfristen der Fixkosten: einen Monat vor „Kündbar bis“ (`vertragStatus(…).erinnerung`) um 09:00 (Wien), an BEIDE Telefone (ohne
- * `nur`); öffnet „Konto“. Nur aktive Posten (am Tag der Erinnerung nicht archiviert) mit laufendem Vertrag, der sich nicht oder um
- * mindestens drei Monate verlängert. Fällt auch die Erinnerung der nächsten Periode ins Fenster, kommt sie mit. Kennung = Posten und
- * „Kündbar bis“: bleibt bei Neuberechnung gleich, auf beiden Telefonen. Der Text nennt Name und Datum, keinen Betrag.
+ * `nur`); öffnet „Konto“. Nur nicht archivierte Posten (archiviert – auch mit einem Datum in der Zukunft – heißt: schon gekündigt,
+ * läuft bis dahin; die Frist ist dann kein Thema mehr) mit laufendem Vertrag, der sich nicht oder um mindestens drei Monate verlängert.
+ * Fällt auch die Erinnerung der nächsten Periode ins Fenster, kommt sie mit. Kennung = Posten und „Kündbar bis“: bleibt bei Neuberechnung gleich, auf beiden Telefonen. Der Text nennt Name und Datum, keinen Betrag.
  * Ein Posten, der sich nicht berechnen lässt, wird übersprungen; nichts hier darf den übrigen Plan verhindern.
  */
 async function fristErinnerungen(state, von, bis) {
@@ -143,6 +143,7 @@ async function fristErinnerungen(state, von, bis) {
 /** Die Erinnerungen eines Postens im Fenster (siehe fristErinnerungen); wirft bei unbrauchbaren Daten. */
 async function fristenEinesPostens(posten, heute, von, bis) {
   const v = posten?.vertrag;
+  if (posten?.archiv) return []; // archiviert = gekündigt (siehe fristErinnerungen)
   if (!v || (v.verlaengerung > 0 && v.verlaengerung < FRIST_AB_VERLAENGERUNG)) return [];
   if (typeof v.bis !== 'string' || !isValidDate(v.bis)) return []; // sonst fände die Verlängerung kein Ende
   const plan = [];
@@ -152,7 +153,7 @@ async function fristenEinesPostens(posten, heute, von, bis) {
     if (!status || status.beendet) break;
     const um = wienZuInstant(status.erinnerung, '09:00');
     if (um > bis) break;
-    if (um > von && istAktiv(posten, status.erinnerung)) {
+    if (um > von) {
       plan.push({ id: await kennung(`frist-${posten.id}-${status.kuendbarBis}`, 'frist'), um, art: 'frist', titel: '📝 Kündigungsfrist', text: `${posten.name}: kündbar bis ${datumAnzeige(status.kuendbarBis)} (in 1 Monat)`, ttl: TTL.frist, ziel: '#/konto' });
     }
     if (!(v.verlaengerung > 0)) break; // ohne Verlängerung gibt es nur diese eine Frist
