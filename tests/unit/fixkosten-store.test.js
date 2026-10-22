@@ -450,6 +450,39 @@ describe('Fixkosten offline und in der Sicherung', () => {
     assert.equal(store.getState(), vorher);
   });
 
+  test('„Beispieldaten entfernen“ (nur Demo) leert auch die Fixkosten – gespeichert; fremde Posten bleiben', async () => {
+    const speicher = speicherAttrappe();
+    const { store } = aufbau({ speicher });
+    await store.laden();
+    await store.fixLaden();
+    assert.equal(allePosten(store).length, 13);
+    // ein Posten einer neueren Version in Teil 1 (nicht gezeigt) darf nicht verloren gehen
+    const roh = gespeichert(speicher);
+    roh.fixkosten.shards[1] = { ...(roh.fixkosten.shards[1] ?? { v: 1, posten: [] }), fremd: [{ i: 'neu00001', n: 'Neu', z: 1 }] };
+    speicher.setItem(KEY, JSON.stringify(roh));
+    const zweiter = aufbau({ speicher }).store;
+    await zweiter.laden();
+    await zweiter.fixLaden();
+    await zweiter.kontoLeeren();
+    assert.deepEqual(zweiter.getState().konto, { v: 1, p: { papa: {}, mama: {} }, x: [] });
+    assert.equal(allePosten(zweiter).length, 0);
+    assert.deepEqual(zweiter.getState().fixkosten.shards[1].fremd, [{ i: 'neu00001', n: 'Neu', z: 1 }]);
+    const danach = aufbau({ speicher }).store;
+    await danach.laden();
+    await danach.fixLaden();
+    assert.equal(allePosten(danach).length, 0, 'auch im Speicher leer');
+    assert.equal(danach.getState().fixkosten.shards[1].fremd.length, 1);
+  });
+
+  test('„Beispieldaten entfernen“ mit Google: abgelehnt, Fixkosten unverändert, nichts geschrieben', async () => {
+    const { store, log } = aufbau({ speicher: speicherAttrappe(), aendern: (a) => ({ ...a, istDemo: false }) });
+    await store.laden();
+    await store.fixLaden();
+    await assert.rejects(store.kontoLeeren(), /nur in der Demo/);
+    assert.equal(allePosten(store).length, 13);
+    assert.equal(log.some((x) => x.startsWith('schreibe')), false);
+  });
+
   test('Demo zurücksetzen: Fixkosten aus den neuen Beispieldaten', async () => {
     const { store } = aufbau({ speicher: speicherAttrappe() });
     await store.laden();

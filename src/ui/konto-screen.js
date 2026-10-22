@@ -1,3 +1,4 @@
+// Registerkarte „Konto“ mit dem Umschalter „Kontostand · Fixkosten“ (gemerkt je Telefon); die Fixkosten stehen in fixkosten-screen.js.
 // Seite „Kontostand“: am letzten Tag des Monats tragen Papa und Mama ihren Gesamtstand ein; darunter die Ersparnis je Monat
 // (auch „ohne Extra“, wenn Sonderbeträge wie Weihnachtsgeld dabei waren). Alle Texte kommen als Text in die Seite, nie als HTML.
 // Beträge erscheinen nur hier, nie in Benachrichtigungen.
@@ -6,6 +7,7 @@ import { abschnitt, bestaetigen, blatt, chip, farbe, toast } from './components.
 import { kontoModel } from '../app/views/konto-model.js';
 import { balkenDiagramm, bereichLeiste, kacheln, verlaufDiagramm } from './konto-diagramm.js';
 import { MAX_EXTRA_TEXT, betragText, centsAusText } from '../domain/konto.js';
+import { fixkostenInhalt, kontoUmschalter } from './fixkosten-screen.js';
 
 const GRUEN = '#2F9E5B';
 const HINWEIS_EINGABE = 'Bitte einen Betrag eingeben, z. B. 20.711 oder 1.234,56.';
@@ -132,7 +134,7 @@ function demoWerkzeuge(e, { store, ui }) {
   const entfernen = () =>
     bestaetigen({
       titel: 'Beispieldaten entfernen?',
-      text: 'Alle Beispiel-Kontostände und Sonderbeträge der Demo werden gelöscht, damit du eigene Zahlen ausprobieren kannst. Das betrifft nur die Demo.',
+      text: 'Alle Beispiel-Kontostände, Sonderbeträge und Fixkosten der Demo werden gelöscht, damit du eigene Zahlen ausprobieren kannst. Das betrifft nur die Demo.',
       ja: 'Entfernen',
       gefahr: true,
       beiJa: async () => {
@@ -437,6 +439,9 @@ function sonderbetraegeKarte(m, ctx) {
 }
 
 export function kontoScreen({ store, ui }) {
+  if (ui.kontoAnsicht === 'fixkosten') {
+    return h('section', { class: 'screen konto fixkosten' }, h('h1', { class: 'gruss' }, 'Fixkosten 💶'), kontoUmschalter(ui), fixkostenInhalt({ store, ui }));
+  }
   const demo = ui.konto?.modus === 'demo';
   const m = kontoModel(store.getState(), store.heute(), { demo, monat: demoMonat, nachtragMonat, bereich });
   const z = m.zusammenfassung;
@@ -445,6 +450,7 @@ export function kontoScreen({ store, ui }) {
     'section',
     { class: 'screen konto' },
     h('h1', { class: 'gruss' }, 'Kontostand 💶'),
+    kontoUmschalter(ui),
     h('p', { class: 'datum' }, 'Am letzten Tag des Monats tragt ihr den Gesamtstand eurer Konten ein; so seht ihr, wie viel ihr spart.'),
     m.eintrag ? eintragKarte(m, ctx) : h('article', { class: 'karte hinweis' }, h('div', { class: 'karte-zeile' }, h('span', { class: 'emoji' }, '🗓️'), h('div', { class: 'karte-text' }, h('b', {}, m.naechster), h('small', {}, 'Frühere Monate trägst du weiter unten mit „Nachtragen“ ein.')))),
     m.nachtragen ? abschnitt('Nachtragen', nachtragKarte(m, ctx)) : null,

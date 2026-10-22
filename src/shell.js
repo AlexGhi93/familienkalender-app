@@ -23,6 +23,7 @@ import { schichtScreen } from './ui/schicht-screen.js';
 import { oeffneSchichtTag } from './ui/schicht-tag.js';
 import { oeffneSchichtarten } from './ui/schicht-arten.js';
 import { schichtFilterLesen, schichtFilterSpeichern } from './app/views/schicht-model.js';
+import { KONTO_ANSICHTEN, kontoAnsichtLesen, kontoAnsichtSpeichern } from './app/views/fixkosten-model.js';
 import { createSchichtAbgleich, schichtAktualisierenFaellig } from './app/schicht-abgleich.js';
 import { monatVor } from './domain/konto.js';
 import { planQuellen, quellenGeaendert } from './push/plan.js';
@@ -37,7 +38,7 @@ const SEITEN = {
   mehr: mehrScreen,
   einkauf: einkaufScreen, // Registerkarte; auch erreichbar von „Heute“ (Karte) und „Neu“ (Kachel)
   verlauf: verlaufScreen, // erreichbar von „Mehr“
-  konto: kontoScreen, // „Kontostand“: Registerkarte; auch erreichbar von „Mehr“, „Heute“ (am letzten Tag) und der Erinnerung
+  konto: kontoScreen, // Registerkarte „Konto“ mit „Kontostand · Fixkosten“; auch erreichbar von „Mehr“, „Heute“ (am letzten Tag) und den Erinnerungen (#/konto/kontostand, #/konto/fixkosten)
   app: appScreen, // „Konto & App“: erreichbar von „Mehr“
 };
 
@@ -85,6 +86,7 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
   let schichtAngefragt = null; // Monat, den der Schichtplan zuletzt geladen hat (null = beim nächsten Zeichnen neu laden)
   let schichtRueckkehr = null; // Zeitpunkt (ms) des letzten Neu-Holens beim Zurückkehren in die App
   let letzteSeite = null; // zuletzt gezeichnete Seite (für `ui.seiteBetreten`)
+  let fixAngefragt = false; // wurden die Fixkosten beim Öffnen ihrer Ansicht schon gelesen? (zurückgesetzt beim Verlassen)
   const versionPruefen = async () => {
     if (neueVersion || !(await istNeueVersionVerfuegbar({ aktuell: VERSION }))) return;
     neueVersion = true;
@@ -135,10 +137,12 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
     neu: { auswahl: null },
     urlaubJahr: 0, // gewähltes Kindergartenjahr auf der Urlaub-Seite (0 = aktuelles)
     schicht: { jm: store.heute().slice(0, 7), filter: schichtFilterLesen(), pinsel: null }, // angezeigter Monat, Filter (je Telefon gemerkt), Pinsel
+    kontoAnsicht: kontoAnsichtLesen(), // „Kontostand“ oder „Fixkosten“ im Konto-Tab (je Telefon gemerkt)
+    fixFilter: 'alle', // Filter der Fixkosten (Alle · Papa · Mama · Gemeinsam · Kind)
     verlauf: { typ: 'alle', jahr: null, text: '', von: null, laedt: false }, // Filter und geladener Bereich des Verlaufs
     titel: () => 'Familienkalender',
     seite: () => {
-      const name = fenster.location.hash.replace(/^#\/?/, '');
+      const name = fenster.location.hash.replace(/^#\/?/, '').split('/')[0];
       return name in SEITEN ? name : 'heute';
     },
     bannerAktualisieren() {
@@ -147,6 +151,7 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
       ui.verbindungZeichnen?.(); // die Verbindung in „Mehr“ bzw. „Konto & App“, falls die Seite gerade offen ist
     },
     rendern() {
+      kontoUnterseiteUebernehmen();
       const seite = ui.seite();
       const state = store.getState();
       const alt = inhalt.scrollTop;
@@ -163,11 +168,14 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
         if (seite === 'verlauf') ui.verlaufLaden();
         if (seite === 'schicht') ui.schichtLaden();
         else schichtAngefragt = null; // beim nächsten Öffnen frisch laden
+        if (seite === 'konto' && ui.kontoAnsicht === 'fixkosten') ui.fixLaden();
+        else fixAngefragt = false; // beim nächsten Öffnen der Fixkosten frisch lesen
       }
       inhalt.scrollTop = alt;
       fenster.scrollTo(0, scrollY);
       fuelle(leiste, TABS.map(([id, symbol, text]) => tab(id, symbol, text, seite)));
-      document.title = `${ui.titel()} · ${SEITEN_TITEL[seite] ?? TABS.find(([id]) => id === seite)?.[2]}`;
+      const seitenTitel = seite === 'konto' && ui.kontoAnsicht === 'fixkosten' ? 'Fixkosten' : (SEITEN_TITEL[seite] ?? TABS.find(([id]) => id === seite)?.[2]);
+      document.title = `${ui.titel()} · ${seitenTitel}`;
       einkaufAbgleich.pruefen(); // Einkaufsliste offen (und Google verbunden): alle 30 Sekunden nachsehen, sonst nicht
       if (seite === 'schicht' && auth) schichtAbgleich.start(); // nur mit Google: in der Demo gibt es kein anderes Telefon
       else schichtAbgleich.stop();
@@ -187,6 +195,26 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
     setzeSchichtFilter(filter) {
       ui.schicht.filter = schichtFilterSpeichern(filter);
       ui.rendern();
+    },
+    /** Fixkosten beim Öffnen ihrer Ansicht einmal lesen (Lesefehler stehen im Status, siehe store.fixLaden). */
+    fixLaden() {
+      if (fixAngefragt) return;
+      fixAngefragt = true;
+      store.fixLaden().catch(() => {});
+    },
+    /** Ansicht des Konto-Tabs wechseln („kontostand“ | „fixkosten“) und auf diesem Telefon merken. */
+    setzeKontoAnsicht(ansicht) {
+      ui.kontoAnsicht = kontoAnsichtSpeichern(ansicht);
+      ui.rendern();
+    },
+    setzeFixFilter(filter) {
+      ui.fixFilter = filter;
+      ui.rendern();
+    },
+    /** Öffnet den Konto-Tab in dieser Ansicht (z. B. „Kontostand eintragen“ auf „Heute“). */
+    gehZuKonto(ansicht) {
+      ui.kontoAnsicht = kontoAnsichtSpeichern(ansicht);
+      ui.gehZu('konto');
     },
     /**
      * Holt nur die Einkaufsliste neu (alle 30 Sekunden, beim Zurückkehren, „Ziehen zum Aktualisieren“); Ergebnis wie store.einkaufAktualisieren.
@@ -296,6 +324,21 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
     aktiv: () => ui.seite() === 'schicht' && document.visibilityState === 'visible' && googleBereit(),
     holen: () => store.schichtAktualisieren(ui.schichtMonate()),
   });
+
+  /**
+   * `#/konto/kontostand` bzw. `#/konto/fixkosten` (Ziel der Erinnerungen): wählt die Ansicht, merkt sie und lässt in der Adresse nur
+   * `#/konto` stehen (ohne neuen Verlaufseintrag), damit „Zurück“ und die Tab-Leiste wie gewohnt funktionieren.
+   */
+  function kontoUnterseiteUebernehmen() {
+    const [name, unter] = fenster.location.hash.replace(/^#\/?/, '').split('/');
+    if (name !== 'konto' || unter === undefined) return;
+    if (KONTO_ANSICHTEN.includes(unter)) ui.kontoAnsicht = kontoAnsichtSpeichern(unter);
+    try {
+      fenster.history.replaceState(fenster.history.state, '', '#/konto');
+    } catch {
+      // ohne Verlauf (sehr alte Browser): die Ansicht stimmt trotzdem
+    }
+  }
 
   fenster.addEventListener('hashchange', () => ui.rendern());
 

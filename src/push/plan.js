@@ -64,7 +64,7 @@ async function kontoErinnerungen(state, von, bis) {
     const spaeter = erste + 3 * STUNDE;
     if (instantZuWien(spaeter).date === tag) kandidaten.push({ art: 'konto2', um: spaeter, text: `Letzte Erinnerung für heute – noch offen: ${namen}.` });
     for (const k of kandidaten) {
-      if (k.um > von && k.um <= bis) plan.push({ id: await kennung(`konto-${monat}`, k.art), um: k.um, art: k.art, titel: '💶 Kontostand eintragen', text: k.text, ttl: TTL[k.art], ziel: '#/konto' });
+      if (k.um > von && k.um <= bis) plan.push({ id: await kennung(`konto-${monat}`, k.art), um: k.um, art: k.art, titel: '💶 Kontostand eintragen', text: k.text, ttl: TTL[k.art], ziel: '#/konto/kontostand' });
     }
   }
   return plan;
@@ -154,7 +154,7 @@ async function fristenEinesPostens(posten, heute, von, bis) {
     const um = wienZuInstant(status.erinnerung, '09:00');
     if (um > bis) break;
     if (um > von) {
-      plan.push({ id: await kennung(`frist-${posten.id}-${status.kuendbarBis}`, 'frist'), um, art: 'frist', titel: '📝 Kündigungsfrist', text: `${posten.name}: kündbar bis ${datumAnzeige(status.kuendbarBis)} (in 1 Monat)`, ttl: TTL.frist, ziel: '#/konto' });
+      plan.push({ id: await kennung(`frist-${posten.id}-${status.kuendbarBis}`, 'frist'), um, art: 'frist', titel: '📝 Kündigungsfrist', text: `${posten.name}: kündbar bis ${datumAnzeige(status.kuendbarBis)} (in 1 Monat)`, ttl: TTL.frist, ziel: '#/konto/fixkosten' });
     }
     if (!(v.verlaengerung > 0)) break; // ohne Verlängerung gibt es nur diese eine Frist
     tag = addDays(status.kuendbarBis, 1); // die nächste Periode

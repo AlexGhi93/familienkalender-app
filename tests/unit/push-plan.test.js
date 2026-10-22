@@ -93,7 +93,7 @@ describe('Kontostand am letzten Tag des Monats', () => {
       ['konto', '2026-11-30T17:00:00.000Z', 'Heute ist der letzte Tag des Monats.'],
       ['konto2', '2026-11-30T20:00:00.000Z', 'Letzte Erinnerung für heute – noch offen: Papa und Mama.'],
     ]);
-    assert.ok(plan.every((p) => p.titel === '💶 Kontostand eintragen' && p.ziel === '#/konto'));
+    assert.ok(plan.every((p) => p.titel === '💶 Kontostand eintragen' && p.ziel === '#/konto/kontostand')); // öffnet den Kontostand, auch wenn zuletzt Fixkosten gewählt waren
     assert.deepEqual(plan.slice(0, 2).map((p) => p.ttl), [10800, 5400]);
   });
 
@@ -250,11 +250,11 @@ describe('Kündigungsfristen (Fixkosten): einen Monat vor „Kündbar bis“ um 
   const kfz = (mehr = {}) => vertrag('kfz00001', 'Kfz-Versicherung', { bis: '2025-12-31', verlaengerung: 12, frist: '1m' }, mehr);
   const mitPosten = (...posten) => zustand({ settings: ohneKonto, fixkosten: { shards: [{ v: 1, posten }, null, { v: 1, posten: [] }, null], status: 'geladen', warnungen: [] } });
 
-  test('kündbar bis 30.11.2026 → am 30.10.2026 um 09:00 (Winterzeit), ohne `nur`, Ziel Konto', async () => {
+  test('kündbar bis 30.11.2026 → am 30.10.2026 um 09:00 (Winterzeit), ohne `nur`, Ziel Konto › Fixkosten', async () => {
     const plan = await planeErinnerungen(mitPosten(kfz()), { jetzt: JETZT });
     assert.deepEqual(kurz(plan), [['frist', '2026-10-30T08:00:00.000Z', 'Kfz-Versicherung: kündbar bis 30.11.2026 (in 1 Monat)']]);
     assert.equal(plan[0].titel, '📝 Kündigungsfrist');
-    assert.equal(plan[0].ziel, '#/konto');
+    assert.equal(plan[0].ziel, '#/konto/fixkosten'); // öffnet im Konto-Tab die Fixkosten
     assert.equal(plan[0].ttl, 21600);
     assert.equal('nur' in plan[0], false);
     assert.ok(/^[A-Za-z0-9_-]{22}$/.test(plan[0].id));

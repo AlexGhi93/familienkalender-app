@@ -200,7 +200,7 @@ function kontoHeuteKarte(m, ui) {
     'article',
     { class: 'karte tint konto-heute', style: farbe('#2F9E5B') },
     h('div', { class: 'karte-zeile' }, h('span', { class: 'emoji' }, '💶'), h('div', { class: 'karte-text' }, h('b', {}, k.text), h('small', {}, 'Heute ist der letzte Tag des Monats: der Gesamtstand aller Konten.'))),
-    h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein primaer', type: 'button', onClick: () => ui.gehZu('konto') }, 'Kontostand eintragen')),
+    h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein primaer', type: 'button', onClick: () => ui.gehZuKonto('kontostand') }, 'Kontostand eintragen')),
   );
 }
 

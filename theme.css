@@ -3738,3 +3738,376 @@ html:has(.screen.einkauf) {
 .sp-art-form .leise {
   font-size: 0.8rem;
 }
+
+/* ---------- Konto: Umschalter „Kontostand · Fixkosten“ ---------- */
+
+.konto-segment {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--akzent) 14%, var(--karte));
+}
+
+.konto-segment-knopf {
+  flex: 1;
+  min-height: 44px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-2);
+  font-weight: 800;
+  font-size: 0.95rem;
+}
+
+.konto-segment-knopf.aktiv {
+  background: var(--akzent);
+  color: var(--akzent-ink);
+}
+
+/* Der Untertitel steht hier unter dem Umschalter, nicht direkt unter der Überschrift */
+.konto-segment + .datum {
+  margin-top: 0;
+}
+
+/* ---------- Fixkosten ---------- */
+
+.fk-kopf {
+  gap: 2px;
+}
+
+.fk-klein {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--ink-2);
+}
+
+.fk-gross {
+  font-size: 2rem;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.fk-kopf-zeile {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 8px;
+  font-size: 0.9rem;
+}
+
+.fk-kopf-zeile b {
+  font-size: 1rem;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.fk-filter .chip {
+  gap: 4px;
+}
+
+.fk-chip-betrag {
+  font-variant-numeric: tabular-nums;
+}
+
+.fk-karte {
+  gap: 6px;
+}
+
+.fk-karte-titel {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.fk-karte-titel small {
+  color: var(--ink-2);
+  font-weight: 800;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.fk-liste {
+  display: flex;
+  flex-direction: column;
+}
+
+.fk-pos {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  padding: 8px 0;
+  border: 0;
+  border-top: 1px solid var(--linie);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+}
+
+.fk-pos:first-child {
+  border-top: 0;
+}
+
+.fk-tag {
+  flex: none;
+  width: 34px;
+  text-align: center;
+  font-weight: 900;
+  color: var(--akzent);
+  font-variant-numeric: tabular-nums;
+}
+
+.fk-n {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.fk-n b {
+  overflow-wrap: anywhere;
+}
+
+.fk-n small {
+  color: var(--ink-2);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.fk-b {
+  flex: none;
+  text-align: right;
+  font-weight: 800;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.fk-b small {
+  display: block;
+  color: var(--ink-2);
+  font-weight: 600;
+  font-size: 0.75rem;
+}
+
+/* Person: Kürzel als Text auf getönter Fläche in der Farbe der Person (nie nur Farbe) */
+.fk-person {
+  --c: var(--ink-2);
+  display: inline-block;
+  max-width: 9ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  padding: 0 5px;
+  border-radius: 6px;
+  border: 1px solid var(--c);
+  background: color-mix(in srgb, var(--c) 22%, var(--karte));
+  color: var(--ink);
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+}
+
+.fk-person-papa {
+  --c: var(--serie-papa);
+}
+
+.fk-person-mama {
+  --c: var(--serie-mama);
+}
+
+.fk-person-kind {
+  --c: var(--sf-gruen);
+}
+
+.fk-abzeichen {
+  display: inline-block;
+  margin-top: 2px;
+  padding: 1px 7px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--familie) 80%, transparent);
+  background: color-mix(in srgb, var(--familie) 22%, var(--karte));
+  color: var(--ink);
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.fk-abzeichen.warn {
+  border-color: var(--gefahr);
+  background: color-mix(in srgb, var(--gefahr) 16%, var(--karte));
+}
+
+.fk-neu {
+  min-height: 48px;
+}
+
+.fk-monate {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fk-balken {
+  display: flex;
+  height: 16px;
+  margin-top: 4px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--linie) 60%, transparent);
+}
+
+.fk-balken-fix {
+  background: var(--akzent);
+}
+
+.fk-balken-spar {
+  background: var(--sf-gruen);
+}
+
+.fk-legende {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  margin-top: 4px;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.fk-legende span::before {
+  content: '■ ';
+}
+
+.fk-leg-fix::before {
+  color: var(--akzent);
+}
+
+.fk-leg-spar::before {
+  color: var(--sf-gruen);
+}
+
+.fk-leg-spar.minus::before {
+  color: var(--gefahr);
+}
+
+.fk-hinweis {
+  font-size: 0.8rem;
+}
+
+.fk-meldung {
+  gap: 6px;
+  border-color: color-mix(in srgb, var(--familie) 70%, transparent);
+  background: color-mix(in srgb, var(--familie) 12%, var(--karte));
+}
+
+.fk-meldung.warn {
+  border-color: var(--gefahr);
+  background: color-mix(in srgb, var(--gefahr) 10%, var(--karte));
+}
+
+.fk-meldung p {
+  font-size: 0.9rem;
+}
+
+.fk-fremd,
+.fk-veraltet {
+  font-size: 0.85rem;
+}
+
+/* Formular */
+
+.fk-felder {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  margin: 0 0 14px;
+  padding: 0;
+  border: 0;
+}
+
+.fk-felder:disabled {
+  opacity: 0.6;
+}
+
+.fk-paar {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.fk-auswahl {
+  width: 100%;
+  min-height: 46px;
+  padding: 8px 10px;
+  border-radius: var(--radius-klein);
+  border: 1.5px solid var(--linie);
+  background: var(--karte);
+  color: var(--ink);
+  font: inherit;
+}
+
+.fk-felder .feld input[type='text'] {
+  width: 100%;
+  color: var(--ink);
+}
+
+.fk-vorlagen {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.fk-vorlage {
+  min-height: 40px;
+  padding: 4px 11px;
+  border-radius: 999px;
+  border: 1.5px solid transparent;
+  background: color-mix(in srgb, var(--akzent) 14%, var(--karte));
+  color: var(--ink);
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+.fk-vorlage.aktiv {
+  border-color: var(--akzent);
+  background: color-mix(in srgb, var(--akzent) 34%, var(--karte));
+}
+
+.fk-haken {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  font-weight: 800;
+}
+
+.fk-haken input {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  accent-color: var(--akzent);
+}
+
+.fk-box {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 6px 12px 12px;
+  border-radius: var(--radius-klein);
+  background: color-mix(in srgb, var(--akzent) 8%, var(--karte));
+  border: 1.5px solid var(--linie);
+}
+
+.fk-vorschau {
+  font-size: 0.9rem;
+}
+
+.fk-tipp {
+  font-size: 0.82rem;
+}

@@ -906,10 +906,22 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       await kontoAendern((konto) => fuegeExtraHinzu(konto, { ...eintrag, id }, { heute }));
     },
 
-    /** Nur Demo („Beispieldaten entfernen“): löscht alle Kontostände und Sonderbeträge. Mit einem anderen Adapter (Google) wird nichts getan. */
+    /**
+     * Nur Demo („Beispieldaten entfernen“): löscht alle Kontostände, Sonderbeträge und Fixkosten-Posten (Teil für Teil; fremde Einträge
+     * einer neueren Version und unlesbare Teile bleiben unangetastet). Mit einem anderen Adapter (Google) wird nichts getan. Wirft mit
+     * deutscher Meldung, wenn etwas nicht geklappt hat.
+     */
     async kontoLeeren() {
       if (!adapter.istDemo) throw new Error('Das geht nur in der Demo.');
       await kontoAendern(() => leeresKonto());
+      if (!adapter.aendereFixShard) return;
+      const nichtBereit = await fixBereit();
+      if (nichtBereit) throw new Error(nichtBereit);
+      for (let nr = 0; nr < FIX_SHARDS; nr += 1) {
+        if (fixGesperrt(nr) || !(state.fixkosten.shards?.[nr]?.posten.length > 0)) continue;
+        const r = await fixTeilAendern(nr, (shard) => (shard.fremd?.length > 0 ? { v: 1, posten: [], fremd: shard.fremd } : leererShard()));
+        if (!r.ok && !r.wartet) throw new Error(r.fehler ?? TEXT_FEHLER);
+      }
     },
 
     /** Löscht genau einen Sonderbetrag. */

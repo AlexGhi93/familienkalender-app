@@ -15,7 +15,7 @@ export function kontostandInhalt({ store, ui, settings, speichern }) {
   return [
     h('p', { class: 'leise' }, 'Papa und Mama tragen am letzten Tag des Monats ihren Gesamtstand ein. Daraus ergibt sich, wie viel ihr pro Monat spart.'),
     h('p', {}, kurz),
-    h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein primaer', type: 'button', onClick: () => ui.gehZu('konto') }, 'Kontostand öffnen')),
+    h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein primaer', type: 'button', onClick: () => ui.gehZuKonto('kontostand') }, 'Kontostand öffnen')),
     h(
       'div',
       { class: 'feld' },
