@@ -161,7 +161,7 @@ test('personenMitTelefon: wem mindestens ein Telefon im Register gehört; Telefo
 });
 
 /** createPush mit nachgebauten Teilen: Speicher, Abonnement, Register im „Kalender“ und Push-Dienst (merkt sich die PUTs). */
-async function aufbau({ person = '', eigenePerson, state = zustand({ dienstErinnerung: 'dienst' }), store, vorbereiten } = {}) {
+async function aufbau({ person = '', eigenePerson, state = zustand({ dienstErinnerung: 'dienst' }), store, vorbereiten, zeitgeber } = {}) {
   const daten = new Map([['fk.push.geraet.v1', 'eigenTel1'], ['fk.push.aktiv.v1', '1']]);
   if (person) daten.set('fk.push.person.v1', person);
   const speicher = { getItem: (k) => daten.get(k) ?? null, setItem: (k, v) => daten.set(k, String(v)), removeItem: (k) => daten.delete(k) };
@@ -198,7 +198,7 @@ async function aufbau({ person = '', eigenePerson, state = zustand({ dienstErinn
     speicher,
     umgebung: { ios: false, installiert: true, pushUnterstuetzt: true, name: 'Android' },
     jetzt: () => JETZT,
-    zeitgeber: { setze: (f) => ((geplant = f), 1), loesche: () => {} },
+    zeitgeber: zeitgeber ?? { setze: (f) => ((geplant = f), 1), loesche: () => {} },
   });
   return { push, speicher, schreiben, anfragen, register: () => register, setzeRegister: (r) => (register = r), geplant: () => geplant, setzeZustand: (s) => (aktuell = s) };
 }
@@ -347,4 +347,109 @@ test('sync: scheitert das Frisch-Lesen, wird nichts gesendet (wartet); ohne Vorl
   t.setzeZustand({ ...basis, schicht: { ...basis.schicht, vorgeladen: null } });
   assert.equal((await t.push.sync({ erzwingen: true })).art, 'wartet');
   assert.equal(gelesen, 2, 'nicht vorgeladen: kein Lesen, es würde ohnehin nichts gesendet');
+});
+
+
+/** Uhr zum Vorspulen für createPush (`zeitgeber`): `vor(ms)` lässt fällige Zeitgeber der Reihe nach laufen und wartet auf sie. */
+function uhrAttrappe() {
+  let jetzt = 0;
+  let naechsteId = 1;
+  const offen = new Map();
+  return {
+    zeitgeber: {
+      setze(fn, ms) {
+        const id = naechsteId++;
+        offen.set(id, { fn, zeit: jetzt + ms });
+        return id;
+      },
+      loesche(id) {
+        offen.delete(id);
+      },
+    },
+    /** Wartezeiten der offenen Zeitgeber (ms ab jetzt), aufsteigend. */
+    offen: () => [...offen.values()].map((z) => z.zeit - jetzt).sort((x, y) => x - y),
+    async vor(ms) {
+      const ende = jetzt + ms;
+      for (;;) {
+        const faellig = [...offen.entries()].filter(([, z]) => z.zeit <= ende).sort((x, y) => x[1].zeit - y[1].zeit)[0];
+        if (!faellig) break;
+        const [id, z] = faellig;
+        offen.delete(id);
+        jetzt = z.zeit;
+        await z.fn();
+      }
+      jetzt = ende;
+    },
+  };
+}
+
+test('wartet, weil eine eigene Änderung (Termin, Tag …) noch gespeichert wird: nach 30 s noch einmal – dann geht der Plan hinaus', async () => {
+  let freigeben;
+  const halten = new Promise((r) => (freigeben = r));
+  const kalender = createDemoAdapter({ speicher: speicherAttrappe(), jetzt: () => JETZT });
+  const store = createStore({ ...kalender, setzeTag: async (...a) => (await halten, kalender.setzeTag(...a)) }, { jetzt: () => JETZT });
+  await store.laden();
+  await store.schichtVorladen();
+  const uhr = uhrAttrappe();
+  const t = await aufbau({ store, zeitgeber: uhr.zeitgeber });
+  const schreiben = store.setTag('2026-10-15', 'krank'); // läuft noch
+  assert.equal((await t.push.sync()).art, 'wartet');
+  assert.equal(t.anfragen.length, 0);
+  assert.deepEqual(uhr.offen(), [30_000]);
+  freigeben();
+  await schreiben; // gespeichert – ohne neue Meldung, also ohne neuen Anstoß von der Shell
+  await uhr.vor(30_000);
+  assert.equal(t.anfragen.length, 1, 'der Plan ging beim zweiten Versuch hinaus');
+  assert.deepEqual(uhr.offen(), [], 'kein weiterer Versuch');
+  assert.equal((await t.push.status()).wartet, false);
+});
+
+test('wartet wegen Lesefehlern: 30 s, 2 min, 10 min, dann alle 10 min – immer nur ein Zeitgeber; Erfolg setzt zurück', async () => {
+  let ok = false;
+  const uhr = uhrAttrappe();
+  const t = await aufbau({ vorbereiten: async () => ok, zeitgeber: uhr.zeitgeber });
+  assert.equal((await t.push.sync()).art, 'wartet');
+  assert.deepEqual(uhr.offen(), [30_000]);
+  await uhr.vor(30_000);
+  assert.deepEqual(uhr.offen(), [120_000]);
+  await uhr.vor(120_000);
+  assert.deepEqual(uhr.offen(), [600_000]);
+  await uhr.vor(600_000);
+  assert.deepEqual(uhr.offen(), [600_000]);
+  assert.equal(t.anfragen.length, 0);
+  ok = true;
+  await uhr.vor(600_000);
+  assert.equal(t.anfragen.length, 1);
+  assert.deepEqual(uhr.offen(), []);
+  ok = false; // ein neues Warten beginnt wieder bei 30 s
+  assert.equal((await t.push.sync({ erzwingen: true })).art, 'wartet');
+  assert.deepEqual(uhr.offen(), [30_000]);
+});
+
+test('ein neuer Anstoß setzt die Wartezeit zurück; ohne Push (ausgeschaltet) hört das Nachholen auf', async () => {
+  const uhr = uhrAttrappe();
+  const t = await aufbau({ vorbereiten: async () => false, zeitgeber: uhr.zeitgeber });
+  await t.push.sync();
+  await uhr.vor(30_000);
+  await uhr.vor(120_000);
+  assert.deepEqual(uhr.offen(), [600_000]);
+  t.push.anstossen(); // z. B. ein neuer Termin: Abgleich in 3 s, das Nachholen ist damit erledigt
+  assert.deepEqual(uhr.offen(), [3000]);
+  await uhr.vor(3000);
+  assert.deepEqual(uhr.offen(), [30_000], 'wieder ab 30 s');
+  await t.push.sync(); // „Jetzt abgleichen“: auch hier nie zwei Zeitgeber
+  assert.deepEqual(uhr.offen(), [30_000]);
+  t.speicher.removeItem('fk.push.aktiv.v1'); // ausgeschaltet (bzw. Push nicht mehr möglich)
+  await uhr.vor(30_000);
+  assert.deepEqual(uhr.offen(), []);
+  assert.equal(t.anfragen.length, 0);
+});
+
+test('Ausschalten bricht ein geplantes Nachholen ab', async () => {
+  const uhr = uhrAttrappe();
+  const t = await aufbau({ vorbereiten: async () => false, zeitgeber: uhr.zeitgeber });
+  await t.push.sync();
+  assert.deepEqual(uhr.offen(), [30_000]);
+  await t.push.deaktivieren();
+  assert.deepEqual(uhr.offen(), []);
 });

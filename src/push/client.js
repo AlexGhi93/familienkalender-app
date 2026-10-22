@@ -8,6 +8,9 @@ import { planQuellen, planeErinnerungen } from './plan.js';
 import { verschluessele } from './verschluesselung.js';
 
 const TAGE_VORAUS = 60;
+// Hat ein Abgleich warten müssen (siehe sync, 'wartet'), wird er still nachgeholt: nach 30 s, 2 min, 10 min, dann alle 10 min.
+// Sonst bliebe er liegen, wenn danach nichts mehr anstößt (z. B. eine eigene Änderung wurde fertig gespeichert, ohne Meldung).
+export const NACHHOLEN_MS = Object.freeze([30_000, 120_000, 600_000]);
 const TAG_MS = 24 * 3600_000;
 const K = { geraet: 'fk.push.geraet.v1', aktiv: 'fk.push.aktiv.v1', digest: 'fk.push.digest.v1', stand: 'fk.push.stand.v1', erloschen: 'fk.push.erloschen.v1', person: 'fk.push.person.v1', personen: 'fk.push.personen.v1' };
 const enc = new TextEncoder();
@@ -47,6 +50,8 @@ const NICHT_ERREICHBAR = () => new PushFehler('dienst-nicht-erreichbar', 'Der Pu
 export function createPush({ store, adapter, config, fetch, navigator, Notification, speicher, umgebung, jetzt = () => new Date(), zeitgeber = { setze: (f, ms) => setTimeout(f, ms), loesche: (id) => clearTimeout(id) }, vorbereiten = () => (store.schichtFrischLesen ? store.schichtFrischLesen() : true) }) {
   let letzterFehler = null;
   let timer = null;
+  let nachholen = null; // Zeitgeber für das Nachholen eines wartenden Abgleichs (höchstens einer)
+  let nachholVersuche = 0;
   let registriert = null; // zuletzt bekannt: steht dieses Telefon im Register? (null = noch nicht geprüft)
   let geraeteAnzahl = 0;
   let wartet = false; // der letzte Abgleich wartet auf den Schichtplan (siehe sync); die Shell stößt ihn danach von selbst an
@@ -160,13 +165,45 @@ export function createPush({ store, adapter, config, fetch, navigator, Notificat
     return status();
   }
 
+  function nachholenAbbrechen() {
+    if (nachholen !== null) zeitgeber.loesche(nachholen);
+    nachholen = null;
+  }
+
+  /** Führt einen Abgleich aus und plant bei 'wartet' das Nachholen (wachsende Wartezeit); jedes andere Ergebnis beendet es. */
+  async function abgleichen(optionen) {
+    nachholenAbbrechen();
+    const r = await syncEinmal(optionen);
+    if (r.art === 'wartet') {
+      const ms = NACHHOLEN_MS[Math.min(nachholVersuche, NACHHOLEN_MS.length - 1)];
+      nachholVersuche += 1;
+      nachholenAbbrechen();
+      nachholen = zeitgeber.setze(async () => {
+        nachholen = null;
+        try {
+          await abgleichen({});
+        } catch (fehler) {
+          letzterFehler = fehler?.message || 'Unbekannter Fehler beim Abgleich.';
+        }
+      }, ms);
+    } else nachholVersuche = 0;
+    return r;
+  }
+
   /**
    * Hält den Plan beim Push-Dienst aktuell. Läuft nur nach einem frischen Laden aus Google (nie aus dem gespeicherten Stand) und nur,
    * wenn sich etwas geändert hat (oder mit `erzwingen`). Gibt { art: 'uebersprungen' | 'wartet' | 'unveraendert' | 'gesendet', … } zurück.
    * 'wartet': der Schichtplan ist für den laufenden Monat noch nicht vorgeladen (siehe planQuellen). Das Telefon steht dann schon im
-   * Register, aber kein Plan geht hinaus – er würde die Erinnerungen an Zusätze löschen; sobald vorgeladen ist, stößt die Shell neu an.
+   * Register, aber kein Plan geht hinaus – er würde die Erinnerungen an Zusätze löschen. Ebenso, wenn der Schichtplan vor dem Senden
+   * nicht frisch gelesen werden konnte (Lesefehler, eigene Änderung wird noch gespeichert). Ein wartender Abgleich wird nachgeholt
+   * (NACHHOLEN_MS); jeder Aufruf von außen ist ein neuer Anstoß (Nachholen beginnt wieder bei 30 s).
    */
-  async function sync({ erzwingen = false } = {}) {
+  async function sync(optionen = {}) {
+    nachholVersuche = 0;
+    return abgleichen(optionen);
+  }
+
+  async function syncEinmal({ erzwingen = false } = {}) {
     wartet = false;
     if (!eingerichtet() || !aktiv()) return { art: 'uebersprungen' };
     let state = store.getState();
@@ -266,12 +303,15 @@ export function createPush({ store, adapter, config, fetch, navigator, Notificat
     registriert = null;
     geraeteAnzahl = 0;
     wartet = false;
+    nachholenAbbrechen();
+    nachholVersuche = 0;
     if (problem) throw problem;
     return status();
   }
 
   /** Plant einen Sync in einigen Sekunden (viele Auslöser kurz hintereinander ergeben einen); Fehler werden nur gemerkt, nicht geworfen. */
   function anstossen(verzoegerungMs = 3000) {
+    nachholenAbbrechen(); // der angestoßene Abgleich ersetzt das Nachholen
     if (timer !== null) zeitgeber.loesche(timer);
     timer = zeitgeber.setze(async () => {
       timer = null;
