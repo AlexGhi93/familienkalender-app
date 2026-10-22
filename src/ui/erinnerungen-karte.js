@@ -102,7 +102,7 @@ export function erinnerungenKarte({ store, ui = null }) {
     ),
     ergebnis,
     testBox,
-    ui?.push ? pushAbschnitt({ push: ui.push }) : null,
+    ui?.push ? pushAbschnitt({ push: ui.push, store }) : null,
     erinnerungenAnleitung(),
   );
 }

@@ -162,13 +162,13 @@ export async function googleAttrappe(page, { einkauf = null, ereignisse: vorhand
 /**
  * Google-Modus, angemeldet über die Attrappe (siehe googleAttrappe): erster Start ohne gespeicherten Stand, „Mit Google anmelden“,
  * bis „Verbunden ✓“. Mit `uhrLaeuft` läuft die Uhr ab `zeit` weiter (page.clock.install, für Zeitgeber wie den 30-Sekunden-Abgleich),
- * sonst steht sie. `ereignisse` und `listenMitAllen` gehen an die Attrappe. Gibt die Attrappe zurück.
+ * sonst steht sie. `ereignisse` und `listenMitAllen` gehen an die Attrappe; `speicher` legt zusätzlich Werte in localStorage. Gibt die Attrappe zurück.
  */
-export async function starteGoogleVerbunden(page, { route = '#/heute', zeit = WERKTAG, einkauf = null, ereignisse = [], listenMitAllen = false, uhrLaeuft = false, loginDienst = true } = {}) {
+export async function starteGoogleVerbunden(page, { route = '#/heute', zeit = WERKTAG, einkauf = null, ereignisse = [], listenMitAllen = false, uhrLaeuft = false, loginDienst = true, speicher = {} } = {}) {
   if (uhrLaeuft) await page.clock.install({ time: new Date(zeit) });
   else await page.clock.setFixedTime(new Date(zeit));
   const google = await googleAttrappe(page, { einkauf, ereignisse, listenMitAllen, loginDienst });
-  await speicherVorbelegen(page, { 'fk.config.v1': KONFIG_GOOGLE });
+  await speicherVorbelegen(page, { 'fk.config.v1': KONFIG_GOOGLE, ...speicher });
   await page.goto(`/${route}`);
   await page.getByRole('button', { name: 'Mit Google anmelden' }).click();
   await expect(page.locator('.toast').filter({ hasText: 'Verbunden ✓' })).toBeVisible();

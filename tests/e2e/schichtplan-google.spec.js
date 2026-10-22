@@ -165,3 +165,26 @@ test('alte Schichtarten ohne „E – Ersatzdienst“: beim Start einmal ergänz
   await expect.poll(() => schichtGelesen(google).filter((a) => a === 'GET fkschichtarten').length).toBeGreaterThan(1); // wieder gelesen …
   expect(schichtGeschrieben(google)).toEqual(['PATCH fkschichtarten']); // … aber nicht noch einmal geschrieben
 });
+
+test.describe('Tagesblatt: Hinweis auf die Erinnerung je nach Geräte-Register (vom letzten Abgleich dieses Telefons gemerkt)', () => {
+  const OK = '🔔 Erinnerung 1 Tag und 1 Stunde vorher auf dem Telefon von Mama';
+  const FEHLT = '⚠️ Noch kein Telefon gehört „Mama“: Die Erinnerung kommt erst, wenn auf ihrem Telefon unter Mehr → Konto & App → 🔔 Erinnerungen die Benachrichtigungen aktiv sind und „Dieses Telefon gehört: 👩 Mama“ gewählt ist.';
+  const UNBEKANNT = '⚠️ Auf diesem Telefon sind die Benachrichtigungen aus, deshalb ist nicht zu sehen, ob ein Telefon „Mama“ gehört. Die Erinnerung kommt nur, wenn auf ihrem Telefon unter Mehr → Konto & App → 🔔 Erinnerungen „Dieses Telefon gehört: 👩 Mama“ gewählt ist.';
+  const faelle = [
+    ['ein Telefon gehört Mama → Hinweis', { 'fk.push.aktiv.v1': '1', 'fk.push.personen.v1': '["papa","mama"]' }, OK, false],
+    ['nur Papa hat ein Telefon → Warnung', { 'fk.push.aktiv.v1': '1', 'fk.push.personen.v1': '["papa"]' }, FEHLT, true],
+    ['Benachrichtigungen hier aus → Warnung „nicht zu sehen“', {}, UNBEKANNT, true],
+  ];
+  for (const [name, speicher, text, warnung] of faelle) {
+    test(name, async ({ page }) => {
+      await starteGoogleVerbunden(page, { route: '#/schicht', speicher });
+      await zelle(page, '2026-10-23').click();
+      const karte = page.locator('.sp-tag-karte[data-person="mama"]');
+      await karte.getByRole('button', { name: '＋ Dienstbesprechung', exact: true }).click();
+      const hinweis = karte.locator('.sp-tag-erinnerung');
+      await expect(hinweis).toHaveText(text);
+      if (warnung) await expect(hinweis).toHaveClass(/warnung/);
+      else await expect(hinweis).not.toHaveClass(/warnung/);
+    });
+  }
+});

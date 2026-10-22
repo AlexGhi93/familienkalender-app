@@ -47,7 +47,7 @@ test('‹ und › wechseln den Monat (auch übers Jahr)', async ({ page }) => {
   await page.getByRole('button', { name: 'Nächster Monat' }).click();
   await expect(monatTitel(page)).toHaveText('November 2026');
   await expect(streifen(page, '2026-11-10', 'mama')).toHaveText('U'); // Beispiel: Mama Urlaub 10.–12.11.
-  await expect(streifen(page, '2026-11-10', 'mama')).toHaveClass(/urlaub/);
+  await expect(streifen(page, '2026-11-10', 'mama')).toHaveClass(/gestreift muster-urlaub/);
   await page.getByRole('button', { name: 'Nächster Monat' }).click();
   await page.getByRole('button', { name: 'Nächster Monat' }).click();
   await expect(monatTitel(page)).toHaveText('Januar 2027');
@@ -535,6 +535,7 @@ test.describe('Tagesblatt (ein Tag)', () => {
     await expect(karte(page, 'papa').getByRole('button', { name: /^＋/ })).toHaveCount(0); // Papa hat (noch) keine Zusatz-Art
     await plus.click();
     await expect(form.locator('.sp-tag-zusatz-kopf')).toHaveText('DB Dienstbesprechung'); // die Art steht fest, keine Auswahl
+    await expect(karte(page, 'mama').getByRole('group', { name: 'Dienstbesprechung hinzufügen' })).toBeVisible();
     await expect(form.getByRole('group', { name: 'Art des Zusatzes' })).toHaveCount(0);
     await expect(von).toHaveValue('18:00'); // vorbelegt mit den Zeiten der Art
     await expect(bis).toHaveValue('19:30');
@@ -600,7 +601,7 @@ test.describe('Tagesblatt (ein Tag)', () => {
     await knopf(page, 'mama', '＋ Dienstbesprechung').click();
     await expect(form.getByRole('textbox', { name: 'Von', exact: true })).toHaveValue('18:00');
     await expect(form.getByRole('textbox', { name: 'Bis', exact: true })).toHaveValue('19:30');
-    await expect(karte(page, 'mama').locator('.sp-tag-erinnerung')).toHaveText('🔔 Erinnerung 1 Tag und 1 Stunde vorher auf dem Telefon von Mama');
+    await expect(karte(page, 'mama').locator('.sp-tag-erinnerung')).toHaveText('🔔 Erinnerung 1 Tag und 1 Stunde vorher auf dem Telefon von Mama (in der Demo kommen keine Benachrichtigungen)');
     await expect(knopf(page, 'mama', '＋ Dienstbesprechung')).toHaveCount(0); // solange das Formular offen ist
     await form.getByRole('textbox', { name: 'Von', exact: true }).fill('19:00');
     await form.getByRole('textbox', { name: 'Bis', exact: true }).fill('20:30');
@@ -632,7 +633,7 @@ test.describe('Tagesblatt (ein Tag)', () => {
     await knopf(page, 'mama', '＋ Elternabend').click();
     await expect(karte(page, 'mama').locator('.sp-tag-zusatz-kopf')).toHaveText('EA Elternabend');
     await expect(karte(page, 'mama').getByRole('textbox', { name: 'Von', exact: true })).toHaveValue('19:00');
-    await expect(karte(page, 'mama').locator('.sp-tag-erinnerung')).toHaveText('🔔 Erinnerung 1 Tag und 1 Stunde vorher auf dem Telefon von Mama');
+    await expect(karte(page, 'mama').locator('.sp-tag-erinnerung')).toHaveText('🔔 Erinnerung 1 Tag und 1 Stunde vorher auf dem Telefon von Mama (in der Demo kommen keine Benachrichtigungen)');
   });
 
   test('eine ausgeblendete (archivierte) Art des Tages steht da, ist aber kein Knopf; eine unbekannte heißt „Unbekannte Art“', async ({ page }) => {
@@ -722,7 +723,7 @@ test.describe('Schichtarten bearbeiten', () => {
     ]);
     await expect(zeilen(page, 'papa').first().locator('.sp-art-kuerzel')).toHaveText('F');
     await expect(zeilen(page, 'papa').first().locator('.sp-art-kuerzel')).toHaveClass(/sf-gruen/);
-    await expect(zeilen(page, 'papa').filter({ hasText: 'Urlaub' }).locator('.sp-art-kuerzel')).toHaveClass(/urlaub/);
+    await expect(zeilen(page, 'papa').filter({ hasText: 'Urlaub' }).locator('.sp-art-kuerzel')).toHaveClass(/gestreift muster-urlaub/);
     await expect(blatt(page).getByRole('button', { name: 'Frühdienst nach oben' })).toBeDisabled();
     await expect(abschnitt(page, 'papa').getByRole('button', { name: 'Ersatzdienst nach unten' })).toBeDisabled(); // E steht als letzte Art von Papa
     await expect(abschnitt(page, 'papa').getByRole('button', { name: '＋ Neue Art' })).toBeVisible();
@@ -808,7 +809,7 @@ test.describe('Schichtarten bearbeiten', () => {
     await formular(page).getByRole('textbox', { name: 'Name' }).fill('Ferien');
     await formular(page).getByRole('button', { name: 'Speichern' }).click();
     await expect.poll(async () => (await katalog(page)).arten.papa.find((a) => a.kuerzel === 'U')).toMatchObject({ name: 'Ferien', muster: 'urlaub' });
-    await expect(zeilen(page, 'papa').filter({ hasText: 'Ferien' }).locator('.sp-art-kuerzel')).toHaveClass(/urlaub/);
+    await expect(zeilen(page, 'papa').filter({ hasText: 'Ferien' }).locator('.sp-art-kuerzel')).toHaveClass(/gestreift muster-urlaub/);
   });
 
   test('↓ auf der ersten Art ändert die Reihenfolge im Pinsel; eine ausgeblendete dazwischen wird übersprungen', async ({ page }) => {

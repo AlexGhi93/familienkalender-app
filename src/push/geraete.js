@@ -54,6 +54,9 @@ export function mitGeraet(register, geraet, jetzt) {
   return { ...register, geraete };
 }
 
+/** Wem mindestens ein Telefon im Register gehört (Set aus 'papa'/'mama'); Telefone ohne Angabe zählen für niemanden. */
+export const personenMitTelefon = (register) => new Set((register?.geraete ?? []).map((g) => g.person).filter((p) => GERAET_PERSONEN.includes(p)));
+
 export const ohneGeraet = (register, id) => ({ ...register, geraete: register.geraete.filter((g) => g.id !== id) });
 export const bereinige = (register, ungueltigeIds) => ({ ...register, geraete: register.geraete.filter((g) => !ungueltigeIds.includes(g.id)) });
 

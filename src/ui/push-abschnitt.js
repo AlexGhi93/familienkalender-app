@@ -4,6 +4,7 @@ import { standText } from '../app/format-de.js';
 import { GRUND_TEXT } from '../push/client.js';
 import { GERAET_PERSONEN } from '../push/geraete.js';
 import { FUER } from '../domain/types.js';
+import { fehlendeErinnerungsTelefone } from '../app/views/schicht-model.js';
 
 const WARTET_TEXT = '⏳ Der Schichtplan wird noch geladen. Der Abgleich folgt von selbst.';
 const WARTET_NEU_ZEICHNEN_MS = 5000;
@@ -13,8 +14,9 @@ const fehlerText = (fehler) => (fehler?.name === 'AuthAbgelaufen' ? MELDUNG_ANME
 /**
  * „Benachrichtigungen von der App“ in Konto & App → Erinnerungen: aktivieren, testen, abgleichen, ausschalten.
  * `push` kommt aus createPush (src/push/client.js). Ist der Push-Dienst noch nicht eingerichtet, bleibt der Abschnitt unsichtbar.
+ * Mit `store`: gehört laut Geräte-Register niemandem ein Telefon, der Zusätze mit „Erinnern“ im Schichtplan hat, steht hier eine Warnung.
  */
-export function pushAbschnitt({ push }) {
+export function pushAbschnitt({ push, store = null }) {
   const box = h('div', { class: 'push-abschnitt' });
 
   async function ausfuehren(arbeit, erfolg) {
@@ -54,7 +56,7 @@ export function pushAbschnitt({ push }) {
           h('button', { class: `chip ${aktuell === p ? 'aktiv' : ''}`.trim(), type: 'button', 'aria-pressed': String(aktuell === p), onClick: () => waehle(p) }, `${FUER[p].emoji} ${FUER[p].label}`),
         ),
       ),
-      h('small', { class: 'leise' }, 'Mit „Nur an den, der bringt bzw. holt“ (Mehr → Bringen & Abholen) kommen Erinnerungen für Sachen nur auf das Telefon dessen, der bringt bzw. abholt. Ohne Angabe bekommt dieses Telefon alle.'),
+      h('small', { class: 'leise' }, 'Mit „Nur an den, der bringt bzw. holt“ (Mehr → Bringen & Abholen) kommen Erinnerungen für Sachen nur auf das Telefon dessen, der bringt bzw. abholt. Erinnerungen an Zusätze im Schichtplan (z. B. Dienstbesprechung) kommen nur auf das Telefon dieser Person. Ohne Angabe bekommt dieses Telefon alle.'),
     );
   }
 
@@ -72,6 +74,7 @@ export function pushAbschnitt({ push }) {
         h('p', {}, '✅ Aktiv auf diesem Telefon. Die App erinnert zusätzlich zu Google Kalender, auch wenn sie geschlossen ist.'),
         h('p', { class: 'leise' }, `${s.geraete} ${s.geraete === 1 ? 'Telefon' : 'Telefone'} in der Familie · ${letzte}`),
         s.wartet ? h('p', { class: 'leise push-wartet' }, WARTET_TEXT) : null,
+        ...(store ? fehlendeErinnerungsTelefone(store.getState(), push.personenMitTelefon()) : []).map((f) => h('p', { class: 'push-telefon-fehlt', 'data-person': f.person }, f.text)),
         fehler,
         h('div', { class: 'knopfzeile' }, knopf('Test-Push senden', testen, 'primaer'), knopf('Jetzt abgleichen', abgleichen), knopf('Ausschalten', ausschalten)),
         personFeld(),

@@ -3518,6 +3518,16 @@ html:has(.screen.einkauf) {
   color: var(--ink-2);
 }
 
+/* kein Telefon gehört der Person (bzw. hier nicht zu sehen): die Erinnerung käme nicht an; ebenso in Konto & App */
+.sp-tag-erinnerung.warnung,
+.push-telefon-fehlt {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-klein);
+  background: color-mix(in srgb, var(--gefahr) 12%, var(--karte));
+  color: var(--ink);
+}
+
 .sp-tag-zeiten {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);

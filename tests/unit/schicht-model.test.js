@@ -1,7 +1,7 @@
 // Ansicht des Schichtplans ohne DOM: Monatsraster mit zwei Streifen je Tag, Filter, Zählung, Legende, gemerkter Filter.
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { SCHICHT_FILTER_SCHLUESSEL, artEntwurf, artEntwurfFehler, pinselAktion, pinselModel, pinselStart, rasterFilter, schichtFilterLesen, schichtFilterSpeichern, schichtArtenModel, schichtMonatModel, schichtTagModel } from '../../src/app/views/schicht-model.js';
+import { SCHICHT_FILTER_SCHLUESSEL, artEntwurf, artEntwurfFehler, erinnerungHinweis, fehlendeErinnerungsTelefone, pinselAktion, pinselModel, pinselStart, rasterFilter, schichtFilterLesen, schichtFilterSpeichern, schichtArtenModel, schichtMonatModel, schichtTagModel } from '../../src/app/views/schicht-model.js';
 import { artAendern, artArchivieren, artHinzufuegen, artVerschieben, leererMonat, setzeNotiz, setzeSchicht, standardKatalog, zusatzHinzufuegen } from '../../src/domain/schicht.js';
 import { speicherAttrappe, zustand } from './hilfen.js';
 
@@ -318,18 +318,18 @@ describe('schichtTagModel (Tagesblatt)', () => {
       { k: db, von: '20:00', bis: '21:00', kuerzel: 'DB', name: 'Dienstbesprechung', farbe: 'schiefer', text: 'Dienstbesprechung 20:00–21:00' },
     ]);
     assert.deepEqual(mama.zusatzArten, [
-      { k: db, kuerzel: 'DB', name: 'Dienstbesprechung', farbe: 'schiefer', von: '18:00', bis: '19:30', hinweis: '🔔 Erinnerung 1 Tag und 1 Stunde vorher auf dem Telefon von Mama' },
+      { k: db, kuerzel: 'DB', name: 'Dienstbesprechung', farbe: 'schiefer', von: '18:00', bis: '19:30', erinnern: true },
     ]);
     assert.deepEqual(person(tagModel(stateMit(), '2026-10-21'), 'papa').zusatzArten, []);
   });
 
-  test('Zusatz-Arten: Hinweis auf die Erinnerung nur bei „Erinnern“, auf dem Telefon der Person (Papa bzw. Mama)', () => {
+  test('Zusatz-Arten: `erinnern` wie im Katalog (fehlt → true)', () => {
     let kat = artHinzufuegen(katalog, 'papa', { name: 'Teamsitzung', kuerzel: 'TS', farbe: 'braun', gruppe: 'zusatz', von: '14:00', bis: '15:00' });
     kat = artHinzufuegen(kat, 'papa', { name: 'Elternabend', kuerzel: 'EA', farbe: 'oliv', gruppe: 'zusatz', von: '19:00', bis: '20:00', erinnern: false });
     const papa = person(tagModel(stateMit({ katalog: kat }), '2026-10-21'), 'papa');
-    assert.deepEqual(papa.zusatzArten.map((a) => [a.name, a.hinweis]), [
-      ['Teamsitzung', '🔔 Erinnerung 1 Tag und 1 Stunde vorher auf dem Telefon von Papa'],
-      ['Elternabend', null],
+    assert.deepEqual(papa.zusatzArten.map((a) => [a.name, a.erinnern]), [
+      ['Teamsitzung', true],
+      ['Elternabend', false],
     ]);
   });
 
@@ -362,6 +362,47 @@ describe('schichtTagModel (Tagesblatt)', () => {
     assert.deepEqual(person(m, 'papa').arten.map((a) => a.kuerzel), ['F', 'M', 'NM', 'N', '2T', 'Ü', 'S', 'U', 'E']);
     assert.equal(person(m, 'mama').frei, true);
     assert.equal(person(m, 'mama').zusatzArten.length, 1);
+  });
+});
+
+describe('Hinweis auf die Erinnerung (Tagesblatt) und fehlende Telefone (Konto & App)', () => {
+  test('Telefon der Person im Register: „🔔 Erinnerung … auf dem Telefon von Mama“ (bzw. Papa)', () => {
+    assert.deepEqual(erinnerungHinweis('mama', new Set(['mama'])), { art: 'ok', text: '🔔 Erinnerung 1 Tag und 1 Stunde vorher auf dem Telefon von Mama' });
+    assert.deepEqual(erinnerungHinweis('papa', new Set(['papa', 'mama'])), { art: 'ok', text: '🔔 Erinnerung 1 Tag und 1 Stunde vorher auf dem Telefon von Papa' });
+  });
+
+  test('kein Telefon gehört der Person: Warnung mit dem Weg in der App (ihrem/seinem Telefon)', () => {
+    const mama = erinnerungHinweis('mama', new Set(['papa']));
+    assert.equal(mama.art, 'fehlt');
+    assert.equal(mama.text, '⚠️ Noch kein Telefon gehört „Mama“: Die Erinnerung kommt erst, wenn auf ihrem Telefon unter Mehr → Konto & App → 🔔 Erinnerungen die Benachrichtigungen aktiv sind und „Dieses Telefon gehört: 👩 Mama“ gewählt ist.');
+    const papa = erinnerungHinweis('papa', new Set());
+    assert.equal(papa.art, 'fehlt');
+    assert.match(papa.text, /^⚠️ Noch kein Telefon gehört „Papa“: .* auf seinem Telefon .*„Dieses Telefon gehört: 👨 Papa“/);
+  });
+
+  test('unbekannt (auf diesem Telefon ist Push aus): ehrliche Warnung; Demo: nur der Hinweis, dass die Demo nichts schickt', () => {
+    const unbekannt = erinnerungHinweis('mama', null);
+    assert.equal(unbekannt.art, 'unbekannt');
+    assert.equal(unbekannt.text, '⚠️ Auf diesem Telefon sind die Benachrichtigungen aus, deshalb ist nicht zu sehen, ob ein Telefon „Mama“ gehört. Die Erinnerung kommt nur, wenn auf ihrem Telefon unter Mehr → Konto & App → 🔔 Erinnerungen „Dieses Telefon gehört: 👩 Mama“ gewählt ist.');
+    assert.deepEqual(erinnerungHinweis('mama', undefined), { art: 'demo', text: '🔔 Erinnerung 1 Tag und 1 Stunde vorher auf dem Telefon von Mama (in der Demo kommen keine Benachrichtigungen)' });
+  });
+
+  test('fehlende Telefone: je Person ohne Telefon die Zusatz-Arten mit „Erinnern“ (ausgeblendete und ohne Erinnern zählen nicht)', () => {
+    const st = (kat) => zustand({ schicht: { katalog: kat, monate: {}, status: {} } });
+    assert.deepEqual(fehlendeErinnerungsTelefone(st(katalog), new Set(['mama'])), []);
+    assert.deepEqual(fehlendeErinnerungsTelefone(st(katalog), new Set(['papa'])), [
+      { person: 'mama', arten: ['Dienstbesprechung'], text: '⚠️ Noch kein Telefon gehört „Mama“: Erinnerungen an Dienstbesprechung kommen erst, wenn auf ihrem Telefon „Dieses Telefon gehört: 👩 Mama“ gewählt ist.' },
+    ]);
+    let kat = artHinzufuegen(katalog, 'papa', { name: 'Teamsitzung', kuerzel: 'TS', farbe: 'braun', gruppe: 'zusatz', von: '14:00', bis: '15:00' });
+    kat = artHinzufuegen(kat, 'papa', { name: 'Elternabend', kuerzel: 'EA', farbe: 'oliv', gruppe: 'zusatz', von: '19:00', bis: '20:00', erinnern: false });
+    assert.deepEqual(fehlendeErinnerungsTelefone(st(kat), new Set()).map((f) => [f.person, f.arten]), [['papa', ['Teamsitzung']], ['mama', ['Dienstbesprechung']]]);
+    assert.match(fehlendeErinnerungsTelefone(st(kat), new Set()).find((f) => f.person === 'papa').text, /auf seinem Telefon „Dieses Telefon gehört: 👨 Papa“/);
+    const ohneErinnern = artAendern(katalog, 'mama', k('mama', 'DB'), { erinnern: false });
+    assert.deepEqual(fehlendeErinnerungsTelefone(st(ohneErinnern), new Set()), []);
+    const archiviert = artArchivieren(katalog, 'mama', k('mama', 'DB'), true);
+    assert.deepEqual(fehlendeErinnerungsTelefone(st(archiviert), new Set()), []);
+    assert.deepEqual(fehlendeErinnerungsTelefone(st(katalog), null), [], 'unbekannt: nichts behaupten');
+    assert.deepEqual(fehlendeErinnerungsTelefone(zustand(), new Set()).map((f) => f.person), ['mama'], 'ohne gelesene Schichtarten: Standardarten');
   });
 });
 

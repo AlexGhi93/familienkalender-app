@@ -1,11 +1,12 @@
 // Tagesblatt des Schichtplans (ein Tipp auf einen Tag ohne Pinsel): beide Personen, gleich welcher Filter auf der Seite gilt.
 // Je Person: die eingetragene Art (mit Zeiten, ☾ bei Nacht), Knöpfe der aktiven Dienst-Arten und „Frei“ (ein Tipp speichert sofort),
 // eine Notiz (eine Zeile, gespeichert beim Verlassen des Feldes oder mit Enter) und die Zusätze des Tages mit ✕; je Zusatz-Art ein
-// Knopf „＋ <Name>“ (z. B. „＋ Dienstbesprechung“), der gleich Von/Bis öffnet, darunter der Hinweis auf die Erinnerung.
+// Knopf „＋ <Name>“ (z. B. „＋ Dienstbesprechung“), der gleich Von/Bis öffnet, darunter der Hinweis auf die Erinnerung – oder eine
+// Warnung, wenn laut Geräte-Register (ui.push) kein Telefon der Person gehört bzw. dieses Telefon das nicht sehen kann.
 import { h } from './dom.js';
 import { blatt, toast } from './components.js';
 import { zeitFeld } from './eingabefelder.js';
-import { schichtTagModel } from '../app/views/schicht-model.js';
+import { erinnerungHinweis, schichtTagModel } from '../app/views/schicht-model.js';
 import { MAX_NOTIZ } from '../domain/schicht.js';
 import { musterKlassen } from './schicht-pinsel.js';
 
@@ -16,8 +17,11 @@ const gleicheNotiz = (a, b) => a.replace(/\s+/g, ' ').trim() === b;
 const kuerzelPille = (kuerzel, klasse) => h('i', { class: `sp-tag-kuerzel ${klasse}` }, kuerzel);
 const farbKlasse = (a) => `sf-${a.farbe} ${musterKlassen(a.muster)}`.trim();
 
-/** Öffnet das Tagesblatt für `datum` ('JJJJ-MM-TT'); es zeichnet sich bei Änderungen im Store neu (nur wenn sich an dem Tag etwas ändert). */
-export function oeffneSchichtTag({ store }, datum) {
+/**
+ * Öffnet das Tagesblatt für `datum` ('JJJJ-MM-TT'); es zeichnet sich bei Änderungen im Store neu (nur wenn sich an dem Tag etwas ändert).
+ * `ui.push` (Google-Modus) sagt, wem laut Geräte-Register ein Telefon gehört; ohne (Demo) gibt es keine Benachrichtigungen.
+ */
+export function oeffneSchichtTag({ store, ui = null }, datum) {
   const jm = datum.slice(0, 7);
   const tag = Number(datum.slice(8));
   const entwurf = { papa: null, mama: null }; // getippte, noch nicht gespeicherte Notizen (überstehen das Neuzeichnen)
@@ -178,6 +182,13 @@ export function oeffneSchichtTag({ store }, datum) {
     );
   }
 
+  /** Hinweis bzw. Warnung unter dem Formular (gelesen wird nichts: das Register stammt aus dem letzten Abgleich dieses Telefons). */
+  function erinnerungZeile(person) {
+    const hw = erinnerungHinweis(person, ui?.push ? ui.push.personenMitTelefon() : undefined);
+    const warnung = hw.art === 'fehlt' || hw.art === 'unbekannt';
+    return h('p', { class: `sp-tag-erinnerung${warnung ? ' warnung' : ''}`, role: warnung ? 'note' : null }, hw.text);
+  }
+
   function zusatzBereich(p) {
     if (p.zusatzArten.length === 0) return null; // diese Person hat keine Zusatz-Art (anlegen unter „Schichtarten bearbeiten“)
     const form = zusatz?.person === p.person ? zusatz : null;
@@ -189,7 +200,7 @@ export function oeffneSchichtTag({ store }, datum) {
     return [
       h(
         'div',
-        { class: 'sp-tag-zusatz-form' },
+        { class: 'sp-tag-zusatz-form', role: 'group', 'aria-label': `${art.name} hinzufügen` },
         h('p', { class: 'sp-tag-zusatz-kopf' }, kuerzelPille(art.kuerzel, `sf-${art.farbe}`), ' ', art.name),
         h(
           'div',
@@ -215,7 +226,7 @@ export function oeffneSchichtTag({ store }, datum) {
           h('button', { class: 'knopf klein primaer', type: 'button', onClick: zusatzHinzufuegen }, 'Hinzufügen'),
         ),
       ),
-      art.hinweis ? h('p', { class: 'sp-tag-erinnerung' }, art.hinweis) : null,
+      art.erinnern ? erinnerungZeile(p.person) : null,
     ];
   }
 

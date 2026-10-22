@@ -178,7 +178,42 @@ export function pinselAktion(state, jm, tag, { person, k }) {
 
 // ---------- Tagesblatt (ein Tag, beide Personen) ----------
 
-const PERSONEN_TAG = { papa: { name: 'Papa', emoji: '👨' }, mama: { name: 'Mama', emoji: '👩' } };
+const PERSONEN_TAG = { papa: { name: 'Papa', emoji: '👨', ihr: 'seinem' }, mama: { name: 'Mama', emoji: '👩', ihr: 'ihrem' } };
+const personKopf = (person) => ({ name: PERSONEN_TAG[person].name, emoji: PERSONEN_TAG[person].emoji });
+
+/**
+ * Hinweis unter dem Formular eines Zusatzes mit „Erinnern“. Die Erinnerung geht nur an Telefone dieser Person (und an Telefone ohne
+ * Angabe). `telefone` = wem laut Geräte-Register ein Telefon gehört (Set, siehe push.personenMitTelefon); null = auf diesem Telefon
+ * unbekannt (Benachrichtigungen hier aus); undefined = Demo (ohne Push). Ergebnis { art: 'ok'|'fehlt'|'unbekannt'|'demo', text }.
+ */
+export function erinnerungHinweis(person, telefone) {
+  const { name, emoji, ihr } = PERSONEN_TAG[person];
+  const ok = `🔔 Erinnerung 1 Tag und 1 Stunde vorher auf dem Telefon von ${name}`;
+  const wahl = `„Dieses Telefon gehört: ${emoji} ${name}“`;
+  if (telefone === undefined) return { art: 'demo', text: `${ok} (in der Demo kommen keine Benachrichtigungen)` };
+  if (telefone === null) {
+    return { art: 'unbekannt', text: `⚠️ Auf diesem Telefon sind die Benachrichtigungen aus, deshalb ist nicht zu sehen, ob ein Telefon „${name}“ gehört. Die Erinnerung kommt nur, wenn auf ${ihr} Telefon unter Mehr → Konto & App → 🔔 Erinnerungen ${wahl} gewählt ist.` };
+  }
+  if (telefone.has(person)) return { art: 'ok', text: ok };
+  return { art: 'fehlt', text: `⚠️ Noch kein Telefon gehört „${name}“: Die Erinnerung kommt erst, wenn auf ${ihr} Telefon unter Mehr → Konto & App → 🔔 Erinnerungen die Benachrichtigungen aktiv sind und ${wahl} gewählt ist.` };
+}
+
+/**
+ * Für „Konto & App“: Personen mit aktiven Zusatz-Arten mit „Erinnern“, denen laut Register (`telefone`, Set) kein Telefon gehört –
+ * deren Erinnerungen kämen nirgends an (außer auf Telefonen ohne Angabe). Unbekannt (null): nichts. [{ person, arten, text }]
+ */
+export function fehlendeErinnerungsTelefone(state, telefone) {
+  if (!telefone) return [];
+  const katalog = katalogVon(state);
+  return SCHICHT_PERSONEN.filter((person) => !telefone.has(person)).flatMap((person) => {
+    const arten = aktiveArten(katalog, person, 'zusatz')
+      .filter((a) => a.erinnern !== false)
+      .map((a) => a.name);
+    if (arten.length === 0) return [];
+    const { name, emoji, ihr } = PERSONEN_TAG[person];
+    return [{ person, arten, text: `⚠️ Noch kein Telefon gehört „${name}“: Erinnerungen an ${arten.join(', ')} kommen erst, wenn auf ${ihr} Telefon „Dieses Telefon gehört: ${emoji} ${name}“ gewählt ist.` }];
+  });
+}
 const UNBEKANNT = { kuerzel: '?', name: 'Unbekannte Art', farbe: 'grau' };
 
 /** Eine Person im Tagesblatt: Kopf (Art mit Zeiten, Nacht), Knöpfe der aktiven Dienst-Arten, Notiz, Zusätze und Zusatz-Arten zum Hinzufügen (mit Hinweis auf die Erinnerung). */
@@ -197,8 +232,7 @@ function tagPerson(katalog, monat, person, tag) {
     const a = artFuer(katalog, person, z.k) ?? UNBEKANNT;
     return { k: z.k, von: z.von, bis: z.bis, kuerzel: a.kuerzel, name: a.name, farbe: a.farbe, text: `${a.name} ${z.von}–${z.bis}` };
   });
-  // je Zusatz-Art ein Knopf „＋ <Name>“; `hinweis` nur mit „Erinnern“ (die Erinnerung kommt nur auf das Telefon der Person)
-  const hinweis = `🔔 Erinnerung 1 Tag und 1 Stunde vorher auf dem Telefon von ${PERSONEN_TAG[person].name}`;
+  // je Zusatz-Art ein Knopf „＋ <Name>“; mit `erinnern` steht unter dem Formular der Hinweis (siehe erinnerungHinweis)
   const zusatzArten = aktiveArten(katalog, person, 'zusatz').map((a) => ({
     k: a.k,
     kuerzel: a.kuerzel,
@@ -206,9 +240,9 @@ function tagPerson(katalog, monat, person, tag) {
     farbe: a.farbe,
     von: a.von ?? '',
     bis: a.bis ?? '',
-    hinweis: a.erinnern === false ? null : hinweis,
+    erinnern: a.erinnern !== false,
   }));
-  return { person, ...PERSONEN_TAG[person], schicht, arten, frei: k === null, nichtWaehlbar, notiz: monat?.n?.[person]?.[tag] ?? '', zusaetze, zusatzArten };
+  return { person, ...personKopf(person), schicht, arten, frei: k === null, nichtWaehlbar, notiz: monat?.n?.[person]?.[tag] ?? '', zusaetze, zusatzArten };
 }
 
 /**
@@ -246,7 +280,7 @@ export function schichtArtenModel(state) {
     const index = (a) => alle.indexOf(a);
     return {
       person,
-      ...PERSONEN_TAG[person],
+      ...personKopf(person),
       aktiv: aktiv.map((a, i) => ({
         ...artZeile(a),
         hoch: i > 0 ? index(a) - index(aktiv[i - 1]) : 0,

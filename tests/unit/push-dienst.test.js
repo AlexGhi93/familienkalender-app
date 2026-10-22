@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { planeErinnerungen } from '../../src/push/plan.js';
 import { baueMeldungen, fuerGeraet, planDigest } from '../../src/push/meldungen.js';
-import { mitGeraet, neuesRegister, normalisiereRegister } from '../../src/push/geraete.js';
+import { mitGeraet, neuesRegister, normalisiereRegister, personenMitTelefon } from '../../src/push/geraete.js';
 import { createPush } from '../../src/push/client.js';
 import { bytesZuB64u } from '../../src/push/base64url.js';
 import { normalizeSettings } from '../../src/domain/settings.js';
@@ -144,6 +144,19 @@ test('Register: `person` bleibt erhalten, Unbekanntes kostet nur die Angabe, nic
   assert.equal(ohne.geraete.find((g) => g.id === 'papaTel1').person, 'papa', 'andere Telefone bleiben unverändert');
 });
 
+test('personenMitTelefon: wem mindestens ein Telefon im Register gehört; Telefone ohne Angabe zählen für niemanden', async () => {
+  const reg = neuesRegister();
+  const papa = await testGeraet('papaTel1', 'papa');
+  const mama = await testGeraet('mamaTel1', 'mama');
+  const ohne = await testGeraet('ohneTel1');
+  assert.deepEqual([...personenMitTelefon(reg)], []);
+  assert.deepEqual([...personenMitTelefon(null)], []);
+  assert.deepEqual([...personenMitTelefon({ ...reg, geraete: [papa] })], ['papa']);
+  assert.deepEqual([...personenMitTelefon({ ...reg, geraete: [papa, mama, { ...mama, id: 'mamaTel2' }] })].sort(), ['mama', 'papa']);
+  assert.deepEqual([...personenMitTelefon({ ...reg, geraete: [ohne] })], []);
+  assert.deepEqual([...personenMitTelefon({ ...reg, geraete: [ohne, mama] })], ['mama']);
+});
+
 /** createPush mit nachgebauten Teilen: Speicher, Abonnement, Register im „Kalender“ und Push-Dienst (merkt sich die PUTs). */
 async function aufbau({ person = '', eigenePerson, state = zustand({ dienstErinnerung: 'dienst' }) } = {}) {
   const daten = new Map([['fk.push.geraet.v1', 'eigenTel1'], ['fk.push.aktiv.v1', '1']]);
@@ -183,7 +196,7 @@ async function aufbau({ person = '', eigenePerson, state = zustand({ dienstErinn
     jetzt: () => JETZT,
     zeitgeber: { setze: (f) => ((geplant = f), 1), loesche: () => {} },
   });
-  return { push, speicher, schreiben, anfragen, register: () => register, geplant: () => geplant, setzeZustand: (s) => (aktuell = s) };
+  return { push, speicher, schreiben, anfragen, register: () => register, setzeRegister: (r) => (register = r), geplant: () => geplant, setzeZustand: (s) => (aktuell = s) };
 }
 
 test('sync: trägt die Person dieses Telefons wieder ein, wenn eine ältere Version sie verloren hat', async () => {
@@ -233,6 +246,24 @@ test('sync: Person geändert → Register, Fingerabdruck und Meldungen ändern s
   await t.geplant()();
   assert.ok(!('person' in t.register().geraete.find((g) => g.id === 'eigenTel1')), 'keine Angabe: bekommt wieder alles');
   assert.ok(plan.every((p) => t.anfragen[2].body.items.some((i) => i.an === 'eigenTel1' && i.id === p.id)));
+});
+
+test('personenMitTelefon (Client): unbekannt bis zum ersten Lesen des Registers, danach aus dem zuletzt gelesenen (ohne eigenes Lesen); aus → unbekannt', async () => {
+  const t = await aufbau({ person: 'papa', eigenePerson: 'papa' });
+  assert.equal(t.push.personenMitTelefon(), null, 'noch nie gelesen');
+  await t.push.sync();
+  assert.deepEqual([...t.push.personenMitTelefon()].sort(), ['mama', 'papa']);
+  // Mamas Telefon stellt auf „keine Angabe“ um: beim nächsten Abgleich (Register gelesen) fehlt Mama
+  const reg = t.register();
+  t.setzeRegister({ ...reg, geraete: reg.geraete.map((g) => (g.id === 'mamaTel1' ? { ...g, person: undefined } : g)) });
+  assert.deepEqual([...t.push.personenMitTelefon()].sort(), ['mama', 'papa'], 'ohne Abgleich kein neues Lesen');
+  await t.push.sync();
+  assert.deepEqual([...t.push.personenMitTelefon()], ['papa']);
+  t.speicher.setItem('fk.push.aktiv.v1', '0');
+  assert.equal(t.push.personenMitTelefon(), null, 'auf diesem Telefon aus: unbekannt');
+  t.speicher.setItem('fk.push.aktiv.v1', '1');
+  await t.push.deaktivieren();
+  assert.equal(t.push.personenMitTelefon(), null, 'nach dem Ausschalten unbekannt');
 });
 
 test('sync: ohne Angabe auf beiden Seiten bleibt das Register unberührt', async () => {

@@ -3,13 +3,13 @@
 // Der Push-Dienst bekommt nur verschlüsselte Meldungen (siehe meldungen.js); Google Kalender bleibt der zweite, unabhängige Weg.
 import { b64uZuBytes, bytesZuB64u } from './base64url.js';
 import { baueMeldungen, planDigest } from './meldungen.js';
-import { GERAET_PERSONEN, bereinige, mitGeraet, neuesRegister, ohneGeraet } from './geraete.js';
+import { GERAET_PERSONEN, bereinige, mitGeraet, neuesRegister, ohneGeraet, personenMitTelefon } from './geraete.js';
 import { planQuellen, planeErinnerungen } from './plan.js';
 import { verschluessele } from './verschluesselung.js';
 
 const TAGE_VORAUS = 60;
 const TAG_MS = 24 * 3600_000;
-const K = { geraet: 'fk.push.geraet.v1', aktiv: 'fk.push.aktiv.v1', digest: 'fk.push.digest.v1', stand: 'fk.push.stand.v1', erloschen: 'fk.push.erloschen.v1', person: 'fk.push.person.v1' };
+const K = { geraet: 'fk.push.geraet.v1', aktiv: 'fk.push.aktiv.v1', digest: 'fk.push.digest.v1', stand: 'fk.push.stand.v1', erloschen: 'fk.push.erloschen.v1', person: 'fk.push.person.v1', personen: 'fk.push.personen.v1' };
 const enc = new TextEncoder();
 
 export class PushFehler extends Error {
@@ -82,6 +82,26 @@ export function createPush({ store, adapter, config, fetch, navigator, Notificat
     if (aktiv()) anstossen();
   }
 
+  /** Merkt sich aus dem gerade gelesenen bzw. geschriebenen Register die Anzahl der Telefone und wem eines gehört (auch über einen Neustart). */
+  function merkeRegister(register) {
+    geraeteAnzahl = register?.geraete.length ?? 0;
+    speicher.setItem(K.personen, JSON.stringify([...personenMitTelefon(register)]));
+  }
+
+  /**
+   * Wem laut dem zuletzt gelesenen Register ein Telefon gehört (Set aus 'papa'/'mama'), ohne selbst zu lesen; null = unbekannt
+   * (auf diesem Telefon sind die Benachrichtigungen aus, oder das Register wurde hier noch nie gelesen).
+   */
+  function personenMitTelefonen() {
+    if (!eingerichtet() || !aktiv()) return null;
+    try {
+      const liste = JSON.parse(speicher.getItem(K.personen));
+      return Array.isArray(liste) ? new Set(liste.filter((p) => GERAET_PERSONEN.includes(p))) : null;
+    } catch {
+      return null;
+    }
+  }
+
   const registrierung = () => navigator.serviceWorker.ready;
   const abonnement = async () => (await registrierung()).pushManager.getSubscription();
 
@@ -115,7 +135,7 @@ export function createPush({ store, adapter, config, fetch, navigator, Notificat
     const j = sub.toJSON();
     const register = await adapter.aendereGeraete((reg) => mitGeraet(reg ?? neuesRegister(), { id: geraeteId(), name: umgebung.name, endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, person: person() }, jetzt().getTime()));
     registriert = true;
-    geraeteAnzahl = register.geraete.length;
+    merkeRegister(register);
     return register;
   }
 
@@ -161,7 +181,7 @@ export function createPush({ store, adapter, config, fetch, navigator, Notificat
     if (veraltet) register = await eintragen(sub); // neue Schlüssel, neues Telefon im Register, Person geändert oder „zuletzt“ auffrischen
     else {
       registriert = true;
-      geraeteAnzahl = register.geraete.length;
+      merkeRegister(register);
     }
 
     if (!planQuellen(state, jetzt())) {
@@ -186,7 +206,7 @@ export function createPush({ store, adapter, config, fetch, navigator, Notificat
         registriert = false;
       }
       const bereinigt = await adapter.aendereGeraete((reg) => (reg ? bereinige(reg, r.ungueltig) : null));
-      geraeteAnzahl = bereinigt?.geraete.length ?? 0;
+      merkeRegister(bereinigt);
     }
     return { art: 'gesendet', geschrieben: r.geschrieben, geloescht: r.geloescht };
   }
@@ -229,7 +249,7 @@ export function createPush({ store, adapter, config, fetch, navigator, Notificat
     }
     const sub = await abonnement();
     if (sub) await sub.unsubscribe();
-    for (const k of [K.aktiv, K.digest, K.stand, K.erloschen]) speicher.removeItem(k);
+    for (const k of [K.aktiv, K.digest, K.stand, K.erloschen, K.personen]) speicher.removeItem(k);
     registriert = null;
     geraeteAnzahl = 0;
     wartet = false;
@@ -250,5 +270,5 @@ export function createPush({ store, adapter, config, fetch, navigator, Notificat
     }, verzoegerungMs);
   }
 
-  return { verfuegbar, status, aktivieren, deaktivieren, sync, testSenden, anstossen, person, setzePerson };
+  return { verfuegbar, status, aktivieren, deaktivieren, sync, testSenden, anstossen, person, setzePerson, personenMitTelefon: personenMitTelefonen };
 }
