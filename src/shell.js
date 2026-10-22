@@ -1,5 +1,5 @@
 // Die eigentliche App-Oberfläche: Tab-Leiste, Seiten, Hinweisleiste (Verbindung, Fortschritt) und alle Bildschirme.
-import { parseDate, addDays } from './domain/dates.js';
+import { parseDate, addDays, todayVienna } from './domain/dates.js';
 import { fuelle, h } from './ui/dom.js';
 import { entferneFehlerToast, toast } from './ui/components.js';
 import { heuteScreen } from './ui/heute-screen.js';
@@ -26,6 +26,7 @@ import { schichtFilterLesen, schichtFilterSpeichern } from './app/views/schicht-
 import { createSchichtAbgleich, schichtAktualisierenFaellig } from './app/schicht-abgleich.js';
 import { monatVor } from './domain/konto.js';
 import { planQuellen, quellenGeaendert } from './push/plan.js';
+import { createSchichtVorlader } from './app/schicht-vorladen.js';
 
 const SEITEN = {
   heute: heuteScreen,
@@ -57,6 +58,7 @@ const TABS = [
 
 const BANNER_INTERVALL_MS = 30_000;
 const SNAPSHOT_VERZOEGERUNG_MS = 1000;
+const VORLADEN_PRUEFEN_MS = 60_000; // ob nach einem Monatswechsel neu vorgeladen werden muss (sonst wartet der Push-Plan)
 const CHECKS_VERZOEGERUNG_MS = 2500; // Urlaub-Checks erst abgleichen, wenn sich der Urlaub kurz nicht mehr ändert
 
 /** Unterscheiden sich zwei Zustände nur im Schichtplan? */
@@ -274,15 +276,15 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
   });
 
   // Schichtplan im Hintergrund vorladen (Schichtarten und drei Monate ab heute; für die Erinnerungen, siehe store.schichtVorladen):
-  // jedes Mal, wenn die App frisch geladen und nutzbar wird (Start, Verbinden), nie aus dem gespeicherten Stand allein. Ohne `await`:
-  // der Start wartet nicht darauf; Fehler stehen im Status der Monate. Hat es nicht geklappt, noch einmal beim Zurückkehren in die App.
-  let schichtVorladenBereit = false;
-  const schichtVorladenAnstossen = ({ nochmal = false } = {}) => {
-    const bereit = auth ? googleBereit() : store.getState().geladen;
-    const neu = bereit && (!schichtVorladenBereit || (nochmal && !store.getState().schicht.vorgeladen));
-    schichtVorladenBereit = bereit;
-    if (neu) Promise.resolve().then(() => store.schichtVorladen()).catch(() => {}); // erst nach dem laufenden Zeichnen/Melden
-  };
+  // beim Start und Verbinden, nach einem Monatswechsel und nach Fehlern still mit Wartezeit (siehe app/schicht-vorladen.js); nie aus dem
+  // gespeicherten Stand allein. Ohne `await`: der Start wartet nicht darauf; Fehler stehen im Status der Monate.
+  const schichtVorlader = createSchichtVorlader({
+    bereit: () => (auth ? googleBereit() : store.getState().geladen),
+    vorladen: () => Promise.resolve().then(() => store.schichtVorladen()), // erst nach dem laufenden Zeichnen/Melden
+    vorgeladen: () => store.getState().schicht.vorgeladen,
+    monat: () => todayVienna(store.jetzt()).slice(0, 7),
+  });
+  const schichtVorladenAnstossen = (optionen) => schichtVorlader.anstossen(optionen);
 
   const schichtAbgleich = createSchichtAbgleich({
     aktiv: () => ui.seite() === 'schicht' && document.visibilityState === 'visible' && googleBereit(),
@@ -309,7 +311,7 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
     letzterFehler = state.fehler;
     // Push-Plan abgleichen, sobald frisch aus Google geladen und der Schichtplan vorgeladen wurde und sich Termine, Einstellungen, Urlaub
     // (Urlaub-Checks), Kontostand (Erinnerung am Monatsende) oder Schichtplan (Zusätze) geändert haben; nie aus dem gespeicherten Stand
-    const quellen = push ? planQuellen(state) : null;
+    const quellen = push ? planQuellen(state, store.jetzt()) : null;
     if (quellenGeaendert(quellen, pushQuellen)) {
       pushQuellen = quellen;
       push.anstossen();
@@ -369,5 +371,6 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
 
   ui.rendern();
   schichtVorladenAnstossen(); // schon geladen (Demo; Google mit gültiger Anmeldung): gleich im Hintergrund
+  setInterval(() => schichtVorladenAnstossen(), VORLADEN_PRUEFEN_MS); // Monatswechsel bei offener App, ohne dass sich etwas tut
   return ui;
 }

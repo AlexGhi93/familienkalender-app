@@ -361,7 +361,7 @@ describe('Schichtplan', () => {
   test('am Anfang leer; schichtLaden holt Katalog und drei Monate (Standardarten, wenn noch keine gespeichert sind)', async () => {
     const { store } = aufbau({ speicher: ohneSchicht() });
     await store.laden();
-    assert.deepEqual(store.getState().schicht, { katalog: null, monate: {}, status: {}, vorgeladen: false });
+    assert.deepEqual(store.getState().schicht, { katalog: null, monate: {}, status: {}, vorgeladen: null });
     const zusage = store.schichtLaden(JM);
     assert.deepEqual(store.getState().schicht.status, { '2026-09': 'laedt', '2026-10': 'laedt', '2026-11': 'laedt' });
     await zusage;
@@ -600,7 +600,7 @@ describe('Schichtplan', () => {
     assert.deepEqual(d.schicht, { katalog: seed.katalog, monate: seed.monate });
     gefragt.sort();
     assert.deepEqual([gefragt.length, gefragt[0], gefragt.at(-1)], [22, '2026-01', '2027-10']);
-    assert.deepEqual(store.getState().schicht, { katalog: null, monate: {}, status: {}, vorgeladen: false }); // der Zustand bleibt unverändert
+    assert.deepEqual(store.getState().schicht, { katalog: null, monate: {}, status: {}, vorgeladen: null }); // der Zustand bleibt unverändert
   });
 
   test('Zurücksetzen (Demo): der Schichtplan kommt aus den neuen Beispieldaten', async () => {
@@ -812,11 +812,11 @@ describe('Schichtplan im Hintergrund vorladen', () => {
     const log = [];
     const { store, speicher } = aufbau({ aendern: protokolliert(log) });
     await store.laden();
-    assert.equal(store.getState().schicht.vorgeladen, false);
+    assert.equal(store.getState().schicht.vorgeladen, null);
     await store.schichtVorladen();
     assert.deepEqual([...log].sort(), ['2026-10', '2026-11', '2026-12', 'arten']); // nichts geschrieben: die Beispieldaten haben schon E
     const s = store.getState().schicht;
-    assert.equal(s.vorgeladen, true);
+    assert.equal(s.vorgeladen, '2026-10');
     assert.deepEqual(s.status, { '2026-10': 'geladen', '2026-11': 'geladen', '2026-12': 'geladen' });
     assert.deepEqual(s.monate['2026-10'], gespeichert(speicher).schicht.monate['2026-10']);
     assert.deepEqual(s.katalog, gespeichert(speicher).schicht.katalog);
@@ -838,7 +838,7 @@ describe('Schichtplan im Hintergrund vorladen', () => {
     assert.deepEqual(geschrieben(log), ['schreibe arten']);
     assert.deepEqual(gespeichert(speicher).schicht.katalog, standardKatalog());
     assert.deepEqual(store.getState().schicht.katalog, standardKatalog());
-    assert.equal(store.getState().schicht.vorgeladen, true);
+    assert.equal(store.getState().schicht.vorgeladen, '2026-10');
     assert.equal(store.getState().fehler, null);
     await store.schichtVorladen();
     assert.equal(log.filter((x) => x === 'arten').length, 2); // das zweite Mal wurde wieder gelesen …
@@ -879,10 +879,10 @@ describe('Schichtplan im Hintergrund vorladen', () => {
     store.starteAusSnapshot({ daten: { settings: undefined, tage: {}, urlaub: [], termine: [], schicht: { katalog: ohneE(), monate: {} } }, gespeichertAm: '2026-10-14T06:00:00.000Z' });
     await store.schichtVorladen();
     assert.deepEqual(log, []);
-    assert.equal(store.getState().schicht.vorgeladen, false);
+    assert.equal(store.getState().schicht.vorgeladen, null);
     await store.laden();
     await store.schichtVorladen();
-    assert.equal(store.getState().schicht.vorgeladen, true);
+    assert.equal(store.getState().schicht.vorgeladen, '2026-10');
     // die Schichtarten werden neu gelesen, auch wenn der gespeicherte Stand schon welche hatte, und ergänzt
     assert.ok(log.includes('arten'));
     assert.equal(anzahlE(store.getState().schicht.katalog), 1);
@@ -900,7 +900,7 @@ describe('Schichtplan im Hintergrund vorladen', () => {
     await zwei.store.laden(); // → anmeldungNoetig
     await zwei.store.schichtVorladen();
     assert.deepEqual(log, []);
-    assert.equal(zwei.store.getState().schicht.vorgeladen, false);
+    assert.equal(zwei.store.getState().schicht.vorgeladen, null);
   });
 
   test('Lesefehler: wirft nicht, kein vorgeladen, ohne lesbare Schichtarten kein Schreiben; abgelaufene Anmeldung setzt anmeldungNoetig', async () => {
@@ -917,7 +917,7 @@ describe('Schichtplan im Hintergrund vorladen', () => {
     });
     await store.laden();
     await store.schichtVorladen();
-    assert.equal(store.getState().schicht.vorgeladen, false);
+    assert.equal(store.getState().schicht.vorgeladen, null);
     assert.equal(store.getState().schicht.status['2026-12'], 'fehler');
     assert.equal(store.getState().fehler, null);
     assert.deepEqual(geschrieben(log), ['schreibe arten']); // die Schichtarten waren lesbar: E ist ergänzt
@@ -925,13 +925,13 @@ describe('Schichtplan im Hintergrund vorladen', () => {
     const zweiter = aufbau({ speicher: speicherMit(ohneE()), aendern: (a) => protokolliert(log)({ ...a, leseSchichtarten: async () => { throw new Error('Netz'); } }) });
     await zweiter.store.laden();
     await zweiter.store.schichtVorladen();
-    assert.equal(zweiter.store.getState().schicht.vorgeladen, false);
+    assert.equal(zweiter.store.getState().schicht.vorgeladen, null);
     assert.deepEqual(geschrieben(log), ['schreibe arten']); // nichts auf einen unbekannten Stand geschrieben
     fehler = authFehler;
     welcher = '2026-11';
     await store.schichtVorladen();
     assert.equal(store.getState().anmeldungNoetig, true);
-    assert.equal(store.getState().schicht.vorgeladen, false);
+    assert.equal(store.getState().schicht.vorgeladen, null);
   });
 
   test('vorgeladen bleibt beim Öffnen der Seite, beim Aktualisieren und bei einem späteren Lesefehler', async () => {
@@ -940,12 +940,26 @@ describe('Schichtplan im Hintergrund vorladen', () => {
     await store.laden();
     await store.schichtVorladen();
     await store.schichtLaden('2026-10');
-    assert.equal(store.getState().schicht.vorgeladen, true);
+    assert.equal(store.getState().schicht.vorgeladen, '2026-10');
     assert.equal(await store.schichtAktualisieren(['2026-10']), true);
-    assert.equal(store.getState().schicht.vorgeladen, true);
+    assert.equal(store.getState().schicht.vorgeladen, '2026-10');
     kaputt = true;
     await store.schichtVorladen();
-    assert.equal(store.getState().schicht.vorgeladen, true); // die Monate von vorhin sind ja da
+    assert.equal(store.getState().schicht.vorgeladen, '2026-10'); // die Monate von vorhin sind ja da
+  });
+
+  test('vorgeladen merkt sich den Monat: nach dem Monatswechsel (App offen) liest ein neues Vorladen den neuen Zeitraum', async () => {
+    let zeit = new Date('2026-10-31T23:00:00+01:00');
+    const log = [];
+    const { store } = aufbau({ jetzt: () => zeit, aendern: protokolliert(log) });
+    await store.laden();
+    await store.schichtVorladen();
+    assert.equal(store.getState().schicht.vorgeladen, '2026-10');
+    zeit = new Date('2026-11-01T00:30:00+01:00');
+    log.length = 0;
+    await store.schichtVorladen();
+    assert.deepEqual(log.filter((x) => x !== 'arten').sort(), ['2026-11', '2026-12', '2027-01']);
+    assert.equal(store.getState().schicht.vorgeladen, '2026-11');
   });
 
   test('Papa hat E umbenannt: beim nächsten Start kommt kein neues E (die Marke „ergaenzt“ wird mitgespeichert)', async () => {
@@ -974,7 +988,7 @@ describe('Schichtplan im Hintergrund vorladen', () => {
       await store.laden();
       await store.schichtVorladen();
       const s = store.getState();
-      assert.deepEqual([s.fehler, s.anmeldungNoetig, store.ausstehend(), s.schicht.vorgeladen], [null, false, 0, true]);
+      assert.deepEqual([s.fehler, s.anmeldungNoetig, store.ausstehend(), s.schicht.vorgeladen], [null, false, 0, '2026-10']);
       assert.ok(meldungen.every((m) => m.fehler === null && !m.anmeldungNoetig));
       assert.equal(anzahlE(s.schicht.katalog), 0); // angezeigt wird, was im Kalender steht
       assert.equal(anzahlE(gespeichert(speicher).schicht.katalog), 0);
@@ -1001,9 +1015,9 @@ describe('Schichtplan im Hintergrund vorladen', () => {
     await store.laden();
     await store.schichtVorladen();
     await store.zuruecksetzen();
-    assert.equal(store.getState().schicht.vorgeladen, false);
+    assert.equal(store.getState().schicht.vorgeladen, null);
     for (let i = 0; i < 5; i += 1) await new Promise((r) => setImmediate(r)); // ohne weiteren Anstoß
-    assert.equal(store.getState().schicht.vorgeladen, true);
+    assert.equal(store.getState().schicht.vorgeladen, '2026-10');
   });
 
   test('zweimal gleichzeitig angestoßen: nur einmal gelesen', async () => {

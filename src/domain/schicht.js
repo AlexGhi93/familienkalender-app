@@ -332,6 +332,19 @@ export function tageImMonat(jm) {
   return new Date(Date.UTC(jahr, monat, 0)).getUTCDate();
 }
 
+/**
+ * Die Monate, die nach dem Start im Hintergrund vorgeladen werden und zu den Erinnerungen an Zusätze beitragen: der Monat `jm`
+ * ('JJJJ-MM', der laufende) und die zwei danach. Eine Regel für Vorladen (store) und Push-Plan, damit beide nie auseinanderlaufen.
+ */
+export function vorladeMonate(jm) {
+  tageImMonat(jm); // wirft bei einem ungültigen Monat
+  const [jahr, monat] = jm.split('-').map(Number);
+  return [0, 1, 2].map((i) => {
+    const index = jahr * 12 + monat - 1 + i;
+    return `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, '0')}`;
+  });
+}
+
 /** Ein Monat ohne Einträge. */
 export function leererMonat(jm) {
   const leer = LEER.repeat(tageImMonat(jm));

@@ -4,7 +4,7 @@
 import { b64uZuBytes, bytesZuB64u } from './base64url.js';
 import { baueMeldungen, planDigest } from './meldungen.js';
 import { GERAET_PERSONEN, bereinige, mitGeraet, neuesRegister, ohneGeraet } from './geraete.js';
-import { planeErinnerungen } from './plan.js';
+import { planQuellen, planeErinnerungen } from './plan.js';
 import { verschluessele } from './verschluesselung.js';
 
 const TAGE_VORAUS = 60;
@@ -48,6 +48,7 @@ export function createPush({ store, adapter, config, fetch, navigator, Notificat
   let timer = null;
   let registriert = null; // zuletzt bekannt: steht dieses Telefon im Register? (null = noch nicht geprüft)
   let geraeteAnzahl = 0;
+  let wartet = false; // der letzte Abgleich wartet auf den Schichtplan (siehe sync); die Shell stößt ihn danach von selbst an
 
   const eingerichtet = () => Boolean(config?.dienst && config?.vapidPublic);
   const aktiv = () => speicher.getItem(K.aktiv) === '1';
@@ -86,7 +87,7 @@ export function createPush({ store, adapter, config, fetch, navigator, Notificat
 
   async function status() {
     const stand = Number(speicher.getItem(K.stand)) || null;
-    const basis = { geraete: geraeteAnzahl, letzteSync: stand, letzterFehler };
+    const basis = { geraete: geraeteAnzahl, letzteSync: stand, letzterFehler, wartet };
     const v = verfuegbar();
     if (!v.ok) return { ...basis, zustand: 'nicht-moeglich', grund: v.grund };
     if (Notification.permission === 'denied') return { ...basis, zustand: 'abgelehnt' };
@@ -140,7 +141,9 @@ export function createPush({ store, adapter, config, fetch, navigator, Notificat
 
   /**
    * Hält den Plan beim Push-Dienst aktuell. Läuft nur nach einem frischen Laden aus Google (nie aus dem gespeicherten Stand) und nur,
-   * wenn sich etwas geändert hat (oder mit `erzwingen`). Gibt { art: 'uebersprungen' | 'unveraendert' | 'gesendet', … } zurück.
+   * wenn sich etwas geändert hat (oder mit `erzwingen`). Gibt { art: 'uebersprungen' | 'wartet' | 'unveraendert' | 'gesendet', … } zurück.
+   * 'wartet': der Schichtplan ist für den laufenden Monat noch nicht vorgeladen (siehe planQuellen). Das Telefon steht dann schon im
+   * Register, aber kein Plan geht hinaus – er würde die Erinnerungen an Zusätze löschen; sobald vorgeladen ist, stößt die Shell neu an.
    */
   async function sync({ erzwingen = false } = {}) {
     if (!eingerichtet() || !aktiv()) return { art: 'uebersprungen' };
@@ -161,6 +164,11 @@ export function createPush({ store, adapter, config, fetch, navigator, Notificat
       geraeteAnzahl = register.geraete.length;
     }
 
+    if (!planQuellen(state, jetzt())) {
+      wartet = true;
+      return { art: 'wartet' };
+    }
+    wartet = false;
     const plan = await planeErinnerungen(state, { jetzt: jetzt(), tage: TAGE_VORAUS });
     const geraete = register.geraete;
     const digest = await planDigest(register.fid, plan, geraete); // ändert sich auch, wenn sich ändert, wer welche Erinnerung bekommt
@@ -224,6 +232,7 @@ export function createPush({ store, adapter, config, fetch, navigator, Notificat
     for (const k of [K.aktiv, K.digest, K.stand, K.erloschen]) speicher.removeItem(k);
     registriert = null;
     geraeteAnzahl = 0;
+    wartet = false;
     if (problem) throw problem;
     return status();
   }

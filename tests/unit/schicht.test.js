@@ -31,6 +31,7 @@ import {
   setzeSchicht,
   standardKatalog,
   tageImMonat,
+  vorladeMonate,
   zusatzEntfernen,
   zusatzHinzufuegen,
 } from '../../src/domain/schicht.js';
@@ -422,6 +423,13 @@ describe('Katalog', () => {
 });
 
 describe('Monat', () => {
+  test('vorladeMonate: der Monat und die zwei danach, auch über den Jahreswechsel', () => {
+    assert.deepEqual(vorladeMonate('2026-10'), ['2026-10', '2026-11', '2026-12']);
+    assert.deepEqual(vorladeMonate('2026-11'), ['2026-11', '2026-12', '2027-01']);
+    assert.deepEqual(vorladeMonate('2026-12'), ['2026-12', '2027-01', '2027-02']);
+    assert.throws(() => vorladeMonate('2026-13'), /Ungültiger Monat/);
+  });
+
   test('tageImMonat und leererMonat (auch Schaltjahre)', () => {
     assert.equal(tageImMonat('2026-02'), 28);
     assert.equal(tageImMonat('2028-02'), 29);

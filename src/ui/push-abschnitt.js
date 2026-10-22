@@ -5,6 +5,8 @@ import { GRUND_TEXT } from '../push/client.js';
 import { GERAET_PERSONEN } from '../push/geraete.js';
 import { FUER } from '../domain/types.js';
 
+const WARTET_TEXT = '⏳ Der Schichtplan wird noch geladen. Der Abgleich folgt von selbst.';
+const WARTET_NEU_ZEICHNEN_MS = 5000;
 const MELDUNG_ANMELDEN = 'Bitte zuerst neu anmelden (Mehr → Konto & App → Neu anmelden).';
 const fehlerText = (fehler) => (fehler?.name === 'AuthAbgelaufen' ? MELDUNG_ANMELDEN : fehler?.message || 'Das hat nicht geklappt.');
 
@@ -28,7 +30,7 @@ export function pushAbschnitt({ push }) {
   // Wichtig: `push.aktivieren()` wird direkt im Tippen gestartet (iOS verlangt eine Nutzeraktion für die Erlaubnis).
   const aktivieren = () => ausfuehren(() => push.aktivieren(), 'Benachrichtigungen aktiviert ✓');
   const testen = () => ausfuehren(() => push.testSenden(), 'Gesendet ✓ Die Benachrichtigung erscheint gleich.');
-  const abgleichen = () => ausfuehren(() => push.sync({ erzwingen: true }), 'Abgeglichen ✓');
+  const abgleichen = () => ausfuehren(() => push.sync({ erzwingen: true }), (r) => (r?.art === 'wartet' ? WARTET_TEXT : 'Abgeglichen ✓'));
   const ausschalten = () => ausfuehren(() => push.deaktivieren(), 'Ausgeschaltet');
 
   const knopf = (text, beiKlick, art = '') => h('button', { class: `knopf klein ${art}`.trim(), type: 'button', onClick: beiKlick }, text);
@@ -69,6 +71,7 @@ export function pushAbschnitt({ push }) {
         kopf,
         h('p', {}, '✅ Aktiv auf diesem Telefon. Die App erinnert zusätzlich zu Google Kalender, auch wenn sie geschlossen ist.'),
         h('p', { class: 'leise' }, `${s.geraete} ${s.geraete === 1 ? 'Telefon' : 'Telefone'} in der Familie · ${letzte}`),
+        s.wartet ? h('p', { class: 'leise push-wartet' }, WARTET_TEXT) : null,
         fehler,
         h('div', { class: 'knopfzeile' }, knopf('Test-Push senden', testen, 'primaer'), knopf('Jetzt abgleichen', abgleichen), knopf('Ausschalten', ausschalten)),
         personFeld(),
@@ -93,6 +96,8 @@ export function pushAbschnitt({ push }) {
     const teile = inhalt(status);
     box.hidden = teile === null;
     fuelle(box, ...(teile ?? []));
+    // wartet der Abgleich auf den Schichtplan, kurz danach noch einmal nachsehen (der Abgleich folgt von selbst, die Anzeige nicht)
+    if (status.wartet) setTimeout(() => box.isConnected && zeichne(), WARTET_NEU_ZEICHNEN_MS);
   }
 
   zeichne();

@@ -1,11 +1,11 @@
 // Welche Push-Erinnerungen es für die nächsten Tage geben soll: reine Berechnung aus dem Zustand der App (ohne Netz, ohne Verschlüsselung).
 // Regeln wie bei Google Kalender: Termin mit Uhrzeit = 1 Tag und 1 Stunde vorher; ohne Uhrzeit = am Vortag um 09:00.
 import { addDays, todayVienna } from '../domain/dates.js';
-import { PERSONEN, fehlendePersonen, leeresKonto, letzterTag, monatVor } from '../domain/konto.js';
+import { PERSONEN, fehlendePersonen, leeresKonto, letzterTag } from '../domain/konto.js';
 import { FUER } from '../domain/types.js';
 import { dienstFuer } from '../domain/dienst.js';
 import { instantZuWien, wienZuInstant } from '../domain/instant.js';
-import { SCHICHT_PERSONEN, artFuer, standardKatalog } from '../domain/schicht.js';
+import { SCHICHT_PERSONEN, artFuer, standardKatalog, vorladeMonate } from '../domain/schicht.js';
 import { terminAnzeige } from '../app/views/gemeinsam.js';
 import { urlaubChecksWunsch } from '../app/urlaub-check.js';
 import { bytesZuB64u } from './base64url.js';
@@ -66,9 +66,6 @@ async function kontoErinnerungen(state, von, bis) {
   return plan;
 }
 
-/** Monate des Schichtplans, die zu den Erinnerungen beitragen: der laufende und die zwei danach (die vorgeladenen, siehe store.schichtVorladen). */
-const SCHICHT_MONATE = 3;
-
 /**
  * Zusätze im Schichtplan (z. B. Mamas Dienstbesprechung), deren Art `erinnern` nicht ausgeschaltet hat: 1 Tag (24 h) und 1 Stunde vor Beginn,
  * nur an die Telefone dieser Person. Es zählen nur geladene Monate vom laufenden bis zwei danach: die hat jedes Telefon vorgeladen, so dass zwei
@@ -79,11 +76,9 @@ async function zusatzErinnerungen(state, von, bis) {
   const schicht = state.schicht;
   if (!schicht?.monate) return [];
   const katalog = schicht.katalog ?? standardKatalog();
-  const erster = todayVienna(new Date(von)).slice(0, 7);
   const plan = [];
   const gesehen = new Set();
-  for (let i = 0; i < SCHICHT_MONATE; i++) {
-    const jm = monatVor(erster, -i);
+  for (const jm of vorladeMonate(todayVienna(new Date(von)).slice(0, 7))) {
     const monat = schicht.monate[jm];
     if (!monat?.z) continue;
     for (const person of SCHICHT_PERSONEN) {
@@ -117,12 +112,15 @@ async function zusatzErinnerungen(state, von, bis) {
 
 /**
  * Wovon der Plan abhängt, oder null = noch nicht senden: erst nach dem frischen Laden (nie aus dem gespeicherten Stand) und erst, wenn der
- * Schichtplan vorgeladen ist; sonst fehlten im Plan die Erinnerungen an Zusätze, und der Push-Dienst würde sie löschen.
- * Der bloße Ladestatus der Monate zählt nicht, nur Schichtarten und Monate.
+ * Schichtplan für den laufenden Monat (Wien, `jetzt`) vorgeladen ist; sonst fehlten im Plan Erinnerungen an Zusätze (oder, nach dem
+ * Monatswechsel bei offener App, die des neuen dritten Monats), und der Push-Dienst würde sie löschen. Gilt für jeden Weg, auf dem der
+ * Plan gesendet wird (Shell und push/client.js `sync`). Der bloße Ladestatus der Monate zählt nicht, nur Schichtarten und Monate.
  */
-export function planQuellen(state) {
-  if (!state?.geladen || state.nurSnapshot || !state.schicht?.vorgeladen) return null;
-  return [state.termine, state.settings, state.urlaub, state.konto, state.schicht.katalog, state.schicht.monate];
+export function planQuellen(state, jetzt = new Date()) {
+  if (!state?.geladen || state.nurSnapshot) return null;
+  const monat = todayVienna(jetzt).slice(0, 7);
+  if (state.schicht?.vorgeladen !== monat) return null;
+  return [state.termine, state.settings, state.urlaub, state.konto, state.schicht.katalog, state.schicht.monate, monat];
 }
 
 /** Hat sich seit dem letzten Senden (`vorher`, null = noch nie) etwas geändert, wovon der Plan abhängt? */

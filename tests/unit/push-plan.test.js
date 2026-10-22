@@ -140,7 +140,7 @@ describe('Kennungen und Reihenfolge', () => {
 // ---------------------------------------------------------------- Schichtplan: Zusätze (z. B. Dienstbesprechung)
 
 /** Zustand mit Zusätzen im Schichtplan: `zusaetze` = { 'JJJJ-MM': { mama: { 1: [{ k, von, bis }] } } }. */
-function mitZusaetzen(zusaetze, { katalog = null, vorgeladen = true } = {}) {
+function mitZusaetzen(zusaetze, { katalog = null, vorgeladen = '2026-10' } = {}) {
   const monate = {};
   for (const [jm, z] of Object.entries(zusaetze)) {
     const m = leererMonat(jm);
@@ -247,24 +247,33 @@ describe('Zusätze im Schichtplan: 1 Tag und 1 Stunde vorher, nur an die Person'
 
 describe('Wann der Plan gesendet wird', () => {
   const geladen = () => ({ ...zustand({ settings: ohneKonto }), geladen: true, nurSnapshot: false });
-  const vorgeladen = (s) => ({ ...s, schicht: { ...s.schicht, vorgeladen: true } });
+  const vorgeladen = (s, monat = '2026-10') => ({ ...s, schicht: { ...s.schicht, vorgeladen: monat } });
 
-  test('erst, wenn der Schichtplan vorgeladen ist (sonst fehlten die Erinnerungen an Zusätze und würden gelöscht)', () => {
+  test('erst, wenn der Schichtplan für den laufenden Monat vorgeladen ist (sonst fehlten Erinnerungen an Zusätze und würden gelöscht)', () => {
     const s = geladen();
-    assert.equal(planQuellen(s), null);
-    assert.equal(planQuellen({ ...vorgeladen(s), nurSnapshot: true }), null);
-    assert.equal(planQuellen({ ...vorgeladen(s), geladen: false }), null);
-    assert.ok(planQuellen(vorgeladen(s)));
+    assert.equal(planQuellen(s, JETZT), null);
+    assert.equal(planQuellen({ ...vorgeladen(s), nurSnapshot: true }, JETZT), null);
+    assert.equal(planQuellen({ ...vorgeladen(s), geladen: false }, JETZT), null);
+    assert.ok(planQuellen(vorgeladen(s), JETZT));
+    // über den Monatswechsel offen: vorgeladen ist der Vormonat → erst nach neuem Vorladen
+    assert.equal(planQuellen(vorgeladen(s, '2026-09'), JETZT), null);
+    assert.equal(planQuellen(vorgeladen(s), new Date('2026-11-01T00:30:00+01:00')), null);
+    assert.ok(planQuellen(vorgeladen(s), new Date('2026-10-31T23:30:00+01:00')));
+    assert.ok(planQuellen(vorgeladen(s, '2026-11'), new Date('2026-11-01T00:30:00+01:00')));
   });
 
   test('erneut bei Änderungen an Terminen, Einstellungen, Urlaub, Kontostand und Schichtplan; nicht beim bloßen Ladestatus', () => {
     const s = vorgeladen(geladen());
-    const q = planQuellen(s);
+    const q = planQuellen(s, JETZT);
     assert.equal(quellenGeaendert(q, null), true);
-    assert.equal(quellenGeaendert(planQuellen({ ...s }), q), false);
+    assert.equal(quellenGeaendert(null, q), false);
+    assert.equal(quellenGeaendert(planQuellen({ ...s }, JETZT), q), false);
     for (const teil of [{ termine: [] }, { settings: { ...s.settings } }, { urlaub: [] }, { konto: { ...s.konto } }, { schicht: { ...s.schicht, monate: {} } }, { schicht: { ...s.schicht, katalog: standardKatalog() } }]) {
-      assert.equal(quellenGeaendert(planQuellen({ ...s, ...teil }), q), true, Object.keys(teil)[0]);
+      assert.equal(quellenGeaendert(planQuellen({ ...s, ...teil }, JETZT), q), true, Object.keys(teil)[0]);
     }
-    assert.equal(quellenGeaendert(planQuellen({ ...s, schicht: { ...s.schicht, status: { '2026-10': 'laedt' } } }), q), false);
+    assert.equal(quellenGeaendert(planQuellen({ ...s, schicht: { ...s.schicht, status: { '2026-10': 'laedt' } } }, JETZT), q), false);
+    // neuer Monat vorgeladen (selbe Monatsdaten): neuer Plan
+    const nov = new Date('2026-11-01T08:00:00+01:00');
+    assert.equal(quellenGeaendert(planQuellen(vorgeladen(s, '2026-11'), nov), q), true);
   });
 });

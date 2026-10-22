@@ -28,7 +28,7 @@ function zustand(extra = {}) {
     dienstplan: { b: ['mama', 'papa', 'papa', 'papa', 'papa', '', ''], h: ['papa', 'mama', 'mama', 'mama', 'mama', '', ''] },
     ...extra,
   });
-  return { geladen: true, nurSnapshot: false, settings, tage: {}, urlaub: [], termine, konto: leeresKonto() };
+  return { geladen: true, nurSnapshot: false, settings, tage: {}, urlaub: [], termine, konto: leeresKonto(), schicht: { katalog: null, monate: {}, status: {}, vorgeladen: '2026-10' } };
 }
 
 const plane = (state) => planeErinnerungen(state, { jetzt: JETZT, tage: 60 });
@@ -170,19 +170,20 @@ async function aufbau({ person = '', eigenePerson, state = zustand({ dienstErinn
   const sub = { toJSON: () => ({ endpoint: eigen.endpoint, keys: { p256dh: eigen.p256dh, auth: eigen.auth } }), unsubscribe: async () => {} };
   const navigator = { serviceWorker: { ready: Promise.resolve({ pushManager: { getSubscription: async () => sub } }) } };
   let geplant = null;
+  let aktuell = state;
   const push = createPush({
-    store: { getState: () => state },
+    store: { getState: () => aktuell },
     adapter,
     config: { dienst: 'https://dienst.example', vapidPublic: 'x' },
     fetch,
     navigator,
-    Notification: { permission: 'granted' },
+    Notification: { permission: 'granted', requestPermission: async () => 'granted' },
     speicher,
     umgebung: { ios: false, installiert: true, pushUnterstuetzt: true, name: 'Android' },
     jetzt: () => JETZT,
     zeitgeber: { setze: (f) => ((geplant = f), 1), loesche: () => {} },
   });
-  return { push, speicher, schreiben, anfragen, register: () => register, geplant: () => geplant };
+  return { push, speicher, schreiben, anfragen, register: () => register, geplant: () => geplant, setzeZustand: (s) => (aktuell = s) };
 }
 
 test('sync: trägt die Person dieses Telefons wieder ein, wenn eine ältere Version sie verloren hat', async () => {
@@ -240,4 +241,37 @@ test('sync: ohne Angabe auf beiden Seiten bleibt das Register unberührt', async
   assert.equal(t.schreiben.length, 0);
   t.speicher.setItem('fk.push.person.v1', 'opa');
   assert.equal(t.push.person(), '', 'Unbekanntes im Speicher zählt als keine Angabe');
+});
+
+test('sync: wartet (sendet nichts), solange der Schichtplan nicht für den laufenden Monat vorgeladen ist – auf jedem Weg', async () => {
+  const basis = zustand();
+  const mitVorgeladen = (monat) => ({ ...basis, schicht: { ...basis.schicht, vorgeladen: monat } });
+  const t = await aufbau({ person: 'papa', eigenePerson: 'papa', state: mitVorgeladen(null) });
+
+  // „Jetzt abgleichen“
+  assert.equal((await t.push.sync({ erzwingen: true })).art, 'wartet');
+  assert.equal(t.anfragen.length, 0, 'kein Plan ohne Zusätze an den Push-Dienst');
+  assert.equal((await t.push.status()).wartet, true);
+  // „Benachrichtigungen aktivieren“: das Telefon kommt ins Register, der Plan wartet
+  const s = await t.push.aktivieren();
+  assert.equal(s.zustand, 'aktiv');
+  assert.equal(s.wartet, true);
+  assert.equal(t.anfragen.length, 0);
+  // „Dieses Telefon gehört“: die Person kommt ins Register, der Plan wartet
+  t.push.setzePerson('mama');
+  await t.geplant()();
+  assert.equal(t.register().geraete.find((g) => g.id === 'eigenTel1').person, 'mama');
+  assert.equal(t.anfragen.length, 0);
+  assert.equal(t.speicher.getItem('fk.push.digest.v1'), null, 'nichts gemerkt: der nächste Abgleich sendet');
+
+  // vorgeladen, aber für den Vormonat (App über den Monatswechsel offen): wartet weiter
+  t.setzeZustand(mitVorgeladen('2026-09'));
+  assert.equal((await t.push.sync({ erzwingen: true })).art, 'wartet');
+  assert.equal(t.anfragen.length, 0);
+
+  // für den laufenden Monat vorgeladen: jetzt geht der Plan hinaus
+  t.setzeZustand(mitVorgeladen('2026-10'));
+  assert.equal((await t.push.sync()).art, 'gesendet');
+  assert.equal(t.anfragen.length, 1);
+  assert.equal((await t.push.status()).wartet, false);
 });

@@ -7,7 +7,7 @@ import { urlaubCheckEventId } from '../domain/ids.js';
 import { normalisiereTermin } from './termin.js';
 import { urlaubChecksAbgleich, urlaubChecksWunsch } from './urlaub-check.js';
 import { entferneExtra, entferneStand, fuegeExtraHinzu, leeresKonto, monatVor, normalisiereKonto, setzeStand } from '../domain/konto.js';
-import { artAendern, artArchivieren, artHinzufuegen, artVerschieben, katalogErgaenzen, leererMonat, normalisiereKatalog, normalisiereMonat, schaltePinsel, schichtAm, setzeNotiz, setzeSchicht, standardKatalog, tageImMonat, zusatzEntfernen, zusatzHinzufuegen } from '../domain/schicht.js';
+import { artAendern, artArchivieren, artHinzufuegen, artVerschieben, katalogErgaenzen, leererMonat, normalisiereKatalog, normalisiereMonat, schaltePinsel, schichtAm, setzeNotiz, setzeSchicht, standardKatalog, tageImMonat, vorladeMonate, zusatzEntfernen, zusatzHinzufuegen } from '../domain/schicht.js';
 import { MAX_SERIEN_WOCHEN, naechsterWochentag, wochenSerie } from './serie.js';
 
 const KITA_TYPEN = ['kita_essen', 'kita_ohne'];
@@ -30,10 +30,11 @@ const zufaelligeId = () => `u${Array.from({ length: 11 }, () => Math.floor(Math.
 const istAuthFehler = (fehler) => fehler?.name === 'AuthAbgelaufen';
 
 /**
- * Schichtplan im Zustand: `katalog` null = noch nicht gelesen (die Ansicht zeigt dann die Standardarten). `vorgeladen` = Schichtarten
- * und die Monate ab dem laufenden (siehe `schichtVorladen`) wurden seit dem Start aus dem Kalender gelesen, nicht nur aus dem gespeicherten Stand.
+ * Schichtplan im Zustand: `katalog` null = noch nicht gelesen (die Ansicht zeigt dann die Standardarten). `vorgeladen` = der Monat
+ * ('JJJJ-MM'), ab dem Schichtarten und Monate (siehe `schichtVorladen`) seit dem Start aus dem Kalender gelesen wurden, nicht nur aus dem
+ * gespeicherten Stand; null = noch nicht. Die Erinnerungen gelten nur, solange das der laufende Monat ist (siehe push/plan.js planQuellen).
  */
-const leererSchichtplan = () => ({ katalog: null, monate: {}, status: {}, vorgeladen: false });
+const leererSchichtplan = () => ({ katalog: null, monate: {}, status: {}, vorgeladen: null });
 
 /** Schichtplan aus Schnappschuss oder Beispieldaten ({ katalog, monate }): normalisiert, alle Monate gelten als geladen. */
 function schichtAusDaten(roh) {
@@ -45,7 +46,7 @@ function schichtAusDaten(roh) {
       // kein gültiger Monat als Schlüssel: weglassen
     }
   }
-  return { katalog: roh?.katalog ? normalisiereKatalog(roh.katalog).katalog : null, monate, status: Object.fromEntries(Object.keys(monate).map((jm) => [jm, 'geladen'])), vorgeladen: false };
+  return { katalog: roh?.katalog ? normalisiereKatalog(roh.katalog).katalog : null, monate, status: Object.fromEntries(Object.keys(monate).map((jm) => [jm, 'geladen'])), vorgeladen: null };
 }
 
 /**
@@ -808,8 +809,8 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
 
     /**
      * Schichtplan im Hintergrund nach dem Start (Google und Demo), damit die Erinnerungen von jedem Telefon aus stimmen: liest die
-     * Schichtarten (immer neu) und den laufenden Monat mit den zwei folgenden; danach `schicht.vorgeladen` (bleibt, auch wenn ein
-     * späteres Vorladen scheitert). Fehlt Papa noch eine später dazugekommene Standardart (E – Ersatzdienst), wird sie einmal still ergänzt
+     * Schichtarten (immer neu) und den laufenden Monat mit den zwei folgenden; danach `schicht.vorgeladen` = der laufende Monat (bleibt,
+     * auch wenn ein späteres Vorladen im selben Monat scheitert; nach dem Monatswechsel braucht es ein neues Vorladen). Fehlt Papa noch eine später dazugekommene Standardart (E – Ersatzdienst), wird sie einmal still ergänzt
      * (siehe `schichtKatalogStillErgaenzen`; das zweite Telefon ergänzt nichts doppelt). Tut nichts vor dem Laden, solange nur
      * der gespeicherte Stand zu sehen ist oder die Anmeldung fehlt (danach erneut anstoßen). Wirft nicht; Lesefehler stehen im Status.
      */
@@ -818,9 +819,9 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       if (!adapter.leseSchichtMonat || !state.geladen || state.nurSnapshot || state.anmeldungNoetig) return Promise.resolve();
       const jm = todayVienna(jetzt()).slice(0, 7);
       schichtVorladenLaeuft = (async () => {
-        const { katalogGelesen, monateGelesen } = await schichtLesen([jm, monatVor(jm, -1), monatVor(jm, -2)], { katalogNeu: true });
-        if (katalogGelesen && monateGelesen && !state.schicht.vorgeladen) {
-          state = { ...state, schicht: { ...state.schicht, vorgeladen: true } };
+        const { katalogGelesen, monateGelesen } = await schichtLesen(vorladeMonate(jm), { katalogNeu: true });
+        if (katalogGelesen && monateGelesen && state.schicht.vorgeladen !== jm) {
+          state = { ...state, schicht: { ...state.schicht, vorgeladen: jm } };
           melden();
         }
         // nur, wenn die Schichtarten gerade gelesen werden konnten (gespeichert wird ohnehin auf der neuesten Fassung)
