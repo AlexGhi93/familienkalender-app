@@ -25,6 +25,7 @@ import { oeffneSchichtarten } from './ui/schicht-arten.js';
 import { schichtFilterLesen, schichtFilterSpeichern } from './app/views/schicht-model.js';
 import { createSchichtAbgleich, schichtAktualisierenFaellig } from './app/schicht-abgleich.js';
 import { monatVor } from './domain/konto.js';
+import { planQuellen, quellenGeaendert } from './push/plan.js';
 
 const SEITEN = {
   heute: heuteScreen,
@@ -292,10 +293,7 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
 
   let letzterFehler = null;
   let speicherZeitgeber = null;
-  let pushTermine = null;
-  let pushSettings = null;
-  let pushUrlaub = null;
-  let pushKonto = null;
+  let pushQuellen = null; // wovon der zuletzt angestoßene Push-Plan abhing (siehe planQuellen)
   let checksUrlaub = null;
   let checksTage = null;
   let checksSettings = null;
@@ -309,12 +307,11 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
     if (state.fehler && state.fehler !== letzterFehler) toast(state.fehler, { art: 'fehler', dauer: 6000 });
     else if (!state.fehler && letzterFehler) entferneFehlerToast();
     letzterFehler = state.fehler;
-    // Push-Plan abgleichen, sobald frisch aus Google geladen wurde und sich Termine oder Einstellungen geändert haben (nie aus dem gespeicherten Stand)
-    if (push && state.geladen && !state.nurSnapshot && (state.termine !== pushTermine || state.settings !== pushSettings || state.urlaub !== pushUrlaub || state.konto !== pushKonto)) {
-      pushTermine = state.termine;
-      pushSettings = state.settings;
-      pushUrlaub = state.urlaub; // der Urlaubsstand bestimmt auch die Urlaub-Check-Erinnerungen
-      pushKonto = state.konto; // und wer den Kontostand schon eingetragen hat, die Erinnerung am Monatsende
+    // Push-Plan abgleichen, sobald frisch aus Google geladen und der Schichtplan vorgeladen wurde und sich Termine, Einstellungen, Urlaub
+    // (Urlaub-Checks), Kontostand (Erinnerung am Monatsende) oder Schichtplan (Zusätze) geändert haben; nie aus dem gespeicherten Stand
+    const quellen = push ? planQuellen(state) : null;
+    if (quellenGeaendert(quellen, pushQuellen)) {
+      pushQuellen = quellen;
       push.anstossen();
     }
     // Urlaub-Checks im Kalender (1.3., 1.5., 1.7.) beim Öffnen und nach Änderungen am Urlaub abgleichen; nur mit Google, nie aus dem gespeicherten Stand

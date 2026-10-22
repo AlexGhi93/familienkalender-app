@@ -1,7 +1,8 @@
 // Push-Plan: welche Erinnerungen es wann gibt (Wiener Zeit, Zeitumstellung), Kontostand am Monatsende, stabile Kennungen.
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { planeErinnerungen } from '../../src/push/plan.js';
+import { planeErinnerungen, planQuellen, quellenGeaendert } from '../../src/push/plan.js';
+import { leererMonat, standardKatalog } from '../../src/domain/schicht.js';
 import { zustand } from './hilfen.js';
 
 const JETZT = new Date('2026-10-14T08:00:00+02:00');
@@ -133,5 +134,137 @@ describe('Kennungen und Reihenfolge', () => {
 
   test('leerer Zustand', async () => {
     assert.deepEqual(await planeErinnerungen({}, { jetzt: JETZT }), []);
+  });
+});
+
+// ---------------------------------------------------------------- Schichtplan: Zusätze (z. B. Dienstbesprechung)
+
+/** Zustand mit Zusätzen im Schichtplan: `zusaetze` = { 'JJJJ-MM': { mama: { 1: [{ k, von, bis }] } } }. */
+function mitZusaetzen(zusaetze, { katalog = null, vorgeladen = true } = {}) {
+  const monate = {};
+  for (const [jm, z] of Object.entries(zusaetze)) {
+    const m = leererMonat(jm);
+    monate[jm] = { ...m, z: { ...m.z, ...z } };
+  }
+  return zustand({ settings: ohneKonto, schicht: { katalog, monate, status: {}, vorgeladen } });
+}
+const DB = standardKatalog().arten.mama.find((a) => a.kuerzel === 'DB').k;
+const db = (von, bis = '19:30') => ({ k: DB, von, bis });
+/** Standardkatalog, bei dem eine Art von Mama geändert wird. */
+const mitMamaArt = (k, fn) => {
+  const katalog = standardKatalog();
+  return { ...katalog, arten: { ...katalog.arten, mama: katalog.arten.mama.map((a) => (a.k === k ? fn(a) : a)) } };
+};
+
+describe('Zusätze im Schichtplan: 1 Tag und 1 Stunde vorher, nur an die Person', () => {
+  test('Dienstbesprechung am 1.11. um 18:30 bei Mama (Erinnerung am Vortag im Vormonat)', async () => {
+    const plan = await planeErinnerungen(mitZusaetzen({ '2026-11': { mama: { 1: [db('18:30')] } } }), { jetzt: JETZT });
+    assert.deepEqual(kurz(plan), [
+      ['tag', '2026-10-31T17:30:00.000Z', 'Morgen um 18:30'], // 31.10. 18:30 in Wien (Winterzeit)
+      ['stunde', '2026-11-01T16:30:00.000Z', 'In 1 Stunde (18:30 Uhr)'], // 1.11. 17:30 in Wien
+    ]);
+    assert.ok(plan.every((p) => p.titel === '📋 Dienstbesprechung' && p.nur === 'mama' && p.ziel === '#/schicht'));
+    assert.deepEqual(plan.map((p) => p.ttl), [21600, 3300]);
+    assert.ok(plan.every((p) => /^[A-Za-z0-9_-]{22}$/.test(p.id)));
+    assert.notEqual(plan[0].id, plan[1].id);
+  });
+
+  test('über die Zeitumstellung am 25.10.: „1 Tag vorher“ sind 24 Stunden (wie bei Terminen)', async () => {
+    const plan = await planeErinnerungen(mitZusaetzen({ '2026-10': { mama: { 24: [db('18:00')], 25: [db('18:00')], 26: [db('18:00')] } } }), { jetzt: JETZT });
+    assert.deepEqual(kurz(plan).map((x) => x.slice(0, 2)), [
+      ['tag', '2026-10-23T16:00:00.000Z'], // Sommerzeit
+      ['stunde', '2026-10-24T15:00:00.000Z'],
+      ['tag', '2026-10-24T17:00:00.000Z'], // 25.10. 18:00 Winterzeit − 24 h = 24.10. 19:00 Sommerzeit
+      ['stunde', '2026-10-25T16:00:00.000Z'],
+      ['tag', '2026-10-25T17:00:00.000Z'],
+      ['stunde', '2026-10-26T16:00:00.000Z'],
+    ]);
+  });
+
+  test('es zählt die Uhrzeit des Zusatzes (nicht die der Art); Papa bekommt seine eigenen', async () => {
+    const katalog = standardKatalog();
+    const fortbildung = { k: 'z', kuerzel: 'X', name: 'Fortbildung', farbe: 'violett', gruppe: 'zusatz', von: '08:00', bis: '12:00' };
+    const mitPapa = { ...katalog, arten: { ...katalog.arten, papa: [...katalog.arten.papa, fortbildung] } };
+    const plan = await planeErinnerungen(mitZusaetzen({ '2026-10': { papa: { 20: [{ k: 'z', von: '09:15', bis: '12:00' }] }, mama: { 20: [db('17:00')] } } }, { katalog: mitPapa }), { jetzt: JETZT });
+    assert.deepEqual(plan.map((p) => [p.nur, p.titel, p.text]), [
+      ['papa', '📋 Fortbildung', 'Morgen um 09:15'],
+      ['mama', '📋 Dienstbesprechung', 'Morgen um 17:00'],
+      ['papa', '📋 Fortbildung', 'In 1 Stunde (09:15 Uhr)'],
+      ['mama', '📋 Dienstbesprechung', 'In 1 Stunde (17:00 Uhr)'],
+    ]);
+  });
+
+  test('Art mit `erinnern: false` → keine Erinnerung; ohne Angabe → doch; archivierte Art erinnert weiter', async () => {
+    const zusaetze = { '2026-10': { mama: { 20: [db('18:00')] } } };
+    assert.deepEqual(await planeErinnerungen(mitZusaetzen(zusaetze, { katalog: mitMamaArt(DB, (a) => ({ ...a, erinnern: false })) }), { jetzt: JETZT }), []);
+    const ohneAngabe = mitMamaArt(DB, ({ erinnern, ...rest }) => rest);
+    assert.equal((await planeErinnerungen(mitZusaetzen(zusaetze, { katalog: ohneAngabe }), { jetzt: JETZT })).length, 2);
+    assert.equal((await planeErinnerungen(mitZusaetzen(zusaetze, { katalog: mitMamaArt(DB, (a) => ({ ...a, archiv: true })) }), { jetzt: JETZT })).length, 2);
+  });
+
+  test('gelöschter Zusatz verschwindet; Kennungen bleiben bei Neuberechnung gleich und sind je Zusatz eindeutig', async () => {
+    const zwei = mitZusaetzen({ '2026-10': { mama: { 20: [db('18:00'), db('20:00', '21:00')] } } });
+    const a = await planeErinnerungen(zwei, { jetzt: JETZT });
+    const b = await planeErinnerungen(zwei, { jetzt: new Date('2026-10-14T09:00:00+02:00') });
+    assert.equal(a.length, 4);
+    assert.deepEqual(a.map((p) => p.id), b.map((p) => p.id));
+    assert.equal(new Set(a.map((p) => p.id)).size, 4);
+    const eins = await planeErinnerungen(mitZusaetzen({ '2026-10': { mama: { 20: [db('20:00', '21:00')] } } }), { jetzt: JETZT });
+    assert.deepEqual(eins.map((p) => p.text), ['Morgen um 20:00', 'In 1 Stunde (20:00 Uhr)']);
+    assert.ok(eins.every((p) => a.some((q) => q.id === p.id))); // dieselben Kennungen wie vorher
+    const andererTag = await planeErinnerungen(mitZusaetzen({ '2026-10': { mama: { 21: [db('20:00', '21:00')] } } }), { jetzt: JETZT });
+    const anderePerson = await planeErinnerungen(mitZusaetzen({ '2026-10': { papa: { 20: [db('20:00', '21:00')] } } }, { katalog: { ...standardKatalog(), arten: { ...standardKatalog().arten, papa: standardKatalog().arten.mama } } }), { jetzt: JETZT });
+    for (const anders of [andererTag, anderePerson]) {
+      assert.equal(anders.length, 2);
+      assert.ok(anders.every((p) => !eins.some((q) => q.id === p.id)));
+    }
+    // gleiche Art und Beginn, nur ein anderes Ende: eine Erinnerung, nicht zwei gleiche
+    assert.equal((await planeErinnerungen(mitZusaetzen({ '2026-10': { mama: { 20: [db('18:00'), db('18:00', '20:00')] } } }), { jetzt: JETZT })).length, 2);
+  });
+
+  test('nur im Fenster; ohne Katalog gelten die Standardarten; unbekannte Art → nichts', async () => {
+    const plan = await planeErinnerungen(mitZusaetzen({ '2026-10': { mama: { 14: [db('08:30'), db('09:30')], 16: [{ k: '9', von: '10:00', bis: '11:00' }] } } }), { jetzt: JETZT });
+    assert.deepEqual(kurz(plan), [
+      ['stunde', '2026-10-14T06:30:00.000Z', 'In 1 Stunde (09:30 Uhr)'], // 08:30 ganz und „1 Tag vorher“ von 09:30 sind schon vorbei
+    ]);
+    assert.deepEqual(await planeErinnerungen(mitZusaetzen({ '2026-10': { mama: { 20: [db('18:00')] } } }), { jetzt: JETZT, tage: 1 }), []);
+  });
+
+  test('nur Monate vom laufenden bis zwei danach (die vorgeladenen, auf jedem Telefon gleich)', async () => {
+    const zusaetze = { '2026-10': { mama: { 30: [db('18:00')] } }, '2026-11': { mama: { 20: [db('18:00')] } }, '2027-01': { mama: { 1: [db('18:00')] } } };
+    const plan = await planeErinnerungen(mitZusaetzen(zusaetze), { jetzt: new Date('2026-11-01T08:00:00+01:00'), tage: 62 });
+    assert.deepEqual(kurz(plan).map((x) => x[1]), ['2026-11-19T17:00:00.000Z', '2026-11-20T16:00:00.000Z', '2026-12-31T17:00:00.000Z', '2027-01-01T16:00:00.000Z']);
+    const vorher = await planeErinnerungen(mitZusaetzen(zusaetze), { jetzt: new Date('2026-10-31T20:00:00+01:00'), tage: 62 });
+    assert.equal(vorher.length, 2);
+    assert.ok(vorher.every((p) => p.um < Date.parse('2026-12-01'))); // Jänner ist im Oktober noch nicht vorgeladen: zählt erst ab November
+  });
+
+  test('eine Uhrzeit, die es in Wien nicht gibt (Zeitumstellung im März), verhindert nicht den ganzen Plan', async () => {
+    const plan = await planeErinnerungen(mitZusaetzen({ '2027-03': { mama: { 28: [db('02:30', '03:30')], 29: [db('18:00')] } } }), { jetzt: new Date('2027-03-20T08:00:00+01:00'), tage: 20 });
+    assert.deepEqual(kurz(plan).map((x) => x[1]), ['2027-03-28T16:00:00.000Z', '2027-03-29T15:00:00.000Z']);
+  });
+});
+
+describe('Wann der Plan gesendet wird', () => {
+  const geladen = () => ({ ...zustand({ settings: ohneKonto }), geladen: true, nurSnapshot: false });
+  const vorgeladen = (s) => ({ ...s, schicht: { ...s.schicht, vorgeladen: true } });
+
+  test('erst, wenn der Schichtplan vorgeladen ist (sonst fehlten die Erinnerungen an Zusätze und würden gelöscht)', () => {
+    const s = geladen();
+    assert.equal(planQuellen(s), null);
+    assert.equal(planQuellen({ ...vorgeladen(s), nurSnapshot: true }), null);
+    assert.equal(planQuellen({ ...vorgeladen(s), geladen: false }), null);
+    assert.ok(planQuellen(vorgeladen(s)));
+  });
+
+  test('erneut bei Änderungen an Terminen, Einstellungen, Urlaub, Kontostand und Schichtplan; nicht beim bloßen Ladestatus', () => {
+    const s = vorgeladen(geladen());
+    const q = planQuellen(s);
+    assert.equal(quellenGeaendert(q, null), true);
+    assert.equal(quellenGeaendert(planQuellen({ ...s }), q), false);
+    for (const teil of [{ termine: [] }, { settings: { ...s.settings } }, { urlaub: [] }, { konto: { ...s.konto } }, { schicht: { ...s.schicht, monate: {} } }, { schicht: { ...s.schicht, katalog: standardKatalog() } }]) {
+      assert.equal(quellenGeaendert(planQuellen({ ...s, ...teil }), q), true, Object.keys(teil)[0]);
+    }
+    assert.equal(quellenGeaendert(planQuellen({ ...s, schicht: { ...s.schicht, status: { '2026-10': 'laedt' } } }), q), false);
   });
 });
