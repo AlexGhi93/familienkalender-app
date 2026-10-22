@@ -460,6 +460,25 @@ describe('Schichtplan', () => {
     assert.deepEqual([tagK(m, 'papa', 5), tagK(m, 'papa', 6), m.jm], ['B', 'A', JM]);
   });
 
+  test('zwei Telefone, Pinsel: entschieden wird nach dem angezeigten Tag, nicht nach der neuesten Fassung im Kalender', async () => {
+    const { store, adapter, speicher } = aufbau();
+    await store.laden();
+    await store.schichtLaden(JM);
+    await store.schichtSetzen(JM, 6, 'papa', null);
+    await store.schichtSetzen(JM, 7, 'papa', 'A');
+    // Das andere Telefon trägt am 6. schon „A“ ein und macht den 7. frei; hier ist das noch nicht angekommen.
+    await adapter.aendereSchichtMonat(JM, (m) => setzeSchicht(setzeSchicht(m, { person: 'papa', tag: 6, k: 'A' }), { person: 'papa', tag: 7, k: null }));
+    assert.deepEqual([6, 7].map((t) => tagK(store.getState().schicht.monate[JM], 'papa', t)), ['.', 'A']);
+    // Beide Tipps, bevor etwas zurückkommt (nach dem ersten Speichern zeigt der Store den neuesten Stand).
+    await Promise.all([
+      store.schichtPinsel(JM, 6, 'papa', 'A'), // angezeigt leer → eintragen (nicht auf dem schon gespeicherten „A“ umschalten)
+      store.schichtPinsel(JM, 7, 'papa', 'A'), // angezeigt „A“ → frei
+    ]);
+    for (const m of [store.getState().schicht.monate[JM], gespeichert(speicher).schicht.monate[JM]]) {
+      assert.deepEqual([6, 7].map((t) => tagK(m, 'papa', t)), ['A', '.']);
+    }
+  });
+
   test('Monat zu voll: abgelehnt mit der Meldung, nichts ändert sich', async () => {
     let voll = leererMonat(JM);
     fuellen: for (const person of ['papa', 'mama']) {
