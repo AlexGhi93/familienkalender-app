@@ -5,7 +5,9 @@
 // Jede Änderung ist eine reine Funktion (alt → neu), die auf die NEUESTE Fassung angewendet wird; das Argument wird nie verändert,
 // und wo es geht ist sie wiederholbar (zweimal angewendet = einmal angewendet).
 //
-// Art = { k, kuerzel, name, farbe, gruppe: 'dienst'|'zusatz', von?: 'HH:MM', bis?: 'HH:MM', nacht?: true, muster?: 'urlaub', archiv?: true }
+// Art = { k, kuerzel, name, farbe, gruppe: 'dienst'|'zusatz', von?: 'HH:MM', bis?: 'HH:MM', nacht?: true, muster?: 'urlaub'|'offen', erinnern?: boolean, archiv?: true }
+// muster: beide gestreift; 'urlaub' zählt nicht als Dienst, 'offen' (z. B. Ersatzdienst) schon.
+// erinnern: nur bei Zusätzen und dort immer vorhanden (fehlt es in einem alten Katalog → true); bei Diensten gibt es das Feld nicht.
 // k = interne Kennung (ein Zeichen aus SCHLUESSEL_ZEICHEN), je Person eindeutig und NIE wiederverwendet (auch nicht nach dem Archivieren):
 // Kürzel, Name und Farbe lassen sich jederzeit ändern, alte Tage bleiben trotzdem richtig.
 // Monat im Speicher: { v: 1, jm: 'JJJJ-MM', t, n, z } immer vollständig; t[person] hat ein Zeichen je Tag (Zeichen i = Tag i+1, LEER = nichts).
@@ -45,6 +47,7 @@ export const PALETTE = Object.freeze(
 const FARBEN = new Set(PALETTE.map((f) => f.id));
 const ERSATZFARBE = 'grau';
 const GRUPPEN = ['dienst', 'zusatz'];
+const MUSTER = ['urlaub', 'offen'];
 const MONAT = /^\d{4}-(0[1-9]|1[0-2])$/;
 const UHRZEIT = /^([01]\d|2[0-3]):[0-5]\d$/;
 const ZU_GROSS_MONAT = 'Zu viele Notizen in diesem Monat. Bitte einige kürzen oder löschen.';
@@ -60,18 +63,21 @@ function pruefePerson(person) {
   if (!SCHICHT_PERSONEN.includes(person)) throw new Error('Ungültige Person (Papa oder Mama).');
 }
 
-/** Eine Art in fester Feldreihenfolge; leere Zusatzfelder fallen weg. */
-function baueArt({ k, kuerzel, name, farbe, gruppe, von, bis, nacht, muster, archiv }) {
+/** Eine Art in fester Feldreihenfolge; leere Zusatzfelder fallen weg. `erinnern` nur bei Zusätzen (fehlt → true). */
+function baueArt({ k, kuerzel, name, farbe, gruppe, von, bis, nacht, muster, erinnern, archiv }) {
   const art = { k, kuerzel, name, farbe, gruppe };
   if (von) art.von = von;
   if (bis) art.bis = bis;
   if (nacht === true) art.nacht = true;
-  if (muster === 'urlaub') art.muster = 'urlaub';
+  if (MUSTER.includes(muster)) art.muster = muster;
+  if (gruppe === 'zusatz') art.erinnern = erinnern !== false;
   if (archiv === true) art.archiv = true;
   return art;
 }
 
 // ---------------------------------------------------------------- Katalog
+
+const ERSATZDIENST = Object.freeze({ kuerzel: 'E', name: 'Ersatzdienst', farbe: 'gelb', gruppe: 'dienst', muster: 'offen' });
 
 const STANDARD = {
   papa: [
@@ -83,6 +89,7 @@ const STANDARD = {
     { kuerzel: 'Ü', name: 'Überstunde', farbe: 'rot' },
     { kuerzel: 'S', name: 'Schulung', farbe: 'violett' },
     { kuerzel: 'U', name: 'Urlaub', farbe: 'tuerkis', muster: 'urlaub' },
+    ERSATZDIENST, // später dazugekommen: steht hinten, damit die Schlüssel der alten Arten bleiben (siehe katalogErgaenzen)
   ],
   mama: [
     { kuerzel: 'T', name: 'Tagdienst', farbe: 'gelb', von: '07:00', bis: '17:45' },
@@ -121,7 +128,9 @@ function pruefeEntwurf(e) {
   const bis = uhrzeit(e.bis);
   if (gruppe === 'zusatz' && (!von || !bis)) throw new Error('Ein Zusatz braucht Von und Bis.');
   if (!von !== !bis) throw new Error('Bitte Von und Bis eingeben oder beide leer lassen.');
-  return { kuerzel, name, farbe: e.farbe, gruppe, von, bis, nacht: e.nacht === true, muster: e.muster === 'urlaub' ? 'urlaub' : undefined };
+  const muster = MUSTER.includes(e.muster) ? e.muster : undefined;
+  const erinnern = gruppe === 'zusatz' ? e.erinnern !== false : undefined; // bei Diensten ohne Bedeutung → fällt weg
+  return { kuerzel, name, farbe: e.farbe, gruppe, von, bis, nacht: e.nacht === true, muster, erinnern };
 }
 
 function pruefeKuerzelFrei(arten, kuerzel, ausser = null) {
@@ -239,8 +248,13 @@ function leseArt(roh, person, gesehen, warnungen) {
     von = undefined;
     bis = undefined;
   }
+  let erinnern = roh.erinnern;
+  if (gruppe === 'zusatz' && erinnern !== undefined && typeof erinnern !== 'boolean') {
+    warnungen.push(`Ungültige Erinnerung bei „${kuerzel}“ (${person}); eingeschaltet.`);
+    erinnern = true;
+  }
   gesehen.add(roh.k);
-  return baueArt({ k: roh.k, kuerzel, name, farbe, gruppe, von, bis, nacht: roh.nacht, muster: roh.muster, archiv: roh.archiv });
+  return baueArt({ k: roh.k, kuerzel, name, farbe, gruppe, von, bis, nacht: roh.nacht, muster: roh.muster, erinnern, archiv: roh.archiv });
 }
 
 /** Prüft einen gelesenen Katalog nachsichtig. null → Standardarten; Unbrauchbares → Standardarten mit Warnung. */
@@ -264,6 +278,22 @@ export function normalisiereKatalog(roh) {
     arten[person] = gut.slice(0, MAX_ARTEN);
   }
   return { katalog: { v: 1, arten }, warnungen };
+}
+
+/**
+ * Ergänzt einen gespeicherten Katalog um später dazugekommene Standardarten: Papa bekommt einmal „E – Ersatzdienst“ (nächster nie
+ * benutzter Schlüssel), wenn er keine Art mit dem Kürzel E hat – auch keine archivierte, egal ob groß oder klein geschrieben.
+ * Rein und wiederholbar; ist kein Platz mehr (24 Arten, Kalendergröße), bleibt alles wie es ist.
+ */
+export function katalogErgaenzen(katalog) {
+  const unveraendert = { katalog, geaendert: false };
+  const papa = katalog?.arten?.papa;
+  if (!Array.isArray(papa) || papa.some((a) => typeof a?.kuerzel === 'string' && gleichesKuerzel(a.kuerzel, ERSATZDIENST.kuerzel))) return unveraendert;
+  try {
+    return { katalog: artHinzufuegen(katalog, 'papa', ERSATZDIENST), geaendert: true };
+  } catch {
+    return unveraendert; // voll – lieber ohne E als ein Fehler beim Öffnen
+  }
 }
 
 /** Der Katalog als Text für die Beschreibung des Kalenderereignisses; zu große Kataloge werden vor dem Schreiben abgelehnt. */

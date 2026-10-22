@@ -733,9 +733,9 @@ test.describe('Schichtarten bearbeiten', () => {
 
     // NM ausblenden: F ↓ springt mit einem Tipp an NM vorbei hinter N
     await blatt(page).getByRole('button', { name: 'Nachmittagsdienst entfernen' }).click();
-    await expect(zeilen(page, 'papa').locator('.sp-art-kuerzel')).toHaveText(['M', 'F', 'N', '2T', 'Ü', 'S', 'U']);
+    await expect(zeilen(page, 'papa').locator('.sp-art-kuerzel')).toHaveText(['M', 'F', 'N', '2T', 'Ü', 'S', 'U', 'E']);
     await blatt(page).getByRole('button', { name: 'Frühdienst nach unten' }).click();
-    await expect(zeilen(page, 'papa').locator('.sp-art-kuerzel')).toHaveText(['M', 'N', 'F', '2T', 'Ü', 'S', 'U']);
+    await expect(zeilen(page, 'papa').locator('.sp-art-kuerzel')).toHaveText(['M', 'N', 'F', '2T', 'Ü', 'S', 'U', 'E']);
     await expect(pinselArten(page).nth(1)).toHaveText('N Nacht');
     await expect(pinselArten(page).nth(2)).toHaveText('F Frühdienst');
   });
@@ -779,7 +779,7 @@ test.describe('Schichtarten bearbeiten', () => {
       await formular(page).getByRole('button', { name: 'Braun' }).click();
       // inzwischen legt das andere Telefon „B Bereitschaft“ an; dieses Telefon zeigt noch die alten Arten
       const fremd = standardKatalog();
-      fremd.arten.papa.push({ k: 'I', kuerzel: 'B', name: 'Bereitschaft', farbe: 'grau', gruppe: 'dienst' });
+      fremd.arten.papa.push({ k: 'J', kuerzel: 'B', name: 'Bereitschaft', farbe: 'grau', gruppe: 'dienst' });
       google.setzeSchichtarten(fremd);
       await formular(page).getByRole('button', { name: 'Speichern' }).click();
       await expect(page.locator('.toast.fehler')).toHaveText('Dieses Kürzel gibt es schon.');

@@ -17,6 +17,7 @@ import {
   artVerschieben,
   istNacht,
   katalogAusText,
+  katalogErgaenzen,
   katalogText,
   leererMonat,
   monatAusText,
@@ -45,6 +46,34 @@ function mitVielenArten(katalog, person, n) {
   return k;
 }
 
+/** Ein gespeicherter Katalog aus der ersten Fassung (0.15.0): Papa A–H ohne E, Mamas DB ohne `erinnern`. */
+function alterKatalog() {
+  const art = (k, kuerzel, name, farbe, mehr = {}) => ({ k, kuerzel, name, farbe, gruppe: 'dienst', ...mehr });
+  return {
+    v: 1,
+    arten: {
+      papa: [
+        art('A', 'F', 'Frühdienst', 'gruen'),
+        art('B', 'M', 'Mittagsdienst', 'orange'),
+        art('C', 'NM', 'Nachmittagsdienst', 'hellblau'),
+        art('D', 'N', 'Nacht', 'dunkelblau', { nacht: true }),
+        art('E', '2T', '2Teiler', 'rosa'),
+        art('F', 'Ü', 'Überstunde', 'rot'),
+        art('G', 'S', 'Schulung', 'violett'),
+        art('H', 'U', 'Urlaub', 'tuerkis', { muster: 'urlaub' }),
+      ],
+      mama: [
+        art('A', 'T', 'Tagdienst', 'gelb', { von: '07:00', bis: '17:45' }),
+        art('B', 'N', 'Nachtdienst', 'dunkellila', { von: '17:30', bis: '07:00' }),
+        art('C', 'S', 'Schulung', 'violett'),
+        art('D', 'Ü', 'Überstunde', 'rot'),
+        art('E', 'U', 'Urlaub', 'tuerkis', { muster: 'urlaub' }),
+        art('F', 'DB', 'Dienstbesprechung', 'schiefer', { gruppe: 'zusatz', von: '18:00', bis: '19:30' }),
+      ],
+    },
+  };
+}
+
 describe('Konstanten', () => {
   test('Personen, Schlüsselzeichen, Palette', () => {
     assert.deepEqual([...SCHICHT_PERSONEN], ['papa', 'mama']);
@@ -71,9 +100,9 @@ describe('Konstanten', () => {
 describe('Katalog', () => {
   test('standardKatalog: Kürzel, Schlüssel, Zeiten, Nacht, Zusatz', () => {
     const k = standardKatalog();
-    assert.deepEqual(kuerzel(k, 'papa'), ['F', 'M', 'NM', 'N', '2T', 'Ü', 'S', 'U']);
+    assert.deepEqual(kuerzel(k, 'papa'), ['F', 'M', 'NM', 'N', '2T', 'Ü', 'S', 'U', 'E']);
     assert.deepEqual(kuerzel(k, 'mama'), ['T', 'N', 'S', 'Ü', 'U', 'DB']);
-    assert.equal(k.arten.papa.map((a) => a.k).join(''), 'ABCDEFGH');
+    assert.equal(k.arten.papa.map((a) => a.k).join(''), 'ABCDEFGHI');
     assert.equal(k.arten.mama.map((a) => a.k).join(''), 'ABCDEF');
     const mama = Object.fromEntries(k.arten.mama.map((a) => [a.kuerzel, a]));
     const papa = Object.fromEntries(k.arten.papa.map((a) => [a.kuerzel, a]));
@@ -91,6 +120,11 @@ describe('Katalog', () => {
     assert.equal(mama.DB.bis, '19:30');
     assert.equal(papa.U.muster, 'urlaub');
     assert.equal(mama.U.muster, 'urlaub');
+    // E – Ersatzdienst: gelb, gestreift wie Urlaub, aber ein Dienst; nach den bisherigen Arten (Schlüssel I)
+    assert.deepEqual(papa.E, { k: 'I', kuerzel: 'E', name: 'Ersatzdienst', farbe: 'gelb', gruppe: 'dienst', muster: 'offen' });
+    // Zusätze haben `erinnern`, Dienste nicht
+    assert.equal(mama.DB.erinnern, true);
+    assert.ok([...k.arten.papa, ...k.arten.mama].filter((a) => a.gruppe === 'dienst').every((a) => !('erinnern' in a)));
     assert.equal(k.v, 1);
     assert.ok([...k.arten.papa, ...k.arten.mama].every((a) => PALETTE.some((f) => f.id === a.farbe)));
     assert.notEqual(standardKatalog(), standardKatalog()); // jedes Mal ein neues Objekt
@@ -111,15 +145,15 @@ describe('Katalog', () => {
     assert.doesNotThrow(() => artHinzufuegen(k, 'papa', neueArt({ kuerzel: 'DB' })));
 
     const neu = artHinzufuegen(k, 'papa', neueArt({ kuerzel: ' X ', name: '  Bereitschaft  ', von: '', bis: '' }));
-    assert.deepEqual(neu.arten.papa.at(-1), { k: 'I', kuerzel: 'X', name: 'Bereitschaft', farbe: 'braun', gruppe: 'dienst' });
+    assert.deepEqual(neu.arten.papa.at(-1), { k: 'J', kuerzel: 'X', name: 'Bereitschaft', farbe: 'braun', gruppe: 'dienst' });
     assert.deepEqual(neu.arten.mama, k.arten.mama);
 
     const zusatz = artHinzufuegen(k, 'papa', neueArt({ kuerzel: 'Z', gruppe: 'zusatz', von: '18:30', bis: '20:00' }));
-    assert.deepEqual(zusatz.arten.papa.at(-1), { k: 'I', kuerzel: 'Z', name: 'Extra', farbe: 'braun', gruppe: 'zusatz', von: '18:30', bis: '20:00' });
+    assert.deepEqual(zusatz.arten.papa.at(-1), { k: 'J', kuerzel: 'Z', name: 'Extra', farbe: 'braun', gruppe: 'zusatz', von: '18:30', bis: '20:00', erinnern: true });
   });
 
   test('höchstens 24 Arten je Person (archivierte zählen mit)', () => {
-    const k = mitVielenArten(standardKatalog(), 'papa', MAX_ARTEN - 8);
+    const k = mitVielenArten(standardKatalog(), 'papa', MAX_ARTEN - 9);
     assert.equal(k.arten.papa.length, 24);
     assert.throws(() => artHinzufuegen(k, 'papa', neueArt({ kuerzel: 'ZZ' })), { message: 'Höchstens 24 Schichtarten pro Person.' });
     const archiviert = artArchivieren(k, 'papa', 'A', true);
@@ -129,24 +163,24 @@ describe('Katalog', () => {
 
   test('Schlüssel werden nie wiederverwendet; Archivieren und Wiederherstellen', () => {
     const mitI = artHinzufuegen(standardKatalog(), 'papa', neueArt({ kuerzel: 'BE', name: 'Bereitschaft' }));
-    assert.equal(artFuer(mitI, 'papa', 'I').kuerzel, 'BE');
-    const archiviert = artArchivieren(mitI, 'papa', 'I', true);
+    assert.equal(artFuer(mitI, 'papa', 'J').kuerzel, 'BE');
+    const archiviert = artArchivieren(mitI, 'papa', 'J', true);
     const mitJ = artHinzufuegen(archiviert, 'papa', neueArt({ kuerzel: 'RE', name: 'Reserve' }));
-    assert.equal(mitJ.arten.papa.at(-1).k, 'J');
-    assert.equal(artFuer(mitJ, 'papa', 'I').kuerzel, 'BE');
-    assert.equal(artFuer(mitJ, 'papa', 'I').archiv, true);
-    assert.ok(!aktiveArten(mitJ, 'papa').some((a) => a.k === 'I'));
-    assert.ok(aktiveArten(mitJ, 'papa').some((a) => a.k === 'J'));
+    assert.equal(mitJ.arten.papa.at(-1).k, 'K');
+    assert.equal(artFuer(mitJ, 'papa', 'J').kuerzel, 'BE');
+    assert.equal(artFuer(mitJ, 'papa', 'J').archiv, true);
+    assert.ok(!aktiveArten(mitJ, 'papa').some((a) => a.k === 'J'));
+    assert.ok(aktiveArten(mitJ, 'papa').some((a) => a.k === 'K'));
     // auch das Kürzel einer archivierten Art bleibt vergeben (sonst gäbe es beim Wiederherstellen zwei gleiche)
     assert.throws(() => artHinzufuegen(mitJ, 'papa', neueArt({ kuerzel: 'be' })), { message: 'Dieses Kürzel gibt es schon.' });
-    const zurueck = artArchivieren(mitJ, 'papa', 'I', false);
-    assert.equal(artFuer(zurueck, 'papa', 'I').archiv, undefined);
-    assert.ok(aktiveArten(zurueck, 'papa').some((a) => a.k === 'I'));
+    const zurueck = artArchivieren(mitJ, 'papa', 'J', false);
+    assert.equal(artFuer(zurueck, 'papa', 'J').archiv, undefined);
+    assert.ok(aktiveArten(zurueck, 'papa').some((a) => a.k === 'J'));
     // wiederholbar
-    assert.deepEqual(artArchivieren(archiviert, 'papa', 'I', true), archiviert);
-    assert.deepEqual(artArchivieren(mitI, 'papa', 'I', false), mitI);
+    assert.deepEqual(artArchivieren(archiviert, 'papa', 'J', true), archiviert);
+    assert.deepEqual(artArchivieren(mitI, 'papa', 'J', false), mitI);
     assert.equal(artFuer(mitI, 'papa', 'z'), null);
-    assert.equal(artFuer(mitI, 'mama', 'I'), null);
+    assert.equal(artFuer(mitI, 'mama', 'J'), null);
   });
 
   test('aktiveArten nach Gruppe', () => {
@@ -179,10 +213,10 @@ describe('Katalog', () => {
 
   test('artVerschieben: tauscht mit dem Nachbarn, an den Enden ändert sich nichts', () => {
     const k = standardKatalog();
-    assert.deepEqual(kuerzel(artVerschieben(k, 'papa', 'B', -1), 'papa'), ['M', 'F', 'NM', 'N', '2T', 'Ü', 'S', 'U']);
-    assert.deepEqual(kuerzel(artVerschieben(k, 'papa', 'B', 1), 'papa'), ['F', 'NM', 'M', 'N', '2T', 'Ü', 'S', 'U']);
+    assert.deepEqual(kuerzel(artVerschieben(k, 'papa', 'B', -1), 'papa'), ['M', 'F', 'NM', 'N', '2T', 'Ü', 'S', 'U', 'E']);
+    assert.deepEqual(kuerzel(artVerschieben(k, 'papa', 'B', 1), 'papa'), ['F', 'NM', 'M', 'N', '2T', 'Ü', 'S', 'U', 'E']);
     assert.deepEqual(artVerschieben(k, 'papa', 'A', -1), k);
-    assert.deepEqual(artVerschieben(k, 'papa', 'H', 1), k);
+    assert.deepEqual(artVerschieben(k, 'papa', 'I', 1), k);
     assert.deepEqual(artVerschieben(k, 'mama', 'F', 1), k);
   });
 
@@ -195,7 +229,13 @@ describe('Katalog', () => {
     artVerschieben(k, 'papa', 'B', -1);
     normalisiereKatalog(k);
     katalogText(k);
+    katalogErgaenzen(k);
+    const alt = alterKatalog();
+    const altVorher = kopie(alt);
+    katalogErgaenzen(alt);
+    normalisiereKatalog(alt);
     assert.deepEqual(k, vorher);
+    assert.deepEqual(alt, altVorher);
   });
 
   test('normalisiereKatalog: tolerant, mit Warnungen', () => {
@@ -243,6 +283,101 @@ describe('Katalog', () => {
     assert.deepEqual(kaputt.katalog, standardKatalog());
     assert.ok(kaputt.warnungen.length > 0);
     assert.deepEqual(katalogAusText('').katalog, standardKatalog());
+  });
+
+  test('Muster „offen“: wie Urlaub gestreift, im Formular wählbar; unbekanntes Muster fällt weg', () => {
+    const k = standardKatalog();
+    const offen = artHinzufuegen(k, 'mama', neueArt({ kuerzel: 'BE', name: 'Bereitschaft', muster: 'offen' }));
+    assert.equal(offen.arten.mama.at(-1).muster, 'offen');
+    assert.equal(artHinzufuegen(k, 'mama', neueArt({ muster: 'kariert' })).arten.mama.at(-1).muster, undefined);
+    assert.equal(artFuer(artAendern(k, 'papa', 'A', { muster: 'offen' }), 'papa', 'A').muster, 'offen');
+    assert.equal(artFuer(artAendern(k, 'papa', 'I', { muster: undefined }), 'papa', 'I').muster, undefined);
+    assert.equal(artFuer(artAendern(k, 'papa', 'I', { muster: 'urlaub' }), 'papa', 'I').muster, 'urlaub');
+    // gelesen: 'offen' bleibt, Unbekanntes fällt weg
+    const art = (s, muster) => ({ k: s, kuerzel: s, name: `Art ${s}`, farbe: 'gelb', gruppe: 'dienst', muster });
+    const r = normalisiereKatalog({ v: 1, arten: { papa: [art('A', 'offen'), art('B', 'urlaub'), art('C', 'kariert')], mama: [] } });
+    assert.deepEqual(r.katalog.arten.papa.map((a) => a.muster), ['offen', 'urlaub', undefined]);
+  });
+
+  test('erinnern: nur bei Zusätzen; fehlt → true; im Formular setzbar, bei Diensten ignoriert', () => {
+    const k = standardKatalog();
+    const zusatz = (ueber = {}) => neueArt({ kuerzel: 'BS', gruppe: 'zusatz', von: '20:00', bis: '21:00', ...ueber });
+    assert.equal(artHinzufuegen(k, 'papa', zusatz()).arten.papa.at(-1).erinnern, true);
+    assert.equal(artHinzufuegen(k, 'papa', zusatz({ erinnern: true })).arten.papa.at(-1).erinnern, true);
+    assert.equal(artHinzufuegen(k, 'papa', zusatz({ erinnern: false })).arten.papa.at(-1).erinnern, false);
+    // bei einem Dienst fällt das Feld weg
+    assert.ok(!('erinnern' in artHinzufuegen(k, 'papa', neueArt({ erinnern: false })).arten.papa.at(-1)));
+    assert.ok(!('erinnern' in artFuer(artAendern(k, 'papa', 'A', { erinnern: true }), 'papa', 'A')));
+    assert.equal(artAendern(k, 'papa', 'A', { erinnern: true }), k); // nichts geändert
+    // ändern: aus, wieder an; wiederholbar
+    const aus = artAendern(k, 'mama', 'F', { erinnern: false });
+    assert.deepEqual(artFuer(aus, 'mama', 'F'), { k: 'F', kuerzel: 'DB', name: 'Dienstbesprechung', farbe: 'schiefer', gruppe: 'zusatz', von: '18:00', bis: '19:30', erinnern: false });
+    assert.equal(artAendern(aus, 'mama', 'F', { erinnern: false }), aus);
+    assert.equal(artFuer(artAendern(aus, 'mama', 'F', { erinnern: true }), 'mama', 'F').erinnern, true);
+    // andere Änderungen lassen `erinnern` stehen
+    assert.equal(artFuer(artAendern(aus, 'mama', 'F', { name: 'Besprechung' }), 'mama', 'F').erinnern, false);
+    // Zusatz → Dienst: Feld fällt weg; Dienst → Zusatz: wieder an
+    const alsDienst = artAendern(aus, 'mama', 'F', { gruppe: 'dienst' });
+    assert.ok(!('erinnern' in artFuer(alsDienst, 'mama', 'F')));
+    assert.equal(artFuer(artAendern(alsDienst, 'mama', 'F', { gruppe: 'zusatz' }), 'mama', 'F').erinnern, true);
+
+    // gelesen: Zusatz ohne `erinnern` → true (ohne Warnung), false bleibt, bei Diensten fällt es weg
+    const roh = {
+      v: 1,
+      arten: {
+        papa: [{ k: 'A', kuerzel: 'F', name: 'Früh', farbe: 'gruen', gruppe: 'dienst', erinnern: true }],
+        mama: [
+          { k: 'A', kuerzel: 'DB', name: 'Dienstbesprechung', farbe: 'schiefer', gruppe: 'zusatz', von: '18:00', bis: '19:30' },
+          { k: 'B', kuerzel: 'BS', name: 'Besuch', farbe: 'braun', gruppe: 'zusatz', von: '20:00', bis: '21:00', erinnern: false },
+        ],
+      },
+    };
+    const r = normalisiereKatalog(roh);
+    assert.deepEqual(r.warnungen, []);
+    assert.ok(!('erinnern' in r.katalog.arten.papa[0]));
+    assert.deepEqual(r.katalog.arten.mama.map((a) => a.erinnern), [true, false]);
+    // unlesbarer Wert → true mit Warnung
+    const komisch = normalisiereKatalog({ v: 1, arten: { papa: [], mama: [{ ...roh.arten.mama[1], erinnern: 'nein' }] } });
+    assert.equal(komisch.katalog.arten.mama[0].erinnern, true);
+    assert.ok(komisch.warnungen.length > 0);
+    // hin und zurück über den Text
+    assert.deepEqual(katalogAusText(katalogText(aus)).katalog, aus);
+  });
+
+  test('katalogErgaenzen: E einmal bei Papa anfügen (nächster freier Schlüssel), sonst nichts', () => {
+    // ein gespeicherter Katalog aus der alten Fassung wird nach Lesen + Ergänzen genau der heutige Standard
+    const gelesen = normalisiereKatalog(alterKatalog()).katalog;
+    const r = katalogErgaenzen(gelesen);
+    assert.equal(r.geaendert, true);
+    assert.deepEqual(r.katalog, standardKatalog());
+    assert.equal(r.katalog.arten.mama, gelesen.arten.mama);
+    // wiederholbar: beim zweiten Mal nichts
+    const zweimal = katalogErgaenzen(r.katalog);
+    assert.equal(zweimal.geaendert, false);
+    assert.equal(zweimal.katalog, r.katalog);
+    assert.equal(katalogErgaenzen(standardKatalog()).geaendert, false);
+
+    // eigene Arten und archivierte Schlüssel: E bekommt den ersten nie benutzten Schlüssel
+    let eigen = artHinzufuegen(gelesen, 'papa', neueArt({ kuerzel: 'BE', name: 'Bereitschaft' })); // I
+    eigen = artArchivieren(eigen, 'papa', 'I', true);
+    const mitE = katalogErgaenzen(eigen);
+    assert.equal(mitE.geaendert, true);
+    assert.deepEqual(mitE.katalog.arten.papa.at(-1), { k: 'J', kuerzel: 'E', name: 'Ersatzdienst', farbe: 'gelb', gruppe: 'dienst', muster: 'offen' });
+    assert.deepEqual(mitE.katalog.arten.papa.slice(0, -1), eigen.arten.papa);
+
+    // es gibt schon ein „E“ (auch klein geschrieben, auch archiviert) → nichts
+    const kleinesE = artHinzufuegen(gelesen, 'papa', neueArt({ kuerzel: 'e', name: 'Eigenes' }));
+    assert.deepEqual(katalogErgaenzen(kleinesE), { katalog: kleinesE, geaendert: false });
+    const archiviertesE = artArchivieren(kleinesE, 'papa', 'I', true);
+    assert.deepEqual(katalogErgaenzen(archiviertesE), { katalog: archiviertesE, geaendert: false });
+    // Mamas „E“ zählt nicht – nur Papa bekommt E
+    const mamaE = artHinzufuegen(gelesen, 'mama', neueArt({ kuerzel: 'E', name: 'Eigenes' }));
+    assert.equal(katalogErgaenzen(mamaE).geaendert, true);
+    assert.ok(!katalogErgaenzen(gelesen).katalog.arten.mama.some((a) => a.kuerzel === 'E'));
+
+    // kein Platz mehr (24 Arten) → nichts, kein Fehler
+    const voll = mitVielenArten(gelesen, 'papa', MAX_ARTEN - 8);
+    assert.deepEqual(katalogErgaenzen(voll), { katalog: voll, geaendert: false });
   });
 
   test('katalogText lehnt zu große Kataloge ab', () => {
@@ -500,5 +635,10 @@ describe('Monat', () => {
     assert.deepEqual(monatZaehlung(leererMonat('2026-10'), k, 'papa'), { dienste: 0, jeArt: [] });
     // archivierte Arten werden weiter gezählt (alte Tage bleiben richtig)
     assert.equal(monatZaehlung(m, artArchivieren(k, 'papa', 'A', true), 'papa').dienste, 5);
+    // E (Ersatzdienst, gestreift „offen“) zählt als Dienst, Urlaub weiter nicht
+    const mitE = setzeSchicht(setzeSchicht(m, { person: 'papa', tag: 9, k: 'I' }), { person: 'papa', tag: 10, k: 'I' });
+    const z = monatZaehlung(mitE, k, 'papa');
+    assert.equal(z.dienste, 7);
+    assert.deepEqual(z.jeArt.at(-1), { k: 'I', kuerzel: 'E', anzahl: 2 });
   });
 });

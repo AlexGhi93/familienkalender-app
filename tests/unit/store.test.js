@@ -530,20 +530,20 @@ describe('Schichtplan', () => {
     assert.equal(tagK(gespeichert(speicher).schicht.monate[JM], 'papa', 6), '.');
   });
 
-  test('Schichtarten: neue Art bekommt „I“ (ausgehend von den Standardarten), ändern, archivieren, verschieben', async () => {
+  test('Schichtarten: neue Art bekommt „J“ (ausgehend von den Standardarten), ändern, archivieren, verschieben', async () => {
     const { store, speicher } = aufbau({ speicher: ohneSchicht() });
     await store.laden();
     assert.equal(store.getState().schicht.katalog, null);
-    assert.deepEqual(await store.schichtArtSpeichern('papa', { kuerzel: 'BS', name: 'Bereitschaft', farbe: 'grau' }), { ok: true, k: 'I' });
+    assert.deepEqual(await store.schichtArtSpeichern('papa', { kuerzel: 'BS', name: 'Bereitschaft', farbe: 'grau' }), { ok: true, k: 'J' });
     const papa = () => store.getState().schicht.katalog.arten.papa;
-    assert.deepEqual(papa().at(-1), { k: 'I', kuerzel: 'BS', name: 'Bereitschaft', farbe: 'grau', gruppe: 'dienst' });
+    assert.deepEqual(papa().at(-1), { k: 'J', kuerzel: 'BS', name: 'Bereitschaft', farbe: 'grau', gruppe: 'dienst' });
     assert.deepEqual(gespeichert(speicher).schicht.katalog, store.getState().schicht.katalog);
-    assert.deepEqual(await store.schichtArtSpeichern('papa', { kuerzel: 'BS', name: 'Rufbereitschaft', farbe: 'grau' }, 'I'), { ok: true, k: 'I' });
+    assert.deepEqual(await store.schichtArtSpeichern('papa', { kuerzel: 'BS', name: 'Rufbereitschaft', farbe: 'grau' }, 'J'), { ok: true, k: 'J' });
     assert.equal(papa().at(-1).name, 'Rufbereitschaft');
-    assert.deepEqual(await store.schichtArtArchivieren('papa', 'I', true), { ok: true });
+    assert.deepEqual(await store.schichtArtArchivieren('papa', 'J', true), { ok: true });
     assert.equal(papa().at(-1).archiv, true);
-    assert.deepEqual(await store.schichtArtVerschieben('papa', 'I', -1), { ok: true });
-    assert.deepEqual(papa().slice(-2).map((a) => a.k), ['I', 'H']);
+    assert.deepEqual(await store.schichtArtVerschieben('papa', 'J', -1), { ok: true });
+    assert.deepEqual(papa().slice(-2).map((a) => a.k), ['J', 'I']);
     assert.deepEqual(gespeichert(speicher).schicht.katalog, store.getState().schicht.katalog);
     const vorher = store.getState();
     await assert.rejects(store.schichtArtSpeichern('papa', { kuerzel: 'F', name: 'Doppelt', farbe: 'grau' }), /Kürzel gibt es schon/);
@@ -746,7 +746,7 @@ describe('Schichtplan', () => {
     store.subscribe((s) => zwischenstaende.push(s.schicht.katalog));
     await tor.weiter();
     await tor.weiter();
-    assert.deepEqual(await Promise.all([eins, zwei]), [{ ok: true, k: 'I' }, { ok: true, k: 'G' }]);
+    assert.deepEqual(await Promise.all([eins, zwei]), [{ ok: true, k: 'J' }, { ok: true, k: 'G' }]);
     assert.deepEqual([tor.z.aufrufe, tor.z.hoechstens], [2, 1]);
     for (const k of zwischenstaende) assert.deepEqual([k.arten.papa.at(-1).kuerzel, k.arten.mama.at(-1).kuerzel], ['BS', 'BS']);
     assert.deepEqual(gespeichert(speicher).schicht.katalog, store.getState().schicht.katalog);
@@ -756,7 +756,7 @@ describe('Schichtplan', () => {
     await store.laden();
     await store.schichtLaden(JM);
     // das andere Telefon legt „B“ an, dieses Telefon hat den alten Katalog noch angezeigt
-    await adapter.aendereSchichtarten((kat) => ({ ...kat, arten: { ...kat.arten, papa: [...kat.arten.papa, { k: 'I', kuerzel: 'B', name: 'Bergbahn', farbe: 'braun', gruppe: 'dienst' }] } }));
+    await adapter.aendereSchichtarten((kat) => ({ ...kat, arten: { ...kat.arten, papa: [...kat.arten.papa, { k: 'J', kuerzel: 'B', name: 'Bergbahn', farbe: 'braun', gruppe: 'dienst' }] } }));
     assert.equal(store.getState().schicht.katalog.arten.papa.some((a) => a.kuerzel === 'B'), false);
     const r = await store.schichtArtSpeichern('papa', { kuerzel: 'b', name: 'Bereitschaft', farbe: 'grau' });
     assert.deepEqual(r, { ok: false, fehler: 'Dieses Kürzel gibt es schon.' });
