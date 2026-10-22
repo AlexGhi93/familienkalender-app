@@ -25,7 +25,7 @@ test.describe('Fixkosten im Konto-Tab', () => {
   test('Umschalter Kontostand · Fixkosten: gemerkt nach dem Neuladen; der Kontostand bleibt wie er war', async ({ page }) => {
     await starteDemo(page, { route: '#/konto' });
     const umschalter = page.getByRole('group', { name: 'Ansicht im Konto' });
-    await expect(umschalter.getByRole('button')).toHaveText(['Kontostand', 'Fixkosten']);
+    await expect(umschalter.getByRole('button')).toHaveText(['Kontostand', 'Fixkosten', 'Sparziele']);
     await expect(umschalter.getByRole('button', { name: 'Kontostand' })).toHaveAttribute('aria-pressed', 'true');
     await expect(page.getByRole('heading', { name: 'Kontostand 💶' })).toBeVisible();
     await expect(page).toHaveTitle('Familienkalender · Kontostand');

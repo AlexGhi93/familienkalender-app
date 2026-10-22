@@ -3739,7 +3739,7 @@ html:has(.screen.einkauf) {
   font-size: 0.8rem;
 }
 
-/* ---------- Konto: Umschalter „Kontostand · Fixkosten“ ---------- */
+/* ---------- Konto: Umschalter „Kontostand · Fixkosten · Sparziele“ ---------- */
 
 .konto-segment {
   display: flex;
@@ -3751,13 +3751,15 @@ html:has(.screen.einkauf) {
 
 .konto-segment-knopf {
   flex: 1;
+  min-width: 0;
   min-height: 44px;
+  padding: 0 4px;
   border: 0;
   border-radius: 999px;
   background: transparent;
   color: var(--ink-2);
   font-weight: 800;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
 }
 
 .konto-segment-knopf.aktiv {
@@ -4110,4 +4112,237 @@ html:has(.screen.einkauf) {
 
 .fk-tipp {
   font-size: 0.82rem;
+}
+
+/* ---------- Sparziele ---------- */
+
+.sz-stand {
+  margin-top: 6px;
+}
+
+.sz-ziel,
+.sz-frei {
+  gap: 6px;
+}
+
+.sz-ziel-kopf {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.sz-ziel-titel {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 2px 10px;
+  overflow-wrap: anywhere;
+}
+
+.sz-ziel-titel small {
+  color: var(--ink-2);
+  font-weight: 800;
+  font-size: 0.8rem;
+}
+
+.sz-aendern {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  margin: -8px -6px -6px 0;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--akzent) 12%, var(--karte));
+  color: var(--ink);
+  font-size: 1.1rem;
+}
+
+.sz-aendern:disabled {
+  opacity: 0.45;
+}
+
+.sz-balken {
+  height: 12px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--akzent) 14%, var(--karte));
+}
+
+.sz-balken span {
+  display: block;
+  height: 100%;
+  min-width: 0;
+  border-radius: 6px;
+}
+
+.sz-raster {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 10px;
+  font-size: 0.88rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.sz-raster b {
+  text-align: right;
+}
+
+.sz-status {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 2px 9px;
+  border-radius: 8px;
+  border: 1px solid var(--c, var(--linie));
+  background: color-mix(in srgb, var(--c, var(--linie)) 18%, var(--karte));
+  color: var(--ink);
+  font-size: 0.8rem;
+  font-weight: 900;
+}
+
+.sz-status.ok {
+  --c: var(--kita);
+}
+
+.sz-status.warn {
+  --c: var(--gefahr);
+}
+
+.sz-status.neu {
+  --c: var(--akzent);
+}
+
+.sz-status.fertig {
+  --c: var(--familie);
+}
+
+.sz-frei {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--akzent) 55%, transparent);
+  background: color-mix(in srgb, var(--akzent) 7%, var(--karte));
+}
+
+.sz-frei-betrag {
+  font-size: 1.3rem;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+
+.sz-monat {
+  gap: 0;
+  padding: 12px 14px;
+  font-size: 0.88rem;
+}
+
+.sz-monat-titel {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 6px;
+  font-size: 0.98rem;
+}
+
+.sz-delta {
+  white-space: nowrap;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+
+.sz-delta.plus {
+  color: color-mix(in srgb, var(--kita) 72%, var(--ink)); /* dunkler (hell) bzw. heller (dunkel): Text ≥ 4,5:1 */
+}
+
+.sz-delta.minus {
+  color: var(--gefahr);
+}
+
+.sz-delta.leer {
+  color: var(--ink-2);
+  font-weight: 700;
+}
+
+.sz-zeile {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  padding: 4px 0;
+  border-top: 1px solid var(--linie);
+}
+
+.sz-zeile span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.sz-zeile b {
+  flex: none;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.sz-abschluss,
+.sz-verschoben {
+  color: var(--ink-2);
+}
+
+.sz-hinweis {
+  margin-top: 4px;
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.sz-abgeschlossen {
+  gap: 8px;
+}
+
+.sz-fertig {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--linie);
+}
+
+.sz-fertig.aus .fk-n b {
+  color: var(--ink-2);
+}
+
+.sz-box {
+  padding: 10px 12px;
+}
+
+.sz-vorschau {
+  font-size: 0.92rem;
+}
+
+.sz-datum {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 8px 10px;
+}
+
+.sz-wahlen {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 10px 0 14px;
+}
+
+.sz-wahl {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-height: 56px;
+  text-align: left;
+  color: var(--ink);
+}
+
+.sz-wahl small {
+  color: var(--ink-2);
+  font-weight: 600;
 }

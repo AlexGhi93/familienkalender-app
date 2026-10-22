@@ -39,7 +39,7 @@ const SEITEN = {
   mehr: mehrScreen,
   einkauf: einkaufScreen, // Registerkarte; auch erreichbar von „Heute“ (Karte) und „Neu“ (Kachel)
   verlauf: verlaufScreen, // erreichbar von „Mehr“
-  konto: kontoScreen, // Registerkarte „Konto“ mit „Kontostand · Fixkosten“; auch erreichbar von „Mehr“, „Heute“ (am letzten Tag) und den Erinnerungen (#/konto/kontostand, #/konto/fixkosten)
+  konto: kontoScreen, // Registerkarte „Konto“ mit „Kontostand · Fixkosten · Sparziele“; auch erreichbar von „Mehr“, „Heute“ (am letzten Tag) und den Erinnerungen (#/konto/kontostand, #/konto/fixkosten, #/konto/sparziele)
   app: appScreen, // „Konto & App“: erreichbar von „Mehr“
 };
 
@@ -79,6 +79,7 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
   let schichtRueckkehr = null; // Zeitpunkt (ms) des letzten Neu-Holens beim Zurückkehren in die App
   let letzteSeite = null; // zuletzt gezeichnete Seite (für `ui.seiteBetreten`)
   let fixAngefragt = false; // wurden die Fixkosten beim Öffnen ihrer Ansicht schon gelesen? (zurückgesetzt beim Verlassen)
+  let zieleAngefragt = false; // wurden die Sparziele beim Öffnen ihrer Ansicht schon gelesen? (zurückgesetzt beim Verlassen)
   const versionPruefen = async () => {
     if (neueVersion || !(await istNeueVersionVerfuegbar({ aktuell: VERSION }))) return;
     neueVersion = true;
@@ -129,7 +130,7 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
     neu: { auswahl: null },
     urlaubJahr: 0, // gewähltes Kindergartenjahr auf der Urlaub-Seite (0 = aktuelles)
     schicht: { jm: store.heute().slice(0, 7), filter: schichtFilterLesen(), pinsel: null }, // angezeigter Monat, Filter (je Telefon gemerkt), Pinsel
-    kontoAnsicht: kontoAnsichtLesen(), // „Kontostand“ oder „Fixkosten“ im Konto-Tab (je Telefon gemerkt)
+    kontoAnsicht: kontoAnsichtLesen(), // „Kontostand“, „Fixkosten“ oder „Sparziele“ im Konto-Tab (je Telefon gemerkt)
     fixFilter: 'alle', // Filter der Fixkosten (Alle · Papa · Mama · Gemeinsam · Kind)
     verlauf: { typ: 'alle', jahr: null, text: '', von: null, laedt: false }, // Filter und geladener Bereich des Verlaufs
     titel: () => 'Familienkalender',
@@ -162,11 +163,14 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
         else schichtAngefragt = null; // beim nächsten Öffnen frisch laden
         if (seite === 'konto' && ui.kontoAnsicht === 'fixkosten') ui.fixLaden();
         else fixAngefragt = false; // beim nächsten Öffnen der Fixkosten frisch lesen
+        if (seite === 'konto' && ui.kontoAnsicht === 'sparziele') ui.zieleLaden();
+        else zieleAngefragt = false; // beim nächsten Öffnen der Sparziele frisch lesen
       }
       inhalt.scrollTop = alt;
       fenster.scrollTo(0, scrollY);
       fuelle(leiste, TABS.map(([id, symbol, text]) => tab(id, symbol, text, seite)));
-      const seitenTitel = seite === 'konto' && ui.kontoAnsicht === 'fixkosten' ? 'Fixkosten' : (SEITEN_TITEL[seite] ?? TABS.find(([id]) => id === seite)?.[2]);
+      const kontoTitel = { fixkosten: 'Fixkosten', sparziele: 'Sparziele' }[ui.kontoAnsicht];
+      const seitenTitel = seite === 'konto' && kontoTitel ? kontoTitel : (SEITEN_TITEL[seite] ?? TABS.find(([id]) => id === seite)?.[2]);
       document.title = `${ui.titel()} · ${seitenTitel}`;
       einkaufAbgleich.pruefen(); // Einkaufsliste offen (und Google verbunden): alle 30 Sekunden nachsehen, sonst nicht
       if (seite === 'schicht' && auth) schichtAbgleich.start(); // nur mit Google: in der Demo gibt es kein anderes Telefon
@@ -194,7 +198,16 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
       fixAngefragt = true;
       store.fixLaden().catch(() => {});
     },
-    /** Ansicht des Konto-Tabs wechseln („kontostand“ | „fixkosten“) und auf diesem Telefon merken. */
+    /**
+     * Sparziele beim Öffnen ihrer Ansicht einmal frisch lesen (das andere Telefon könnte etwas geändert haben); Lesefehler stehen im
+     * Status (store.zieleLaden: alter Stand bleibt, gesperrt bis zum nächsten Lesen).
+     */
+    zieleLaden() {
+      if (zieleAngefragt) return;
+      zieleAngefragt = true;
+      store.zieleLaden?.().catch?.(() => {});
+    },
+    /** Ansicht des Konto-Tabs wechseln („kontostand“ | „fixkosten“ | „sparziele“) und auf diesem Telefon merken. */
     setzeKontoAnsicht(ansicht) {
       ui.kontoAnsicht = kontoAnsichtSpeichern(ansicht);
       ui.rendern();
@@ -318,7 +331,7 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
   });
 
   /**
-   * `#/konto/kontostand` bzw. `#/konto/fixkosten` (Ziel der Erinnerungen): wählt die Ansicht, merkt sie und lässt in der Adresse nur
+   * `#/konto/kontostand`, `#/konto/fixkosten` bzw. `#/konto/sparziele` (Ziel der Erinnerungen und Links): wählt die Ansicht, merkt sie und lässt in der Adresse nur
    * `#/konto` stehen (ohne neuen Verlaufseintrag), damit „Zurück“ und die Tab-Leiste wie gewohnt funktionieren.
    */
   function kontoUnterseiteUebernehmen() {
