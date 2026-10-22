@@ -8,6 +8,7 @@ import { normalisiereTermin } from './termin.js';
 import { urlaubChecksAbgleich, urlaubChecksWunsch } from './urlaub-check.js';
 import { entferneExtra, entferneStand, fuegeExtraHinzu, leeresKonto, monatVor, normalisiereKonto, setzeStand } from '../domain/konto.js';
 import { artAendern, artArchivieren, artHinzufuegen, artVerschieben, katalogErgaenzen, leererMonat, normalisiereKatalog, normalisiereMonat, schaltePinsel, schichtAm, setzeNotiz, setzeSchicht, standardKatalog, tageImMonat, vorladeMonate, zusatzEntfernen, zusatzHinzufuegen } from '../domain/schicht.js';
+import { FIX_SHARDS, leererShard, neueFixId, normalisiereShard, postenAnzahlPruefen, postenArchivieren, postenLoeschen, postenPruefen, postenSetzen, postenWiederherstellen, shardFuer } from '../domain/fixkosten.js';
 import { MAX_SERIEN_WOCHEN, naechsterWochentag, wochenSerie } from './serie.js';
 
 const KITA_TYPEN = ['kita_essen', 'kita_ohne'];
@@ -23,6 +24,9 @@ const TEXT_FEHLER = 'Speichern hat nicht geklappt. Bitte noch einmal versuchen.'
 const FACHLICH = new WeakSet();
 const TEXT_ANMELDEN = 'Bitte neu anmelden: deine Änderung wird danach gespeichert.';
 const TEXT_UNKLAR = 'Möglicherweise teilweise gespeichert – bitte aktualisieren.';
+const TEXT_FIX_NICHT_GELESEN = 'Die Fixkosten konnten nicht gelesen werden. Bitte noch einmal versuchen.';
+const TEXT_FIX_ANMELDEN = 'Bitte zuerst neu anmelden; danach lassen sich die Fixkosten ändern.';
+const TEXT_FIX_GELOESCHT = 'Diesen Posten gibt es nicht mehr – er wurde wohl auf dem anderen Telefon gelöscht.';
 
 /** Zufällige ID aus den Zeichen 0-9 und a-v: so darf sie auch als Google-Ereignis-ID dienen. */
 const zufaelligeId = () => `u${Array.from({ length: 11 }, () => Math.floor(Math.random() * 32).toString(32)).join('')}`;
@@ -50,6 +54,19 @@ function schichtAusDaten(roh) {
 }
 
 /**
+ * Fixkosten im Zustand: `shards` = die vier Teile (null = noch nie gelesen), `status` null (noch nie gelesen) | 'gespeichert' (aus dem
+ * Schnappschuss oder den Beispieldaten, noch nicht aus dem Kalender) | 'laedt' | 'geladen' | 'fehler', `warnungen` = Meldungen des
+ * letzten Lesens (z. B. ein unlesbarer Teil, der beim nächsten Speichern dieses Teils überschrieben würde) für die Anzeige.
+ */
+const leereFixkosten = () => ({ shards: null, status: null, warnungen: [] });
+
+/** Die vier Teile, wie sie ein Adapter, der Schnappschuss oder die Beispieldaten liefern (fehlender Teil → leerer Teil). */
+const fixTeile = (shards) => Array.from({ length: FIX_SHARDS }, (_, nr) => normalisiereShard(shards?.[nr] ?? leererShard()));
+
+/** Fixkosten aus Schnappschuss oder Beispieldaten ({ shards }); ohne → noch nicht gelesen. */
+const fixAusDaten = (roh) => (Array.isArray(roh?.shards) ? { shards: fixTeile(roh.shards), status: 'gespeichert', warnungen: [] } : leereFixkosten());
+
+/**
  * Übernimmt aus dem, was ein Adapter liefert, nur die Felder des Zustands. Den Schichtplan nicht: er wird erst beim Öffnen seiner Seite
  * geladen (`schichtLaden`); die Demo liefert ihn zwar mit, aber so verhalten sich Demo und Google gleich.
  */
@@ -75,8 +92,8 @@ function ladeFelder(daten, state) {
  *   speichert sie nach dem erneuten Anmelden.
  * - Mehr als drei Schreibvorgänge melden ihren Fortschritt (`state.fortschritt`).
  */
-export function createStore(adapter, { jetzt = () => new Date(), neueId = zufaelligeId } = {}) {
-  let state = { geladen: false, settings: normalizeSettings(), tage: {}, urlaub: [], termine: [], einkauf: leereListe(), konto: leeresKonto(), schicht: leererSchichtplan(), fehler: null, fortschritt: null, anmeldungNoetig: false, fenster: null };
+export function createStore(adapter, { jetzt = () => new Date(), neueId = zufaelligeId, fixId = neueFixId } = {}) {
+  let state = { geladen: false, settings: normalizeSettings(), tage: {}, urlaub: [], termine: [], einkauf: leereListe(), konto: leeresKonto(), schicht: leererSchichtplan(), fixkosten: leereFixkosten(), fehler: null, fortschritt: null, anmeldungNoetig: false, fenster: null };
   const hoerer = new Set();
   const wartend = []; // Schreibvorgänge, die wegen abgelaufener Anmeldung noch fehlen
   const geladeneBereiche = [];
@@ -89,6 +106,9 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
   let einkaufHolen = null; // laufende Abfrage der Einkaufsliste: mehrfaches Anstoßen fragt nur einmal
   let schichtVorladenLaeuft = null; // laufendes Vorladen des Schichtplans: mehrfaches Anstoßen fragt nur einmal
   let schichtFrischLaeuft = null; // laufendes Frisch-Lesen vor dem Senden des Push-Plans (siehe schichtFrischLesen): höchstens eines
+  let fixGelesen = false; // wurden die Fixkosten seit dem Start schon einmal aus dem Kalender gelesen? Erst dann wird geschrieben.
+  let fixLesenLaeuft = null; // laufendes Lesen der Fixkosten: mehrfaches Anstoßen fragt nur einmal
+  let fixFrischLaeuft = null; // laufendes Frisch-Lesen der Fixkosten (siehe fixFrischLesen): höchstens eines
   const melden = () => {
     for (const h of hoerer) h(state);
   };
@@ -221,11 +241,13 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     });
   }
 
-  // Schichtplan-Änderungen, die noch nicht gespeichert sind, je Teil ('katalog' oder 'JJJJ-MM'):
+  // Änderungen, die noch nicht gespeichert sind, je Teil – Schichtplan ('katalog' oder 'JJJJ-MM') und Fixkosten (Teil 0 … 3):
   // { basis: zuletzt bekannter Stand im Kalender, offen: [fn, …] in Tipp-Reihenfolge, kette: Promise der Speicherungen }.
   // Angezeigt wird immer `basis` mit allen offenen Änderungen darauf: so verschwindet kein Tipp, während ein früherer gespeichert wird.
   const schichtOffen = new Map();
   const schichtSchreibtNoch = () => schichtOffen.size > 0;
+  const fixOffen = new Map();
+  const fixSchreibtNoch = () => fixOffen.size > 0;
 
   const schichtTeil = (teil) => (teil === 'katalog' ? state.schicht.katalog : state.schicht.monate[teil]);
   const mitSchichtTeil = (teil, wert) => ({ ...state, schicht: teil === 'katalog' ? { ...state.schicht, katalog: wert } : { ...state.schicht, monate: { ...state.schicht.monate, [teil]: wert } } });
@@ -241,30 +263,31 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     }, basis);
 
   /**
-   * Ändert einen Teil des Schichtplans: `fn(wert)` → neuer Wert. Sofort sichtbar; wirft sofort (ohne etwas zu ändern), wenn `fn` ablehnt.
-   * Gespeichert wird je Teil eines nach dem anderen (schnelle Pinsel-Tipps streiten nicht um dieselbe Fassung im Kalender), und zwar `fn`
-   * auf der NEUESTEN Fassung (zwei Telefone überschreiben sich nicht). Bei einem Fehler wird nur diese Änderung zurückgenommen und der
-   * Teil neu gelesen; anderes (inzwischen geladene Monate, Status) bleibt. Gibt den sofort angezeigten Wert zurück.
+   * Ändert einen Teil (des Schichtplans oder der Fixkosten): `fn(wert)` → neuer Wert. Sofort sichtbar; wirft sofort (ohne etwas zu
+   * ändern), wenn `fn` ablehnt. Gespeichert wird je Teil eines nach dem anderen (schnelle Pinsel-Tipps streiten nicht um dieselbe Fassung
+   * im Kalender), und zwar `fn` auf der NEUESTEN Fassung (zwei Telefone überschreiben sich nicht). Bei einem Fehler wird nur diese
+   * Änderung zurückgenommen und der Teil neu gelesen; anderes (inzwischen geladene Monate, Status) bleibt. `offenListe` = Warteschlangen
+   * je Teil, `aktuell()` = angezeigter Wert, `mit(wert)` = Zustand mit diesem Wert. Gibt { neu (sofort angezeigt), ergebnis, fehler } zurück.
    */
-  async function schichtAendern(teil, fn, { leer, speichern, lesen, normalisiere }) {
-    const vorher = schichtTeil(teil) ?? leer();
+  async function teilAendern(offenListe, teil, fn, { leer, aktuell, mit, speichern, lesen, normalisiere }) {
+    const vorher = aktuell() ?? leer();
     const neu = fn(vorher);
-    let eintrag = schichtOffen.get(teil);
+    let eintrag = offenListe.get(teil);
     if (!eintrag) {
       eintrag = { basis: vorher, offen: [], kette: Promise.resolve() };
-      schichtOffen.set(teil, eintrag);
+      offenListe.set(teil, eintrag);
     }
     eintrag.offen.push(fn);
-    state = { ...mitSchichtTeil(teil, neu), fehler: null };
+    state = { ...mit(neu), fehler: null };
     melden();
 
-    const anzeigen = () => mitSchichtTeil(teil, mitOffenen(eintrag.basis, eintrag.offen));
+    const anzeigen = () => mit(mitOffenen(eintrag.basis, eintrag.offen));
     const herausnehmen = () => {
       const i = eintrag.offen.indexOf(fn);
       if (i >= 0) eintrag.offen.splice(i, 1);
     };
     const aufraeumen = () => {
-      if (eintrag.offen.length === 0 && schichtOffen.get(teil) === eintrag) schichtOffen.delete(teil);
+      if (eintrag.offen.length === 0 && offenListe.get(teil) === eintrag) offenListe.delete(teil);
     };
     // Wirft `fn` auf der neuesten Fassung, ist das eine fachliche Ablehnung (deutsche Meldung), kein Netzfehler.
     const aufNeuester = (wert) => {
@@ -307,6 +330,109 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     eintrag.kette = lauf.catch(() => {});
     const ergebnis = await lauf;
     return { neu, ergebnis, fehler: ergebnis === 'auth' ? TEXT_ANMELDEN : fehlerText };
+  }
+
+  /** Ändert einen Teil des Schichtplans ('katalog' oder 'JJJJ-MM'), siehe `teilAendern`. */
+  const schichtAendern = (teil, fn, optionen) => teilAendern(schichtOffen, teil, fn, { ...optionen, aktuell: () => schichtTeil(teil), mit: (wert) => mitSchichtTeil(teil, wert) });
+
+  /** Zustand mit Teil `nr` der Fixkosten = `shard` (die anderen Teile bleiben). */
+  function mitFixTeil(nr, shard) {
+    const shards = [...(state.fixkosten.shards ?? fixTeile(null))];
+    shards[nr] = shard;
+    return { ...state, fixkosten: { ...state.fixkosten, shards } };
+  }
+
+  /**
+   * Ändert Teil `nr` der Fixkosten (siehe `teilAendern`): sofort sichtbar, gespeichert als `fn` auf der NEUESTEN Fassung dieses Teils
+   * (die anderen drei Teile bleiben unberührt). Ergebnis wie `schichtKatalogAendern`: { ok: true } | { ok: false, fehler } |
+   * { ok: false, wartet: true, fehler }. Wirft, wenn `fn` schon auf dem angezeigten Stand ablehnt (dann ändert sich nichts).
+   */
+  async function fixTeilAendern(nr, fn) {
+    const { ergebnis, fehler } = await teilAendern(fixOffen, nr, fn, {
+      leer: leererShard,
+      aktuell: () => state.fixkosten.shards?.[nr] ?? null,
+      mit: (shard) => mitFixTeil(nr, shard),
+      speichern: (f) => adapter.aendereFixShard(nr, f),
+      lesen: async () => (await adapter.leseFixkosten()).shards?.[nr] ?? null,
+      normalisiere: (shard) => normalisiereShard(shard ?? leererShard()),
+    });
+    if (ergebnis === 'ok') return { ok: true };
+    return ergebnis === 'auth' ? { ok: false, wartet: true, fehler } : { ok: false, fehler };
+  }
+
+  /**
+   * Liest die vier Teile der Fixkosten (alle gleichzeitig). Status 'laedt' → 'geladen' bzw. 'fehler' (abgelaufene Anmeldung setzt
+   * zusätzlich `anmeldungNoetig`). Wurde inzwischen selbst etwas geändert, bleiben die angezeigten Teile (die Antwort könnte älter sein).
+   * Ergebnis: true, wenn gelesen werden konnte. Höchstens ein Lesen gleichzeitig; wirft nicht.
+   */
+  function fixLesen() {
+    if (fixLesenLaeuft) return fixLesenLaeuft;
+    if (!adapter.leseFixkosten) return Promise.resolve(false);
+    fixLesenLaeuft = (async () => {
+      const stand = schreibStand;
+      state = { ...state, fixkosten: { ...state.fixkosten, status: 'laedt' } };
+      melden();
+      let gelesen;
+      try {
+        gelesen = await adapter.leseFixkosten();
+      } catch (fehler) {
+        state = { ...state, fixkosten: { ...state.fixkosten, status: 'fehler' }, ...(istAuthFehler(fehler) ? { anmeldungNoetig: true } : {}) };
+        melden();
+        return false;
+      }
+      const eigene = stand !== schreibStand || schreibend > 0 || wartend.length > 0 || fixSchreibtNoch();
+      const f = state.fixkosten;
+      const frisch = fixTeile(gelesen?.shards);
+      // eigene Änderung inzwischen: das Angezeigte bleibt; unverändert: dieselben Teile (kein neuer Push-Plan, kein Neuzeichnen der Liste)
+      const shards = f.shards && (eigene || JSON.stringify(frisch) === JSON.stringify(f.shards)) ? f.shards : frisch;
+      state = { ...state, fixkosten: { shards, status: 'geladen', warnungen: gelesen?.warnungen ?? [] } };
+      fixGelesen = true;
+      melden();
+      return true;
+    })()
+      .catch(() => false)
+      .finally(() => {
+        fixLesenLaeuft = null;
+      });
+    return fixLesenLaeuft;
+  }
+
+  /** Vor dem ersten Schreiben müssen die Fixkosten einmal aus dem Kalender gelesen sein (Anzahl, Anzeige, Warnungen). → Fehlertext oder null. */
+  async function fixBereit() {
+    if (fixGelesen && state.fixkosten.shards) return null;
+    if (await fixLesen()) return null;
+    return state.anmeldungNoetig ? TEXT_FIX_ANMELDEN : TEXT_FIX_NICHT_GELESEN;
+  }
+
+  /** In welchem Teil der Posten `id` steht (angezeigter Stand); sonst der Teil, in den er gehört. */
+  function fixTeilVon(id) {
+    const nr = (state.fixkosten.shards ?? []).findIndex((s) => s?.posten.some((p) => p.id === id));
+    return nr >= 0 ? nr : shardFuer(id);
+  }
+
+  /** Eine neue Kennung, die es in den angezeigten Teilen noch nicht gibt. */
+  function freieFixId() {
+    const vergeben = new Set((state.fixkosten.shards ?? []).flatMap((s) => s?.posten.map((p) => p.id) ?? []));
+    let id = fixId();
+    for (let i = 0; i < 10 && vergeben.has(id); i += 1) id = fixId();
+    return id;
+  }
+
+  /** Ändert einen vorhandenen Posten mit `fn(teil)` (Archivieren usw.): { ok, fehler?, wartet? }; nie ein Wurf. */
+  async function fixPostenAendern(id, fn) {
+    const fehler = await fixBereit();
+    if (fehler) return { ok: false, fehler };
+    try {
+      return await fixTeilAendern(fixTeilVon(id), fn);
+    } catch (e) {
+      return { ok: false, fehler: e?.message || TEXT_FEHLER }; // schon auf dem angezeigten Stand abgelehnt: nichts geändert
+    }
+  }
+
+  /** Fixkosten für die Sicherung: frisch aus dem Kalender (Anmeldefehler laufen nach oben); ohne passenden Adapter der angezeigte Stand. */
+  async function fixFuerSicherung() {
+    if (!adapter.leseFixkosten) return { shards: state.fixkosten.shards ?? fixTeile(null) };
+    return { shards: fixTeile((await adapter.leseFixkosten()).shards) };
   }
 
   /** Ändert einen Monat des Schichtplans (siehe `schichtAendern`). */
@@ -445,7 +571,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
 
     /** Startet mit zuletzt gespeicherten Daten (nur zum Anzeigen, bis die Anmeldung da ist). `stand` = Zeitpunkt der Speicherung. */
     starteAusSnapshot({ daten, gespeichertAm }) {
-      state = { ...state, ...ladeFelder(daten, state), ...(daten.schicht ? { schicht: schichtAusDaten(daten.schicht) } : {}), geladen: true, nurSnapshot: true, stand: gespeichertAm, anmeldungNoetig: true };
+      state = { ...state, ...ladeFelder(daten, state), ...(daten.schicht ? { schicht: schichtAusDaten(daten.schicht) } : {}), ...(daten.fixkosten ? { fixkosten: fixAusDaten(daten.fixkosten) } : {}), geladen: true, nurSnapshot: true, stand: gespeichertAm, anmeldungNoetig: true };
       melden();
     },
 
@@ -568,13 +694,14 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
 
     /**
      * Alle Daten für die Sicherung. Mit Google wird der gesamte Verlauf aus den Kalendern geholt (Anmeldefehler laufen nach oben);
-     * in der Demo steht ohnehin alles im Zustand. Der Schichtplan wird in beiden Fällen Monat für Monat gelesen.
-     * Der Zustand der App bleibt dabei unverändert.
+     * in der Demo steht ohnehin alles im Zustand. Der Schichtplan wird in beiden Fällen Monat für Monat gelesen, die Fixkosten (alle vier
+     * Teile) frisch. Der Zustand der App bleibt dabei unverändert.
      */
     async sicherungsDaten() {
       const roh = adapter.ladeAlles ? await adapter.ladeAlles() : state;
       const schicht = await schichtFuerSicherung();
-      return { settings: state.settings, tage: roh.tage, urlaub: roh.urlaub, termine: roh.termine, einkauf: state.einkauf, konto: state.konto, schicht };
+      const fixkosten = await fixFuerSicherung();
+      return { settings: state.settings, tage: roh.tage, urlaub: roh.urlaub, termine: roh.termine, einkauf: state.einkauf, konto: state.konto, schicht, fixkosten };
     },
 
     /**
@@ -811,9 +938,11 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     },
 
     /**
-     * Schichtplan im Hintergrund nach dem Start (Google und Demo), damit die Erinnerungen von jedem Telefon aus stimmen: liest die
-     * Schichtarten (immer neu) und den laufenden Monat mit den zwei folgenden; danach `schicht.vorgeladen` = der laufende Monat (bleibt,
-     * auch wenn ein späteres Vorladen im selben Monat scheitert; nach dem Monatswechsel braucht es ein neues Vorladen). Fehlt Papa noch eine später dazugekommene Standardart (E – Ersatzdienst), wird sie einmal still ergänzt
+     * Schichtplan und Fixkosten im Hintergrund nach dem Start (Google und Demo), damit die Erinnerungen von jedem Telefon aus stimmen:
+     * liest die Schichtarten (immer neu), den laufenden Monat mit den zwei folgenden und – gleichzeitig – die vier Teile der Fixkosten
+     * (für die Erinnerungen an Kündigungsfristen); erst wenn ALLES gelesen ist, gilt `schicht.vorgeladen` = der laufende Monat (das eine
+     * Tor für den Push-Plan: bleibt, auch wenn ein späteres Vorladen im selben Monat scheitert; nach dem Monatswechsel braucht es ein
+     * neues Vorladen). Fehlt Papa noch eine später dazugekommene Standardart (E – Ersatzdienst), wird sie einmal still ergänzt
      * (siehe `schichtKatalogStillErgaenzen`; das zweite Telefon ergänzt nichts doppelt). Tut nichts vor dem Laden, solange nur
      * der gespeicherte Stand zu sehen ist oder die Anmeldung fehlt (danach erneut anstoßen). Wirft nicht; Lesefehler stehen im Status.
      */
@@ -822,8 +951,8 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       if (!adapter.leseSchichtMonat || !state.geladen || state.nurSnapshot || state.anmeldungNoetig) return Promise.resolve();
       const jm = todayVienna(jetzt()).slice(0, 7);
       schichtVorladenLaeuft = (async () => {
-        const { katalogGelesen, monateGelesen } = await schichtLesen(vorladeMonate(jm), { katalogNeu: true });
-        if (katalogGelesen && monateGelesen && state.schicht.vorgeladen !== jm) {
+        const [{ katalogGelesen, monateGelesen }, fixOk] = await Promise.all([schichtLesen(vorladeMonate(jm), { katalogNeu: true }), adapter.leseFixkosten ? fixLesen() : true]);
+        if (katalogGelesen && monateGelesen && fixOk && state.schicht.vorgeladen !== jm) {
           state = { ...state, schicht: { ...state.schicht, vorgeladen: jm } };
           melden();
         }
@@ -841,15 +970,17 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
      * Unmittelbar vor jedem Senden des Push-Plans (push/client.js `sync`): Schichtarten und die vorgeladenen Monate (der laufende und
      * die zwei danach) frisch aus dem Kalender. Der Plan ersetzt beim Push-Dienst den der ganzen Familie; aus einem veralteten Stand
      * würde er Zusätze löschen (oder zurückbringen), die das andere Telefon inzwischen eingetragen (oder entfernt) hat – und für sie gibt
-     * es keine Erinnerung von Google Kalender. Gemeldet wird nur eine echte Änderung (siehe `schichtAktualisieren`); danach gilt der
-     * laufende Monat als vorgeladen. Ergebnis: true = aktuell, false = ging gerade nicht (nicht geladen, Lesefehler, eigene Änderung wird
-     * noch gespeichert) – dann nicht senden. Höchstens ein Lesen gleichzeitig; wirft nicht.
+     * es keine Erinnerung von Google Kalender. Ebenso, gleichzeitig, die vier Teile der Fixkosten (`fixFrischLesen`: Erinnerungen an
+     * Kündigungsfristen gehen an beide Telefone). Gemeldet wird nur eine echte Änderung (siehe `schichtAktualisieren`); danach gilt der
+     * laufende Monat als vorgeladen. Ergebnis: true = beides aktuell, false = ging gerade nicht (nicht geladen, Lesefehler, eigene
+     * Änderung wird noch gespeichert) – dann nicht senden. Höchstens ein Lesen gleichzeitig; wirft nicht.
      */
     schichtFrischLesen() {
       if (schichtFrischLaeuft) return schichtFrischLaeuft;
       const jm = todayVienna(jetzt()).slice(0, 7);
       schichtFrischLaeuft = (async () => {
-        const ok = await store.schichtAktualisieren(vorladeMonate(jm));
+        const [schichtOk, fixOk] = await Promise.all([store.schichtAktualisieren(vorladeMonate(jm)), adapter.leseFixkosten ? store.fixFrischLesen() : true]);
+        const ok = schichtOk && fixOk;
         if (ok && state.schicht.vorgeladen !== jm) {
           state = { ...state, schicht: { ...state.schicht, vorgeladen: jm } };
           melden();
@@ -931,6 +1062,92 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     /** Art mit der Nachbarin tauschen (−1 hoch, 1 runter); Ergebnis wie `schichtKatalogAendern`. */
     schichtArtVerschieben: (person, k, richtung) => schichtKatalogAendern((kat) => artVerschieben(kat, person, k, richtung)),
 
+    /** Fixkosten beim Öffnen ihrer Seite: die vier Teile lesen (siehe `fixLesen`). → true, wenn gelesen; wirft nicht. */
+    fixLaden: () => fixLesen(),
+
+    /**
+     * Fixkosten frisch aus dem Kalender (vor dem Senden des Push-Plans, siehe `schichtFrischLesen`; auch beim Zurückkehren nutzbar).
+     * Eigene Änderungen gehen vor: solange etwas gespeichert wird oder wartet, wird nicht gefragt, und eine Antwort, während der selbst
+     * etwas geändert wurde, wird verworfen. Gemeldet wird nur eine echte Änderung. → true = aktuell, false = ging gerade nicht. Wirft nicht.
+     */
+    fixFrischLesen() {
+      if (fixFrischLaeuft) return fixFrischLaeuft;
+      const moeglich = () => adapter.leseFixkosten && state.geladen && !state.nurSnapshot && !state.anmeldungNoetig;
+      const eigene = () => schreibend > 0 || wartend.length > 0 || fixSchreibtNoch();
+      if (!moeglich() || eigene()) return Promise.resolve(false);
+      fixFrischLaeuft = (async () => {
+        const stand = schreibStand;
+        let gelesen;
+        try {
+          gelesen = await adapter.leseFixkosten();
+        } catch (fehler) {
+          if (istAuthFehler(fehler)) {
+            state = { ...state, anmeldungNoetig: true };
+            melden();
+          }
+          return false;
+        }
+        if (stand !== schreibStand || eigene()) return false;
+        const neu = { shards: fixTeile(gelesen?.shards), status: 'geladen', warnungen: gelesen?.warnungen ?? [] };
+        fixGelesen = true;
+        if (JSON.stringify(neu) !== JSON.stringify(state.fixkosten)) {
+          state = { ...state, fixkosten: neu };
+          melden();
+        }
+        return true;
+      })()
+        .catch(() => false)
+        .finally(() => {
+          fixFrischLaeuft = null;
+        });
+      return fixFrischLaeuft;
+    },
+
+    /**
+     * Fixkosten-Posten anlegen (ohne `id`: neue Kennung; Startmonat = `start` oder der laufende Monat in Wien) oder ändern (mit `id`; das
+     * Archivdatum bleibt, wie es im Kalender steht – dafür gibt es Archivieren/Zurückholen). Geschrieben wird nur in den Teil des Postens,
+     * als reine Änderung auf der NEUESTEN Fassung (zwei Telefone überschreiben sich nicht; hat das andere Telefon den Posten inzwischen
+     * endgültig gelöscht, wird er nicht wieder angelegt). Vorher müssen die Fixkosten einmal gelesen sein (sonst wird erst gelesen).
+     * Ergebnis: { ok: true, id } | { ok: false, fehler } (ungültige Eingabe mit der Meldung von `postenPruefen`, mehr als 100 Posten,
+     * Teil zu voll, Speicherfehler – dann zurückgenommen und neu gelesen) | { ok: false, wartet: true, fehler } (nach dem Anmelden
+     * gespeichert). Wirft nie.
+     */
+    async fixPostenSpeichern(entwurf) {
+      const { archiv: _archiv, ...roh } = entwurf && typeof entwurf === 'object' ? entwurf : {};
+      const neu = !roh.id;
+      const posten = { ...roh, start: roh.start || todayVienna(jetzt()).slice(0, 7) };
+      if (neu) delete posten.id;
+      const ungueltig = postenPruefen(posten);
+      if (ungueltig) return { ok: false, fehler: ungueltig };
+      const nichtBereit = await fixBereit();
+      if (nichtBereit) return { ok: false, fehler: nichtBereit };
+      if (neu) {
+        posten.id = freieFixId(); // erst nach dem Lesen: so ist sie sicher noch nicht vergeben
+        const zuViele = postenAnzahlPruefen(state.fixkosten.shards, posten.id);
+        if (zuViele) return { ok: false, fehler: zuViele };
+      }
+      const fn = neu
+        ? (shard) => postenSetzen(shard, posten)
+        : (shard) => {
+            const alt = shard.posten.find((p) => p.id === posten.id);
+            if (!alt) throw new Error(TEXT_FIX_GELOESCHT);
+            return postenSetzen(shard, alt.archiv ? { ...posten, archiv: alt.archiv } : posten);
+          };
+      try {
+        const r = await fixTeilAendern(neu ? shardFuer(posten.id) : fixTeilVon(posten.id), fn);
+        return r.ok ? { ok: true, id: posten.id } : r;
+      } catch (e) {
+        return { ok: false, fehler: e?.message || TEXT_FEHLER }; // schon auf dem angezeigten Stand abgelehnt (z. B. Teil zu voll): nichts geändert
+      }
+    },
+
+    /** Posten ins Archiv ab `datum` ('JJJJ-MM-TT', Standard: heute in Wien); zählt ab dann nicht mehr. Ergebnis wie `fixPostenSpeichern` (ohne id). */
+    fixPostenArchivieren: (id, datum = todayVienna(jetzt())) => fixPostenAendern(id, (shard) => postenArchivieren(shard, id, datum)),
+    /** Posten aus dem Archiv zurückholen. */
+    fixPostenWiederherstellen: (id) => fixPostenAendern(id, (shard) => postenWiederherstellen(shard, id)),
+    /** Posten endgültig löschen – nur aus dem Archiv (sonst { ok: false, fehler }). */
+    fixPostenLoeschen: (id) => fixPostenAendern(id, (shard) => postenLoeschen(shard, id)),
+
     async einstellungen(teil) {
       const settings = normalizeSettings({ ...state.settings, ...teil });
       await aendere({ settings }, () => adapter.speichereSettings(teil));
@@ -944,7 +1161,8 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
 
     async zuruecksetzen() {
       const daten = await adapter.zuruecksetzen();
-      state = { ...state, ...daten, schicht: daten.schicht ? schichtAusDaten(daten.schicht) : leererSchichtplan(), geladen: true, fehler: null };
+      state = { ...state, ...daten, schicht: daten.schicht ? schichtAusDaten(daten.schicht) : leererSchichtplan(), fixkosten: fixAusDaten(daten.fixkosten), geladen: true, fehler: null };
+      fixGelesen = false; // vor dem nächsten Ändern erst aus dem (neuen) Speicher lesen
       melden();
       store.schichtVorladen(); // neue Beispieldaten: im Hintergrund wieder vorladen (wirft nicht)
     },

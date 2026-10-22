@@ -6,6 +6,8 @@ import { FUER } from '../domain/types.js';
 import { dienstFuer } from '../domain/dienst.js';
 import { instantZuWien, wienZuInstant } from '../domain/instant.js';
 import { SCHICHT_PERSONEN, artFuer, standardKatalog, vorladeMonate } from '../domain/schicht.js';
+import { istAktiv, vertragStatus } from '../domain/fixkosten.js';
+import { datumAnzeige } from '../domain/eingabe.js';
 import { terminAnzeige } from '../app/views/gemeinsam.js';
 import { urlaubChecksWunsch } from '../app/urlaub-check.js';
 import { bytesZuB64u } from './base64url.js';
@@ -14,7 +16,9 @@ const TYPEN = ['arzt', 'familie', 'kita_sache', 'urlaub_check'];
 const STUNDE = 3600_000;
 // Sekunden, die der Push-Server von Google/Apple die Nachricht für ein Telefon ohne Netz aufhebt: kommt es rechtzeitig wieder ins Netz, wird sie noch zugestellt
 // („1 Stunde vorher“ nur bis kurz vor dem Termin, danach wäre sie sinnlos).
-const TTL = { tag: 21600, stunde: 3300, vortag: 21600, abend: 14400, konto: 10800, konto2: 5400 };
+const TTL = { tag: 21600, stunde: 3300, vortag: 21600, abend: 14400, konto: 10800, konto2: 5400, frist: 21600 };
+// Verträge, die sich um weniger als so viele Monate verlängern (z. B. monatlich kündbar), bekommen keine Erinnerung (sonst jeden Monat eine).
+const FRIST_AB_VERLAENGERUNG = 3;
 
 async function kennung(terminId, art) {
   const hash = new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${terminId}|${art}`)));
@@ -111,16 +115,52 @@ async function zusatzErinnerungen(state, von, bis) {
 }
 
 /**
+ * Kündigungsfristen der Fixkosten: einen Monat vor „Kündbar bis“ (`vertragStatus(…).erinnerung`) um 09:00 (Wien), an BEIDE Telefone (ohne
+ * `nur`); öffnet „Konto“. Nur aktive Posten (am Tag der Erinnerung nicht archiviert) mit laufendem Vertrag, der sich nicht oder um
+ * mindestens drei Monate verlängert. Fällt auch die Erinnerung der nächsten Periode ins Fenster, kommt sie mit. Kennung = Posten und
+ * „Kündbar bis“: bleibt bei Neuberechnung gleich, auf beiden Telefonen. Der Text nennt Name und Datum, keinen Betrag.
+ */
+async function fristErinnerungen(state, von, bis) {
+  const shards = state.fixkosten?.shards;
+  if (!Array.isArray(shards)) return [];
+  const heute = todayVienna(new Date(von));
+  const plan = [];
+  for (const posten of shards.flatMap((s) => s?.posten ?? [])) {
+    const v = posten.vertrag;
+    if (!v || (v.verlaengerung > 0 && v.verlaengerung < FRIST_AB_VERLAENGERUNG)) continue;
+    let tag = heute;
+    for (let runde = 0; runde < 4; runde += 1) {
+      const status = vertragStatus(posten, tag);
+      if (!status || status.beendet) break;
+      let um;
+      try {
+        um = wienZuInstant(status.erinnerung, '09:00');
+      } catch {
+        break;
+      }
+      if (um > bis) break;
+      if (um > von && istAktiv(posten, status.erinnerung)) {
+        plan.push({ id: await kennung(`frist-${posten.id}-${status.kuendbarBis}`, 'frist'), um, art: 'frist', titel: '📝 Kündigungsfrist', text: `${posten.name}: kündbar bis ${datumAnzeige(status.kuendbarBis)} (in 1 Monat)`, ttl: TTL.frist, ziel: '#/konto' });
+      }
+      if (!(v.verlaengerung > 0)) break; // ohne Verlängerung gibt es nur diese eine Frist
+      tag = addDays(status.kuendbarBis, 1); // die nächste Periode
+    }
+  }
+  return plan;
+}
+
+/**
  * Wovon der Plan abhängt, oder null = noch nicht senden: erst nach dem frischen Laden (nie aus dem gespeicherten Stand) und erst, wenn der
  * Schichtplan für den laufenden Monat (Wien, `jetzt`) vorgeladen ist; sonst fehlten im Plan Erinnerungen an Zusätze (oder, nach dem
  * Monatswechsel bei offener App, die des neuen dritten Monats), und der Push-Dienst würde sie löschen. Gilt für jeden Weg, auf dem der
- * Plan gesendet wird (Shell und push/client.js `sync`). Der bloße Ladestatus der Monate zählt nicht, nur Schichtarten und Monate.
+ * Plan gesendet wird (Shell und push/client.js `sync`). „Vorgeladen“ schließt die Fixkosten ein (Kündigungsfristen, siehe
+ * store.schichtVorladen). Der bloße Ladestatus zählt nicht, nur Schichtarten, Monate und die Teile der Fixkosten.
  */
 export function planQuellen(state, jetzt = new Date()) {
   if (!state?.geladen || state.nurSnapshot) return null;
   const monat = todayVienna(jetzt).slice(0, 7);
   if (state.schicht?.vorgeladen !== monat) return null;
-  return [state.termine, state.settings, state.urlaub, state.konto, state.schicht.katalog, state.schicht.monate, monat];
+  return [state.termine, state.settings, state.urlaub, state.konto, state.schicht.katalog, state.schicht.monate, state.fixkosten?.shards ?? null, monat];
 }
 
 /** Hat sich seit dem letzten Senden (`vorher`, null = noch nie) etwas geändert, wovon der Plan abhängt? */
@@ -139,7 +179,7 @@ function nurFuer(t, settings) {
 }
 
 /**
- * Plan der nächsten `tage` Tage: [{ id, um (ms), art: 'tag'|'stunde'|'vortag'|'abend'|'konto'|'konto2', titel, text, ttl, ziel?, nur? }], sortiert nach Zeitpunkt.
+ * Plan der nächsten `tage` Tage: [{ id, um (ms), art: 'tag'|'stunde'|'vortag'|'abend'|'konto'|'konto2'|'frist', titel, text, ttl, ziel?, nur? }], sortiert nach Zeitpunkt.
  * Die `id` hängt nur an Termin und Art (nicht am Zeitpunkt), damit zwei Telefone denselben Plan ohne Doppelungen schicken.
  * `nur` ('papa' | 'mama'): nur an die Telefone dieser Person (und an Telefone ohne Angabe, siehe meldungen.js).
  */
@@ -176,5 +216,6 @@ export async function planeErinnerungen(state, { jetzt = new Date(), tage = 60 }
   }
   plan.push(...(await kontoErinnerungen(state, von, bis)));
   plan.push(...(await zusatzErinnerungen(state, von, bis)));
+  plan.push(...(await fristErinnerungen(state, von, bis)));
   return plan.sort((a, b) => a.um - b.um || a.id.localeCompare(b.id));
 }

@@ -333,6 +333,41 @@ test('sync: liest den Schichtplan vor dem Senden frisch (das andere Telefon hat 
   assert.ok(mamasDb.every((p) => gesendet.has(p.id)), 'Mamas neue DB-Erinnerungen bleiben im Plan');
 });
 
+test('sync: liest die Fixkosten vor dem Senden frisch (Mama hat einen Vertrag angelegt) – die Kündigungs-Erinnerung geht an beide', async () => {
+  const kalender = createDemoAdapter({ speicher: speicherAttrappe({ 'fk.demo.v1': JSON.stringify({ settings: {}, tage: {}, urlaub: [], termine: [] }) }), jetzt: () => JETZT });
+  const papa = createStore(kalender, { jetzt: () => JETZT });
+  const mama = createStore(kalender, { jetzt: () => JETZT });
+  for (const s of [papa, mama]) {
+    await s.laden();
+    await s.schichtVorladen();
+  }
+  const r = await mama.fixPostenSpeichern({ name: 'Kfz-Versicherung', cents: 5900, ungefaehr: false, intervall: 1, tag: '1', kategorie: 'versicherung', person: 'papa', vertrag: { bis: '2026-12-31', verlaengerung: 12, frist: '1m' } });
+  assert.equal(r.ok, true);
+  const frist = (await planeErinnerungen(mama.getState(), { jetzt: JETZT, tage: 60 })).filter((p) => p.art === 'frist');
+  assert.equal(frist.length, 1);
+  assert.equal(frist[0].nur, undefined);
+
+  const t = await aufbau({ store: papa });
+  assert.equal((await t.push.sync()).art, 'gesendet');
+  const items = t.anfragen[0].body.items.filter((i) => i.id === frist[0].id);
+  assert.deepEqual(items.map((i) => i.an).sort(), ['eigenTel1', 'mamaTel1'], 'an beide Telefone');
+});
+
+test('sync: lassen sich die Fixkosten nicht frisch lesen, wird nichts gesendet (wartet)', async () => {
+  let kaputt = false;
+  const kalender = createDemoAdapter({ speicher: speicherAttrappe(), jetzt: () => JETZT });
+  const store = createStore({ ...kalender, leseFixkosten: async () => { if (kaputt) throw new Error('Netz'); return kalender.leseFixkosten(); } }, { jetzt: () => JETZT });
+  await store.laden();
+  await store.schichtVorladen();
+  assert.equal(store.getState().schicht.vorgeladen, '2026-10');
+  kaputt = true;
+  const t = await aufbau({ store });
+  assert.equal((await t.push.sync({ erzwingen: true })).art, 'wartet');
+  assert.equal(t.anfragen.length, 0);
+  kaputt = false;
+  assert.equal((await t.push.sync({ erzwingen: true })).art, 'gesendet');
+});
+
 test('sync: scheitert das Frisch-Lesen, wird nichts gesendet (wartet); ohne Vorladen wird gar nicht erst gelesen', async () => {
   let ok = false;
   let gelesen = 0;

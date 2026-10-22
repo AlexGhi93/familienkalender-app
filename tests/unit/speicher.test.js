@@ -86,7 +86,25 @@ describe('Schnappschuss', () => {
     const s = speicherAttrappe();
     const snap = createSnapshot({ speicher: s, jetzt });
     snap.speichern({ settings: state.settings, tage: {}, urlaub: [], termine: [] }, '2026-10-14');
-    assert.deepEqual(snap.lesen().daten, { settings: state.settings, tage: {}, urlaub: [], termine: [], fenster: null, einkauf: leereListe(), konto: leeresKonto(), schicht: { katalog: null, monate: {} } });
+    assert.deepEqual(snap.lesen().daten, { settings: state.settings, tage: {}, urlaub: [], termine: [], fenster: null, einkauf: leereListe(), konto: leeresKonto(), schicht: { katalog: null, monate: {} }, fixkosten: null });
+  });
+
+  test('Fixkosten: die vier Teile werden gespeichert und nachsichtig zurückgelesen', () => {
+    const teil = { v: 1, posten: [{ id: 'abc12345', name: 'Miete', cents: 90000, ungefaehr: false, intervall: 1, tag: '1', start: '2026-01', kategorie: 'wohnen', person: 'gemeinsam' }] };
+    const s = speicherAttrappe();
+    const snap = createSnapshot({ speicher: s, jetzt });
+    snap.speichern({ ...state, fixkosten: { shards: [teil, { v: 1, posten: [] }, { v: 1, posten: [] }, { v: 1, posten: [] }], status: 'geladen', warnungen: ['x'] } }, '2026-10-14');
+    assert.deepEqual(JSON.parse(s.getItem(SNAPSHOT_KEY)).fixkosten, { shards: [teil, { v: 1, posten: [] }, { v: 1, posten: [] }, { v: 1, posten: [] }] });
+    assert.deepEqual(snap.lesen().daten.fixkosten, { shards: [teil, { v: 1, posten: [] }, { v: 1, posten: [] }, { v: 1, posten: [] }] });
+    // noch nicht gelesen: nichts gespeichert
+    snap.speichern({ ...state, fixkosten: { shards: null, status: null, warnungen: [] } }, '2026-10-14');
+    assert.equal(snap.lesen().daten.fixkosten, null);
+    // kaputt: unbrauchbare Teile werden leer, beschädigte Posten fallen weg; der Rest des Schnappschusses bleibt gültig
+    const roh = { v: 1, gespeichertAm: '2026-10-14T06:00:00.000Z', settings: {}, tage: {}, urlaub: [], termine: [] };
+    const lies = (fixkosten) => createSnapshot({ speicher: speicherAttrappe({ [SNAPSHOT_KEY]: JSON.stringify({ ...roh, fixkosten }) }) }).lesen().daten.fixkosten;
+    assert.deepEqual(lies({ shards: [teil, 'kaputt', null, { v: 1, posten: [{ id: 'x' }] }] }), { shards: [teil, { v: 1, posten: [] }, null, { v: 1, posten: [] }] });
+    assert.equal(lies({ shards: [teil] }), null);
+    assert.equal(lies('kaputt'), null);
   });
 
   describe('Schichtplan: höchstens sechs Monate, die nächsten zu heute (bei gleichem Abstand der spätere)', () => {

@@ -45,7 +45,7 @@ const NICHT_ERREICHBAR = () => new PushFehler('dienst-nicht-erreichbar', 'Der Pu
 /**
  * `store` (getState), `adapter` (leseGeraete, aendereGeraete), `config` ({ dienst, vapidPublic }), `fetch`, `navigator`, `Notification`,
  * `speicher` (localStorage-artig), `umgebung` (siehe erkenneUmgebung), `jetzt`, `zeitgeber` ({ setze, loesche }).
- * `vorbereiten()` → true, wenn der Zustand jetzt frisch genug zum Senden ist (Standard: `store.schichtFrischLesen`).
+ * `vorbereiten()` → true, wenn der Zustand jetzt frisch genug zum Senden ist (Standard: `store.schichtFrischLesen`, liest Schichtplan und Fixkosten).
  */
 export function createPush({ store, adapter, config, fetch, navigator, Notification, speicher, umgebung, jetzt = () => new Date(), zeitgeber = { setze: (f, ms) => setTimeout(f, ms), loesche: (id) => clearTimeout(id) }, vorbereiten = () => (store.schichtFrischLesen ? store.schichtFrischLesen() : true) }) {
   let letzterFehler = null;
@@ -193,9 +193,9 @@ export function createPush({ store, adapter, config, fetch, navigator, Notificat
   /**
    * Hält den Plan beim Push-Dienst aktuell. Läuft nur nach einem frischen Laden aus Google (nie aus dem gespeicherten Stand) und nur,
    * wenn sich etwas geändert hat (oder mit `erzwingen`). Gibt { art: 'uebersprungen' | 'wartet' | 'unveraendert' | 'gesendet', … } zurück.
-   * 'wartet': der Schichtplan ist für den laufenden Monat noch nicht vorgeladen (siehe planQuellen). Das Telefon steht dann schon im
-   * Register, aber kein Plan geht hinaus – er würde die Erinnerungen an Zusätze löschen. Ebenso, wenn der Schichtplan vor dem Senden
-   * nicht frisch gelesen werden konnte (Lesefehler, eigene Änderung wird noch gespeichert). Ein wartender Abgleich wird nachgeholt
+   * 'wartet': Schichtplan und Fixkosten sind für den laufenden Monat noch nicht vorgeladen (siehe planQuellen). Das Telefon steht dann
+   * schon im Register, aber kein Plan geht hinaus – er würde die Erinnerungen an Zusätze und Kündigungsfristen löschen. Ebenso, wenn
+   * Schichtplan oder Fixkosten vor dem Senden nicht frisch gelesen werden konnten (Lesefehler, eigene Änderung wird noch gespeichert). Ein wartender Abgleich wird nachgeholt
    * (NACHHOLEN_MS); jeder Aufruf von außen ist ein neuer Anstoß (Nachholen beginnt wieder bei 30 s).
    */
   async function sync(optionen = {}) {
@@ -223,7 +223,7 @@ export function createPush({ store, adapter, config, fetch, navigator, Notificat
       merkeRegister(register);
     }
 
-    // Erst wenn überhaupt gesendet würde, den Schichtplan frisch lesen (das andere Telefon hat vielleicht Zusätze geändert); geht das
+    // Erst wenn überhaupt gesendet würde, Schichtplan und Fixkosten frisch lesen (das andere Telefon hat vielleicht Zusätze oder Verträge geändert); geht das
     // nicht, wird nicht gesendet: ein Plan aus einem alten Stand würde dessen Erinnerungen löschen oder zurückbringen.
     let bereit = Boolean(planQuellen(state, jetzt()));
     if (bereit) {

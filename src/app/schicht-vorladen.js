@@ -1,5 +1,6 @@
-// Schichtplan im Hintergrund vorladen (Schichtarten und drei Monate ab dem laufenden; für die Erinnerungen an Zusätze, siehe
-// store.schichtVorladen und push/plan.js planQuellen): ohne Vorladen für den laufenden Monat geht kein Push-Plan hinaus.
+// Schichtplan und Fixkosten im Hintergrund vorladen (Schichtarten, drei Monate ab dem laufenden, die vier Teile der Fixkosten; für die
+// Erinnerungen an Zusätze und Kündigungsfristen, siehe store.schichtVorladen und push/plan.js planQuellen): ohne Vorladen für den
+// laufenden Monat geht kein Push-Plan hinaus.
 // Wann: jedes Mal, wenn die App frisch nutzbar wird (Start, Verbinden), nach einem Monatswechsel bei offener App und – ist es
 // gescheitert – still noch einmal nach 30 s, 2 min, 10 min und dann alle 10 min, solange die App offen ist. Nie zwei gleichzeitig.
 

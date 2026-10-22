@@ -61,8 +61,14 @@ const SNAPSHOT_VERZOEGERUNG_MS = 1000;
 const VORLADEN_PRUEFEN_MS = 60_000; // ob nach einem Monatswechsel neu vorgeladen werden muss (sonst wartet der Push-Plan)
 const CHECKS_VERZOEGERUNG_MS = 2500; // Urlaub-Checks erst abgleichen, wenn sich der Urlaub kurz nicht mehr ändert
 
-/** Unterscheiden sich zwei Zustände nur im Schichtplan? */
-const nurSchichtGeaendert = (a, b) => a.schicht !== b.schicht && [...new Set([...Object.keys(a), ...Object.keys(b)])].every((k) => k === 'schicht' || a[k] === b[k]);
+// Teile des Zustands, die im Hintergrund vorgeladen werden, und die Seite, die sie zeigt.
+const HINTERGRUND_SEITE = { schicht: 'schicht', fixkosten: 'konto' };
+
+/** Unterscheiden sich zwei Zustände nur in vorgeladenen Teilen, die `seite` nicht zeigt (Schichtplan, Fixkosten)? */
+function nurHintergrundGeaendert(a, b, seite) {
+  const geaendert = [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((k) => a[k] !== b[k]);
+  return geaendert.length > 0 && geaendert.every((k) => HINTERGRUND_SEITE[k] && HINTERGRUND_SEITE[k] !== seite);
+}
 
 /**
  * `auth` und `snapshot` gibt es nur im Google-Modus; `konto` bündelt, was „Konto & App“ dafür braucht
@@ -275,7 +281,7 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
     jetzt: () => store.jetzt().getTime(),
   });
 
-  // Schichtplan im Hintergrund vorladen (Schichtarten und drei Monate ab heute; für die Erinnerungen, siehe store.schichtVorladen):
+  // Schichtplan und Fixkosten im Hintergrund vorladen (Schichtarten, drei Monate ab heute, vier Teile der Fixkosten; für die Erinnerungen, siehe store.schichtVorladen):
   // beim Start und Verbinden, nach einem Monatswechsel und nach Fehlern still mit Wartezeit (siehe app/schicht-vorladen.js); nie aus dem
   // gespeicherten Stand allein. Ohne `await`: der Start wartet nicht darauf; Fehler stehen im Status der Monate.
   const schichtVorlader = createSchichtVorlader({
@@ -302,15 +308,15 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
   let checksZeitgeber = null;
   let gemeldet = store.getState(); // zuletzt gemeldeter (bzw. beim Start gezeichneter) Zustand
   store.subscribe((state) => {
-    // Hat sich nur der Schichtplan geändert (z. B. das Vorladen im Hintergrund), bleibt jede andere Seite, wie sie ist: sie zeigt ihn nicht,
-    // und neu gezeichnet würde sie z. B. die Animationen in „Mehr“ abbrechen. Offene Blätter melden sich selbst an.
-    const nurSchicht = ui.seite() !== 'schicht' && nurSchichtGeaendert(gemeldet, state);
+    // Hat sich nur der Schichtplan oder die Fixkosten geändert (z. B. das Vorladen im Hintergrund), bleibt jede Seite, die sie nicht zeigt,
+    // wie sie ist; neu gezeichnet würde sie z. B. die Animationen in „Mehr“ abbrechen. Offene Blätter melden sich selbst an.
+    const nurHintergrund = nurHintergrundGeaendert(gemeldet, state, ui.seite());
     gemeldet = state;
     if (state.fehler && state.fehler !== letzterFehler) toast(state.fehler, { art: 'fehler', dauer: 6000 });
     else if (!state.fehler && letzterFehler) entferneFehlerToast();
     letzterFehler = state.fehler;
     // Push-Plan abgleichen, sobald frisch aus Google geladen und der Schichtplan vorgeladen wurde und sich Termine, Einstellungen, Urlaub
-    // (Urlaub-Checks), Kontostand (Erinnerung am Monatsende) oder Schichtplan (Zusätze) geändert haben; nie aus dem gespeicherten Stand
+    // (Urlaub-Checks), Kontostand (Erinnerung am Monatsende), Schichtplan (Zusätze) oder Fixkosten (Kündigungsfristen) geändert haben; nie aus dem gespeicherten Stand
     const quellen = push ? planQuellen(state, store.jetzt()) : null;
     if (quellenGeaendert(quellen, pushQuellen)) {
       pushQuellen = quellen;
@@ -325,7 +331,7 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
       checksZeitgeber = setTimeout(() => store.urlaubChecksAbgleichen(), CHECKS_VERZOEGERUNG_MS);
     }
     schichtVorladenAnstossen();
-    if (!nurSchicht) ui.rendern();
+    if (!nurHintergrund) ui.rendern();
     if (snapshot && state.geladen && !state.nurSnapshot) {
       clearTimeout(speicherZeitgeber);
       speicherZeitgeber = setTimeout(() => snapshot.speichern(store.getState(), store.heute()), SNAPSHOT_VERZOEGERUNG_MS);

@@ -245,6 +245,60 @@ describe('Zusätze im Schichtplan: 1 Tag und 1 Stunde vorher, nur an die Person'
   });
 });
 
+describe('Kündigungsfristen (Fixkosten): einen Monat vor „Kündbar bis“ um 09:00, an beide Telefone', () => {
+  const vertrag = (id, name, v, mehr = {}) => ({ id, name, cents: 5900, ungefaehr: false, intervall: 1, tag: '1', start: '2026-01', kategorie: 'versicherung', person: 'papa', vertrag: v, ...mehr });
+  const kfz = (mehr = {}) => vertrag('kfz00001', 'Kfz-Versicherung', { bis: '2025-12-31', verlaengerung: 12, frist: '1m' }, mehr);
+  const mitPosten = (...posten) => zustand({ settings: ohneKonto, fixkosten: { shards: [{ v: 1, posten }, null, { v: 1, posten: [] }, null], status: 'geladen', warnungen: [] } });
+
+  test('kündbar bis 30.11.2026 → am 30.10.2026 um 09:00 (Winterzeit), ohne `nur`, Ziel Konto', async () => {
+    const plan = await planeErinnerungen(mitPosten(kfz()), { jetzt: JETZT });
+    assert.deepEqual(kurz(plan), [['frist', '2026-10-30T08:00:00.000Z', 'Kfz-Versicherung: kündbar bis 30.11.2026 (in 1 Monat)']]);
+    assert.equal(plan[0].titel, '📝 Kündigungsfrist');
+    assert.equal(plan[0].ziel, '#/konto');
+    assert.equal(plan[0].ttl, 21600);
+    assert.equal('nur' in plan[0], false);
+    assert.ok(/^[A-Za-z0-9_-]{22}$/.test(plan[0].id));
+  });
+
+  test('Kennung je Posten und Datum: bleibt bei Neuberechnung gleich, anderer Posten → andere', async () => {
+    const a = await planeErinnerungen(mitPosten(kfz()), { jetzt: JETZT });
+    const b = await planeErinnerungen(mitPosten(kfz()), { jetzt: new Date('2026-10-20T08:00:00+02:00') });
+    assert.equal(a[0].id, b[0].id);
+    const c = await planeErinnerungen(mitPosten(kfz({ id: 'kfz00002' })), { jetzt: JETZT });
+    assert.notEqual(a[0].id, c[0].id);
+  });
+
+  test('archiviert, beendet, monatlich kündbar (Verlängerung < 3 Monate) oder außerhalb des Fensters → keine', async () => {
+    const leer = async (...posten) => assert.deepEqual(await planeErinnerungen(mitPosten(...posten), { jetzt: JETZT }), []);
+    await leer(kfz({ archiv: '2026-10-01' }));
+    await leer(kfz({ archiv: '2026-10-30' })); // ab dem Tag der Erinnerung nicht mehr aktiv
+    await leer(vertrag('ende0001', 'Alter Vertrag', { bis: '2026-09-30', verlaengerung: 0, frist: '1m' }));
+    await leer(vertrag('handy001', 'Handy', { bis: '2026-12-31', verlaengerung: 1, frist: '1m' }));
+    await leer(vertrag('fit00001', 'Fitnessstudio', { bis: '2027-06-30', verlaengerung: 12, frist: '2m' })); // Erinnerung 30.03.2027
+    await leer({ ...kfz(), vertrag: undefined });
+  });
+
+  test('archiviert erst nach dem Tag der Erinnerung: noch erinnert; ohne Verlängerung: einmal vor dem Ende', async () => {
+    assert.equal((await planeErinnerungen(mitPosten(kfz({ archiv: '2026-12-01' })), { jetzt: JETZT })).length, 1);
+    const plan = await planeErinnerungen(mitPosten(vertrag('miete001', 'Befristete Miete', { bis: '2027-01-31', verlaengerung: 0, frist: '3m' })), { jetzt: JETZT });
+    assert.deepEqual(kurz(plan), []); // kündbar bis 31.10.2026, Erinnerung 30.09.: schon vorbei
+    const spaeter = await planeErinnerungen(mitPosten(vertrag('miete001', 'Befristete Miete', { bis: '2027-02-28', verlaengerung: 0, frist: '3m' })), { jetzt: JETZT });
+    assert.deepEqual(kurz(spaeter), [['frist', '2026-10-28T08:00:00.000Z', 'Befristete Miete: kündbar bis 28.11.2026 (in 1 Monat)']]);
+  });
+
+  test('Verlängerung um 3 Monate: auch die Frist der nächsten Periode, wenn sie ins Fenster fällt', async () => {
+    // bis 31.10.2026, Frist 2 Wochen → kündbar bis 17.10., Erinnerung 17.09. (vorbei); nächste Periode: Ende 31.01.2027 → kündbar 17.01.2027, Erinnerung 17.12.2026
+    const p = vertrag('quart001', 'Quartalsvertrag', { bis: '2026-10-31', verlaengerung: 3, frist: '2w' });
+    const plan = await planeErinnerungen(mitPosten(p), { jetzt: JETZT, tage: 90 });
+    assert.deepEqual(kurz(plan), [['frist', '2026-12-17T08:00:00.000Z', 'Quartalsvertrag: kündbar bis 17.01.2027 (in 1 Monat)']]);
+  });
+
+  test('ohne Fixkosten im Zustand (noch nicht gelesen): keine, kein Fehler', async () => {
+    assert.deepEqual(await planeErinnerungen(zustand({ settings: ohneKonto }), { jetzt: JETZT }), []);
+    assert.deepEqual(await planeErinnerungen(zustand({ settings: ohneKonto, fixkosten: { shards: null, status: null, warnungen: [] } }), { jetzt: JETZT }), []);
+  });
+});
+
 describe('Wann der Plan gesendet wird', () => {
   const geladen = () => ({ ...zustand({ settings: ohneKonto }), geladen: true, nurSnapshot: false });
   const vorgeladen = (s, monat = '2026-10') => ({ ...s, schicht: { ...s.schicht, vorgeladen: monat } });
@@ -272,6 +326,12 @@ describe('Wann der Plan gesendet wird', () => {
       assert.equal(quellenGeaendert(planQuellen({ ...s, ...teil }, JETZT), q), true, Object.keys(teil)[0]);
     }
     assert.equal(quellenGeaendert(planQuellen({ ...s, schicht: { ...s.schicht, status: { '2026-10': 'laedt' } } }, JETZT), q), false);
+    // Fixkosten: neue Teile → neuer Plan; nur der Ladestatus → nicht
+    const mitFix = { ...s, fixkosten: { shards: [{ v: 1, posten: [] }, null, null, null], status: 'geladen', warnungen: [] } };
+    const qf = planQuellen(mitFix, JETZT);
+    assert.equal(quellenGeaendert(qf, q), true);
+    assert.equal(quellenGeaendert(planQuellen({ ...mitFix, fixkosten: { ...mitFix.fixkosten, status: 'laedt' } }, JETZT), qf), false);
+    assert.equal(quellenGeaendert(planQuellen({ ...mitFix, fixkosten: { ...mitFix.fixkosten, shards: [...mitFix.fixkosten.shards] } }, JETZT), qf), true);
     // neuer Monat vorgeladen (selbe Monatsdaten): neuer Plan
     const nov = new Date('2026-11-01T08:00:00+01:00');
     assert.equal(quellenGeaendert(planQuellen(vorgeladen(s, '2026-11'), nov), q), true);

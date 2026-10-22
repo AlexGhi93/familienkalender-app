@@ -5,6 +5,7 @@ import { normalizeSettings } from '../domain/settings.js';
 import { normalisiereListe } from '../domain/einkauf.js';
 import { normalisiereKonto } from '../domain/konto.js';
 import { normalisiereKatalog, normalisiereMonat } from '../domain/schicht.js';
+import { FIX_SHARDS, normalisiereShard } from '../domain/fixkosten.js';
 import { TAGES_TYPEN, TYPES } from '../domain/types.js';
 
 export const SNAPSHOT_KEY = 'fk.snapshot.v1';
@@ -46,6 +47,15 @@ function pruefeSchicht(roh, bezug) {
   return { katalog, monate: naechsteMonate(monate, bezug, MAX_SNAPSHOT_SCHICHT_MONATE) };
 }
 
+/**
+ * Fixkosten nachsichtig lesen (wie den Schichtplan: nur eine Kopie, das Vorladen holt sie neu): genau vier Teile, sonst null (= keine);
+ * ein unbrauchbarer Teil wird leer, beschädigte Posten fallen weg; ein fehlender Teil (null) bleibt null.
+ */
+function pruefeFixkosten(roh) {
+  if (!istObjekt(roh) || !Array.isArray(roh.shards) || roh.shards.length !== FIX_SHARDS) return null;
+  return { shards: roh.shards.map((s) => (s === null ? null : normalisiereShard(s))) };
+}
+
 /** Prüft die gelesene Struktur streng; liefert die bereinigten Daten oder null. */
 function pruefe(roh) {
   if (!istObjekt(roh) || roh.v !== 1 || typeof roh.gespeichertAm !== 'string' || Number.isNaN(Date.parse(roh.gespeichertAm))) return null;
@@ -66,14 +76,14 @@ function pruefe(roh) {
     if (!istObjekt(t) || typeof t.id !== 'string' || !TERMIN_TYPEN.includes(t.typ) || !TYPES[t.typ] || !gueltigesDatum(t.date) || !Array.isArray(t.mitnehmen ?? [])) return null;
   }
   const fenster = istObjekt(roh.fenster) && gueltigesDatum(roh.fenster.von) && gueltigesDatum(roh.fenster.bis) ? { von: roh.fenster.von, bis: roh.fenster.bis } : null;
-  return { daten: { settings, tage: roh.tage, urlaub: roh.urlaub, termine: roh.termine, fenster, einkauf: normalisiereListe(roh.einkauf), konto: normalisiereKonto(roh.konto), schicht: pruefeSchicht(roh.schicht, new Date(roh.gespeichertAm).toISOString()) }, gespeichertAm: roh.gespeichertAm };
+  return { daten: { settings, tage: roh.tage, urlaub: roh.urlaub, termine: roh.termine, fenster, einkauf: normalisiereListe(roh.einkauf), konto: normalisiereKonto(roh.konto), schicht: pruefeSchicht(roh.schicht, new Date(roh.gespeichertAm).toISOString()), fixkosten: pruefeFixkosten(roh.fixkosten) }, gespeichertAm: roh.gespeichertAm };
 }
 
 export function createSnapshot({ speicher = globalThis.localStorage ?? null, jetzt = () => new Date() } = {}) {
   return {
     /**
      * Speichert Tage, Urlaub, Termine und Einstellungen der letzten zwölf Monate, dazu die Schichtarten und von den geladenen Monaten
-     * des Schichtplans die sechs am nächsten zu `heute`. Gibt true zurück, wenn gespeichert wurde.
+     * des Schichtplans die sechs am nächsten zu `heute`, und die vier Teile der Fixkosten (falls schon gelesen). Gibt true zurück, wenn gespeichert wurde.
      */
     speichern(state, heute) {
       if (!speicher) return false;
@@ -89,6 +99,7 @@ export function createSnapshot({ speicher = globalThis.localStorage ?? null, jet
         einkauf: state.einkauf ?? null,
         konto: state.konto ?? null,
         schicht: state.schicht ? { katalog: state.schicht.katalog ?? null, monate: naechsteMonate(state.schicht.monate, heute, MAX_SNAPSHOT_SCHICHT_MONATE) } : null,
+        fixkosten: state.fixkosten?.shards ? { shards: state.fixkosten.shards } : null, // höchstens 4 × 6000 Zeichen
       });
       if (text.length > MAX_SNAPSHOT_ZEICHEN) return false;
       try {

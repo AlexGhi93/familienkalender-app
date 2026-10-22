@@ -345,9 +345,10 @@ describe('Einstellungen und Sicherung', () => {
     await store.laden();
     const d = await store.sicherungsDaten();
     const s = store.getState();
-    const { schicht, ...rest } = d;
+    const { schicht, fixkosten, ...rest } = d;
     assert.deepEqual(rest, { settings: s.settings, tage: s.tage, urlaub: s.urlaub, termine: s.termine, einkauf: s.einkauf, konto: s.konto });
     assert.deepEqual(Object.keys(schicht), ['katalog', 'monate']); // Inhalt: siehe „Schichtplan“
+    assert.deepEqual(Object.keys(fixkosten), ['shards']); // Inhalt: siehe fixkosten-store.test.js
   });
 });
 

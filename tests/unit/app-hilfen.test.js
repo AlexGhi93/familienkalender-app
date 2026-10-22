@@ -22,7 +22,7 @@ describe('Sicherung', () => {
   const s = sicherungErstellen({ state, appVersion: '9.9.9', jetzt: new Date('2026-10-14T06:00:00Z') });
 
   test('Kopf und Inhalt; flüchtige Felder fehlen', () => {
-    assert.deepEqual(Object.keys(s), ['app', 'sicherungVersion', 'appVersion', 'erstelltAm', 'settings', 'tage', 'urlaub', 'termine', 'einkauf', 'konto', 'schicht']);
+    assert.deepEqual(Object.keys(s), ['app', 'sicherungVersion', 'appVersion', 'erstelltAm', 'settings', 'tage', 'urlaub', 'termine', 'einkauf', 'konto', 'schicht', 'fixkosten']);
     assert.deepEqual([s.app, s.sicherungVersion, s.appVersion, s.erstelltAm], ['familienkalender', SICHERUNG_VERSION, '9.9.9', '2026-10-14T06:00:00.000Z']);
     assert.deepEqual(s.tage, { '2026-10-01': { typ: 'kita_essen' }, '2026-10-02': { typ: 'krank' } });
     assert.deepEqual(Object.keys(s.tage), ['2026-10-01', '2026-10-02']);
@@ -45,11 +45,25 @@ describe('Sicherung', () => {
 
   test('Dateiname und Anzahl (Einzahl und Mehrzahl)', () => {
     assert.equal(sicherungDateiname('2026-10-14'), 'familienkalender-sicherung-2026-10-14.json');
-    assert.equal(sicherungAnzahlText(s), '2 Tage · 2 Urlaube · 8 Termine · 4 Artikel auf der Einkaufsliste · 10 Kontostände · 3 Monate Schichtplan');
+    assert.equal(sicherungAnzahlText(s), '2 Tage · 2 Urlaube · 8 Termine · 4 Artikel auf der Einkaufsliste · 10 Kontostände · 3 Monate Schichtplan · 13 Fixkosten-Posten');
     const eins = { tage: { a: 1 }, urlaub: [1], termine: [1], einkauf: { e: [1] }, konto: { p: { papa: { '2026-09': 1 }, mama: {} } } };
     assert.equal(sicherungAnzahlText(eins), '1 Tag · 1 Urlaub · 1 Termin · 1 Artikel auf der Einkaufsliste · 1 Kontostand');
     assert.equal(sicherungAnzahlText({ ...eins, schicht: { katalog: null, monate: { '2026-09': {} } } }), '1 Tag · 1 Urlaub · 1 Termin · 1 Artikel auf der Einkaufsliste · 1 Kontostand · 1 Monat Schichtplan');
     assert.equal(sicherungAnzahlText({ ...eins, schicht: { katalog: null, monate: {} } }), sicherungAnzahlText(eins));
+    assert.equal(sicherungAnzahlText({ ...eins, fixkosten: { posten: [{}] } }), `${sicherungAnzahlText(eins)} · 1 Fixkosten-Posten`);
+    assert.equal(sicherungAnzahlText({ ...eins, fixkosten: { posten: [] } }), sicherungAnzahlText(eins));
+  });
+
+  test('Fixkosten: alle Posten aller Teile (mit Archiv) in einer Liste, nach Name sortiert; ohne Fixkosten leer', () => {
+    const alle = state.fixkosten.shards.flatMap((t) => t?.posten ?? []);
+    assert.equal(s.fixkosten.posten.length, alle.length);
+    assert.equal(s.fixkosten.posten.length, 13);
+    const namen = s.fixkosten.posten.map((p) => p.name);
+    assert.deepEqual(namen, [...namen].sort((a, b) => a.localeCompare(b, 'de')));
+    assert.ok(s.fixkosten.posten.some((p) => p.archiv));
+    assert.deepEqual(s.fixkosten.posten.find((p) => p.id === alle[0].id), alle[0]);
+    assert.deepEqual(sicherungErstellen({ state: zustand(), appVersion: VERSION }).fixkosten, { posten: [] });
+    assert.deepEqual(sicherungErstellen({ state: zustand({ fixkosten: { shards: null, status: null, warnungen: [] } }), appVersion: VERSION }).fixkosten, { posten: [] });
   });
 
   test('Schichtplan: Katalog und Monate (nach Monat sortiert); ohne Schichtplan leer', () => {
