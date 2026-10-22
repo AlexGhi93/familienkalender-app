@@ -196,9 +196,9 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
       ui.schicht.filter = schichtFilterSpeichern(filter);
       ui.rendern();
     },
-    /** Fixkosten beim Öffnen ihrer Ansicht einmal lesen (Lesefehler stehen im Status, siehe store.fixLaden). */
-    fixLaden() {
-      if (fixAngefragt) return;
+    /** Fixkosten beim Öffnen ihrer Ansicht einmal lesen; `nochmal` (Knopf „Nochmal versuchen“) liest erneut. Lesefehler stehen im Status (store.fixLaden). */
+    fixLaden({ nochmal = false } = {}) {
+      if (fixAngefragt && !nochmal) return;
       fixAngefragt = true;
       store.fixLaden().catch(() => {});
     },

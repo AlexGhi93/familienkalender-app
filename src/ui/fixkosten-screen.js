@@ -107,7 +107,7 @@ function kategorieKarte(k, ctx) {
       k.posten.map((z) =>
         postenKnopf(
           z.id,
-          `${z.name} bearbeiten`,
+          z.beschriftung,
           [
             h('span', { class: 'fk-n' }, h('b', {}, z.name), h('small', {}, personPille(z.person), ` ${fest(z.unter)}`, z.gesperrt ? ' · 🔒 gesperrt' : ''), abzeichen(z.abzeichen)),
             h('span', { class: 'fk-b' }, fest(z.betrag), z.proMonat ? h('small', {}, 'pro Monat') : null),
@@ -129,7 +129,7 @@ function fristenKarte(m, ctx) {
     h(
       'div',
       { class: 'fk-liste' },
-      m.fristen.map((f) => postenKnopf(f.id, `${f.name}: ${f.abzeichen.text}`, [h('span', { class: 'fk-n' }, h('b', {}, f.name), h('small', {}, f.unter), abzeichen(f.abzeichen))], ctx)),
+      m.fristen.map((f) => postenKnopf(f.id, f.beschriftung, [h('span', { class: 'fk-n' }, h('b', {}, f.name), h('small', {}, f.unter), abzeichen(f.abzeichen))], ctx)),
     ),
   );
 }
@@ -159,6 +159,7 @@ function diagrammKarte(m) {
         ),
       ),
     ),
+    d.hinweis ? h('p', { class: 'leise fk-hinweis fk-waechst' }, d.hinweis) : null,
     h('p', { class: 'leise fk-hinweis' }, 'Monate mit großen Zahlungen (z. B. jährliche Beiträge) zeigen, warum weniger gespart wurde.'),
   );
 }
@@ -172,7 +173,7 @@ function archivKarte(m, ctx) {
     h(
       'div',
       { class: 'fk-liste' },
-      m.archiv.map((a) => postenKnopf(a.id, `${a.name} (archiviert)`, [h('span', { class: 'fk-n' }, h('b', {}, a.name), h('small', {}, a.unter)), h('span', { class: 'fk-b' }, '—')], ctx, true)),
+      m.archiv.map((a) => postenKnopf(a.id, a.beschriftung, [h('span', { class: 'fk-n' }, h('b', {}, a.name), h('small', {}, a.unter)), h('span', { class: 'fk-b' }, '—')], ctx, true)),
     ),
   );
 }
@@ -180,7 +181,7 @@ function archivKarte(m, ctx) {
 /** Warnungen beim Lesen, unlesbare Teile (gesperrt) und ausgeblendete Posten einer neueren Version. */
 function meldungen(m) {
   return [
-    ...m.unlesbar.map((u) => h('article', { class: 'karte fk-meldung warn', role: 'alert' }, h('b', {}, `⚠️ ${u.titel}`), h('p', {}, u.text))),
+    ...m.unlesbar.map((u) => h('article', { class: 'karte fk-meldung warn' }, h('b', {}, `⚠️ ${u.titel}`), h('p', {}, u.text))),
     m.warnungen.length > 0 ? h('article', { class: 'karte fk-meldung' }, m.warnungen.map((w) => h('p', {}, `⚠️ ${w}`))) : null,
   ];
 }
@@ -196,7 +197,20 @@ export function fixkostenInhalt({ store, ui }) {
         'article',
         { class: 'karte hinweis fk-nicht-geladen' },
         h('p', {}, text),
-        m.zustand === 'fehler' ? h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein', type: 'button', onClick: () => store.fixLaden() }, 'Nochmal versuchen')) : null,
+        m.zustand === 'fehler' ? h('div', { class: 'knopfzeile' }, h(
+                'button',
+                {
+                  class: 'knopf klein',
+                  type: 'button',
+                  onClick: (ev) => {
+                    // sichtbar, dass es läuft; das Neuzeichnen (Status „lädt“, dann gelesen oder Fehler) ersetzt den Knopf
+                    ev.currentTarget.disabled = true;
+                    ev.currentTarget.textContent = 'Wird geladen …';
+                    ui.fixLaden?.({ nochmal: true });
+                  },
+                },
+                'Nochmal versuchen',
+              )) : null,
       ),
     ];
   }

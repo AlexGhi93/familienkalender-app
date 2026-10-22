@@ -53,6 +53,7 @@ describe('kontoModel', () => {
       ['2026-08', 40000, 20000, 'plus', 'August 2026: +600 € (ohne Extra +400 €)'],
       ['2026-09', -9000, 0, 'minus', 'September 2026: −90 €'],
     ]);
+    assert.deepEqual(m.balken.map((b) => b.delta), [60000, -9000], 'Veränderung mit Sonderbeträgen (für die Fixkosten-Seite)');
     assert.deepEqual(m.balkenDurchschnitt, { wert: 15500, text: 'Ø +155 € ohne Extra' });
     assert.deepEqual(m.diagramm.monate.map((x) => x.kurz), ['Jul', 'Aug', 'Sep']);
     assert.deepEqual(m.diagramm.legende, [{ id: 'zusammen', label: 'Zusammen', letzter: '2.010 €' }, { id: 'papa', label: 'Papa', letzter: '1.400 €' }, { id: 'mama', label: 'Mama', letzter: '610 €' }]);

@@ -87,6 +87,8 @@ test.describe('Fixkosten im Konto-Tab', () => {
     await expect(kfz.locator('.fk-person')).toHaveText('PAPA');
     await expect(kfz.locator('.fk-abzeichen')).toHaveText('⚠ Kündbar bis 30.11. – in 47 Tagen');
     await expect(kfz.locator('.fk-abzeichen')).toHaveClass(/warn/);
+    // Vorleseprogramme hören Betrag, Person und die ⚠-Frist (nicht nur „… bearbeiten“)
+    await expect(kfz).toHaveAccessibleName('Kfz-Versicherung Papa, Papa, 59 € pro Monat, monatlich · am 1., ⚠ Kündbar bis 30.11. – in 47 Tagen – bearbeiten');
     const fitness = zeile(page, 'Freizeit & Abos', 'Fitnessstudio');
     await expect(fitness.locator('.fk-abzeichen')).toHaveText('📝 Kündbar bis 30.04.2027');
     await expect(fitness.locator('.fk-abzeichen')).not.toHaveClass(/warn/);
@@ -101,6 +103,7 @@ test.describe('Fixkosten im Konto-Tab', () => {
     await expect(diagramm.locator('.fk-monat > .fk-klein')).toHaveText(['Oktober 2026', 'September 2026', 'August 2026', 'Juli 2026', 'Juni 2026', 'Mai 2026']);
     await expect(diagramm.locator('.fk-monat').nth(1).locator('.fk-legende')).toHaveText('Fixkosten fällig 1.348,79 €Ersparnis +1.933,50 €');
     await expect(diagramm.locator('.fk-monat').first().locator('.fk-legende')).toHaveText('Fixkosten fällig 1.545,69 €Ersparnis: Kontostand am Monatsende');
+    await expect(diagramm.locator('.fk-waechst')).toHaveCount(0); // schon 6 Monate
 
     const archiv = karte(page, 'Archiv');
     await expect(archiv.locator('.fk-karte-titel small')).toHaveText('1');
@@ -112,6 +115,7 @@ test.describe('Fixkosten im Konto-Tab', () => {
     await page.getByRole('button', { name: '＋ Fixkosten eintragen' }).click();
     const d = dialog(page, 'Neue Fixkosten');
     await expect(d.getByRole('group', { name: 'Vorlage (optional)' }).getByRole('button')).toHaveCount(13);
+    for (const hoehe of await d.locator('.fk-vorlage').evaluateAll((liste) => liste.map((x) => x.getBoundingClientRect().height))) expect(hoehe).toBeGreaterThanOrEqual(44);
     await d.getByRole('button', { name: '🚗 Kfz-Versicherung' }).click();
     await expect(d.getByRole('button', { name: '🚗 Kfz-Versicherung' })).toHaveAttribute('aria-pressed', 'true');
     await expect(d.getByLabel('Name', { exact: true })).toHaveValue('Kfz-Versicherung');
@@ -280,6 +284,18 @@ test.describe('Fixkosten im Konto-Tab', () => {
     await expect(karte(page, 'Archiv')).toHaveCount(0);
     await page.reload();
     await expect(gross(page)).toHaveText('0 €');
+
+    // der erste eigene Posten: die Grafik zeigt nur diesen Monat und sagt, dass sie wächst
+    await page.getByRole('button', { name: '＋ Fixkosten eintragen' }).click();
+    const d = dialog(page, 'Neue Fixkosten');
+    await d.getByLabel('Name', { exact: true }).fill('Miete');
+    await d.getByLabel('Betrag in Euro').fill('800');
+    await d.getByRole('button', { name: 'Speichern' }).click();
+    await expect(d).toBeHidden();
+    const diagramm = karte(page, 'Fixkosten und Ersparnis');
+    await expect(diagramm.locator('.fk-karte-titel small')).toHaveText('dieser Monat');
+    await expect(diagramm.locator('.fk-monat > .fk-klein')).toHaveText(['Oktober 2026']);
+    await expect(diagramm.locator('.fk-waechst')).toHaveText('Wird mit jedem Monat länger (bis 6 Monate).');
   });
 
   test('Demo: unlesbarer Teil mit klarer Meldung; Posten einer neueren Version ausgeblendet mit Hinweis', async ({ page }) => {
@@ -321,5 +337,37 @@ test.describe('Fixkosten mit Google', () => {
     await expect(page.locator('.fk-meldung:not(.warn)')).toHaveText('⚠️ Die Notiz bei „Miete“ war unlesbar und wurde entfernt.');
     await expect(page.locator('.fk-fremd')).toHaveText('ℹ️ 1 Posten von einer neueren App-Version ausgeblendet – bitte App aktualisieren');
     expect(google.anfragen.filter((a) => a.startsWith('GET ') && a.includes('/events/fkfest')).length).toBeGreaterThanOrEqual(4);
+  });
+
+  test('Speichern scheitert (HTTP 500): Meldung, Archivieren/Zurückholen bleiben benutzbar, kein Fehler auf der Seite', async ({ page }) => {
+    const teil = (nr, p) => ({ id: `fkfest${nr}`, summary: '💶 fk Fixkosten (nicht löschen)', description: JSON.stringify({ v: 1, p }), start: { date: '2000-01-01' }, end: { date: '2000-01-02' }, transparency: 'transparent' });
+    const miete = { i: 'aaaa0001', n: 'Miete', c: 90000, m: 1, d: '1', s: '2026-01', k: 'wohnen', w: 'gemeinsam' };
+    const alt = { i: 'aaaa0002', n: 'Zeitung', c: 2000, m: 1, d: '1', s: '2026-01', k: 'sonstiges', w: 'gemeinsam', a: '2026-05-01' };
+    // beide Posten in den Teil legen, in den sie gehören
+    const { shardFuer } = await import('../../src/domain/fixkosten.js');
+    const teile = new Map();
+    for (const p of [miete, alt]) teile.set(shardFuer(p.i), [...(teile.get(shardFuer(p.i)) ?? []), p]);
+    await starteGoogleVerbunden(page, { route: '#/konto', ereignisse: [...teile].map(([nr, p]) => teil(nr, p)), speicher: { 'fk.konto.ansicht.v1': 'fixkosten' } });
+    await expect(gross(page)).toHaveText('900 €');
+    // ab jetzt scheitert jedes Schreiben der Fixkosten
+    await page.route(/\/events(\/fkfest\d)?(\?.*)?$/, (route) => (route.request().method() === 'GET' ? route.fallback() : route.fulfill({ status: 500, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ error: { code: 500, message: 'kaputt' } }) })));
+
+    await zeile(page, 'Wohnen & Energie', 'Miete').click();
+    await dialog(page, 'Fixkosten ändern').getByRole('button', { name: '🗄️ Archivieren' }).click();
+    const archivieren = dialog(page, '„Miete“ archivieren').getByRole('button', { name: 'Archivieren', exact: true });
+    await archivieren.click();
+    await expect(page.locator('.toast.fehler')).toBeVisible();
+    await expect(archivieren).toBeEnabled();
+    await expect(gross(page)).toHaveText('900 €');
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+
+    await karte(page, 'Archiv').locator('.fk-pos', { hasText: 'Zeitung' }).click();
+    const zurueck = dialog(page, 'Zeitung').getByRole('button', { name: 'Zurückholen' });
+    await zurueck.click();
+    await expect(page.locator('.toast.fehler')).toBeVisible();
+    await expect(zurueck).toBeEnabled();
+    await expect(karte(page, 'Archiv').locator('.fk-n > b')).toHaveText(['Zeitung']);
   });
 });

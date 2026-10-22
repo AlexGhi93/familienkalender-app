@@ -153,6 +153,16 @@ describe('fixkostenModel: Listen', () => {
     assert.deepEqual([kind.id, kind.kuerzel, kind.name], ['kind', 'KRÜMEL', 'Krümel']);
   });
 
+  test('Beschriftung der Zeilen für Vorleseprogramme: Name, Person, Betrag und Abzeichen (⚠-Frist hörbar)', () => {
+    const m = fixkostenModel(mit(ALLE), HEUTE);
+    const zeilen = m.kategorien.flatMap((k) => k.posten);
+    assert.equal(zeilen.find((z) => z.name === 'Kfz-Versicherung Papa').beschriftung, 'Kfz-Versicherung Papa, Papa, 59 € pro Monat, monatlich · am 1., ⚠ Kündbar bis 30.11. – in 47 Tagen – bearbeiten');
+    assert.equal(zeilen.find((z) => z.name === 'Fernwärme').beschriftung, 'Fernwärme, Gemeinsam, 89 € pro Monat, alle 2 Monate 178 € · am 20. – bearbeiten');
+    assert.equal(zeilen.find((z) => z.name === 'Strom').beschriftung, 'Strom, Gemeinsam, ungefähr 74 € pro Monat, monatlich · am 15. · ~ ungefähr – bearbeiten');
+    assert.equal(m.fristen[0].beschriftung, 'Kfz-Versicherung Papa, Vertrag bis 31.12.2026, ⚠ Kündbar bis 30.11. – in 47 Tagen – bearbeiten');
+    assert.equal(fixkostenModel(mit([MIETE, ALT]), HEUTE).archiv[0].beschriftung, 'Zeitung, archiviert ab 01.05.2026 · 20 € monatlich – zurückholen oder endgültig löschen');
+  });
+
   test('Abzeichen: „Kündbar bis“, ⚠ ab 60 Tagen davor', () => {
     const m = fixkostenModel(mit(ALLE), HEUTE);
     const zeile = (name) => m.kategorien.flatMap((k) => k.posten).find((z) => z.name === name);
@@ -218,10 +228,13 @@ describe('fixkostenModel: Listen', () => {
         ['Juli 2026', 'Fixkosten fällig 1.000 €', 'Ersparnis: keine Angabe'],
       ],
     );
+    assert.equal(m.diagramm.hinweis, 'Wird mit jedem Monat länger (bis 6 Monate).');
     const sep = m.diagramm.monate[1];
     assert.ok(sep.fixBreite > 0 && sep.sparBreite > 0 && sep.fixBreite + sep.sparBreite <= 100);
     assert.equal(m.diagramm.monate[0].sparBreite, 0);
     assert.equal(fixkostenModel(mit([]), HEUTE).diagramm, null);
+    const voll = fixkostenModel(mit([p('a0000001', 'Miete', 100000, { start: '2025-01' })]), HEUTE).diagramm;
+    assert.deepEqual([voll.monate.length, voll.hinweis], [6, null]);
   });
 
   test('negative Ersparnis: kein grüner Teil, Text mit Minus', () => {

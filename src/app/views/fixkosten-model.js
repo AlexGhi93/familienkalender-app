@@ -53,6 +53,7 @@ export const FIX_FILTER = Object.freeze(['alle', ...FIX_PERSONEN.map((x) => x.id
 const WARN_TAGE = 60; // ⚠ ab so vielen Tagen vor „Kündbar bis“
 const MONATLICH_KUENDBAR_BIS = 3; // Verlängerung unter 3 Monaten (> 0): monatlich kündbar, keine Erinnerung (wie push/plan.js)
 const DIAGRAMM_MONATE = 6;
+const DIAGRAMM_HINWEIS = 'Wird mit jedem Monat länger (bis 6 Monate).';
 const BETRAG_FEHLER = 'Bitte einen Betrag zwischen 0,01 € und 99.999,99 € eingeben.';
 
 const monatText = (jm) => `${MONATE[Number(jm.slice(5, 7)) - 1]} ${jm.slice(0, 4)}`;
@@ -93,20 +94,29 @@ export function vertragAbzeichen(posten, heute) {
   return { text: `📝 Kündbar bis ${datumAnzeige(st.kuendbarBis)}`, warn: false };
 }
 
+const AKTION_BEARBEITEN = 'bearbeiten';
+const AKTION_ARCHIV = 'zurückholen oder endgültig löschen';
+
 /** Zeile eines Postens in einer Kategorie. */
 function zeile(posten, gesperrt, settings, heute) {
   const teile = [posten.intervall === 1 ? 'monatlich' : `${intervallText(posten.intervall)} ${betragText(posten.cents)}`, tagText(posten.tag)];
   if (posten.ungefaehr) teile.push('~ ungefähr');
+  const person = personInfo(posten.person, settings);
+  const unter = teile.join(' · ');
+  const abzeichen = vertragAbzeichen(posten, heute);
+  const betragGesprochen = `${posten.ungefaehr ? 'ungefähr ' : ''}${betragText(monatlich(posten))} pro Monat`;
   return {
     id: posten.id,
     name: posten.name,
-    person: personInfo(posten.person, settings),
-    unter: teile.join(' · '),
+    person,
+    unter,
     betrag: ungefaehrText(posten, monatlich(posten)),
     proMonat: posten.intervall > 1,
-    abzeichen: vertragAbzeichen(posten, heute),
+    abzeichen,
     archiviert: Boolean(posten.archiv),
     gesperrt,
+    // was ein Vorleseprogramm sagt (auch die ⚠-Frist), statt nur „Name bearbeiten“
+    beschriftung: `${[posten.name, person.name, betragGesprochen, unter, abzeichen?.text].filter(Boolean).join(', ')} – ${posten.archiv ? AKTION_ARCHIV : AKTION_BEARBEITEN}`,
   };
 }
 
@@ -120,7 +130,7 @@ function diagrammModel(alle, jm, ersparnisJeMonat) {
   if (alle.length === 0) return null;
   const erster = alle.map((p) => p.start).sort()[0];
   const monate = Array.from({ length: DIAGRAMM_MONATE }, (_, i) => monatVor(jm, i)).filter((m) => m >= erster);
-  const daten = monate.map((m) => ({ monat: m, fix: faelligeImMonat(alle, m).reduce((s, f) => s + f.posten.cents, 0), spar: ersparnisJeMonat.get(m) ?? null }));
+  const daten = monate.map((m) => ({ monat: m, fix: summen(alle, { jm: m, heute: `${m}-01` }).faellig, spar: ersparnisJeMonat.get(m) ?? null }));
   const groesster = Math.max(1, ...daten.map((d) => d.fix + Math.max(0, d.spar ?? 0)));
   const breite = (cents) => Math.round((cents / groesster) * 1000) / 10;
   return {
@@ -133,6 +143,7 @@ function diagrammModel(alle, jm, ersparnisJeMonat) {
       sparBreite: d.spar !== null && d.spar > 0 ? breite(d.spar) : 0,
       minus: d.spar !== null && d.spar < 0,
     })),
+    hinweis: monate.length < DIAGRAMM_MONATE ? DIAGRAMM_HINWEIS : null, // beginnt beim ersten Startmonat und wächst bis 6 Monate
   };
 }
 
@@ -163,10 +174,10 @@ export function fixkostenModel(state, heute, { filter: filterWunsch = 'alle' } =
 
   // Ersparnis aus dem Kontostand (dasselbe Modell wie die Seite „Kontostand“, Zeitraum 6 Monate)
   const konto = kontoModel(state, heute, { bereich: 6 });
-  const ersparnisJeMonat = new Map(konto.balken.map((b) => [b.monat, b.wert + b.extra]));
+  const ersparnisJeMonat = new Map(konto.balken.map((b) => [b.monat, b.delta]));
 
   const personWahl = filter === 'alle' ? null : personInfo(filter, settings);
-  const alleSumme = Object.values(s.jePerson).reduce((a, b) => a + b, 0);
+  const alleSumme = summen(alle, { jm, heute }).monatlich;
   const kopf = {
     titel: personWahl ? `Fixkosten pro Monat (Ø) · ${personWahl.emoji} ${personWahl.name}` : 'Fixkosten pro Monat (Ø)',
     monatlich: betragText(s.monatlich),
@@ -204,12 +215,15 @@ export function fixkostenModel(state, heute, { filter: filterWunsch = 'alle' } =
     unter: istMonatlichKuendbar(posten.vertrag) && status.ende !== posten.vertrag.bis ? 'verlängert sich monatlich' : `Vertrag bis ${datumAnzeige(status.ende)}`,
     abzeichen: vertragAbzeichen(posten, heute),
     gesperrt: gesperrt.get(posten.id),
-  }));
+  })).map((f) => ({ ...f, beschriftung: `${f.name}, ${f.unter}, ${f.abzeichen.text} – ${AKTION_BEARBEITEN}` }));
 
   const archiv = gefiltert
     .filter((p) => p.archiv)
     .sort((a, b) => (a.archiv < b.archiv ? 1 : a.archiv > b.archiv ? -1 : a.name.localeCompare(b.name, 'de')))
-    .map((p) => ({ id: p.id, name: p.name, unter: `archiviert ab ${datumAnzeige(p.archiv)} · ${betragText(p.cents)} ${intervallText(p.intervall)}`, aktiv: istAktiv(p, heute), gesperrt: gesperrt.get(p.id) }));
+    .map((p) => {
+      const unter = `archiviert ab ${datumAnzeige(p.archiv)} · ${betragText(p.cents)} ${intervallText(p.intervall)}`;
+      return { id: p.id, name: p.name, unter, aktiv: istAktiv(p, heute), gesperrt: gesperrt.get(p.id), beschriftung: `${p.name}, ${unter} – ${AKTION_ARCHIV}` };
+    });
 
   return {
     zustand,

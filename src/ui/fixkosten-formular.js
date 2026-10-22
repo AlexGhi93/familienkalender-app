@@ -42,7 +42,7 @@ async function sicher(lauf) {
   }
 }
 
-const gesperrtHinweis = () => h('article', { class: 'karte fk-meldung warn', role: 'alert' }, h('b', {}, '🔒 Nicht änderbar'), h('p', {}, TEXT_TEIL_GESPERRT));
+const gesperrtHinweis = () => h('article', { class: 'karte fk-meldung warn' }, h('b', {}, '🔒 Nicht änderbar'), h('p', {}, TEXT_TEIL_GESPERRT));
 
 function auswahl(beschriftung, optionen, wert, beiAenderung, mehr = {}) {
   return h(
@@ -208,26 +208,27 @@ export function oeffneFixFormular({ store }, id) {
             }),
           ),
         ),
+        // Fällig am und (bei Intervall > 1) die nächste Zahlung nebeneinander; die Kategorie bekommt die ganze Breite (lange Namen)
         h(
           'div',
           { class: 'feld-paar fk-paar' },
           feld('Fällig am', auswahl('Fällig am', TAGE, e.tag, (w) => (e.tag = w))),
-          feld('Kategorie', auswahl('Kategorie', FIX_KATEGORIEN.map((k) => [k.id, `${k.emoji} ${k.name}`]), e.kategorie, (w) => (e.kategorie = w))),
-        ),
-        e.intervall > 1
-          ? feld(
-              'Nächste Zahlung im',
-              auswahl(
+          e.intervall > 1
+            ? feld(
                 'Nächste Zahlung im',
-                (() => {
-                  const liste = startMonate(e.intervall, heute);
-                  return (liste.some((m) => m.wert === e.naechste) ? liste : [{ wert: e.naechste, text: e.naechste }, ...liste]).map((m) => [m.wert, m.text]);
-                })(),
-                e.naechste,
-                (w) => (e.naechste = w),
-              ),
-            )
-          : null,
+                auswahl(
+                  'Nächste Zahlung im',
+                  (() => {
+                    const liste = startMonate(e.intervall, heute);
+                    return (liste.some((m) => m.wert === e.naechste) ? liste : [{ wert: e.naechste, text: e.naechste }, ...liste]).map((m) => [m.wert, m.text]);
+                  })(),
+                  e.naechste,
+                  (w) => (e.naechste = w),
+                ),
+              )
+            : null,
+        ),
+        feld('Kategorie', auswahl('Kategorie', FIX_KATEGORIEN.map((k) => [k.id, `${k.emoji} ${k.name}`]), e.kategorie, (w) => (e.kategorie = w))),
         h('div', { class: 'feld' }, h('span', { 'aria-hidden': 'true' }, 'Gehört zu'), personWahl()),
         h('label', { class: 'fk-haken' }, ungefaehr, ' ~ Betrag schwankt (ungefähr)'),
         vertragBox(),
@@ -272,11 +273,12 @@ function oeffneArchivieren({ store }, posten, danach) {
                 toast('Bitte ein Datum eingeben, z. B. 01.11.2026.', { art: 'fehler' });
                 return;
               }
-              ev.currentTarget.disabled = true;
+              const knopf = ev.currentTarget; // nach dem `await` ist currentTarget schon null
+              knopf.disabled = true;
               if (erledigt(await sicher(store.fixPostenArchivieren(posten.id, datum)), 'Archiviert ✓')) {
                 schliessen();
                 danach();
-              } else ev.currentTarget.disabled = false;
+              } else knopf.disabled = false; // nochmal versuchen
             },
           },
           'Archivieren',
@@ -331,9 +333,10 @@ export function oeffneFixArchiviert({ store }, id) {
             type: 'button',
             disabled: gesperrt,
             onClick: async (ev) => {
-              ev.currentTarget.disabled = true;
+              const knopf = ev.currentTarget; // nach dem `await` ist currentTarget schon null
+              knopf.disabled = true;
               if (erledigt(await sicher(store.fixPostenWiederherstellen(posten.id)), 'Zurückgeholt ✓')) schliessen();
-              else ev.currentTarget.disabled = false;
+              else knopf.disabled = false; // nochmal versuchen
             },
           },
           'Zurückholen',

@@ -149,7 +149,7 @@ export function kontoModel(state, heute, { demo = false, monat: gewuenscht = nul
         }
       : null;
 
-  // Balken = gewöhnliche Ersparnis („ohne Extra“); die Sonderbeträge des Monats hängen als Segment daran
+  // Balken = gewöhnliche Ersparnis („ohne Extra“); die Sonderbeträge des Monats hängen als Segment daran. `delta` = ganze Veränderung (mit Extra)
   const balken = imBereich
     .filter((z) => z.zusammen && z.zusammen.delta !== null)
     .slice(0, MAX_BALKEN)
@@ -157,7 +157,7 @@ export function kontoModel(state, heute, { demo = false, monat: gewuenscht = nul
     .map((z) => {
       const { delta, ohneExtra, extra } = z.zusammen;
       const zusatz = extra !== 0 ? ` (ohne Extra ${deltaText(ohneExtra)})` : '';
-      return { monat: z.monat, kurz: MONATE[Number(z.monat.slice(5)) - 1].slice(0, 3), wert: ohneExtra, extra, art: art(ohneExtra), text: `${monatText(z.monat)}: ${deltaText(delta)}${zusatz}` };
+      return { monat: z.monat, kurz: MONATE[Number(z.monat.slice(5)) - 1].slice(0, 3), wert: ohneExtra, extra, delta, art: art(ohneExtra), text: `${monatText(z.monat)}: ${deltaText(delta)}${zusatz}` };
     });
 
   const mitDaten = reihenDaten ? reihenDaten.monate.filter((_, i) => reihenDaten.reihen.papa[i] !== null || reihenDaten.reihen.mama[i] !== null).length : 0;
