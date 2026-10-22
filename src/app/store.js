@@ -296,7 +296,9 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       },
     };
     const lauf = eintrag.kette.then(() => ausfuehren(schreibe, state, optionen));
-    eintrag.kette = lauf;
+    // Die Kette läuft immer weiter (sonst bliebe nach einem Wurf, z. B. eines Hörers, jeder spätere Tipp dieses Teils ungespeichert);
+    // der Aufrufer bekommt die Ablehnung trotzdem über `await lauf`.
+    eintrag.kette = lauf.catch(() => {});
     const ergebnis = await lauf;
     return { neu, ergebnis, fehler: ergebnis === 'auth' ? TEXT_ANMELDEN : fehlerText };
   }

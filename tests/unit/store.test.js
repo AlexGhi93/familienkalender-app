@@ -710,6 +710,31 @@ describe('Schichtplan', () => {
     assert.deepEqual(TAGE.map((t) => tagK(gespeichert(speicher).schicht.monate[JM], 'papa', t)), ['Z', 'Z', 'Z']);
   });
 
+  test('ein Hörer wirft während einer Speicherung: die Kette läuft weiter, spätere Tipps werden gespeichert, der Abgleich geht wieder', async () => {
+    const tor = schranke();
+    const { store, speicher } = aufbau({ aendern: (a) => ({ ...a, aendereSchichtMonat: (jm, fn) => tor.durch(() => a.aendereSchichtMonat(jm, fn)) }) });
+    await store.laden();
+    await store.schichtLaden(JM);
+    const eins = store.schichtSetzen(JM, 6, 'papa', 'Z');
+    const zwei = store.schichtSetzen(JM, 7, 'papa', 'Z'); // wartet in der Kette hinter dem ersten
+    let wuerfe = 2;
+    store.subscribe(() => {
+      if (wuerfe > 0) {
+        wuerfe -= 1;
+        throw new Error('Zeichenfehler'); // beim Erfolg und noch einmal bei der Rücknahme
+      }
+    });
+    await tor.weiter();
+    await assert.rejects(eins, { message: 'Zeichenfehler' });
+    await tor.weiter();
+    await zwei;
+    const drei = store.schichtSetzen(JM, 8, 'papa', 'Z');
+    await tor.weiter();
+    await drei;
+    assert.deepEqual([7, 8].map((t) => tagK(gespeichert(speicher).schicht.monate[JM], 'papa', t)), ['Z', 'Z']);
+    assert.equal(await store.schichtAktualisieren([JM]), true);
+  });
+
   test('Schichtarten schnell nacheinander: eine Speicherung nach der anderen, beide bleiben', async () => {
     const tor = schranke();
     const { store, speicher } = aufbau({ aendern: (a) => ({ ...a, aendereSchichtarten: (fn) => tor.durch(() => a.aendereSchichtarten(fn)) }) });
