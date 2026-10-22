@@ -210,7 +210,7 @@ describe('Fehler beim Speichern: zurückgenommen, neu gelesen; abgelaufene Anmel
     await store.laden();
     const vorher = store.getState().ziele.daten;
     const r = await store.zielSpeichern(entwurf());
-    assert.deepEqual(r, { ok: false, fehler: TEXT_FEHLER });
+    assert.deepEqual(r, { ok: false, fehler: TEXT_FEHLER, gemeldet: true });
     assert.deepEqual(store.getState().ziele.daten, vorher);
     assert.deepEqual(log, ['schreibe', 'lesen']);
     assert.equal(store.getState().fehler, TEXT_FEHLER);
@@ -279,7 +279,7 @@ describe('Zwei Telefone', () => {
     await t.store.laden();
     const alt = zielMit(t.store, 'auto0001');
     await t.api.ereignisse.schreibe('kan', { id: 'fksparen', description: zieleText({ v: 1, beginn: '2026-10', z: [], m: [] }) });
-    assert.deepEqual(await t.store.zielSpeichern({ ...alt, name: 'Neues Auto' }), { ok: false, fehler: TEXT_GELOESCHT });
+    assert.deepEqual(await t.store.zielSpeichern({ ...alt, name: 'Neues Auto' }), { ok: false, fehler: TEXT_GELOESCHT, gemeldet: true });
     assert.equal(zielMit(t.store, 'auto0001'), undefined, 'neu gelesen: nicht mehr gezeigt');
     assert.deepEqual(JSON.parse(t.text()).z, []);
   });
@@ -327,7 +327,7 @@ describe('Unlesbare Sparziele werden nie überschrieben, fremde Einträge bleibe
     await t.store.laden();
     const neuer = JSON.stringify({ v: 2, z: [] });
     await t.api.ereignisse.schreibe('kan', { id: 'fksparen', description: neuer });
-    assert.deepEqual(await t.store.zielSpeichern(entwurf()), { ok: false, fehler: TEXT_ZIELE_GESPERRT });
+    assert.deepEqual(await t.store.zielSpeichern(entwurf()), { ok: false, fehler: TEXT_ZIELE_GESPERRT, gemeldet: true });
     assert.equal(t.text(), neuer);
     assert.equal(t.store.getState().ziele.unlesbar, true);
     assert.equal(t.store.getState().ziele.warnungen.length, 1);
@@ -642,11 +642,90 @@ describe('Fix-Runde 1: Sperre und Warteschlange (m-2 … m-4)', () => {
     await store.laden();
     assert.equal(ziele(store).length, 3);
     const [r1, r2] = await Promise.all([store.zielSpeichern(entwurf()), store.zielSpeichern(entwurf({ name: 'Laptop', emoji: '💻' }))]);
-    assert.deepEqual(r1, { ok: false, fehler: TEXT_ZIELE_GESPERRT });
+    assert.deepEqual(r1, { ok: false, fehler: TEXT_ZIELE_GESPERRT, gemeldet: true });
     assert.equal(r2.ok, false);
     const z = store.getState().ziele;
     assert.equal(z.unlesbar, true);
     assert.deepEqual(z.daten, leereZiele());
     assert.deepEqual(await store.zielSpeichern(entwurf()), { ok: false, fehler: TEXT_ZIELE_GESPERRT });
+  });
+});
+
+describe('Task 3, Fix-Runde 1: eine Meldung je Fehler (I-1) und die geparkten Punkte aus Task 2 (m-A, m-B, m-C)', () => {
+  const AUTO = { id: 'auto0001', name: 'Auto', emoji: '🚗', zielCents: 2300000, datum: '2028-07', vorlaeufig: false, erstellt: '2026-10' };
+
+  test('I-1: scheitert das Speichern, steht die Meldung in state.fehler (die Shell zeigt sie) und das Ergebnis trägt „gemeldet“; vorher Abgelehntes nicht', async () => {
+    const { store } = aufbau({ ids: ['neu00001', 'neu00002'], aendern: (a) => ({ ...a, aendereZiele: async () => { throw new Error('Netz weg'); } }) });
+    await store.laden();
+    const abgelehnt = await store.zielSpeichern(entwurf({ name: '' }));
+    assert.deepEqual(abgelehnt, { ok: false, fehler: 'Bitte einen Namen eingeben.' });
+    assert.equal(store.getState().fehler, null, 'nichts in state.fehler: die Oberfläche muss es selbst zeigen');
+    const r = await store.zielSpeichern(entwurf());
+    assert.deepEqual(r, { ok: false, fehler: TEXT_FEHLER, gemeldet: true });
+    assert.equal(store.getState().fehler, r.fehler);
+  });
+
+  test('m-A: nach einem gescheiterten Lesen speichert eine wartende Änderung erfolgreich (frisch gelesen) → Status wieder „geladen“, weiteres Ändern geht', async () => {
+    const t = await googleMitLesefehler({ text: zieleText({ v: 1, z: [AUTO], m: [] }), ids: ['neu00001', 'neu00002'] });
+    await t.store.laden();
+    t.st.fehler = authFehler;
+    assert.equal((await t.store.zielSpeichern(entwurf())).wartet, true);
+    t.st.fehler = http500;
+    await t.store.laden();
+    assert.equal(t.store.getState().ziele.status, 'fehler');
+    t.st.fehler = null;
+    await t.store.wiederholeAusstehende();
+    const z = t.store.getState().ziele;
+    assert.deepEqual([z.status, z.warnungen], ['geladen', []]);
+    assert.deepEqual(z.daten.z.map((x) => x.id), ['auto0001', 'neu00001']);
+    assert.deepEqual(await t.store.zielSpeichern(entwurf({ name: 'Laptop', emoji: '💻' })), { ok: true, id: 'neu00002' });
+  });
+
+  test('m-B: scheitert das Lesen der Sparziele, behält der Schnappschuss die zuletzt gespeicherten (nicht null); ohne früheren bleibt es null', async () => {
+    const t = await googleMitLesefehler({ text: zieleText({ v: 1, z: [AUTO], m: [] }) });
+    await t.store.laden();
+    const speicher = speicherAttrappe();
+    const snap = createSnapshot({ speicher, jetzt: () => JETZT });
+    snap.speichern(t.store.getState(), HEUTE);
+    const gut = JSON.parse(speicher.getItem(SNAPSHOT_KEY)).ziele;
+    assert.ok(gut);
+    t.st.fehler = http500;
+    await t.store.laden();
+    assert.equal(t.store.getState().ziele.status, 'fehler');
+    assert.equal(snap.speichern(t.store.getState(), HEUTE), true);
+    assert.deepEqual(JSON.parse(speicher.getItem(SNAPSHOT_KEY)).ziele, gut);
+    const offline = createStore(t.adapter, { jetzt: () => JETZT });
+    offline.starteAusSnapshot(snap.lesen());
+    assert.deepEqual(offline.getState().ziele.daten.z.map((z) => z.id), ['auto0001']);
+    assert.equal(offline.getState().ziele.status, 'gespeichert');
+  });
+
+  test('m-C: zieleLaden liest „unlesbar“, während eine eigene Änderung unterwegs ist → leer und gesperrt (nie alte Ziele mit „unlesbar“)', async () => {
+    let freigeben;
+    const halt = new Promise((r) => (freigeben = r));
+    let unlesbar = false;
+    const { store } = aufbau({
+      ids: ['neu00001'],
+      aendern: (a) => ({
+        ...a,
+        aendereZiele: async () => {
+          await halt;
+          throw zieleGesperrtFehler();
+        },
+        leseZiele: async () => (unlesbar ? { daten: leereZiele(), unlesbar: true, warnungen: [], text: '{"v":2}' } : a.leseZiele()),
+      }),
+    });
+    await store.laden();
+    const schreiben = store.zielSpeichern(entwurf());
+    unlesbar = true;
+    assert.equal(await store.zieleLaden(), true);
+    let z = store.getState().ziele;
+    assert.equal(z.unlesbar, true);
+    assert.deepEqual(z.daten, leereZiele());
+    freigeben();
+    assert.deepEqual(await schreiben, { ok: false, fehler: TEXT_ZIELE_GESPERRT, gemeldet: true });
+    z = store.getState().ziele;
+    assert.equal(z.unlesbar, true);
+    assert.deepEqual(z.daten, leereZiele());
   });
 });

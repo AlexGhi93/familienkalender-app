@@ -24,13 +24,16 @@ function finde(state, id) {
   return null;
 }
 
-/** Ergebnis des Stores melden; true = erledigt (gespeichert oder wartet nur auf die Anmeldung). */
+/**
+ * Ergebnis des Stores melden; true = erledigt (gespeichert oder wartet nur auf die Anmeldung). Ein Fehler mit `gemeldet` zeigt die
+ * Shell schon (aus state.fehler) – dann keine zweite Meldung; vor dem Schreiben Abgelehntes (ohne `gemeldet`) zeigt nur diese hier.
+ */
 function erledigt(r, erfolg) {
   if (r?.ok || r?.wartet) {
     if (r.ok) toast(erfolg);
     return true;
   }
-  toast(r?.fehler ?? ALLGEMEINER_FEHLER, { art: 'fehler' });
+  if (!r?.gemeldet) toast(r?.fehler ?? ALLGEMEINER_FEHLER, { art: 'fehler' });
   return false;
 }
 

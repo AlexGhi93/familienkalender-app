@@ -951,3 +951,22 @@ describe('Ausblenden nur abgeschlossener Ziele (n-2), Verschieben nicht nach dem
     assert.match(eins[0], /^1 Sparziel konnte nicht gelesen werden/);
   });
 });
+
+describe('Task 3, Fix-Runde 1 (m-1): „ab“ je Ziel und „anteilig“ je Monat kommen aus der Rechnung', () => {
+  test('ab = erster Monat, ab dem die restlichen Monate zählen: ohne gerechneten Monat der Startmonat, sonst der Monat nach dem letzten Kontostand', () => {
+    const neu = sparVerlauf(daten([auto({ erstellt: '2026-11' })]), kontoAus({ '2026-09': 800000, '2026-10': 900000 }), '2026-10-31');
+    assert.equal(zielVon(neu, 'auto0001').ab, '2026-11');
+    const v = sparVerlauf(daten([auto()]), kontoAus(BEISPIEL), '2027-01-31');
+    assert.equal(zielVon(v, 'auto0001').ab, '2027-02');
+    assert.equal(zielVon(v, 'auto0001').monateRest, 18);
+    const zu = sparVerlauf(daten([auto({ beendet: { monat: '2026-12', art: 'ausgegeben' } })]), kontoAus(BEISPIEL), '2027-01-31');
+    assert.equal(zielVon(zu, 'auto0001').ab, null);
+  });
+
+  test('anteilig nur, wenn ein Plus-Monat weniger bringt als nötig (bei genau dem Nötigen nicht); Minus und leer nie', () => {
+    const v = sparVerlauf(daten([auto(), urlaub()]), kontoAus(BEISPIEL), '2027-01-31');
+    assert.deepEqual(v.monate.map((m) => [m.monat, m.anteilig]), [['2027-01', false], ['2026-12', false], ['2026-11', false], ['2026-10', true]]);
+    const genau = sparVerlauf(daten([auto({ zielCents: 1_200_000, datum: '2027-09' })]), kontoAus({ '2026-09': 800000, '2026-10': 900000 }), '2026-10-31');
+    assert.equal(monatVon(genau, '2026-10').anteilig, false);
+  });
+});

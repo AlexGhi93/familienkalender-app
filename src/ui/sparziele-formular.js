@@ -5,7 +5,7 @@
 // wieder benutzbar. Alle Zahlen kommen aus sparziele-model.js (Domäne), alle Texte als Text in die Seite.
 import { fuelle, h } from './dom.js';
 import { bestaetigen, blatt, toast } from './components.js';
-import { bedarfVorschau, entwurfZuZiel, sparzieleModel, zielEntwurf } from '../app/views/sparziele-model.js';
+import { bedarfVorschau, entwurfZuZiel, sparzieleModel, zielEntwurf, zieleSperre, zielSymbole } from '../app/views/sparziele-model.js';
 import { MAX_ZIEL_NAME, zielLoeschbar } from '../domain/sparziele.js';
 import { betragText, centsAusText } from '../domain/konto.js';
 import { MONATE } from '../app/format-de.js';
@@ -13,13 +13,16 @@ import { MONATE } from '../app/format-de.js';
 const ALLGEMEINER_FEHLER = 'Das hat nicht geklappt. Bitte noch einmal versuchen.';
 const JAHRE_VORAUS = 15;
 
-/** Ergebnis des Stores melden; true = erledigt (gespeichert oder wartet nur auf die Anmeldung). */
+/**
+ * Ergebnis des Stores melden; true = erledigt (gespeichert oder wartet nur auf die Anmeldung). Ein Fehler mit `gemeldet` zeigt die
+ * Shell schon (aus state.fehler) – dann keine zweite Meldung; vor dem Schreiben Abgelehntes (ohne `gemeldet`) zeigt nur diese hier.
+ */
 export function erledigt(r, erfolg) {
   if (r?.ok || r?.wartet) {
     if (r.ok) toast(typeof erfolg === 'function' ? erfolg(r) : erfolg);
     return true;
   }
-  toast(r?.fehler ?? ALLGEMEINER_FEHLER, { art: 'fehler' });
+  if (!r?.gemeldet) toast(r?.fehler ?? ALLGEMEINER_FEHLER, { art: 'fehler' });
   return false;
 }
 
@@ -58,8 +61,8 @@ export function oeffneZielFormular({ store }, id) {
     toast('Dieses Sparziel gibt es nicht mehr.', { art: 'fehler' });
     return null;
   }
-  const m = sparzieleModel(state, heute);
-  const gesperrt = m.gesperrt;
+  const gesperrt = zieleSperre(state.ziele);
+  const symbolListe = zielSymbole(state.settings);
   const e = zielEntwurf(original, heute);
   const loeschbar = original ? zielLoeschbar(state.ziele.daten, state.konto, heute, original.id) : false;
   let speichert = false;
@@ -77,28 +80,28 @@ export function oeffneZielFormular({ store }, id) {
     const s = store.getState();
     const v = bedarfVorschau(e, { daten: s.ziele?.daten, konto: s.konto, heute });
     if (!v) return [h('span', {}, 'Nach Eingabe von Zielbetrag und Datum steht hier, wie viel ihr pro Monat zurücklegen müsst.')];
+    if (v.fehler) return [h('span', { class: 'sz-vorschau-fehler' }, `⚠ ${v.fehler}`)];
     if (v.erreicht) return [h('span', {}, 'Mit dem schon Gesparten ist dieses Ziel erreicht 🎉')];
     return [h('span', {}, `Ab ${v.ab} → ${v.monate} → `), h('b', {}, v.proMonat)];
   }
 
-  async function speichern(knopf) {
+  /** Während gespeichert wird, ist das ganze Blatt aus (Felder, Speichern, Ziel beenden, Löschen); danach wieder an (m-3). */
+  async function speichern() {
     if (speichert) return;
-    const { ziel, fehler } = entwurfZuZiel(e, heute);
+    const { ziel, fehler } = entwurfZuZiel(e, heute, { konto: store.getState().konto });
     if (fehler) {
       toast(fehler, { art: 'fehler' }); // das Formular bleibt mit der Eingabe offen
       return;
     }
     speichert = true;
-    knopf.disabled = true;
-    knopf.textContent = 'Speichert …';
+    neuZeichnen();
     const r = await sicher(store.zielSpeichern(ziel));
     speichert = false;
     if (erledigt(r, 'Gespeichert ✓')) {
       b.schliessen();
       return;
     }
-    knopf.disabled = false;
-    knopf.textContent = 'Speichern';
+    neuZeichnen();
   }
 
   function datumFelder(aktualisieren) {
@@ -108,7 +111,7 @@ export function oeffneZielFormular({ store }, id) {
     const tage = [['', 'ganzer Monat'], ...Array.from({ length: 31 }, (_, i) => [String(i + 1), `${i + 1}.`])];
     return h(
       'div',
-      { class: 'sz-datum' },
+      { class: 'sz-datum', role: 'group', 'aria-label': 'Bis wann?' },
       feld('Monat', auswahl('Monat', MONATE.map((n, i) => [String(i + 1).padStart(2, '0'), n]), e.monat, (w) => ((e.monat = w), aktualisieren()))),
       feld('Jahr', auswahl('Jahr', jahre.map((j) => [j, j]), e.jahr, (w) => ((e.jahr = w), aktualisieren()))),
       e.art === 'fest' ? feld('Tag (optional)', auswahl('Tag (optional)', tage, e.tag, (w) => ((e.tag = w), aktualisieren()))) : null,
@@ -123,7 +126,7 @@ export function oeffneZielFormular({ store }, id) {
     const symbole = h(
       'div',
       { class: 'chip-reihe sz-symbole', role: 'group', 'aria-label': 'Symbol' },
-      m.symbole.map((s) =>
+      symbolListe.map((s) =>
         h(
           'button',
           {
@@ -163,10 +166,11 @@ export function oeffneZielFormular({ store }, id) {
         ),
       ),
     );
-    const speichernKnopf = h('button', { class: 'knopf klein primaer sz-speichern', type: 'button', disabled: Boolean(gesperrt), onClick: (ev) => speichern(ev.currentTarget) }, 'Speichern');
+    const aus = Boolean(gesperrt) || speichert;
+    const speichernKnopf = h('button', { class: 'knopf klein primaer sz-speichern', type: 'button', disabled: aus, onClick: () => speichern() }, speichert ? 'Speichert …' : 'Speichern');
     felder = h(
       'fieldset',
-      { class: 'fk-felder', disabled: Boolean(gesperrt) },
+      { class: 'fk-felder', disabled: aus },
       feld('Name', name),
       h('div', { class: 'feld' }, h('span', { 'aria-hidden': 'true' }, 'Symbol'), symbole),
       h('div', { class: 'feld' }, h('span', { 'aria-hidden': 'true' }, 'Art'), art),
@@ -183,9 +187,9 @@ export function oeffneZielFormular({ store }, id) {
         'div',
         { class: 'knopfzeile' },
         original && loeschbar
-          ? h('button', { class: 'knopf klein gefahr', type: 'button', disabled: Boolean(gesperrt), onClick: () => zielLoeschenFragen({ store }, original, () => b.schliessen()) }, 'Endgültig löschen')
+          ? h('button', { class: 'knopf klein gefahr', type: 'button', disabled: aus, onClick: () => zielLoeschenFragen({ store }, original, () => b.schliessen()) }, 'Endgültig löschen')
           : null,
-        original ? h('button', { class: 'knopf klein', type: 'button', disabled: Boolean(gesperrt), onClick: () => oeffneZielBeenden({ store }, original, () => b.schliessen()) }, 'Ziel beenden') : null,
+        original ? h('button', { class: 'knopf klein', type: 'button', disabled: aus, onClick: () => oeffneZielBeenden({ store }, original, () => b.schliessen()) }, 'Ziel beenden') : null,
         speichernKnopf,
       ),
     ];
@@ -258,7 +262,12 @@ export function oeffneVerschieben({ store }) {
           toast(`Höchstens ${m.frei.betrag} – mehr ist nicht frei.`, { art: 'fehler' });
           return;
         }
-        const name = m.frei.ziele.find((z) => z.id === e.ziel)?.text.replace(/ \(offen .*\)$/, '') ?? 'Ziel';
+        const ziel = m.frei.ziele.find((z) => z.id === e.ziel);
+        const name = ziel?.titel ?? 'Ziel';
+        if (ziel && cents > ziel.offen) {
+          toast(`Höchstens ${betragText(ziel.offen)} – mehr fehlt „${name}“ nicht.`, { art: 'fehler' });
+          return;
+        }
         knopf.disabled = true;
         if (erledigt(await sicher(store.freiVerschieben(e.ziel, cents)), (r) => `${betragText(r.cents)} zu ${name} verschoben ✓`)) schliessen();
         else knopf.disabled = false; // nochmal versuchen

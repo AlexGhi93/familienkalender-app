@@ -3,7 +3,7 @@
 // Intervall und berechnetem „Kündbar bis“, Archivieren (fällt aus den Summen), Zurückholen, „Endgültig löschen“ mit Rückfrage, Neuladen,
 // Ziel der Erinnerungen (#/konto/fixkosten), „Beispieldaten entfernen“, unlesbare Teile / ausgeblendete Posten / Warnungen (Google).
 // Die Demo-Fixkosten (src/app/seed.js) sind erfunden.
-import { test, expect, starteDemo, starteGoogleVerbunden, erwarteToast, NETZFEHLER } from './hilfen.js';
+import { test, expect, starteDemo, starteGoogleVerbunden, erwarteToast, fehlerToastsZaehlen, NETZFEHLER } from './hilfen.js';
 import { TEXT_TEIL_GESPERRT } from '../../src/domain/fixkosten.js';
 
 test.use({ viewport: { width: 375, height: 812 } });
@@ -321,6 +321,22 @@ test.describe('Fixkosten im Konto-Tab', () => {
   });
 });
 
+test.describe('Fixkosten: Rückfrage mit Animation (Doppeltipp)', () => {
+  test.use({ contextOptions: { reducedMotion: 'no-preference' } }); // das Blatt gleitet hinaus: ein zweiter Tipp träfe sonst noch den Knopf
+
+  test('Doppeltipp auf „Endgültig löschen“ in der Rückfrage löscht genau einmal, ohne Fehlermeldung', async ({ page }) => {
+    await oeffneFixkosten(page);
+    const toasts = await fehlerToastsZaehlen(page);
+    await karte(page, 'Archiv').locator('.fk-pos', { hasText: 'Babyschwimmen' }).click();
+    await dialog(page, 'Babyschwimmen').getByRole('button', { name: 'Endgültig löschen' }).click();
+    await dialog(page, 'Endgültig löschen?').getByRole('button', { name: 'Endgültig löschen' }).dblclick();
+    await erwarteToast(page, 'Gelöscht ✓');
+    await page.waitForTimeout(600);
+    expect(await toasts.anzahl()).toBe(0);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+  });
+});
+
 test.describe('Fixkosten mit Google', () => {
   test.use({ erlaubteFehler: NETZFEHLER }); // fehlende versteckte Ereignisse antworten 404
 
@@ -360,12 +376,19 @@ test.describe('Fixkosten mit Google', () => {
       return route.fulfill({ status: 500, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ error: { code: 500, message: 'kaputt' } }) });
     });
 
+    const toasts = await fehlerToastsZaehlen(page); // jeder Fehler: genau EINE Meldung (die der Shell aus state.fehler)
+    const neueRunde = async () => {
+      await page.locator('.toast').evaluateAll((t) => t.forEach((x) => x.remove()));
+      await toasts.zuruecksetzen();
+    };
+
     await zeile(page, 'Wohnen & Energie', 'Miete').click();
     await dialog(page, 'Fixkosten ändern').getByRole('button', { name: '🗄️ Archivieren' }).click();
     const archivieren = dialog(page, '„Miete“ archivieren').getByRole('button', { name: 'Archivieren', exact: true });
     await archivieren.click();
     await expect(page.locator('.toast.fehler')).toBeVisible({ timeout: 15_000 });
     await expect(archivieren).toBeEnabled();
+    expect(await toasts.anzahl()).toBe(1);
     await expect(gross(page)).toHaveText('900 €');
     await page.keyboard.press('Escape');
     await page.keyboard.press('Escape');
@@ -373,14 +396,16 @@ test.describe('Fixkosten mit Google', () => {
 
     await karte(page, 'Archiv').locator('.fk-pos', { hasText: 'Zeitung' }).click();
     const zurueck = dialog(page, 'Zeitung').getByRole('button', { name: 'Zurückholen' });
+    await neueRunde();
     await zurueck.click();
     await expect(page.locator('.toast.fehler')).toBeVisible({ timeout: 15_000 });
     await expect(zurueck).toBeEnabled();
+    expect(await toasts.anzahl()).toBe(1);
     await expect(karte(page, 'Archiv').locator('.fk-n > b')).toHaveText(['Zeitung']);
 
     // „Endgültig löschen“: während es läuft, sind beide Knöpfe aus (kein zweites Löschen); nach dem Fehler wieder benutzbar
     const loeschen = dialog(page, 'Zeitung').getByRole('button', { name: 'Endgültig löschen' });
-    await page.locator('.toast').evaluateAll((t) => t.forEach((x) => x.remove()));
+    await neueRunde();
     await loeschen.click();
     await dialog(page, 'Endgültig löschen?').getByRole('button', { name: 'Endgültig löschen' }).click();
     await expect(loeschen).toBeDisabled();
@@ -388,6 +413,7 @@ test.describe('Fixkosten mit Google', () => {
     await expect(page.locator('.toast.fehler')).toBeVisible({ timeout: 15_000 });
     await expect(loeschen).toBeEnabled();
     await expect(zurueck).toBeEnabled();
+    expect(await toasts.anzahl()).toBe(1);
     await expect(karte(page, 'Archiv').locator('.fk-n > b')).toHaveText(['Zeitung']);
   });
 });

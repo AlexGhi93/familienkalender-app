@@ -133,7 +133,7 @@ function teileAuf(gespart, aktiv, stand, frei, monat, ab) {
   const noetig = aktiv.map((z) => noetigMitLuecke(z, stand.get(z.id), ab, monat));
   if (gespart >= 0) {
     const anteile = summe(noetig) >= gespart ? verteile(gespart, noetig) : noetig.slice();
-    return { anteile, noetig, freiCents: gespart - summe(anteile), ungedeckt: 0 };
+    return { anteile, noetig, freiCents: gespart - summe(anteile), ungedeckt: 0, anteilig: gespart > 0 && summe(noetig) > gespart };
   }
   const verlust = -gespart;
   const ausFrei = Math.min(frei, verlust);
@@ -141,7 +141,7 @@ function teileAuf(gespart, aktiv, stand, frei, monat, ab) {
   const bestand = aktiv.map((z) => stand.get(z.id));
   const vorhanden = summe(bestand);
   const weg = rest >= vorhanden ? bestand : verteile(rest, bestand);
-  return { anteile: weg.map((c) => 0 - c), noetig, freiCents: 0 - ausFrei, ungedeckt: Math.max(0, rest - vorhanden) };
+  return { anteile: weg.map((c) => 0 - c), noetig, freiCents: 0 - ausFrei, ungedeckt: Math.max(0, rest - vorhanden), anteilig: false };
 }
 
 /**
@@ -151,19 +151,20 @@ function teileAuf(gespart, aktiv, stand, frei, monat, ab) {
  *     etwas abgeschlossen oder verschoben wurde:
  *     { monat, basis, luecke (Zahl der nachgeholten Monate ohne Kontostand von beiden, sonst 0),
  *       gespart (null = noch kein Kontostand von beiden), art: 'plus'|'minus'|'leer' (0 oder kein Kontostand),
- *       zuteilung: [{ ziel, cents (mit Vorzeichen), noetig }] (alle in dem Monat laufenden Ziele), ungedeckt (verfallenes Minus, ≥ 0),
+ *       zuteilung: [{ ziel, cents (mit Vorzeichen), noetig }] (alle in dem Monat laufenden Ziele), anteilig (Plus-Monat mit weniger
+ *       als nötig: anteilig nach Bedarf verteilt), ungedeckt (verfallenes Minus, ≥ 0),
  *       frei: { cents (Veränderung durch die Aufteilung), vorher (Monatsanfang), nachher (Monatsende) },
  *       abschluss: [{ ziel, art, cents }], verschoben: [{ id, ziel, cents (tatsächlich), gewuenscht }] }
  *     Es gilt: Σ zuteilung.cents + frei.cents = gespart + ungedeckt, und
  *              frei.nachher = frei.vorher + Σ abschluss(art 'frei').cents + frei.cents − Σ verschoben.cents.
- *   ziele: in der Reihenfolge von `daten.z`, jedes { ...ziel, gespart, offen, monateRest, noetigProMonat, plan: { soll, rueckstand },
+ *   ziele: in der Reihenfolge von `daten.z`, jedes { ...ziel, gespart, offen, ab, monateRest, noetigProMonat, plan: { soll, rueckstand },
  *     status: 'imPlan'|'hinter'|'erreicht'|'neu', faellig, abgeschlossen: null | { monat, art, automatisch } } – bei abgeschlossenen
  *     ist gespart der Betrag beim Abschluss; faellig = der Zielmonat ist schon gerechnet, das Ziel schließt im nächsten Monat
  *     (monateRest und noetigProMonat dann 0);
  *   frei, summeZiele (Σ gespart der laufenden Ziele), noetigGesamt (Σ noetigProMonat der laufenden), standMonat (letzter Monat mit
  *   beiden Kontoständen, oder null)
  * }
- * Nach vorn gerechnet wird ab dem Monat nach dem letzten Kontostand (frühestens ab dem Startmonat): monateRest bis zum Zielmonat
+ * Nach vorn gerechnet wird ab dem Monat `ab` = nach dem letzten Kontostand (frühestens ab dem Startmonat; abgeschlossen: null): monateRest bis zum Zielmonat
  * (mindestens 1), noetigProMonat = offen / monateRest (aufgerundet). Plan: soll = Ziel × vergangene Monate / alle Monate (abgerundet;
  * vergangen = Startmonat bis letzter Kontostand), rueckstand = soll − gespart (≥ 0). Status: erreicht → neu (noch kein Monat
  * gerechnet) → hinter (rueckstand > 0) → imPlan. Das Flag `aus` (im Verlauf ausgeblendet) ändert an der Rechnung nichts.
@@ -204,6 +205,7 @@ export function sparVerlauf(daten, konto, heute) {
     let zuteilung = [];
     let freiCents = 0;
     let ungedeckt = 0;
+    let anteilig = false;
     const ab = eintrag ? spaeter(naechsterMonat(eintrag.basis), beginn) : monat;
     if (eintrag) {
       const t = teileAuf(eintrag.gespart, aktiv, stand, frei, monat, ab);
@@ -211,6 +213,7 @@ export function sparVerlauf(daten, konto, heute) {
       zuteilung = aktiv.map((z, i) => ({ ziel: z.id, cents: t.anteile[i], noetig: t.noetig[i] }));
       freiCents = t.freiCents;
       ungedeckt = t.ungedeckt;
+      anteilig = t.anteilig;
       frei += freiCents;
     }
     const verschoben = [];
@@ -233,6 +236,7 @@ export function sparVerlauf(daten, konto, heute) {
       gespart,
       art: gespart > 0 ? 'plus' : gespart < 0 ? 'minus' : 'leer',
       zuteilung,
+      anteilig,
       ungedeckt,
       frei: { cents: freiCents, vorher, nachher: frei },
       abschluss,
@@ -261,6 +265,7 @@ function zielStand(ziel, zu, gespartJetzt, gerechnetBis) {
       ...ziel,
       gespart: zu.cents,
       offen,
+      ab: null,
       monateRest: 0,
       noetigProMonat: 0,
       plan: { soll: ziel.zielCents, rueckstand: offen },
@@ -282,6 +287,7 @@ function zielStand(ziel, zu, gespartJetzt, gerechnetBis) {
     ...ziel,
     gespart: gespartJetzt,
     offen,
+    ab,
     monateRest,
     noetigProMonat: offen === 0 || faellig ? 0 : Math.ceil(offen / monateRest),
     plan: { soll, rueckstand },

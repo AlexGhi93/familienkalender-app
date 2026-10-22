@@ -131,8 +131,12 @@ export function entferneFehlerToast() {
   document.querySelector('.toast.fehler')?.remove();
 }
 
-/** Rückfrage als Blatt; ruft `beiJa` nur nach Bestätigung auf. */
+/**
+ * Rückfrage als Blatt; ruft `beiJa` nur nach Bestätigung auf – und höchstens einmal: ein Doppeltipp, während das Blatt noch
+ * hinausgleitet, löst die Aktion kein zweites Mal aus (der Knopf ist sofort aus).
+ */
 export function bestaetigen({ titel, text, ja = 'Ja', nein = 'Abbrechen', gefahr = false, beiJa }) {
+  let gewaehlt = false;
   return blatt({
     titel,
     render: ({ schliessen }) => [
@@ -146,7 +150,10 @@ export function bestaetigen({ titel, text, ja = 'Ja', nein = 'Abbrechen', gefahr
           {
             class: `knopf klein ${gefahr ? 'gefahr' : 'primaer'}`,
             type: 'button',
-            onClick: () => {
+            onClick: (ev) => {
+              if (gewaehlt) return;
+              gewaehlt = true;
+              ev.currentTarget.disabled = true;
               schliessen();
               beiJa();
             },

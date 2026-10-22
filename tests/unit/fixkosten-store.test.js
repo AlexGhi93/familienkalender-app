@@ -315,7 +315,7 @@ describe('Fixkosten ändern', () => {
     assert.equal((await store.fixPostenSpeichern(entwurf({ name: 'Miete' }))).ok, true);
     kaputt = true;
     const r = await store.fixPostenSpeichern(entwurf({ name: 'Strom' }));
-    assert.deepEqual(r, { ok: false, fehler: TEXT_FEHLER });
+    assert.deepEqual(r, { ok: false, fehler: TEXT_FEHLER, gemeldet: true });
     assert.equal(store.getState().fehler, TEXT_FEHLER);
     assert.equal(postenMit(store, b), undefined, 'zurückgenommen');
     assert.equal(postenMit(store, a).name, 'Miete', 'der andere Teil bleibt');
@@ -380,7 +380,7 @@ describe('Fixkosten: zwei Telefone auf einem Kalender', () => {
     await t.mama.fixPostenArchivieren(id, '2026-10-01');
     await t.mama.fixPostenLoeschen(id);
     const r = await t.papa.fixPostenSpeichern({ ...papasAlter, cents: 1599 });
-    assert.deepEqual(r, { ok: false, fehler: 'Diesen Posten gibt es nicht mehr – er wurde wohl auf dem anderen Telefon gelöscht.' });
+    assert.deepEqual(r, { ok: false, fehler: 'Diesen Posten gibt es nicht mehr – er wurde wohl auf dem anderen Telefon gelöscht.', gemeldet: true });
     assert.equal(postenMit(t.papa, id), undefined);
     const { shards } = await t.kalender.leseFixkosten();
     assert.equal(shards.flatMap((s) => s?.posten ?? []).length, 0);
@@ -402,7 +402,7 @@ describe('Fixkosten: zwei Telefone auf einem Kalender', () => {
       t.papa.starteAusSnapshot({ daten: { tage: {}, urlaub: [], termine: [], fixkosten: papasStand }, gespeichertAm: '2026-10-22T05:00:00.000Z' }); // wieder der alte Stand mit dem Posten …
       await t.papa.laden(); // … aber verbunden (die Teile sind schon gelesen: es wird nicht neu gelesen)
       assert.ok(postenMit(t.papa, id), `${was}: Papa sieht ihn noch`);
-      assert.deepEqual(await aufruf(), { ok: false, fehler: GELOESCHT }, was);
+      assert.deepEqual(await aufruf(), { ok: false, fehler: GELOESCHT, gemeldet: true }, was);
       assert.equal(postenMit(t.papa, id), undefined, `${was}: danach der Stand im Kalender`);
       assert.equal(t.papa.getState().fehler, GELOESCHT);
     }
@@ -555,7 +555,7 @@ describe('Unlesbare Teile werden nie überschrieben, fremde Posten bleiben erhal
     const neuer = JSON.stringify({ v: 2, p: [{ i: 'aaaa3' }] });
     await t.api.ereignisse.schreibe('kan', { id: 'fkfest2', description: neuer });
     const r = await t.store.fixPostenArchivieren('aaaa3', '2026-11-01');
-    assert.deepEqual(r, { ok: false, fehler: TEXT_TEIL_GESPERRT });
+    assert.deepEqual(r, { ok: false, fehler: TEXT_TEIL_GESPERRT, gemeldet: true });
     assert.equal(t.text(2), neuer);
     assert.ok(!t.geschrieben().includes('PATCH fkfest2'));
     assert.deepEqual(t.store.getState().fixkosten.unlesbar, [2]);
@@ -633,7 +633,7 @@ describe('Unlesbare Teile werden nie überschrieben, fremde Posten bleiben erhal
     const neuer = JSON.stringify({ v: 1, p: [{ ...JSON.parse(t.text(2)).p[0], x: 'neu' }] });
     await t.api.ereignisse.schreibe('kan', { id: 'fkfest2', description: neuer });
     const NEUER = 'Diesen Posten hat das andere Telefon mit einer neueren App-Version geändert. Bitte die App aktualisieren.';
-    assert.deepEqual(await t.store.fixPostenWiederherstellen('aaaa3'), { ok: false, fehler: NEUER });
+    assert.deepEqual(await t.store.fixPostenWiederherstellen('aaaa3'), { ok: false, fehler: NEUER, gemeldet: true });
     assert.equal(postenMit(t.store, 'aaaa3'), undefined, 'neu gelesen: nicht mehr gezeigt');
     assert.deepEqual(await t.store.fixPostenSpeichern({ ...alt, cents: 1 }), { ok: false, fehler: NEUER }); // ein altes Formular: ebenso abgelehnt
     assert.equal(t.text(2), neuer);

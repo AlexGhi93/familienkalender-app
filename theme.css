@@ -797,6 +797,11 @@ small.notiz {
   z-index: 50;
 }
 
+/* Ein Blatt, das gerade hinausgleitet, nimmt keine Tipps mehr an (kein zweites Auslösen beim Doppeltipp) */
+.blatt-huelle.zu {
+  pointer-events: none;
+}
+
 .blatt-hintergrund {
   position: absolute;
   inset: 0;
@@ -4317,6 +4322,11 @@ html:has(.screen.einkauf) {
 
 .sz-vorschau {
   font-size: 0.92rem;
+}
+
+.sz-vorschau-fehler {
+  color: var(--gefahr);
+  font-weight: 700;
 }
 
 .sz-datum {

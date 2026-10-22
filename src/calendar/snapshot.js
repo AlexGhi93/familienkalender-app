@@ -72,7 +72,8 @@ function pruefeZiele(roh) {
 
 /**
  * Sparziele für den Schnappschuss: als Kalendertext (kurz, mit fremden Einträgen); nur gelesene (Status 'geladen' oder 'gespeichert') –
- * noch nie gelesen, beim letzten Laden gescheitert ('fehler') oder unbrauchbar → null.
+ * noch nie gelesen, beim letzten Laden gescheitert ('fehler') oder unbrauchbar → null (bei 'fehler' behält speichern() die Sparziele
+ * des bisherigen Schnappschusses).
  */
 function zieleFuerSnapshot(ziele) {
   if (ziele?.status !== 'geladen' && ziele?.status !== 'gespeichert') return null;
@@ -115,6 +116,15 @@ export function createSnapshot({ speicher = globalThis.localStorage ?? null, jet
      */
     speichern(state, heute) {
       if (!speicher) return false;
+      /** Die Sparziele des bisherigen Schnappschusses (roh, nur wenn brauchbar): nach einem gescheiterten Lesen bleiben sie (m-B). */
+      const letzteZiele = () => {
+        try {
+          const alt = JSON.parse(speicher.getItem(SNAPSHOT_KEY))?.ziele;
+          return pruefeZiele(alt) ? alt : null;
+        } catch {
+          return null;
+        }
+      };
       const grenze = addDays(heute, -TAGE_ZURUECK);
       const text = JSON.stringify({
         v: 1,
@@ -129,7 +139,7 @@ export function createSnapshot({ speicher = globalThis.localStorage ?? null, jet
         schicht: state.schicht ? { katalog: state.schicht.katalog ?? null, monate: naechsteMonate(state.schicht.monate, heute, MAX_SNAPSHOT_SCHICHT_MONATE) } : null,
         // im Zustandsformat (lange Schlüssel): etwa 1,5-mal der Kalendertext, also höchstens rund 4 × 9000 Zeichen
         fixkosten: state.fixkosten?.shards ? { shards: state.fixkosten.shards, unlesbar: state.fixkosten.unlesbar ?? [] } : null,
-        ziele: zieleFuerSnapshot(state.ziele), // höchstens ~6000 Zeichen (Kalendertext)
+        ziele: zieleFuerSnapshot(state.ziele) ?? (state.ziele?.status === 'fehler' ? letzteZiele() : null), // höchstens ~6000 Zeichen (Kalendertext)
       });
       if (text.length > MAX_SNAPSHOT_ZEICHEN) return false;
       try {

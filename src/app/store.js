@@ -426,7 +426,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       normalisiere: (shard) => normalisiereShard(shard ?? leererShard()),
     });
     if (ergebnis === 'ok') return { ok: true };
-    return ergebnis === 'auth' ? { ok: false, wartet: true, fehler } : { ok: false, fehler };
+    return ergebnis === 'auth' ? { ok: false, wartet: true, fehler } : { ok: false, fehler, gemeldet: true }; // gemeldet: die Meldung steht schon in state.fehler (die Shell zeigt sie)
   }
 
   /**
@@ -570,7 +570,13 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
         mit: (daten) => ({ ...state, ziele: { ...state.ziele, daten } }),
         async speichern(f) {
           try {
-            return await adapter.aendereZiele(f);
+            const gespeichert = await adapter.aendereZiele(f);
+            // Gespeichert heißt: der Adapter hat die Sparziele eben frisch gelesen (und lesbar gefunden) – eine Sperre nach einem
+            // gescheiterten Lesen ('fehler') ist damit aufgehoben (m-A).
+            if (state.ziele.status !== 'geladen' && state.ziele.status !== 'gespeichert') {
+              state = { ...state, ziele: { ...state.ziele, status: 'geladen', warnungen: zieleWarnungen({ daten: gespeichert ?? state.ziele.daten, unlesbar: false }) } };
+            }
+            return gespeichert;
           } catch (e) {
             // inzwischen (z. B. durch das andere Telefon) unlesbar: der Adapter hat nichts geschrieben; ab jetzt gesperrt und leer
             // gezeigt (auch wenn das folgende neu Lesen scheitert), wartende Änderungen fallen weg (ihr Speichern wird ebenso abgelehnt)
@@ -594,7 +600,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
         normalisiere: (daten) => daten ?? leereZiele(),
       });
       if (ergebnis === 'ok') return { ok: true };
-      return ergebnis === 'auth' ? { ok: false, wartet: true, fehler } : { ok: false, fehler };
+      return ergebnis === 'auth' ? { ok: false, wartet: true, fehler } : { ok: false, fehler, gemeldet: true }; // gemeldet: die Meldung steht schon in state.fehler (die Shell zeigt sie)
     } catch (e) {
       return { ok: false, fehler: e?.message || TEXT_FEHLER };
     }
@@ -633,7 +639,15 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       }
       const frisch = zieleZustand(g, 'geladen');
       const eigene = zieleOffen.size > 0 || stand !== zieleStand;
-      state = { ...state, ziele: eigene ? { ...frisch, daten: state.ziele.daten } : frisch };
+      if (frisch.unlesbar) {
+        // unlesbar geht immer vor (m-C): leer und gesperrt, auch mit eigener Änderung unterwegs (ihr Speichern wird ohnehin abgelehnt)
+        const eintrag = zieleOffen.get('ziele');
+        if (eintrag) {
+          eintrag.basis = leereZiele();
+          eintrag.offen.length = 0;
+        }
+        state = { ...state, ziele: frisch };
+      } else state = { ...state, ziele: eigene ? { ...frisch, daten: state.ziele.daten } : frisch };
       melden();
       return true;
     })()

@@ -3,7 +3,7 @@
 // „Frei“, „Ziel beenden → Geld zurück zu Frei“, Verlauf pro Monat (Summe stimmt), Ausblenden, „Endgültig löschen“ mit Rückfrage, ohne
 // Kontostand, unlesbar, Schreib- und Lesefehler (HTTP 500). Erwartete Zahlen kommen aus der Domäne (sparVerlauf mit den Demo-Daten)
 // oder aus hier erfundenen Beispielen; die Demo-Ziele (src/app/seed.js) sind erfunden.
-import { test, expect, starteDemo, starteGoogleVerbunden, erwarteToast, NETZFEHLER, WERKTAG_DATUM } from './hilfen.js';
+import { test, expect, starteDemo, starteGoogleVerbunden, erwarteToast, fehlerToastsZaehlen, NETZFEHLER, WERKTAG_DATUM } from './hilfen.js';
 import { seedDemo } from '../../src/app/seed.js';
 import { TEXT_ZIELE_GESPERRT, TEXT_ZIELE_NICHT_GELADEN, sparVerlauf } from '../../src/domain/sparziele.js';
 import { betragText, deltaText } from '../../src/domain/konto.js';
@@ -120,7 +120,7 @@ test.describe('Sparziele im Konto-Tab (Demo)', () => {
     const aendern = dialog(page, 'Sparziel ändern');
     await expect(aendern.getByLabel('Name', { exact: true })).toHaveValue('Neues Fahrrad');
     await aendern.getByLabel('Zielbetrag in Euro').fill('abc');
-    await expect(aendern.locator('.sz-vorschau')).toContainText('Nach Eingabe');
+    await expect(aendern.locator('.sz-vorschau')).toHaveText('⚠ Bitte einen Zielbetrag zwischen 1 € und 999.999 € eingeben.');
     await aendern.getByRole('button', { name: 'Speichern' }).click();
     await expect(page.locator('.toast.fehler')).toHaveText('Bitte einen Zielbetrag zwischen 1 € und 999.999 € eingeben.');
     await expect(aendern).toBeVisible();
@@ -247,6 +247,42 @@ test.describe('Sparziele im Konto-Tab (Demo)', () => {
   });
 });
 
+test.describe('Sparziele: Rückfrage mit Animation (Doppeltipp) und Grenzen beim Verschieben', () => {
+  test.use({ contextOptions: { reducedMotion: 'no-preference' } }); // das Blatt gleitet hinaus: ein zweiter Tipp träfe sonst noch den Knopf
+
+  test('„Zu Ziel verschieben“ über dem offenen Betrag → klare Meldung (m-4); Doppeltipp auf „Endgültig löschen“ löscht genau einmal (m-2)', async ({ page }) => {
+    await oeffneSparziele(page);
+    await page.getByRole('button', { name: '＋ Neues Sparziel' }).click();
+    const neu = dialog(page, 'Neues Sparziel');
+    await neu.getByLabel('Name', { exact: true }).fill('Kleinigkeit');
+    await neu.getByLabel('Zielbetrag in Euro').fill('50');
+    await neu.getByRole('button', { name: 'Speichern' }).click();
+    await expect(neu).toBeHidden();
+    await expect(karte(page, 'Kleinigkeit')).toHaveCount(1);
+
+    await page.getByRole('button', { name: 'Zu Ziel verschieben' }).click();
+    const d = dialog(page, 'Zu Ziel verschieben');
+    await d.getByLabel('Zu welchem Ziel?').selectOption({ label: '🎯 Kleinigkeit (offen 50 €)' });
+    await d.getByLabel('Betrag in Euro').fill('100');
+    await d.getByRole('button', { name: 'Verschieben' }).click();
+    await expect(page.locator('.toast.fehler')).toHaveText('Höchstens 50 € – mehr fehlt „🎯 Kleinigkeit“ nicht.');
+    await expect(frei(page)).toHaveText(betragText(v.frei));
+    await d.getByRole('button', { name: 'Abbrechen' }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await page.locator('.toast').evaluateAll((t) => t.forEach((x) => x.remove()));
+
+    const toasts = await fehlerToastsZaehlen(page);
+    await karte(page, 'Kleinigkeit').getByRole('button', { name: 'Kleinigkeit ändern' }).click();
+    await dialog(page, 'Sparziel ändern').getByRole('button', { name: 'Endgültig löschen' }).click();
+    await dialog(page, 'Endgültig löschen?').getByRole('button', { name: 'Endgültig löschen' }).dblclick();
+    await erwarteToast(page, 'Gelöscht ✓');
+    await expect(karte(page, 'Kleinigkeit')).toHaveCount(0);
+    await page.waitForTimeout(600); // ein zweites Löschen hätte jetzt „gibt es nicht mehr“ gemeldet
+    expect(await toasts.anzahl()).toBe(0);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+  });
+});
+
 // Google-Attrappe: Kontostand Juli–September (beide), ein erfundenes Ziel ab August
 const KONTO = { v: 1, p: { papa: { '2026-07': 600_000, '2026-08': 700_000, '2026-09': 800_000 }, mama: { '2026-07': 400_000, '2026-08': 500_000, '2026-09': 550_000 } }, x: [] };
 const ZIELE = { v: 1, beginn: '2026-08', z: [{ id: 'aaaa0001', name: 'Rad', emoji: '🎁', zielCents: 600_000, datum: '2027-07', vorlaeufig: false, erstellt: '2026-08' }], m: [] };
@@ -268,14 +304,17 @@ test.describe('Sparziele mit Google', () => {
       return fehler500(route);
     });
 
+    const toasts = await fehlerToastsZaehlen(page); // jeder Fehler: genau EINE Meldung (die der Shell aus state.fehler)
+
     await page.getByRole('button', { name: 'Zu Ziel verschieben' }).click();
     const d = dialog(page, 'Zu Ziel verschieben');
     await d.getByLabel('Betrag in Euro').fill('100');
     const verschieben = d.getByRole('button', { name: 'Verschieben' });
     await verschieben.click();
     await expect(verschieben).toBeDisabled();
-    await expect(page.locator('.toast.fehler')).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('.toast.fehler')).toHaveText('Speichern hat nicht geklappt. Bitte noch einmal versuchen.', { timeout: 15_000 });
     await expect(verschieben).toBeEnabled();
+    expect(await toasts.anzahl()).toBe(1);
     await expect(frei(page)).toHaveText(betragText(G.frei));
     await page.keyboard.press('Escape');
 
@@ -283,11 +322,13 @@ test.describe('Sparziele mit Google', () => {
     await dialog(page, 'Sparziel ändern').getByRole('button', { name: 'Ziel beenden' }).click();
     const beenden = dialog(page, '„Rad“ beenden');
     await page.locator('.toast').evaluateAll((t) => t.forEach((x) => x.remove()));
+    await toasts.zuruecksetzen();
     await beenden.getByRole('button', { name: /Geld zurück zu Frei/ }).click();
     await expect(beenden.getByRole('button', { name: /Geld wurde ausgegeben/ })).toBeDisabled();
     await expect(page.locator('.toast.fehler')).toBeVisible({ timeout: 15_000 });
     await expect(beenden.getByRole('button', { name: /Geld zurück zu Frei/ })).toBeEnabled();
     await expect(beenden.getByRole('button', { name: /Geld wurde ausgegeben/ })).toBeEnabled();
+    expect(await toasts.anzahl()).toBe(1);
     await beenden.getByRole('button', { name: 'Abbrechen' }).click(); // Escape schlösse beide Blätter
     await expect(karte(page, 'Rad')).toHaveCount(1);
     await expect(frei(page)).toHaveText(betragText(G.frei));
@@ -295,10 +336,25 @@ test.describe('Sparziele mit Google', () => {
     const formular = dialog(page, 'Sparziel ändern');
     await formular.getByLabel('Name', { exact: true }).fill('Rad neu');
     await page.locator('.toast').evaluateAll((t) => t.forEach((x) => x.remove()));
-    const speichern = formular.getByRole('button', { name: 'Speichern' });
-    await speichern.click();
+    await toasts.zuruecksetzen();
+    await formular.getByRole('button', { name: 'Speichern' }).click();
+    // während gespeichert wird, ist das ganze Blatt aus (m-3)
+    await expect(formular.getByRole('button', { name: 'Speichert …' })).toBeDisabled();
+    await expect(formular.getByRole('button', { name: 'Ziel beenden' })).toBeDisabled();
+    await expect(formular.getByLabel('Name', { exact: true })).toBeDisabled();
     await expect(page.locator('.toast.fehler')).toBeVisible({ timeout: 15_000 });
+    const speichern = formular.getByRole('button', { name: 'Speichern' });
     await expect(speichern).toBeEnabled();
+    await expect(formular.getByRole('button', { name: 'Ziel beenden' })).toBeEnabled();
+    expect(await toasts.anzahl()).toBe(1);
+    // vor dem Schreiben Abgelehntes zeigt die Oberfläche selbst – ebenfalls genau einmal
+    await page.locator('.toast').evaluateAll((t) => t.forEach((x) => x.remove()));
+    await toasts.zuruecksetzen();
+    await formular.getByLabel('Name', { exact: true }).fill('');
+    await speichern.click();
+    await expect(page.locator('.toast.fehler')).toHaveText('Bitte einen Namen eingeben.');
+    expect(await toasts.anzahl()).toBe(1);
+    await formular.getByLabel('Name', { exact: true }).fill('Rad neu');
     await expect(formular.getByLabel('Name', { exact: true })).toHaveValue('Rad neu'); // die Eingabe bleibt
     await page.keyboard.press('Escape');
     await expect(karte(page, 'Rad')).toHaveCount(1);

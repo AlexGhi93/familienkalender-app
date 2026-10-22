@@ -3,7 +3,7 @@
 // Alle erwarteten Zahlen kommen aus der Domäne (sparVerlauf) oder aus kleinen, hier erfundenen Beispielen – nie aus der Machette.
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { bedarfVorschau, entwurfZuZiel, monatText, sparzieleModel, zielEntwurf, zielBisText, SYMBOL_NAMEN } from '../../src/app/views/sparziele-model.js';
+import { bedarfVorschau, entwurfZuZiel, monatText, sparzieleModel, zielEntwurf, zielBisText, zieleSperre, zielSymbole, SYMBOL_NAMEN } from '../../src/app/views/sparziele-model.js';
 import { KONTO_ANSICHTEN, kontoAnsichtLesen, kontoAnsichtSpeichern } from '../../src/app/views/fixkosten-model.js';
 import { nurHintergrundGeaendert } from '../../src/app/hintergrund.js';
 import { TEXT_ZIELE_GESPERRT, TEXT_ZIELE_NICHT_GELADEN, ZIEL_EMOJIS, sparVerlauf } from '../../src/domain/sparziele.js';
@@ -241,5 +241,43 @@ describe('Formular: Entwurf, Prüfung, Bedarf pro Monat', () => {
     assert.equal(m.symbole.find((s) => s.emoji === '👧').name, 'Für Kiki');
     const ohne = sparzieleModel(zustand({ ziele: zieleZustand({ v: 1, z: [], m: [] }) }), HEUTE);
     assert.equal(ohne.symbole.find((s) => s.emoji === '👧').name, 'Für Kind');
+  });
+});
+
+describe('Task 3, Fix-Runde 1 (m-1, m-5, m-7)', () => {
+  const leer = { v: 1, z: [], m: [] };
+  test('m-1: am Monatsletzten (Kontostand beider schon da) beginnt ein neues Ziel nächsten Monat: Zieldatum in diesem Monat → Fehler schon in der Vorschau', () => {
+    const k = konto({ '2026-09': 500_000, '2026-10': 600_000 });
+    const e = { ...zielEntwurf(null, '2026-10-31'), name: 'Rad', betrag: '1.000', monat: '10', jahr: '2026' };
+    const v = bedarfVorschau(e, { daten: leer, konto: k, heute: '2026-10-31' });
+    assert.deepEqual(v, { fehler: 'Das Zieldatum liegt vor dem ersten Sparmonat – bitte einen späteren Monat wählen.' });
+    assert.equal(entwurfZuZiel(e, '2026-10-31', { konto: k }).fehler, v.fehler);
+    const nov = bedarfVorschau({ ...e, monat: '11' }, { daten: leer, konto: k, heute: '2026-10-31' });
+    assert.deepEqual(nov, { ab: 'November 2026', monate: '1 Monat', proMonat: `${betragText(100_000)} pro Monat` });
+  });
+
+  test('m-1: ungültiger Betrag → Fehler in der Vorschau; leerer Betrag → noch nichts', () => {
+    const e = { ...zielEntwurf(null, HEUTE), name: '', betrag: 'abc', monat: '09', jahr: '2027' };
+    assert.deepEqual(bedarfVorschau(e, { daten: leer, konto: konto({}), heute: HEUTE }), { fehler: 'Bitte einen Zielbetrag zwischen 1 € und 999.999 € eingeben.' });
+    assert.equal(bedarfVorschau({ ...e, betrag: ' ' }, { daten: leer, konto: konto({}), heute: HEUTE }), null);
+  });
+
+  test('m-1: „Ab“ beim Ändern = Monat nach dem letzten Kontostand (aus der Rechnung)', () => {
+    const b = bedarfVorschau(zielEntwurf(demo.ziele.z[0], HEUTE), { daten: demo.ziele, konto: demo.konto, heute: HEUTE });
+    assert.equal(b.ab, monatText(sparVerlauf(demo.ziele, demo.konto, HEUTE).ziele[0].ab));
+    assert.equal(b.ab, 'Oktober 2026');
+  });
+
+  test('m-5: „Frei“-Ziele tragen einen Titel (ohne „offen“) für die Meldung', () => {
+    const m = sparzieleModel(mitDemo(), HEUTE);
+    assert.deepEqual(m.frei.ziele.map((z) => z.titel), ['🚗 Auto', '🏖️ Sommerurlaub']);
+  });
+
+  test('m-7: Sperre und Symbole ohne das ganze Modell', () => {
+    assert.equal(zieleSperre({ status: 'geladen', unlesbar: false }), null);
+    assert.equal(zieleSperre({ status: 'gespeichert', unlesbar: false }), null);
+    assert.equal(zieleSperre({ status: 'fehler', unlesbar: false }), TEXT_ZIELE_NICHT_GELADEN);
+    assert.equal(zieleSperre({ status: 'geladen', unlesbar: true }), TEXT_ZIELE_GESPERRT);
+    assert.deepEqual(zielSymbole({ kindname: 'Kiki' }), sparzieleModel(zustand({ settings: { kindname: 'Kiki' }, ziele: zieleZustand(leer) }), HEUTE).symbole);
   });
 });

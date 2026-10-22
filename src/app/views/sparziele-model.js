@@ -2,7 +2,7 @@
 // Stand), Karten der laufenden Ziele (Balken, Beträge, Monate, Status), „Frei verfügbar“, Verlauf pro Monat (Ersparnis und Aufteilung),
 // abgeschlossene Ziele (Ausblenden, Löschen nur ohne Geld), Sperren und Warnungen; dazu Entwurf, Prüfung und Bedarf-Vorschau des Formulars.
 // Gerechnet wird ausschließlich mit src/domain/sparziele.js (sparVerlauf); hier wird nur formatiert.
-import { TEXT_ZIELE_GESPERRT, TEXT_ZIELE_NICHT_GELADEN, ZIEL_EMOJIS, sparVerlauf, startMonat, zielLoeschbar, zielPruefen } from '../../domain/sparziele.js';
+import { TEXT_ZIELE_GESPERRT, TEXT_ZIELE_NICHT_GELADEN, ZIEL_EMOJIS, sparVerlauf, startMonat, zielLoeschbar, zielPruefen, zielSchluss } from '../../domain/sparziele.js';
 import { betragText, centsAusText, deltaText, monatVor } from '../../domain/konto.js';
 import { MONATE } from '../format-de.js';
 
@@ -18,7 +18,8 @@ export const SYMBOL_NAMEN = Object.freeze(['Auto', 'Urlaub', 'Wohnen', 'Geschenk
 /** Farben der Balken (der Reihe nach je Ziel), als CSS-Variablen aus theme.css. */
 const BALKEN_FARBEN = ['var(--serie-papa)', 'var(--urlaub)', 'var(--kita)', 'var(--abwesend)', 'var(--arzt)', 'var(--serie-mama)'];
 
-function symbole(settings) {
+/** Die Symbole zur Auswahl: [{ emoji, name }]. */
+export function zielSymbole(settings) {
   const kind = String(settings?.kindname ?? '').trim() || 'Kind';
   return ZIEL_EMOJIS.map((emoji, i) => ({ emoji, name: SYMBOL_NAMEN[i] === 'Kind' ? `Für ${kind}` : SYMBOL_NAMEN[i] }));
 }
@@ -44,7 +45,7 @@ function zielKarte(z, i) {
   const p = prozent(z.gespart, z.zielCents);
   const status = statusVon(z);
   const stand = `${betragText(z.gespart)} von ${betragText(z.zielCents)} · ${prozentText(p)}`;
-  const schluss = monatText(monatVor(z.datum, -1));
+  const schluss = monatText(zielSchluss(z).monat);
   const monate = z.faellig ? 'Zielmonat vorbei' : `Noch ${monateText(z.monateRest)}`;
   const proMonat = z.faellig ? `schließt im ${schluss}` : `${betragText(z.noetigProMonat)} / Monat`;
   return {
@@ -77,7 +78,7 @@ function monatEintrag(m, name) {
   let hinweis = null;
   if (m.gespart !== null && m.gespart > 0) {
     const noetig = m.zuteilung.reduce((s, t) => s + t.noetig, 0);
-    const anteilig = m.zuteilung.length > 0 && noetig > m.gespart;
+    const anteilig = m.anteilig; // aus der Rechnung: Plus-Monat mit weniger als nötig
     teile = m.zuteilung.filter((t) => t.cents !== 0 || t.noetig > 0).map((t) => zeile(anteilig ? name(t.ziel) : `${name(t.ziel)} (nötig ${betragText(t.noetig)})`, t.cents));
     if (m.frei.cents !== 0) teile.push(zeile(m.zuteilung.length > 0 ? '💜 Frei verfügbar (Rest)' : '💜 Frei verfügbar (kein laufendes Ziel)', m.frei.cents));
     if (anteilig) hinweis = `Weniger als nötig (${betragText(noetig)}) → anteilig nach Bedarf aufgeteilt.`;
@@ -102,6 +103,12 @@ function monatEintrag(m, name) {
   };
 }
 
+/** Warum sich die Sparziele gerade nicht ändern lassen (unlesbar / nicht gelesen) oder null (wie die Sperre im Store). */
+export function zieleSperre(zs) {
+  if (zs?.unlesbar) return TEXT_ZIELE_GESPERRT;
+  return zs?.status === 'geladen' || zs?.status === 'gespeichert' ? null : TEXT_ZIELE_NICHT_GELADEN;
+}
+
 /**
  * Die Seite „Sparziele“ am Tag `heute` → {
  *   zustand: 'ok' | 'nichtGeladen' (noch nie gelesen), gesperrt (Grund, warum nichts geändert werden kann, oder null),
@@ -115,8 +122,7 @@ export function sparzieleModel(state, heute, { ausgeblendeteZeigen = false } = {
   const daten = zs.daten ?? { v: 1, z: [], m: [] };
   const konto = state.konto;
   const v = sparVerlauf(daten, konto, heute);
-  const lesbar = zs.status === 'geladen' || zs.status === 'gespeichert';
-  const gesperrt = zs.unlesbar ? TEXT_ZIELE_GESPERRT : lesbar ? null : TEXT_ZIELE_NICHT_GELADEN;
+  const gesperrt = zieleSperre(zs);
   const nachId = new Map(v.ziele.map((z) => [z.id, z]));
   const name = (id) => {
     const z = nachId.get(id);
@@ -145,7 +151,7 @@ export function sparzieleModel(state, heute, { ausgeblendeteZeigen = false } = {
       betrag: betragText(v.frei),
       cents: v.frei,
       kannVerschieben: !gesperrt && v.frei > 0 && verschiebbar.length > 0,
-      ziele: verschiebbar.map((z) => ({ id: z.id, text: `${z.emoji} ${z.name} (offen ${betragText(z.offen)})`, offen: z.offen })),
+      ziele: verschiebbar.map((z) => ({ id: z.id, titel: `${z.emoji} ${z.name}`, text: `${z.emoji} ${z.name} (offen ${betragText(z.offen)})`, offen: z.offen })),
     },
     verlauf: v.monate.map((m) => monatEintrag(m, name)),
     abgeschlossen: fertig
@@ -159,7 +165,7 @@ export function sparzieleModel(state, heute, { ausgeblendeteZeigen = false } = {
         loeschbar: zielLoeschbar(daten, konto, heute, z.id),
       })),
     ausgeblendet: fertig.filter((z) => z.aus).length,
-    symbole: symbole(state.settings),
+    symbole: zielSymbole(state.settings),
   };
 }
 
@@ -184,22 +190,29 @@ export function zielEntwurf(ziel, heute) {
   };
 }
 
-/** Entwurf → { ziel: { id?, name, emoji, zielCents, datum, vorlaeufig }, fehler } (Prüfung der Domäne; `erstellt` nur zum Prüfen). */
-export function entwurfZuZiel(e, heute) {
+/**
+ * Entwurf → { ziel: { id?, name, emoji, zielCents, datum, vorlaeufig }, fehler } (Prüfung der Domäne). Geprüft wird gegen den ersten
+ * Sparmonat: bei einem vorhandenen Ziel sein `erstellt`, bei einem neuen – wenn `konto` da ist – startMonat(heute, konto), so meldet
+ * das Formular schon vor dem Speichern, wenn das Zieldatum davor liegt.
+ */
+export function entwurfZuZiel(e, heute, { konto } = {}) {
   const cents = centsAusText(String(e.betrag ?? ''));
   const datum = e.tag ? `${e.jahr}-${e.monat}-${String(e.tag).padStart(2, '0')}` : `${e.jahr}-${e.monat}`;
   const ziel = { ...(e.id ? { id: e.id } : {}), name: String(e.name ?? '').replace(/\s+/g, ' ').trim(), emoji: e.emoji, zielCents: cents ?? NaN, datum, vorlaeufig: e.art === 'vorlaeufig' };
-  const fehler = zielPruefen({ ...ziel, ...(e.erstellt ? { erstellt: e.erstellt } : {}) }, { heute });
+  const erstellt = e.erstellt ?? (!e.id && konto ? startMonat(heute, konto) : undefined);
+  const fehler = zielPruefen({ ...ziel, ...(erstellt ? { erstellt } : {}) }, { heute });
   return { ziel: fehler ? null : ziel, fehler };
 }
 
 /**
- * „Ab <Monat> → N Monate → X € pro Monat“ für den Entwurf, gerechnet mit sparVerlauf: ein neues Ziel beginnt im Startmonat (startMonat),
- * ein vorhandenes rechnet mit dem schon Gesparten. → { ab, monate, proMonat } | { erreicht: true } | null (Entwurf noch unvollständig).
+ * „Ab <Monat> → N Monate → X € pro Monat“ für den Entwurf, gerechnet mit sparVerlauf (auch „ab“ kommt aus der Rechnung): ein neues Ziel
+ * beginnt im Startmonat (startMonat), ein vorhandenes rechnet mit dem schon Gesparten. → { ab, monate, proMonat } | { erreicht: true }
+ * | { fehler } (Betrag oder Datum passen nicht) | null (noch kein Betrag eingegeben).
  */
 export function bedarfVorschau(e, { daten, konto, heute }) {
-  const { ziel, fehler } = entwurfZuZiel({ ...e, name: e.name || 'Vorschau' }, heute);
-  if (fehler) return null;
+  if (String(e.betrag ?? '').trim() === '') return null;
+  const { ziel, fehler } = entwurfZuZiel({ ...e, name: String(e.name ?? '').trim() || 'Vorschau' }, heute, { konto });
+  if (fehler) return { fehler };
   const alt = e.id ? (daten?.z ?? []).find((z) => z.id === e.id) : null;
   const probe = alt
     ? { ...daten, z: daten.z.map((z) => (z.id === alt.id ? { ...alt, ...ziel } : z)) }
@@ -208,5 +221,5 @@ export function bedarfVorschau(e, { daten, konto, heute }) {
   if (!z || z.abgeschlossen) return null;
   if (z.offen === 0) return { erreicht: true };
   if (z.faellig) return null;
-  return { ab: monatText(monatVor(ziel.datum, z.monateRest - 1)), monate: monateText(z.monateRest), proMonat: `${betragText(z.noetigProMonat)} pro Monat` };
+  return { ab: monatText(z.ab), monate: monateText(z.monateRest), proMonat: `${betragText(z.noetigProMonat)} pro Monat` };
 }

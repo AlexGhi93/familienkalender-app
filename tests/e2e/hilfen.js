@@ -185,3 +185,20 @@ export async function tab(page, name) {
 export async function erwarteToast(page, text) {
   await expect(page.locator('.toast').filter({ hasText: text })).toBeVisible();
 }
+
+/**
+ * Zählt die Fehlermeldungen (`.toast.fehler`), die ab jetzt erscheinen (jede neu eingefügte zählt, auch wenn sie eine andere ersetzt).
+ * → { anzahl(), zuruecksetzen() } – damit ein Test prüfen kann, dass ein Fehler genau EINE Meldung bringt.
+ */
+export async function fehlerToastsZaehlen(page) {
+  await page.evaluate(() => {
+    window.fehlerToasts = 0;
+    new MutationObserver((liste) => {
+      for (const m of liste) for (const n of m.addedNodes) if (n.classList?.contains('toast') && n.classList.contains('fehler')) window.fehlerToasts += 1;
+    }).observe(document.body, { childList: true });
+  });
+  return {
+    anzahl: () => page.evaluate(() => window.fehlerToasts),
+    zuruecksetzen: () => page.evaluate(() => (window.fehlerToasts = 0)),
+  };
+}
