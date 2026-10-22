@@ -6,6 +6,7 @@ import { normalisiereListe } from '../domain/einkauf.js';
 import { normalisiereKonto } from '../domain/konto.js';
 import { normalisiereKatalog, normalisiereMonat } from '../domain/schicht.js';
 import { FIX_SHARDS, normalisiereShard } from '../domain/fixkosten.js';
+import { zieleLesen, zieleText } from '../domain/sparziele.js';
 import { TAGES_TYPEN, TYPES } from '../domain/types.js';
 
 export const SNAPSHOT_KEY = 'fk.snapshot.v1';
@@ -58,6 +59,27 @@ function pruefeFixkosten(roh) {
   return { shards: roh.shards.map((s) => (s === null ? null : normalisiereShard(s))), unlesbar };
 }
 
+/**
+ * Sparziele nachsichtig lesen (nur eine Kopie; laden() holt sie neu): gespeichert ist der Kalendertext ({ text, unlesbar }), gelesen wie
+ * aus dem Kalender. Fehlt das (alter Schnappschuss) oder ist es unbrauchbar → null (= noch nicht gelesen), ohne den Rest zu verwerfen.
+ * `unlesbar` = beim letzten Laden waren die Sparziele unlesbar (nur zur Anzeige: auch offline gesperrt).
+ */
+function pruefeZiele(roh) {
+  if (!istObjekt(roh) || typeof roh.text !== 'string') return null;
+  const gelesen = zieleLesen(roh.text);
+  return gelesen.unlesbar ? null : { daten: gelesen.daten, unlesbar: roh.unlesbar === true };
+}
+
+/** Sparziele für den Schnappschuss: als Kalendertext (kurz, mit fremden Einträgen); noch nie gelesen oder unbrauchbar → null. */
+function zieleFuerSnapshot(ziele) {
+  if (!ziele?.status) return null;
+  try {
+    return { text: zieleText(ziele.daten), unlesbar: ziele.unlesbar === true };
+  } catch {
+    return null;
+  }
+}
+
 /** Prüft die gelesene Struktur streng; liefert die bereinigten Daten oder null. */
 function pruefe(roh) {
   if (!istObjekt(roh) || roh.v !== 1 || typeof roh.gespeichertAm !== 'string' || Number.isNaN(Date.parse(roh.gespeichertAm))) return null;
@@ -78,14 +100,15 @@ function pruefe(roh) {
     if (!istObjekt(t) || typeof t.id !== 'string' || !TERMIN_TYPEN.includes(t.typ) || !TYPES[t.typ] || !gueltigesDatum(t.date) || !Array.isArray(t.mitnehmen ?? [])) return null;
   }
   const fenster = istObjekt(roh.fenster) && gueltigesDatum(roh.fenster.von) && gueltigesDatum(roh.fenster.bis) ? { von: roh.fenster.von, bis: roh.fenster.bis } : null;
-  return { daten: { settings, tage: roh.tage, urlaub: roh.urlaub, termine: roh.termine, fenster, einkauf: normalisiereListe(roh.einkauf), konto: normalisiereKonto(roh.konto), schicht: pruefeSchicht(roh.schicht, new Date(roh.gespeichertAm).toISOString()), fixkosten: pruefeFixkosten(roh.fixkosten) }, gespeichertAm: roh.gespeichertAm };
+  return { daten: { settings, tage: roh.tage, urlaub: roh.urlaub, termine: roh.termine, fenster, einkauf: normalisiereListe(roh.einkauf), konto: normalisiereKonto(roh.konto), schicht: pruefeSchicht(roh.schicht, new Date(roh.gespeichertAm).toISOString()), fixkosten: pruefeFixkosten(roh.fixkosten), ziele: pruefeZiele(roh.ziele) }, gespeichertAm: roh.gespeichertAm };
 }
 
 export function createSnapshot({ speicher = globalThis.localStorage ?? null, jetzt = () => new Date() } = {}) {
   return {
     /**
      * Speichert Tage, Urlaub, Termine und Einstellungen der letzten zwölf Monate, dazu die Schichtarten und von den geladenen Monaten
-     * des Schichtplans die sechs am nächsten zu `heute`, und die vier Teile der Fixkosten (falls schon gelesen). Gibt true zurück, wenn gespeichert wurde.
+     * des Schichtplans die sechs am nächsten zu `heute`, die vier Teile der Fixkosten und die Sparziele (jeweils falls schon gelesen).
+     * Gibt true zurück, wenn gespeichert wurde.
      */
     speichern(state, heute) {
       if (!speicher) return false;
@@ -103,6 +126,7 @@ export function createSnapshot({ speicher = globalThis.localStorage ?? null, jet
         schicht: state.schicht ? { katalog: state.schicht.katalog ?? null, monate: naechsteMonate(state.schicht.monate, heute, MAX_SNAPSHOT_SCHICHT_MONATE) } : null,
         // im Zustandsformat (lange Schlüssel): etwa 1,5-mal der Kalendertext, also höchstens rund 4 × 9000 Zeichen
         fixkosten: state.fixkosten?.shards ? { shards: state.fixkosten.shards, unlesbar: state.fixkosten.unlesbar ?? [] } : null,
+        ziele: zieleFuerSnapshot(state.ziele), // höchstens ~6000 Zeichen (Kalendertext)
       });
       if (text.length > MAX_SNAPSHOT_ZEICHEN) return false;
       try {

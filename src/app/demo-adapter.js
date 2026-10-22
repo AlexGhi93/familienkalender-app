@@ -4,6 +4,7 @@ import { leereListe, normalisiereListe } from '../domain/einkauf.js';
 import { leeresKonto, normalisiereKonto } from '../domain/konto.js';
 import { katalogText, leererMonat, monatText, normalisiereKatalog, normalisiereMonat, standardKatalog } from '../domain/schicht.js';
 import { FIX_SHARDS, leererShard, normalisiereShard, shardText, teilGesperrtFehler } from '../domain/fixkosten.js';
+import { zieleGesperrtFehler, zieleLesen, zieleText, zieleWarnungen } from '../domain/sparziele.js';
 import { seedDemo } from './seed.js';
 
 const KEY = 'fk.demo.v1';
@@ -35,6 +36,15 @@ function fixkostenAusSpeicher(roh) {
 }
 
 /**
+ * Sparziele aus dem Speicher lesen, genau wie beim Google-Adapter (gespeichert ist der Kalendertext): { daten, unlesbar, warnungen, text }.
+ * Kein Text (alter Speicher) → leere Daten; unlesbarer Text → leer, gesperrt (nie überschreiben), mit dem Rohtext für die Sicherung.
+ */
+function zieleGelesen(text) {
+  const { daten, unlesbar } = zieleLesen(typeof text === 'string' ? text : null);
+  return { daten, unlesbar, warnungen: zieleWarnungen({ daten, unlesbar }), text: unlesbar ? text : null };
+}
+
+/**
  * Kalender-Adapter für den Demo-Modus: hält alles in `localStorage` und kennt weder Google noch das Netz.
  * Schnittstelle (die später auch der Google-Adapter erfüllt):
  * laden, setzeTag, loescheTag, speichereUrlaub, loescheUrlaub, speichereTermin, loescheTermin, speichereSettings, zuruecksetzen.
@@ -51,9 +61,13 @@ export function createDemoAdapter({ speicher = globalThis.localStorage, jetzt = 
   }
 
   function neuErzeugen() {
-    daten = seedDemo(todayVienna(jetzt()));
+    const seed = seedDemo(todayVienna(jetzt()));
+    daten = { ...seed, ziele: zieleText(seed.ziele) }; // Sparziele wie im Kalender als Text (so verhält sich „unlesbar“ wie bei Google)
     sichern();
   }
+
+  /** Was laden() und zuruecksetzen() liefern: eine Kopie, die Sparziele gelesen wie beim Google-Adapter. */
+  const nachAussen = () => ({ ...structuredClone(daten), ziele: zieleGelesen(daten.ziele) });
 
   return {
     istDemo: true, // der Store erlaubt „Beispieldaten entfernen“ nur mit einem Adapter, der das von sich sagt
@@ -77,9 +91,10 @@ export function createDemoAdapter({ speicher = globalThis.localStorage, jetzt = 
           daten.konto = normalisiereKonto(daten.konto ?? leeresKonto()); // … und noch keine Kontostände
           daten.schicht = schichtAusSpeicher(daten.schicht); // … und noch keinen Schichtplan
           daten.fixkosten = fixkostenAusSpeicher(daten.fixkosten); // … und noch keine Fixkosten
+          daten.ziele = typeof daten.ziele === 'string' ? daten.ziele : null; // … und noch keine Sparziele (Text wie im Kalender)
         }
       }
-      return structuredClone(daten);
+      return nachAussen();
     },
     async setzeTag(date, typ) {
       daten.tage[date] = { typ };
@@ -159,6 +174,23 @@ export function createDemoAdapter({ speicher = globalThis.localStorage, jetzt = 
       sichern();
       return structuredClone(neu);
     },
+    /** Sparziele lesen (wie beim Google-Adapter): { daten, unlesbar, warnungen, text }. */
+    async leseZiele() {
+      return zieleGelesen(daten?.ziele);
+    },
+    /**
+     * Sparziele ändern: `aenderung(daten)` → neue Daten (fehlen sie: leere Daten); gibt die gespeicherten zurück. Wie bei Google: unlesbare
+     * Sparziele werden nie überschrieben (Fehler „ZieleGesperrt“), zu volle abgelehnt; fremde Einträge bleiben im Text erhalten.
+     */
+    async aendereZiele(aenderung) {
+      const alt = zieleGelesen(daten.ziele);
+      if (alt.unlesbar) throw zieleGesperrtFehler();
+      const neu = aenderung(structuredClone(alt.daten));
+      if (!neu) return null;
+      daten.ziele = zieleText(neu); // wirft, wenn sie nicht in den Kalender passen würden
+      sichern();
+      return structuredClone(neu);
+    },
     /** Einkaufsliste lesen (wie beim Google-Adapter): { liste }. In der Demo schreibt kein anderes Telefon, sie ist also immer die eigene. */
     async leseEinkauf() {
       return { liste: structuredClone(daten?.einkauf ?? leereListe()) };
@@ -177,7 +209,7 @@ export function createDemoAdapter({ speicher = globalThis.localStorage, jetzt = 
     },
     async zuruecksetzen() {
       neuErzeugen();
-      return structuredClone(daten);
+      return nachAussen();
     },
   };
 }

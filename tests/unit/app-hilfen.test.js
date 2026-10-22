@@ -22,7 +22,7 @@ describe('Sicherung', () => {
   const s = sicherungErstellen({ state, appVersion: '9.9.9', jetzt: new Date('2026-10-14T06:00:00Z') });
 
   test('Kopf und Inhalt; flüchtige Felder fehlen', () => {
-    assert.deepEqual(Object.keys(s), ['app', 'sicherungVersion', 'appVersion', 'erstelltAm', 'settings', 'tage', 'urlaub', 'termine', 'einkauf', 'konto', 'schicht', 'fixkosten']);
+    assert.deepEqual(Object.keys(s), ['app', 'sicherungVersion', 'appVersion', 'erstelltAm', 'settings', 'tage', 'urlaub', 'termine', 'einkauf', 'konto', 'schicht', 'fixkosten', 'ziele']);
     assert.deepEqual([s.app, s.sicherungVersion, s.appVersion, s.erstelltAm], ['familienkalender', SICHERUNG_VERSION, '9.9.9', '2026-10-14T06:00:00.000Z']);
     assert.deepEqual(s.tage, { '2026-10-01': { typ: 'kita_essen' }, '2026-10-02': { typ: 'krank' } });
     assert.deepEqual(Object.keys(s.tage), ['2026-10-01', '2026-10-02']);

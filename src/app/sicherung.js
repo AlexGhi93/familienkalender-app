@@ -34,9 +34,22 @@ function fixSicherung(fixkosten) {
   return { posten, ...(fremd.length > 0 ? { fremd } : {}), ...(unlesbar.length > 0 ? { unlesbar } : {}) };
 }
 
+/**
+ * Sparziele: Ziele und Verschiebungen aus „Frei“ in lesbarer Form (wie im Zustand, in ihrer Reihenfolge), dazu `beginn` (ab wann
+ * gerechnet wird; null = noch nie ein Ziel). `ziele` = { daten, unlesbar?, text? } wie aus store.sicherungsDaten; ohne → leer. Was diese
+ * Version nicht versteht, fehlt nicht unbemerkt: `fremd` = solche Einträge roh, `unlesbar` = der Rohtext unlesbarer Sparziele (beide nur,
+ * wenn es welche gibt; die Sicherung wird nie zurückgeschrieben).
+ */
+function zieleSicherung(ziele) {
+  const d = ziele?.daten ?? {};
+  const fremd = d.fremd && (d.fremd.z?.length > 0 || d.fremd.m?.length > 0) ? { fremd: d.fremd } : {};
+  const unlesbar = ziele?.unlesbar ? { unlesbar: ziele.text ?? null } : {};
+  return { beginn: d.beginn ?? null, ziele: d.z ?? [], verschiebungen: d.m ?? [], ...fremd, ...unlesbar };
+}
+
 const nachDatum = (a, b) => a.date.localeCompare(b.date) || (a.time ?? '').localeCompare(b.time ?? '');
 
-/** Sicherung aus dem Zustand (`tage`, `urlaub`, `termine`, `settings`, `einkauf`, `konto`, `schicht`, `fixkosten`); flüchtige Felder (Fehler, Fortschritt …) fehlen bewusst. */
+/** Sicherung aus dem Zustand (`tage`, `urlaub`, `termine`, `settings`, `einkauf`, `konto`, `schicht`, `fixkosten`, `ziele`); flüchtige Felder (Fehler, Fortschritt …) fehlen bewusst. */
 export function sicherungErstellen({ state, appVersion, jetzt = new Date() }) {
   return {
     app: 'familienkalender',
@@ -55,6 +68,7 @@ export function sicherungErstellen({ state, appVersion, jetzt = new Date() }) {
     konto: state.konto ? normalisiereKonto(state.konto) : leeresKonto(),
     schicht: schichtSicherung(state.schicht),
     fixkosten: fixSicherung(state.fixkosten),
+    ziele: zieleSicherung(state.ziele),
   };
 }
 
@@ -64,7 +78,10 @@ export const sicherungText = (sicherung) => JSON.stringify(sicherung, null, 2);
 
 const zahl = (n, einzahl, mehrzahl) => `${n} ${n === 1 ? einzahl : mehrzahl}`;
 
-/** „12 Tage · 3 Urlaube · 5 Termine · 4 Artikel auf der Einkaufsliste · 6 Kontostände · 4 Monate Schichtplan · 9 Fixkosten-Posten“ (Schichtplan und Fixkosten nur, wenn es welche gibt) */
+/**
+ * „12 Tage · 3 Urlaube · 5 Termine · 4 Artikel auf der Einkaufsliste · 6 Kontostände · 4 Monate Schichtplan · 9 Fixkosten-Posten · 3 Sparziele“
+ * (Schichtplan, Fixkosten und Sparziele nur, wenn es welche gibt)
+ */
 export function sicherungAnzahlText(s) {
   const kontoEintraege = Object.values(s.konto.p).reduce((summe, monate) => summe + Object.keys(monate).length, 0);
   const schichtMonate = Object.keys(s.schicht?.monate ?? {}).length;
@@ -74,5 +91,8 @@ export function sicherungAnzahlText(s) {
   if (fixPosten > 0) teile.push(`${fixPosten} Fixkosten-Posten`);
   const unlesbar = s.fixkosten?.unlesbar?.length ?? 0;
   if (unlesbar > 0) teile.push(`${zahl(unlesbar, 'unlesbarer Teil', 'unlesbare Teile')} der Fixkosten (als Text gesichert)`);
+  const ziele = (s.ziele?.ziele?.length ?? 0) + (s.ziele?.fremd?.z?.length ?? 0);
+  if (ziele > 0) teile.push(zahl(ziele, 'Sparziel', 'Sparziele'));
+  if (s.ziele?.unlesbar !== undefined) teile.push('Sparziele unlesbar (als Text gesichert)');
   return teile.join(' · ');
 }

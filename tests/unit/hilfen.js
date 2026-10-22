@@ -22,7 +22,10 @@ export function zustand({ settings = {}, ...rest } = {}) {
   return { tage: {}, urlaub: [], termine: [], einkauf: leereListe(), konto: leeresKonto(), schicht: { katalog: null, monate: {}, status: {} }, ...rest, settings: normalizeSettings(settings) };
 }
 
-/** Google-Kalender-API im Arbeitsspeicher (nur `ereignisse`: holen, einfuegen, schreibe, aendere); `roh(k, id)` = gespeichertes Ereignis, `log` = Zugriffe. */
+/**
+ * Google-Kalender-API im Arbeitsspeicher (nur `ereignisse`: holen, liste, einfuegen, schreibe, aendere); `roh(k, id)` = gespeichertes
+ * Ereignis, `log` = Zugriffe (ohne `liste`). `liste` liefert die Ereignisse eines Kalenders, die im Zeitfenster [von, bis) beginnen.
+ */
 export function apiAttrappe() {
   const kalender = new Map();
   const von = (k) => (kalender.has(k) || kalender.set(k, new Map()), kalender.get(k));
@@ -38,6 +41,11 @@ export function apiAttrappe() {
       laufend -= 1;
       const e = von(k).get(id);
       return e ? structuredClone(e) : null;
+    },
+    async liste(k, fenster) {
+      await new Promise((r) => setImmediate(r));
+      const beginn = (e) => e.start?.date ?? e.start?.dateTime?.slice(0, 10) ?? '';
+      return [...von(k).values()].filter((e) => beginn(e) >= fenster.von && beginn(e) < fenster.bis).map((e) => structuredClone(e));
     },
     async einfuegen(k, body) {
       if (von(k).has(body.id)) return { bereitsVorhanden: true };

@@ -270,13 +270,16 @@ test.describe('Fixkosten im Konto-Tab', () => {
     await expect(page.getByRole('heading', { name: 'Kontostand 💶' })).toBeVisible();
   });
 
-  test('Demo: „Beispieldaten entfernen“ leert auch die Fixkosten', async ({ page }) => {
+  test('Demo: „Beispieldaten entfernen“ leert auch die Fixkosten (und die Sparziele)', async ({ page }) => {
     await starteDemo(page, { route: '#/konto' });
+    const zieleImSpeicher = () => page.evaluate(() => JSON.parse(JSON.parse(localStorage.getItem('fk.demo.v1')).ziele).z.length);
+    expect(await zieleImSpeicher()).toBe(3);
     await page.getByRole('button', { name: 'Beispieldaten entfernen' }).click();
     const frage = dialog(page, 'Beispieldaten entfernen?');
-    await expect(frage).toContainText('Sonderbeträge und Fixkosten');
+    await expect(frage).toContainText('Sonderbeträge, Fixkosten und Sparziele');
     await frage.getByRole('button', { name: 'Entfernen' }).click();
     await erwarteToast(page, 'Beispieldaten entfernt');
+    expect(await zieleImSpeicher()).toBe(0);
     await page.getByRole('group', { name: 'Ansicht im Konto' }).getByRole('button', { name: 'Fixkosten' }).click();
     await expect(gross(page)).toHaveText('0 €');
     await expect(page.getByText('Noch keine Fixkosten.')).toBeVisible();

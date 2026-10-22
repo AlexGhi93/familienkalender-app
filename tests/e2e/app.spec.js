@@ -52,7 +52,7 @@ test('Sicherung: vorbereiten zeigt „Bereit“, Datei speichern lädt das JSON 
   await starteDemo(page, { route: '#/app' });
   const karte = page.locator('article.karte').filter({ has: page.getByRole('heading', { name: 'Sicherung' }) });
   await karte.getByRole('button', { name: 'Sicherung vorbereiten' }).click();
-  await expect(karte.locator('.sichern-bereit p')).toHaveText(/^Bereit: \d+ Tage · 2 Urlaube · 8 Termine · 4 Artikel auf der Einkaufsliste · 10 Kontostände · 3 Monate Schichtplan · 13 Fixkosten-Posten\.$/);
+  await expect(karte.locator('.sichern-bereit p')).toHaveText(/^Bereit: \d+ Tage · 2 Urlaube · 8 Termine · 4 Artikel auf der Einkaufsliste · 10 Kontostände · 3 Monate Schichtplan · 13 Fixkosten-Posten · 3 Sparziele\.$/);
   const speichern = karte.getByRole('button', { name: 'Datei speichern (familienkalender-sicherung-2026-10-14.json)' });
   const [download] = await Promise.all([page.waitForEvent('download'), speichern.click()]);
   expect(download.suggestedFilename()).toBe('familienkalender-sicherung-2026-10-14.json');
@@ -61,6 +61,8 @@ test('Sicherung: vorbereiten zeigt „Bereit“, Datei speichern lädt das JSON 
   expect(Object.keys(sicherung.schicht.monate)).toEqual(['2026-09', '2026-10', '2026-11']);
   expect(sicherung.fixkosten.posten).toHaveLength(13);
   expect(sicherung.fixkosten.posten.find((p) => p.id === 'demofk05')).toMatchObject({ name: 'Kfz-Versicherung Papa', vertrag: { verlaengerung: 12, frist: '1m' } });
+  expect(sicherung.ziele.ziele.map((z) => z.name)).toEqual(['Auto', 'Sommerurlaub', 'Neues Sofa']);
+  expect(sicherung.ziele).toMatchObject({ beginn: '2026-06', verschiebungen: [] });
   expect(sicherung.termine.find((t) => t.id === 'demo-t1').titel).toBe('🩺 Kinderarzt (Kind) 10:00 · 🎒 e-card, MuKi-Pass, Impfpass');
   // „Bereit“ übersteht das Neuzeichnen der Seite
   await page.getByRole('button', { name: '‹ Zurück' }).click();

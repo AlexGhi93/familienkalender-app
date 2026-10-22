@@ -12,6 +12,7 @@ import { einkaufAusText, einkaufText } from '../domain/einkauf.js';
 import { kontoAusText, kontoText } from '../domain/konto.js';
 import { katalogAusText, katalogText, monatAusText, monatText } from '../domain/schicht.js';
 import { FIX_SHARDS, shardLesen, shardText } from '../domain/fixkosten.js';
+import { zieleLesen, zieleText, zieleWarnungen } from '../domain/sparziele.js';
 import { classifyEvent } from '../domain/classify.js';
 import { zeitAusDateTime } from '../domain/format.js';
 import { DEFAULT_SETTINGS, normalizeSettings } from '../domain/settings.js';
@@ -23,6 +24,7 @@ export const GERAETE_ID = 'fkgeraete'; // Register der Telefone für Push-Erinne
 export const EINKAUF_ID = 'fkeinkauf'; // gemeinsame Einkaufsliste (siehe domain/einkauf.js)
 export const KONTO_ID = 'fkkonto'; // monatliche Kontostände von Papa und Mama (siehe domain/konto.js)
 export const SCHICHTARTEN_ID = 'fkschichtarten'; // Schichtarten von Papa und Mama (siehe domain/schicht.js)
+export const ZIELE_ID = 'fksparen'; // Sparziele und Verschiebungen aus „Frei“ (siehe domain/sparziele.js); nicht „fkziele“: z liegt außerhalb von 0-9 und a-v
 export const TEST_ID = 'fktest'; // „🔔 Test-Erinnerung“ aus Konto & App → Erinnerungen: für die App unsichtbar
 export const MAX_EINSTELLUNGEN_ZEICHEN = 6000; // Google kürzt `description` still bei 8192 Zeichen (Vertragsprobe C11b)
 const TERMIN_MINUTEN = 30;
@@ -295,6 +297,20 @@ export function fixShardAusEreignis(event) {
   return shardLesen(event?.description);
 }
 
+/** Sparziele als verstecktes Ereignis „fksparen“ (wie die Fixkosten); der Titel nennt weder Ziele noch Beträge, zu volle Daten werden abgelehnt. */
+export function zieleZuEreignis(daten) {
+  return schichtEreignis(ZIELE_ID, '🎯 fk Sparziele (nicht löschen)', zieleText(daten), 'sparziele');
+}
+
+/**
+ * Liest die Sparziele → { daten, unlesbar, warnungen } (siehe zieleLesen, zieleWarnungen): fehlender Text → leere Daten; unlesbarer Text
+ * → leere, gesperrte Daten (`unlesbar: true`, mit Warnung, nie überschreiben); was diese Version nicht versteht, bleibt als `fremd` erhalten.
+ */
+export function zieleAusEreignis(event) {
+  const { daten, unlesbar } = zieleLesen(event?.description);
+  return { daten, unlesbar, warnungen: zieleWarnungen({ daten, unlesbar }) };
+}
+
 /** Liest das Register; unbrauchbares JSON ergibt `register: null` (nichts wird gelöscht oder erraten). */
 export function geraeteAusEreignis(event) {
   const text = event?.description;
@@ -345,7 +361,7 @@ export function einstellungenAusEreignis(event) {
 export function ereignisZuEintrag(event, kalender, settings) {
   if (event.status === 'cancelled' || !event.start) return { art: 'ignorieren' };
   if (event.id === EINSTELLUNGEN_ID) return { art: 'einstellungen', ...einstellungenAusEreignis(event) };
-  if (event.id === TEST_ID || event.id === GERAETE_ID || event.id === EINKAUF_ID || event.id === KONTO_ID || istSchichtId(event.id) || istFixId(event.id)) return { art: 'ignorieren' };
+  if (event.id === TEST_ID || event.id === GERAETE_ID || event.id === EINKAUF_ID || event.id === KONTO_ID || event.id === ZIELE_ID || istSchichtId(event.id) || istFixId(event.id)) return { art: 'ignorieren' };
 
   const { typ, subtyp, quelle } = classifyEvent(event, kalender);
   if (TAGES_TYPEN.includes(typ)) return { art: 'tag', id: event.id, typ, tage: spanDays(eventSpan(event)), quelle };

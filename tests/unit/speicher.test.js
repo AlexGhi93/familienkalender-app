@@ -86,7 +86,7 @@ describe('Schnappschuss', () => {
     const s = speicherAttrappe();
     const snap = createSnapshot({ speicher: s, jetzt });
     snap.speichern({ settings: state.settings, tage: {}, urlaub: [], termine: [] }, '2026-10-14');
-    assert.deepEqual(snap.lesen().daten, { settings: state.settings, tage: {}, urlaub: [], termine: [], fenster: null, einkauf: leereListe(), konto: leeresKonto(), schicht: { katalog: null, monate: {} }, fixkosten: null });
+    assert.deepEqual(snap.lesen().daten, { settings: state.settings, tage: {}, urlaub: [], termine: [], fenster: null, einkauf: leereListe(), konto: leeresKonto(), schicht: { katalog: null, monate: {} }, fixkosten: null, ziele: null });
   });
 
   test('Fixkosten: die vier Teile werden gespeichert und nachsichtig zurückgelesen', () => {

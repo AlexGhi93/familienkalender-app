@@ -4,6 +4,7 @@ import { normalizeSettings } from '../domain/settings.js';
 import { ARZT_SUBTYPEN } from '../domain/types.js';
 import { leererMonat, setzeNotiz, setzeSchicht, standardKatalog, tageImMonat, zusatzHinzufuegen } from '../domain/schicht.js';
 import { FIX_SHARDS, leererShard, postenSetzen, shardFuer } from '../domain/fixkosten.js';
+import { ZIEL_EMOJIS } from '../domain/sparziele.js';
 import { naechsterKitaTag, wochenSerie } from './serie.js';
 
 const MUSTER = ['kita_essen', 'kita_essen', 'kita_essen', 'kita_ohne', 'kita_essen', 'kita_essen', 'kita_essen', 'kita_essen'];
@@ -122,7 +123,8 @@ export function seedDemo(heute) {
   konto.x.push({ i: 'demoex01', p: 'mama', m: monatVor(3), c: 60000, t: 'Steuerrückzahlung' }, { i: 'demoex02', p: 'papa', m: monatVor(2), c: -45000, t: 'Autoreparatur' });
   const schicht = schichtDemo([monatVor(1), monatVor(0), monatVor(-1)]);
   const fixkosten = fixkostenDemo(monatVor);
-  return { settings, tage, urlaub, termine: [...termine, ...sachenDemo({ settings, tage, urlaub }, heute)], einkauf, konto, schicht, fixkosten };
+  const ziele = zieleDemo(monatVor);
+  return { settings, tage, urlaub, termine: [...termine, ...sachenDemo({ settings, tage, urlaub }, heute)], einkauf, konto, schicht, fixkosten, ziele };
 }
 
 // Papa: Blöcke aus 4 Diensten, dann 2 Tage frei (fortlaufend über Monatsgrenzen); jeder Block mit anderen Arten.
@@ -187,6 +189,27 @@ function fixkostenDemo(monatVor) {
   const shards = Array.from({ length: FIX_SHARDS }, leererShard);
   for (const x of posten) shards[shardFuer(x.id)] = postenSetzen(shards[shardFuer(x.id)], x);
   return { shards };
+}
+
+/**
+ * Erfundene Sparziele (keine echten Namen oder Beträge), alle vor vier Monaten angelegt: so verteilt die Rechnung schon die Ersparnis von
+ * vier Demo-Kontoständen (drei Plus-Monate, ein Minus-Monat). 🚗 Auto (fest, in knapp zwei Jahren) und 🏖️ Sommerurlaub (vorläufig, in
+ * neun Monaten) laufen; 🛋️ Neues Sofa war vor zwei Monaten fällig und ist abgeschlossen (steht im Verlauf). Was die Ziele im letzten
+ * Monat nicht brauchten, liegt in „Frei verfügbar“. Im Zustandsformat (lange Schlüssel); der Demo-Adapter speichert es als Kalendertext.
+ */
+function zieleDemo(monatVor) {
+  const [auto, urlaub, sofa] = [ZIEL_EMOJIS[0], ZIEL_EMOJIS[1], ZIEL_EMOJIS[6]];
+  const start = monatVor(4);
+  return {
+    v: 1,
+    beginn: start,
+    z: [
+      { id: 'demo0001', name: 'Auto', emoji: auto, zielCents: 2_300_000, datum: monatVor(-21), vorlaeufig: false, erstellt: start },
+      { id: 'demo0002', name: 'Sommerurlaub', emoji: urlaub, zielCents: 300_000, datum: monatVor(-9), vorlaeufig: true, erstellt: start },
+      { id: 'demo0003', name: 'Neues Sofa', emoji: sofa, zielCents: 120_000, datum: monatVor(2), vorlaeufig: false, erstellt: start },
+    ],
+    m: [],
+  };
 }
 
 /** Sachen für die Krabbelstube: Hinbringen in der nächsten Woche, Heimholen am Freitag danach, später Windeln und Socken. */

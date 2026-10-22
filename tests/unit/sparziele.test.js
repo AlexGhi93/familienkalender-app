@@ -31,6 +31,7 @@ import {
   zielSetzen,
   zieleLesen,
   zieleText,
+  zieleWarnungen,
 } from '../../src/domain/sparziele.js';
 import * as domain from '../../src/domain/index.js';
 
@@ -280,10 +281,10 @@ describe('zielSetzen, zielBeenden, zielLoeschen, freiVerschieben', () => {
   test('zielAusblenden: nur Anzeige – die Zahlen bleiben gleich; wiederholbar; wieder einblenden', () => {
     const k = kontoAus(BEISPIEL);
     const d = daten([auto(), urlaub({ beendet: { monat: '2026-12', art: 'ausgegeben' } })]);
-    const aus = zielAusblenden(d, 'url00001', true);
+    const aus = zielAusblenden(d, 'url00001', true, { heute: '2027-02-05' });
     assert.equal(aus.z[1].aus, true);
-    assert.equal(zielAusblenden(aus, 'url00001', true), aus);
-    assert.equal(zielAusblenden(d, 'gibtsnicht', true), d);
+    assert.equal(zielAusblenden(aus, 'url00001', true, { heute: '2027-02-05' }), aus);
+    assert.equal(zielAusblenden(d, 'gibtsnicht', true, { heute: '2027-02-05' }), d);
     const mit = sparVerlauf(d, k, '2027-02-05');
     const ohne = sparVerlauf(aus, k, '2027-02-05');
     assert.deepEqual(ohne.monate, mit.monate);
@@ -296,7 +297,7 @@ describe('zielSetzen, zielBeenden, zielLoeschen, freiVerschieben', () => {
     const wieder = zielAusblenden(aus, 'url00001', false);
     assert.equal('aus' in wieder.z[1], false);
     // Ändern lässt das Flag stehen
-    assert.equal(zielSetzen(zielAusblenden(d, 'auto0001', true), auto({ name: 'Neues Auto' }), { heute: '2026-10-20' }).z[0].aus, true);
+    assert.equal(zielSetzen({ ...d, z: [{ ...d.z[0], aus: true }, d.z[1]] }, auto({ name: 'Neues Auto' }), { heute: '2026-10-20' }).z[0].aus, true);
   });
 
   test('freiVerschieben: gedeckelt auf „Frei“ und auf das noch Offene; wiederholbar; Prüfungen; Höchstzahl', () => {
@@ -373,7 +374,7 @@ describe('zielSetzen, zielBeenden, zielLoeschen, freiVerschieben', () => {
     assert.ok(d.z.filter((z) => !z.beendet).length >= 5, 'einige laufen noch');
     // alle beenden und ausblenden geht, ohne die Grenze zu überschreiten
     for (const z of d.z) d = zielBeenden(d, z.id, { monat: '2026-12', art: 'ausgegeben' });
-    for (const z of d.z) d = zielAusblenden(d, z.id, true);
+    for (const z of d.z) d = zielAusblenden(d, z.id, true, { heute: '2026-12-05' });
     assert.ok(d.z.every((z) => z.beendet && z.aus));
     assert.ok(zieleText(d).length <= MAX_ZIELE_ZEICHEN);
     // ein nie gefördertes Ziel löschen macht Platz; das geförderte nicht
@@ -900,5 +901,53 @@ describe('Eigenschaft: Σ Zuteilung + ΔFrei = Ersparnis (auf den Cent), nichts 
     }
     assert.ok(geloeschte > 20, `genug löschbare Ziele (${geloeschte})`);
     assert.ok(gepruefteMonate > 1000 && minusMonate > 300 && ungedeckteMonate > 100, `genug verschiedene Fälle (${gepruefteMonate}/${minusMonate}/${ungedeckteMonate})`);
+  });
+});
+
+// ---------------------------------------------------------------- Extras aus der Nachprüfung (n-2, n-3) und Warnungen
+
+describe('Ausblenden nur abgeschlossener Ziele (n-2), Verschieben nicht nach dem Abschluss (n-3), Warnungen', () => {
+  test('n-2: ein laufendes Ziel lässt sich nicht ausblenden (klare Meldung); abgeschlossen – von Hand oder automatisch – schon', () => {
+    const d = daten([auto(), urlaub({ beendet: { monat: '2026-12', art: 'ausgegeben' } }), urlaub({ id: 'url00002', datum: '2026-11' })]);
+    assert.throws(() => zielAusblenden(d, 'auto0001', true, { heute: '2026-12-05' }), /Nur abgeschlossene Sparziele lassen sich ausblenden/);
+    // von Hand beendet ab Dezember: im November läuft es noch, ab Dezember abgeschlossen
+    assert.throws(() => zielAusblenden(d, 'url00001', true, { heute: '2026-11-30' }), /Nur abgeschlossene/);
+    assert.equal(zielAusblenden(d, 'url00001', true, { heute: '2026-12-01' }).z[1].aus, true);
+    // Zielmonat November: automatisch abgeschlossen ab Dezember
+    assert.throws(() => zielAusblenden(d, 'url00002', true, { heute: '2026-11-15' }), /Nur abgeschlossene/);
+    assert.equal(zielAusblenden(d, 'url00002', true, { heute: '2026-12-01' }).z[2].aus, true);
+    // ohne gültiges „heute“ wirft es sofort; Einblenden braucht keins und geht immer
+    assert.throws(() => zielAusblenden(d, 'url00001', true), /Ungültiges Datum/);
+    const aus = { ...d, z: d.z.map((z) => ({ ...z, aus: true })) };
+    assert.equal('aus' in zielAusblenden(aus, 'auto0001', false).z[0], false);
+    // unbekannte Kennung: unverändert
+    assert.equal(zielAusblenden(d, 'gibtsnicht', true, { heute: '2027-01-05' }), d);
+  });
+
+  test('n-3: Verschieben in einen Monat ab dem Abschluss des Ziels wird abgelehnt (auch wenn es heute noch läuft)', () => {
+    const k = kontoAus({ '2026-09': 800000, '2026-10': 2000000 }); // Oktober +12.000 €: genug für „Frei“
+    const ctx = { konto: k, heute: '2026-11-05' };
+    const d = daten([auto(), urlaub({ datum: '2026-11' })]); // Urlaub: Zielmonat November → abgeschlossen ab Dezember
+    assert.throws(() => freiVerschieben(d, { id: 'v0000001', monat: '2026-12', ziel: 'url00001', cents: 100 }, ctx), /schon abgeschlossen/);
+    assert.throws(() => freiVerschieben(d, { id: 'v0000001', monat: '2027-03', ziel: 'url00001', cents: 100 }, ctx), /schon abgeschlossen/);
+    const beendet = daten([auto({ beendet: { monat: '2026-12', art: 'frei' } })]);
+    assert.throws(() => freiVerschieben(beendet, { id: 'v0000001', monat: '2026-12', ziel: 'auto0001', cents: 100 }, ctx), /schon abgeschlossen/);
+    // im laufenden Monat (vor dem Abschluss) geht es
+    assert.equal(freiVerschieben(d, { id: 'v0000001', monat: '2026-11', ziel: 'url00001', cents: 100 }, ctx).m.length, 1);
+    assert.equal(freiVerschieben(beendet, { id: 'v0000001', monat: '2026-11', ziel: 'auto0001', cents: 100 }, ctx).m.length, 1);
+  });
+
+  test('zieleWarnungen: unlesbar → eine klare Warnung; fremde Ziele und Verschiebungen werden gezählt; sonst keine', () => {
+    assert.deepEqual(zieleWarnungen({ daten: leereZiele(), unlesbar: false }), []);
+    const [w] = zieleWarnungen({ daten: leereZiele(), unlesbar: true });
+    assert.match(w, /Sparziele sind unlesbar/);
+    const text = JSON.stringify({ v: 1, z: [{ i: 'neu00001', n: 'Neu', x: 1 }, { i: 'neu00002', n: 'Neu', x: 1 }], m: [{ i: 'neu00003', q: 1 }] });
+    const w2 = zieleWarnungen(zieleLesen(text));
+    assert.equal(w2.length, 2);
+    assert.match(w2[0], /^2 Sparziele konnten nicht gelesen werden/);
+    assert.match(w2[1], /^1 Verschiebung konnte nicht gelesen werden/);
+    const eins = zieleWarnungen(zieleLesen(JSON.stringify({ v: 1, z: [{ i: 'neu00001', x: 1 }] })));
+    assert.deepEqual(eins.length, 1);
+    assert.match(eins[0], /^1 Sparziel konnte nicht gelesen werden/);
   });
 });

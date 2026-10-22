@@ -134,7 +134,7 @@ function demoWerkzeuge(e, { store, ui }) {
   const entfernen = () =>
     bestaetigen({
       titel: 'Beispieldaten entfernen?',
-      text: 'Alle Beispiel-Kontostände, Sonderbeträge und Fixkosten der Demo werden gelöscht, damit du eigene Zahlen ausprobieren kannst. Das betrifft nur die Demo.',
+      text: 'Alle Beispiel-Kontostände, Sonderbeträge, Fixkosten und Sparziele der Demo werden gelöscht, damit du eigene Zahlen ausprobieren kannst. Das betrifft nur die Demo.',
       ja: 'Entfernen',
       gefahr: true,
       beiJa: async () => {

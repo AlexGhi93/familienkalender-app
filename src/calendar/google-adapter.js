@@ -4,9 +4,10 @@ import { addDays, todayVienna } from '../domain/dates.js';
 import { kindergartenjahr } from '../domain/urlaub.js';
 import { normalizeSettings } from '../domain/settings.js';
 import { beendeTestErinnerung, pruefeErinnerungen, repariereErinnerungen, starteTestErinnerung } from './erinnerungen.js';
-import { EINKAUF_ID, EINSTELLUNGEN_ID, FIX_IDS, GERAETE_ID, KONTO_ID, SCHICHTARTEN_ID, einkaufAusEreignis, einkaufZuEreignis, kontoAusEreignis, kontoZuEreignis, einstellungenAusEreignis, einstellungenZuEreignis, fixShardAusEreignis, fixShardId, fixShardZuEreignis, geraeteAusEreignis, geraeteZuEreignis, schichtartenAusEreignis, schichtartenZuEreignis, schichtMonatAusEreignis, schichtMonatId, schichtMonatZuEreignis, tagZuEreignis, terminZuEreignis, urlaubCheckZuEreignis, urlaubZuEreignis } from './mapping.js';
+import { EINKAUF_ID, EINSTELLUNGEN_ID, FIX_IDS, GERAETE_ID, KONTO_ID, SCHICHTARTEN_ID, ZIELE_ID, einkaufAusEreignis, einkaufZuEreignis, kontoAusEreignis, kontoZuEreignis, einstellungenAusEreignis, einstellungenZuEreignis, fixShardAusEreignis, fixShardId, fixShardZuEreignis, geraeteAusEreignis, geraeteZuEreignis, schichtartenAusEreignis, schichtartenZuEreignis, schichtMonatAusEreignis, schichtMonatId, schichtMonatZuEreignis, tagZuEreignis, terminZuEreignis, urlaubCheckZuEreignis, urlaubZuEreignis, zieleAusEreignis, zieleZuEreignis } from './mapping.js';
 import { leererMonat, standardKatalog } from '../domain/schicht.js';
 import { leererShard, teilGesperrtFehler } from '../domain/fixkosten.js';
+import { leereZiele, zieleGesperrtFehler } from '../domain/sparziele.js';
 import { istUrlaubCheckId } from '../domain/ids.js';
 import { ereignisseZuZustand } from './zustand.js';
 
@@ -97,8 +98,8 @@ export function createGoogleAdapter({ api, kalender, jetzt = () => new Date(), a
       const z = ereignisseZuZustand({ ereignisse: await ereignisseLesen(von, bis), settings });
       await titelKorrigieren(z.resync);
       const einkauf = (await this.leseEinkauf()).liste;
-      const konto = (await this.leseKonto()).konto;
-      return { settings, tage: z.tage, urlaub: z.urlaub, termine: z.termine, konflikte: z.konflikte, warnungen: gelesen.warnungen, fenster: { von, bis }, einkauf, konto, urlaubChecks: z.urlaubChecks };
+      const [{ konto }, ziele] = await Promise.all([this.leseKonto(), this.leseZiele()]); // Sparziele werden mit dem Kontostand gerechnet
+      return { settings, tage: z.tage, urlaub: z.urlaub, termine: z.termine, konflikte: z.konflikte, warnungen: gelesen.warnungen, fenster: { von, bis }, einkauf, konto, ziele, urlaubChecks: z.urlaubChecks };
     },
 
     /** Urlaub-Checks im Kalender „Termine“ anlegen/aktualisieren (`schreiben`) und löschen (`loeschen`); nur eigene IDs (`fkc…`), Fremdes bleibt unberührt. */
@@ -191,6 +192,30 @@ export function createGoogleAdapter({ api, kalender, jetzt = () => new Date(), a
     /** Ändert die Kontostände: `aenderung(konto)` → neues Konto, angewendet auf die NEUESTE Fassung bei Google; gibt das gespeicherte Konto zurück. */
     aendereKonto: (aenderung) =>
       aendereVersteckt({ id: KONTO_ID, lesen: (e) => kontoAusEreignis(e).konto, bauen: kontoZuEreignis, fehler: 'Der Kontostand konnte nicht gespeichert werden. Bitte noch einmal versuchen.', leer: () => kontoAusEreignis(null).konto }, aenderung),
+
+    /**
+     * Sparziele (verstecktes Ereignis „fksparen“): { daten, unlesbar, warnungen, text } – fehlt es: leere Daten. `unlesbar` = diese
+     * Version kann den Text nicht lesen (beschädigt oder neuere Version): leer gezeigt, nie überschrieben; `text` = dann der Rohtext (für
+     * die Sicherung), sonst null.
+     */
+    async leseZiele() {
+      const e = await api.ereignisse.holen(kalender.anwesenheit, ZIELE_ID);
+      const gelesen = zieleAusEreignis(!e || e.status === 'cancelled' ? null : e);
+      return { ...gelesen, text: gelesen.unlesbar ? e.description : null };
+    },
+
+    /**
+     * Ändert die Sparziele: `aenderung(daten)` → neue Daten, angewendet auf die NEUESTE Fassung (fehlt sie: leere Daten); gibt die
+     * gespeicherten zurück (null = nichts getan). Ist die neueste Fassung unlesbar, wird nichts geschrieben (Fehler „ZieleGesperrt“).
+     */
+    aendereZiele(aenderung) {
+      const lesen = (e) => {
+        const g = zieleAusEreignis(e);
+        if (g.unlesbar) throw zieleGesperrtFehler();
+        return g.daten;
+      };
+      return aendereVersteckt({ id: ZIELE_ID, lesen, bauen: zieleZuEreignis, fehler: 'Die Sparziele konnten nicht gespeichert werden. Bitte noch einmal versuchen.', leer: leereZiele }, aenderung);
+    },
 
     /** Schichtarten (verstecktes Ereignis „fkschichtarten“): { katalog, warnungen }, oder { katalog: null }, wenn es noch keine gibt. Nicht beim Start geladen. */
     async leseSchichtarten() {
