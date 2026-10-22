@@ -88,6 +88,7 @@ test('Demo mit alten Schichtarten ohne E: beim Start im Hintergrund einmal ergä
   await page.evaluate(() => {
     const daten = JSON.parse(localStorage.getItem('fk.demo.v1'));
     daten.schicht.katalog.arten.papa = daten.schicht.katalog.arten.papa.filter((a) => a.kuerzel !== 'E');
+    delete daten.schicht.katalog.ergaenzt; // wie vor „E – Ersatzdienst“: noch keine Marke
     localStorage.setItem('fk.demo.v1', JSON.stringify(daten));
   });
   expect(await papaE()).toBe(0);

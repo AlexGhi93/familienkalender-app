@@ -610,9 +610,11 @@ describe('Schichtplan', () => {
     await store.schichtSetzen(JM, 6, 'papa', 'A');
     await store.schichtSetzen(JM, 7, 'papa', 'A');
     await store.zuruecksetzen();
+    await store.schichtVorladen(); // das Zurücksetzen hat das Vorladen schon angestoßen: wartet auf dasselbe
     const s = store.getState().schicht;
-    assert.deepEqual(s.monate, gespeichert(speicher).schicht.monate);
-    assert.deepEqual(s.status, { '2026-09': 'geladen', '2026-10': 'geladen', '2026-11': 'geladen' });
+    const neu = gespeichert(speicher).schicht.monate;
+    assert.deepEqual(s.monate, { ...neu, '2026-12': neu['2026-12'] ?? leererMonat('2026-12') }); // Dezember: vorgeladen, in den Beispieldaten leer
+    assert.deepEqual(s.status, { '2026-09': 'geladen', '2026-10': 'geladen', '2026-11': 'geladen', '2026-12': 'geladen' });
   });
 
   /** Schranke vor dem Kalender: jede Schreibanfrage wartet, bis `weiter()` sie freigibt (oder mit `fehler` scheitern lässt); zählt gleichzeitige Anfragen. */
@@ -789,9 +791,9 @@ describe('Schichtplan', () => {
 });
 
 describe('Schichtplan im Hintergrund vorladen', () => {
-  /** Schichtarten aus einer Version vor „E – Ersatzdienst“. */
+  /** Schichtarten aus einer Version vor „E – Ersatzdienst“ (ohne E und ohne die Marke „ergaenzt“). */
   const ohneE = () => {
-    const k = standardKatalog();
+    const { ergaenzt, ...k } = standardKatalog();
     return { ...k, arten: { ...k.arten, papa: k.arten.papa.filter((a) => a.kuerzel !== 'E') } };
   };
   const speicherMit = (katalog) => speicherAttrappe({ 'fk.demo.v1': JSON.stringify({ settings: {}, tage: {}, urlaub: [], termine: [], schicht: { katalog, monate: {} } }) });
@@ -944,6 +946,64 @@ describe('Schichtplan im Hintergrund vorladen', () => {
     kaputt = true;
     await store.schichtVorladen();
     assert.equal(store.getState().schicht.vorgeladen, true); // die Monate von vorhin sind ja da
+  });
+
+  test('Papa hat E umbenannt: beim nächsten Start kommt kein neues E (die Marke „ergaenzt“ wird mitgespeichert)', async () => {
+    const log = [];
+    const { store, speicher } = aufbau({ speicher: speicherMit(ohneE()), aendern: protokolliert(log) });
+    await store.laden();
+    await store.schichtVorladen();
+    assert.deepEqual(gespeichert(speicher).schicht.katalog.ergaenzt, ['E']);
+    const k = store.getState().schicht.katalog.arten.papa.find((a) => a.kuerzel === 'E').k;
+    assert.equal((await store.schichtArtSpeichern('papa', { kuerzel: 'Ers', name: 'Ersatz', farbe: 'gelb' }, k)).ok, true);
+    const neu = aufbau({ speicher, aendern: protokolliert(log) }); // nächster Start
+    await neu.store.laden();
+    await neu.store.schichtVorladen();
+    assert.equal(anzahlE(gespeichert(speicher).schicht.katalog), 0);
+    assert.equal(anzahlE(neu.store.getState().schicht.katalog), 0);
+    assert.equal(geschrieben(log).length, 2); // Ergänzen, Umbenennen – sonst nichts
+  });
+
+  test('Ergänzen scheitert (Netz oder abgelaufene Anmeldung): still – keine Meldung, nichts wartet, keine Anmeldung verlangt; beim nächsten Mal klappt es', async () => {
+    for (const fehler of [() => new Error('Netz'), authFehler]) {
+      let kaputt = true;
+      const { store, speicher, meldungen } = aufbau({
+        speicher: speicherMit(ohneE()),
+        aendern: (a) => ({ ...a, aendereSchichtarten: async (fn) => { if (kaputt) throw fehler(); return a.aendereSchichtarten(fn); } }),
+      });
+      await store.laden();
+      await store.schichtVorladen();
+      const s = store.getState();
+      assert.deepEqual([s.fehler, s.anmeldungNoetig, store.ausstehend(), s.schicht.vorgeladen], [null, false, 0, true]);
+      assert.ok(meldungen.every((m) => m.fehler === null && !m.anmeldungNoetig));
+      assert.equal(anzahlE(s.schicht.katalog), 0); // angezeigt wird, was im Kalender steht
+      assert.equal(anzahlE(gespeichert(speicher).schicht.katalog), 0);
+      kaputt = false;
+      await store.schichtVorladen();
+      assert.equal(anzahlE(gespeichert(speicher).schicht.katalog), 1);
+      assert.equal(anzahlE(store.getState().schicht.katalog), 1);
+    }
+  });
+
+  test('Ergänzen lässt einen sichtbaren Fehler stehen', async () => {
+    const { store } = aufbau({ speicher: speicherMit(ohneE()), aendern: (a) => ({ ...a, setzeTag: async () => { throw new Error('Netz'); } }) });
+    await store.laden();
+    await store.setTag('2026-10-14', 'krank');
+    const fehler = store.getState().fehler;
+    assert.ok(fehler);
+    await store.schichtVorladen();
+    assert.equal(anzahlE(store.getState().schicht.katalog), 1);
+    assert.equal(store.getState().fehler, fehler);
+  });
+
+  test('Demo „Zurücksetzen“: der Schichtplan wird danach wieder im Hintergrund vorgeladen', async () => {
+    const { store } = aufbau();
+    await store.laden();
+    await store.schichtVorladen();
+    await store.zuruecksetzen();
+    assert.equal(store.getState().schicht.vorgeladen, false);
+    for (let i = 0; i < 5; i += 1) await new Promise((r) => setImmediate(r)); // ohne weiteren Anstoß
+    assert.equal(store.getState().schicht.vorgeladen, true);
   });
 
   test('zweimal gleichzeitig angestoßen: nur einmal gelesen', async () => {

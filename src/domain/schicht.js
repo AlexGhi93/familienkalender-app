@@ -1,6 +1,6 @@
 // Schichtplan: wer wann welche Schicht hat (Papa und Mama), von Hand eingetragen – nichts wird automatisch erzeugt.
 // Rein, ohne DOM und ohne Netz. Die Daten liegen als kleines JSON in versteckten Kalenderereignissen:
-//   „fkschichtarten“  – der Katalog: { v: 1, arten: { papa: Art[], mama: Art[] } }
+//   „fkschichtarten“  – der Katalog: { v: 1, arten: { papa: Art[], mama: Art[] }, ergaenzt?: ['E'] } (ergaenzt: siehe katalogErgaenzen)
 //   „fksch<JJJJMM>“   – ein Monat:   { v: 1, t: { papa: '…', mama: '…' }, n?: { person: { tag: Notiz } }, z?: { person: { tag: Zusatz[] } } }
 // Jede Änderung ist eine reine Funktion (alt → neu), die auf die NEUESTE Fassung angewendet wird; das Argument wird nie verändert,
 // und wo es geht ist sie wiederholbar (zweimal angewendet = einmal angewendet).
@@ -78,6 +78,7 @@ function baueArt({ k, kuerzel, name, farbe, gruppe, von, bis, nacht, muster, eri
 
 // ---------------------------------------------------------------- Katalog
 
+const ERGAENZUNGEN = ['E']; // Kürzel der später dazugekommenen Standardarten, die `katalogErgaenzen` einmal ergänzt
 const ERSATZDIENST = Object.freeze({ kuerzel: 'E', name: 'Ersatzdienst', farbe: 'gelb', gruppe: 'dienst', muster: 'offen' });
 
 const STANDARD = {
@@ -105,7 +106,7 @@ const STANDARD = {
 /** Die Schichtarten beim ersten Öffnen; Schlüssel A, B, C … je Person in dieser Reihenfolge. */
 export function standardKatalog() {
   const liste = (person) => STANDARD[person].map((a, i) => baueArt({ gruppe: 'dienst', ...a, k: SCHLUESSEL_ZEICHEN[i] }));
-  return { v: 1, arten: { papa: liste('papa'), mama: liste('mama') } };
+  return { v: 1, arten: { papa: liste('papa'), mama: liste('mama') }, ergaenzt: [...ERGAENZUNGEN] }; // hat schon alles: nichts mehr ergänzen
 }
 
 function uhrzeit(wert) {
@@ -140,7 +141,7 @@ function pruefeKuerzelFrei(arten, kuerzel, ausser = null) {
 
 /** Neuer Katalog mit geänderter Liste einer Person; wirft, wenn der Platz im Kalender nicht reicht. */
 function mitArten(katalog, person, arten) {
-  const neu = { v: 1, arten: { ...katalog.arten, [person]: arten } };
+  const neu = { v: 1, arten: { ...katalog.arten, [person]: arten }, ...(katalog.ergaenzt ? { ergaenzt: katalog.ergaenzt } : {}) };
   katalogText(neu);
   return neu;
 }
@@ -278,20 +279,26 @@ export function normalisiereKatalog(roh) {
     if (gut.length > MAX_ARTEN) warnungen.push(`Mehr als ${MAX_ARTEN} Schichtarten (${person}); die übrigen wurden entfernt.`);
     arten[person] = gut.slice(0, MAX_ARTEN);
   }
-  return { katalog: { v: 1, arten }, warnungen };
+  const ergaenzt = Array.isArray(roh.ergaenzt) ? ERGAENZUNGEN.filter((k) => roh.ergaenzt.includes(k)) : []; // Unbekanntes fällt weg
+  return { katalog: { v: 1, arten, ...(ergaenzt.length > 0 ? { ergaenzt } : {}) }, warnungen };
 }
 
 /**
- * Ergänzt einen gespeicherten Katalog um später dazugekommene Standardarten: Papa bekommt einmal „E – Ersatzdienst“ (nächster nie
- * benutzter Schlüssel), wenn er keine Art mit dem Kürzel E hat – auch keine archivierte, egal ob groß oder klein geschrieben.
- * Rein und wiederholbar; ist kein Platz mehr (24 Arten, Kalendergröße), bleibt alles wie es ist.
+ * Ergänzt einen gespeicherten Katalog um später dazugekommene Standardarten, und zwar wirklich nur einmal: Papa bekommt „E – Ersatzdienst“
+ * (nächster nie benutzter Schlüssel), wenn die Marke `ergaenzt` noch kein 'E' enthält und er keine Art mit dem Kürzel E hat – auch keine
+ * archivierte, egal ob groß oder klein geschrieben. Dabei (oder wenn es E schon gibt) kommt 'E' in `ergaenzt`: benennt Papa E später um
+ * oder blendet es aus, kommt es nicht wieder. Rein und wiederholbar; ist kein Platz mehr (24 Arten, Kalendergröße), bleibt alles wie es
+ * ist (auch ohne Marke: mit Platz wird es beim nächsten Mal ergänzt).
  */
 export function katalogErgaenzen(katalog) {
   const unveraendert = { katalog, geaendert: false };
   const papa = katalog?.arten?.papa;
-  if (!Array.isArray(papa) || papa.some((a) => typeof a?.kuerzel === 'string' && gleichesKuerzel(a.kuerzel, ERSATZDIENST.kuerzel))) return unveraendert;
+  const marke = Array.isArray(katalog?.ergaenzt) ? katalog.ergaenzt : [];
+  if (!Array.isArray(papa) || marke.includes(ERSATZDIENST.kuerzel)) return unveraendert;
+  const mitMarke = (k) => ({ ...k, ergaenzt: [...marke, ERSATZDIENST.kuerzel] });
+  if (papa.some((a) => typeof a?.kuerzel === 'string' && gleichesKuerzel(a.kuerzel, ERSATZDIENST.kuerzel))) return { katalog: mitMarke(katalog), geaendert: true };
   try {
-    return { katalog: artHinzufuegen(katalog, 'papa', ERSATZDIENST), geaendert: true };
+    return { katalog: mitMarke(artHinzufuegen(katalog, 'papa', ERSATZDIENST)), geaendert: true };
   } catch {
     return unveraendert; // voll – lieber ohne E als ein Fehler beim Öffnen
   }

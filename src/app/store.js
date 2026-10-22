@@ -371,6 +371,29 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     return { katalogGelesen, monateGelesen: jms.every((m) => status[m] === 'geladen') };
   }
 
+  /**
+   * Ergänzt fehlende Standardarten (siehe `katalogErgaenzen`) still im Hintergrund: keine Meldung, kein Warten auf die Anmeldung, kein
+   * „Änderung wartet“ – das hat ja niemand eingegeben. Gespeichert wird als reine Änderung auf der NEUESTEN Fassung (hat das andere
+   * Telefon schon ergänzt, wird nichts geschrieben); scheitert es, versucht es das nächste Vorladen noch einmal.
+   */
+  async function schichtKatalogStillErgaenzen() {
+    if (schichtOffen.has('katalog')) return; // eigene Änderung der Schichtarten läuft: sie geht vor, das nächste Vorladen ergänzt
+    const vorher = state.schicht.katalog;
+    let gespeichert;
+    try {
+      gespeichert = await adapter.aendereSchichtarten((kat) => {
+        const r = katalogErgaenzen(kat);
+        return r.geaendert ? r.katalog : null;
+      });
+      if (!gespeichert) gespeichert = (await adapter.leseSchichtarten()).katalog; // schon ergänzt: den Stand im Kalender zeigen
+    } catch {
+      return;
+    }
+    if (state.schicht.katalog !== vorher || schichtOffen.has('katalog')) return; // inzwischen selbst geändert: das bringt den neuesten Stand
+    state = { ...state, schicht: { ...state.schicht, katalog: normalisiereKatalog(gespeichert ?? null).katalog } };
+    melden();
+  }
+
   /** Schichtplan für die Sicherung: Katalog und alle vorhandenen Monate von Jänner 2026 bis zwölf Monate nach heute (fehlende übersprungen). */
   async function schichtFuerSicherung() {
     if (!adapter.leseSchichtMonat) return { katalog: state.schicht.katalog, monate: state.schicht.monate };
@@ -786,8 +809,8 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     /**
      * Schichtplan im Hintergrund nach dem Start (Google und Demo), damit die Erinnerungen von jedem Telefon aus stimmen: liest die
      * Schichtarten (immer neu) und den laufenden Monat mit den zwei folgenden; danach `schicht.vorgeladen` (bleibt, auch wenn ein
-     * späteres Vorladen scheitert). Fehlt Papa noch eine später dazugekommene Standardart (E – Ersatzdienst), wird sie einmal ergänzt –
-     * als reine Änderung auf der neuesten Fassung, so ergänzt auch das zweite Telefon nichts doppelt. Tut nichts vor dem Laden, solange nur
+     * späteres Vorladen scheitert). Fehlt Papa noch eine später dazugekommene Standardart (E – Ersatzdienst), wird sie einmal still ergänzt
+     * (siehe `schichtKatalogStillErgaenzen`; das zweite Telefon ergänzt nichts doppelt). Tut nichts vor dem Laden, solange nur
      * der gespeicherte Stand zu sehen ist oder die Anmeldung fehlt (danach erneut anstoßen). Wirft nicht; Lesefehler stehen im Status.
      */
     schichtVorladen() {
@@ -800,10 +823,8 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
           state = { ...state, schicht: { ...state.schicht, vorgeladen: true } };
           melden();
         }
-        // nur auf einen frisch gelesenen Katalog: sonst würde aus einem unbekannten Stand heraus geschrieben
-        if (katalogGelesen && state.schicht.katalog && katalogErgaenzen(state.schicht.katalog).geaendert) {
-          await schichtKatalogAendern((kat) => katalogErgaenzen(kat).katalog);
-        }
+        // nur, wenn die Schichtarten gerade gelesen werden konnten (gespeichert wird ohnehin auf der neuesten Fassung)
+        if (katalogGelesen && state.schicht.katalog && katalogErgaenzen(state.schicht.katalog).geaendert) await schichtKatalogStillErgaenzen();
       })()
         .catch(() => {}) // Hintergrund: ein Fehler darf nichts stören
         .finally(() => {
@@ -895,6 +916,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       const daten = await adapter.zuruecksetzen();
       state = { ...state, ...daten, schicht: daten.schicht ? schichtAusDaten(daten.schicht) : leererSchichtplan(), geladen: true, fehler: null };
       melden();
+      store.schichtVorladen(); // neue Beispieldaten: im Hintergrund wieder vorladen (wirft nicht)
     },
   };
   return store;

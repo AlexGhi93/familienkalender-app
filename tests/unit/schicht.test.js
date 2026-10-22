@@ -365,11 +365,11 @@ describe('Katalog', () => {
     assert.deepEqual(mitE.katalog.arten.papa.at(-1), { k: 'J', kuerzel: 'E', name: 'Ersatzdienst', farbe: 'gelb', gruppe: 'dienst', muster: 'offen' });
     assert.deepEqual(mitE.katalog.arten.papa.slice(0, -1), eigen.arten.papa);
 
-    // es gibt schon ein „E“ (auch klein geschrieben, auch archiviert) → nichts
+    // es gibt schon ein „E“ (auch klein geschrieben, auch archiviert) → kein zweites E, nur die Marke „ergaenzt“
     const kleinesE = artHinzufuegen(gelesen, 'papa', neueArt({ kuerzel: 'e', name: 'Eigenes' }));
-    assert.deepEqual(katalogErgaenzen(kleinesE), { katalog: kleinesE, geaendert: false });
+    assert.deepEqual(katalogErgaenzen(kleinesE), { katalog: { ...kleinesE, ergaenzt: ['E'] }, geaendert: true });
     const archiviertesE = artArchivieren(kleinesE, 'papa', 'I', true);
-    assert.deepEqual(katalogErgaenzen(archiviertesE), { katalog: archiviertesE, geaendert: false });
+    assert.deepEqual(katalogErgaenzen(archiviertesE), { katalog: { ...archiviertesE, ergaenzt: ['E'] }, geaendert: true });
     // Mamas „E“ zählt nicht – nur Papa bekommt E
     const mamaE = artHinzufuegen(gelesen, 'mama', neueArt({ kuerzel: 'E', name: 'Eigenes' }));
     assert.equal(katalogErgaenzen(mamaE).geaendert, true);
@@ -380,11 +380,35 @@ describe('Katalog', () => {
     assert.deepEqual(katalogErgaenzen(voll), { katalog: voll, geaendert: false });
   });
 
+  test('katalogErgaenzen wirklich nur einmal: die Marke „ergaenzt“ verhindert E nach Umbenennen oder Archivieren; Standard und Lesen behalten sie', () => {
+    // alter Katalog: E + Marke
+    const alt = normalisiereKatalog(alterKatalog()).katalog;
+    assert.equal(alt.ergaenzt, undefined);
+    const r = katalogErgaenzen(alt);
+    assert.deepEqual(r.katalog.ergaenzt, ['E']);
+    assert.deepEqual(standardKatalog().ergaenzt, ['E']);
+    // Papa benennt E um („Ers“) → beim nächsten Start kein neues E
+    const umbenannt = artAendern(r.katalog, 'papa', 'I', { kuerzel: 'Ers', name: 'Ersatz', farbe: 'gelb', gruppe: 'dienst' });
+    assert.deepEqual(umbenannt.ergaenzt, ['E']); // Änderungen behalten die Marke
+    assert.deepEqual(katalogErgaenzen(umbenannt), { katalog: umbenannt, geaendert: false });
+    // archiviert → auch nichts
+    const archiviert = artArchivieren(r.katalog, 'papa', 'I', true);
+    assert.deepEqual(katalogErgaenzen(archiviert), { katalog: archiviert, geaendert: false });
+    // die Marke übersteht Text und Lesen; Unbekanntes in der Liste fällt weg, Kaputtes ebenso
+    assert.deepEqual(katalogAusText(katalogText(umbenannt)).katalog, umbenannt);
+    assert.deepEqual(normalisiereKatalog({ ...alterKatalog(), ergaenzt: ['X', 'E', 'E', 3] }).katalog.ergaenzt, ['E']);
+    assert.equal('ergaenzt' in normalisiereKatalog({ ...alterKatalog(), ergaenzt: ['X'] }).katalog, false);
+    assert.equal('ergaenzt' in normalisiereKatalog({ ...alterKatalog(), ergaenzt: 'E' }).katalog, false);
+    // voll: kein E und keine Marke (beim nächsten Mal mit Platz noch einmal versuchen)
+    const voll = mitVielenArten(alt, 'papa', MAX_ARTEN - 8);
+    assert.deepEqual(katalogErgaenzen(voll), { katalog: voll, geaendert: false });
+  });
+
   test('katalogErgaenzen: ein ungeputztes „ E “ (Leerzeichen, NFC) zählt als E – kein zweites E', () => {
     const roh = (kuerzel) => ({ v: 1, arten: { papa: [{ k: 'A', kuerzel, name: 'Eigenes', farbe: 'gelb', gruppe: 'dienst' }], mama: [] } });
     for (const kuerzel of [' E', 'E ', ' e\t', ' E']) {
       const k = roh(kuerzel);
-      assert.deepEqual(katalogErgaenzen(k), { katalog: k, geaendert: false }, JSON.stringify(kuerzel));
+      assert.deepEqual(katalogErgaenzen(k), { katalog: { ...k, ergaenzt: ['E'] }, geaendert: true }, JSON.stringify(kuerzel)); // nur die Marke
     }
     // ein anderes Kürzel mit Leerzeichen bleibt ein anderes
     assert.equal(katalogErgaenzen(roh(' EX ')).geaendert, true);

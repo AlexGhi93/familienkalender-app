@@ -42,11 +42,14 @@ test('beim Start im Hintergrund: Schichtarten, laufender und zwei folgende Monat
   await expect(page.locator('.sp-legende')).toContainText('Frühdienst'); // keine Schichtarten bei Google: die Standardarten
   expect(schichtGeschrieben(google), 'Lesen schreibt nichts').toEqual([]);
 
-  // Monatswechsel zum Dezember liest 2026-12 und 2027-01 dazu
+  // Monatswechsel zum Dezember liest 2026-12 und 2027-01 dazu (das Vorladen hörte bei 2026-12 auf)
+  expect(schichtGelesen(google)).not.toContain('GET fksch202701');
+  const dezemberVorher = schichtGelesen(google).filter((a) => a === 'GET fksch202612').length;
   await page.getByRole('button', { name: 'Nächster Monat' }).click();
   await page.getByRole('button', { name: 'Nächster Monat' }).click();
   await expect(monatTitel(page)).toHaveText('Dezember 2026');
-  await expect.poll(() => schichtGelesen(google)).toEqual(expect.arrayContaining(['GET fksch202612', 'GET fksch202701']));
+  await expect.poll(() => schichtGelesen(google)).toContain('GET fksch202701');
+  expect(schichtGelesen(google).filter((a) => a === 'GET fksch202612').length).toBeGreaterThan(dezemberVorher);
 });
 
 test('der Pinsel schreibt „fksch202610“: Titel ohne Inhalt, gültiges JSON ≤ 6000 Zeichen, versteckt am 01.01.2000 ohne Erinnerung', async ({ page }) => {
@@ -144,13 +147,14 @@ test('nach dem Neuladen ohne Netz: der besuchte Monat aus der Offline-Kopie, ein
 });
 
 test('alte Schichtarten ohne „E – Ersatzdienst“: beim Start einmal ergänzt (ein PATCH), danach im Pinsel; nach dem Neuladen nicht noch einmal', async ({ page }) => {
-  const k = standardKatalog();
+  const { ergaenzt, ...k } = standardKatalog();
   const ohneE = { ...k, arten: { ...k.arten, papa: k.arten.papa.filter((a) => a.kuerzel !== 'E') } };
   const google = await starteGoogleVerbunden(page, { ereignisse: [schichtartenZuEreignis(ohneE).body] });
   await expect.poll(() => schichtGeschrieben(google)).toEqual(['PATCH fkschichtarten']);
   const gespeichert = JSON.parse(google.ereignis('fkschichtarten').description);
   expect(gespeichert.arten.papa.filter((a) => a.kuerzel === 'E')).toEqual([{ k: 'I', kuerzel: 'E', name: 'Ersatzdienst', farbe: 'gelb', gruppe: 'dienst', muster: 'offen' }]);
   expect(gespeichert.arten.mama).toEqual(ohneE.arten.mama);
+  expect(gespeichert.ergaenzt).toEqual(['E']); // die Marke: auch nach Umbenennen kommt E nicht wieder
 
   await tab(page, 'Schicht');
   await page.getByRole('button', { name: '✏️ Eintragen' }).click();
