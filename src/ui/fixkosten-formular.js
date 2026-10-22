@@ -300,14 +300,11 @@ export function oeffneFixArchiviert({ store }, id) {
   const intervall = FIX_INTERVALLE.find((i) => i.monate === posten.intervall)?.text ?? '';
   return blatt({
     titel: posten.name,
-    render: ({ schliessen }) => [
-      gesperrt ? gesperrtHinweis() : null,
-      h('p', { class: 'blatt-text' }, `Archiviert ab ${datumAnzeige(posten.archiv)}. ${aktiv ? 'Bis dahin zählt er noch zu den Fixkosten.' : 'Er zählt nicht mehr zu den Fixkosten.'}`),
-      h('p', { class: 'leise' }, `${posten.ungefaehr ? '~ ' : ''}${betragText(posten.cents)} ${intervall}`),
-      h(
-        'div',
-        { class: 'knopfzeile' },
-        h(
+    render: ({ schliessen }) => {
+      // Während gelöscht oder zurückgeholt wird, sind beide Knöpfe aus (kein zweites Löschen); bei einem Fehler wieder an.
+      const knoepfe = () => [loeschenKnopf, zurueckKnopf];
+      const sperren = (an) => knoepfe().forEach((k) => (k.disabled = an || gesperrt));
+      const loeschenKnopf = h(
           'button',
           {
             class: 'knopf klein gefahr',
@@ -320,28 +317,34 @@ export function oeffneFixArchiviert({ store }, id) {
                 ja: 'Endgültig löschen',
                 gefahr: true,
                 beiJa: async () => {
+                  sperren(true);
                   if (erledigt(await sicher(store.fixPostenLoeschen(posten.id)), 'Gelöscht ✓')) schliessen();
+                  else sperren(false); // nochmal versuchen
                 },
               }),
           },
           'Endgültig löschen',
-        ),
-        h(
+        );
+      const zurueckKnopf = h(
           'button',
           {
             class: 'knopf klein primaer',
             type: 'button',
             disabled: gesperrt,
-            onClick: async (ev) => {
-              const knopf = ev.currentTarget; // nach dem `await` ist currentTarget schon null
-              knopf.disabled = true;
+            onClick: async () => {
+              sperren(true);
               if (erledigt(await sicher(store.fixPostenWiederherstellen(posten.id)), 'Zurückgeholt ✓')) schliessen();
-              else knopf.disabled = false; // nochmal versuchen
+              else sperren(false); // nochmal versuchen
             },
           },
           'Zurückholen',
-        ),
-      ),
-    ],
+        );
+      return [
+      gesperrt ? gesperrtHinweis() : null,
+      h('p', { class: 'blatt-text' }, `Archiviert ab ${datumAnzeige(posten.archiv)}. ${aktiv ? 'Bis dahin zählt er noch zu den Fixkosten.' : 'Er zählt nicht mehr zu den Fixkosten.'}`),
+      h('p', { class: 'leise' }, `${posten.ungefaehr ? '~ ' : ''}${betragText(posten.cents)} ${intervall}`),
+      h('div', { class: 'knopfzeile' }, loeschenKnopf, zurueckKnopf),
+    ];
+    },
   });
 }

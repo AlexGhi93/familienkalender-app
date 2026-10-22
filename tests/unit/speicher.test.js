@@ -59,7 +59,7 @@ describe('Konfiguration', () => {
 describe('Schnappschuss', () => {
   const jetzt = () => new Date('2026-10-14T06:00:00.000Z');
   const state = {
-    settings: normalizeSettings({ kindname: 'Iris' }),
+    settings: normalizeSettings({ kindname: 'Mia' }),
     tage: { '2025-10-13': { typ: 'krank' }, '2025-10-14': { typ: 'krank' }, '2026-10-13': { typ: 'kita_essen' } },
     urlaub: [{ id: 'alt', start: '2025-01-01', end: '2025-10-13' }, { id: 'neu', start: '2025-10-10', end: '2025-10-20' }],
     termine: [{ id: 't-alt', typ: 'arzt', subtyp: 'zahnarzt', date: '2025-10-13', time: '09:00', mitnehmen: [], kosten: null }, { id: 't', typ: 'familie', label: 'Fest', date: '2026-10-20', time: null, mitnehmen: [], kosten: null }],

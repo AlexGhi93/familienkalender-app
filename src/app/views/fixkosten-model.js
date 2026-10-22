@@ -12,6 +12,8 @@ import {
   istAktiv,
   kuendigungsfristen,
   monatlich,
+  monatlichKuendbar,
+  monatsIndex,
   postenPruefen,
   summen,
   vertragStatus,
@@ -51,19 +53,16 @@ export function kontoAnsichtSpeichern(wert, speicher = globalThis.localStorage) 
 
 export const FIX_FILTER = Object.freeze(['alle', ...FIX_PERSONEN.map((x) => x.id)]);
 const WARN_TAGE = 60; // ⚠ ab so vielen Tagen vor „Kündbar bis“
-const MONATLICH_KUENDBAR_BIS = 3; // Verlängerung unter 3 Monaten (> 0): monatlich kündbar, keine Erinnerung (wie push/plan.js)
 const DIAGRAMM_MONATE = 6;
 const DIAGRAMM_HINWEIS = 'Wird mit jedem Monat länger (bis 6 Monate).';
 const BETRAG_FEHLER = 'Bitte einen Betrag zwischen 0,01 € und 99.999,99 € eingeben.';
 
 const monatText = (jm) => `${MONATE[Number(jm.slice(5, 7)) - 1]} ${jm.slice(0, 4)}`;
-const monatsIndex = (jm) => Number(jm.slice(0, 4)) * 12 + Number(jm.slice(5, 7)) - 1;
 const plusMonate = (jm, n) => monatVor(jm, -n);
 const kurzDatum = (iso) => `${iso.slice(8, 10)}.${iso.slice(5, 7)}.`;
 const intervallText = (monate) => FIX_INTERVALLE.find((i) => i.monate === monate)?.text ?? `alle ${monate} Monate`;
 const tagText = (tag) => (tag === 'letzter' ? 'am Monatsletzten' : `am ${tag}.`);
 const ungefaehrText = (posten, cents) => `${posten.ungefaehr ? '~ ' : ''}${betragText(cents)}`;
-const istMonatlichKuendbar = (v) => v.verlaengerung > 0 && v.verlaengerung < MONATLICH_KUENDBAR_BIS;
 
 /** Person eines Postens für die Anzeige: Kind mit dem Namen aus den Einstellungen (sonst „Kind“); Kürzel als Text neben der Farbe. */
 function personInfo(id, settings) {
@@ -86,7 +85,7 @@ export function vertragAbzeichen(posten, heute) {
   const st = vertragStatus(posten, heute);
   if (!st) return null;
   if (st.beendet) return { text: '📝 Vertrag beendet', warn: false };
-  if (istMonatlichKuendbar(posten.vertrag)) {
+  if (monatlichKuendbar(posten.vertrag)) {
     return st.ende === posten.vertrag.bis ? { text: `📝 Kündbar bis ${datumAnzeige(st.kuendbarBis)}, danach monatlich kündbar`, warn: false } : { text: '📝 monatlich kündbar', warn: false };
   }
   if (st.tage < 0) return { text: `📝 Vertrag endet am ${datumAnzeige(st.ende)}`, warn: false };
@@ -209,10 +208,10 @@ export function fixkostenModel(state, heute, { filter: filterWunsch = 'alle' } =
   }).filter((k) => k.posten.length > 0);
 
   const fristenListe = kuendigungsfristen(gefiltert, heute);
-  const fristen = [...fristenListe.filter((x) => !istMonatlichKuendbar(x.posten.vertrag)), ...fristenListe.filter((x) => istMonatlichKuendbar(x.posten.vertrag))].map(({ posten, status }) => ({
+  const fristen = [...fristenListe.filter((x) => !monatlichKuendbar(x.posten.vertrag)), ...fristenListe.filter((x) => monatlichKuendbar(x.posten.vertrag))].map(({ posten, status }) => ({
     id: posten.id,
     name: posten.name,
-    unter: istMonatlichKuendbar(posten.vertrag) && status.ende !== posten.vertrag.bis ? 'verlängert sich monatlich' : `Vertrag bis ${datumAnzeige(status.ende)}`,
+    unter: monatlichKuendbar(posten.vertrag) && status.ende !== posten.vertrag.bis ? 'verlängert sich monatlich' : `Vertrag bis ${datumAnzeige(status.ende)}`,
     abzeichen: vertragAbzeichen(posten, heute),
     gesperrt: gesperrt.get(posten.id),
   })).map((f) => ({ ...f, beschriftung: `${f.name}, ${f.unter}, ${f.abzeichen.text} – ${AKTION_BEARBEITEN}` }));
@@ -358,7 +357,7 @@ export function vertragVorschau(entwurf, heute) {
   if (!entwurf.mitVertrag || typeof entwurf.bis !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(entwurf.bis) || datumAnzeige(entwurf.bis) === '') return null;
   const vertrag = { bis: entwurf.bis, verlaengerung: Number(entwurf.verlaengerung), frist: entwurf.frist };
   const st = vertragStatus({ vertrag }, heute);
-  const monatlichK = istMonatlichKuendbar(vertrag);
+  const monatlichK = monatlichKuendbar(vertrag);
   return {
     kuendbarBis: datumAnzeige(st.kuendbarBis),
     erinnerung: !monatlichK && !st.beendet && st.erinnerung >= heute ? datumAnzeige(st.erinnerung) : null,

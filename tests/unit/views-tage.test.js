@@ -20,9 +20,9 @@ const sache = (id, date, richtung = 'hin') => ({ id, typ: 'kita_sache', richtung
 
 describe('gemeinsame Anzeige', () => {
   test('terminAnzeige: Arzt, Termin mit Symbol, Sachen', () => {
-    const settings = normalizeSettings({ kindname: 'Iris', wechseldatum: '2026-09-01' });
+    const settings = normalizeSettings({ kindname: 'Mia', wechseldatum: '2026-09-01' });
     const a = terminAnzeige(arzt('t1', MITTWOCH, '09:00', { fuer: 'kind', kosten: { betrag: 12.5 }, notiz: 'n' }), settings);
-    assert.deepEqual([a.emoji, a.label, a.fuerText, a.fuerEmoji, a.kosten, a.notiz, a.titel], ['🩺', 'Kinderarzt', 'Iris', '🧒', '12,50 €', 'n', '🩺 Kinderarzt (Iris) 09:00 · 🎒 e-card · 💶 12,50 €']);
+    assert.deepEqual([a.emoji, a.label, a.fuerText, a.fuerEmoji, a.kosten, a.notiz, a.titel], ['🩺', 'Kinderarzt', 'Mia', '🧒', '12,50 €', 'n', '🩺 Kinderarzt (Mia) 09:00 · 🎒 e-card · 💶 12,50 €']);
     const f = terminAnzeige({ id: 't2', typ: 'familie', label: 'Finanzamt', symbol: '🏛️', fuer: 'oma', date: MITTWOCH, mitnehmen: [], kosten: { kostenlos: true } }, settings);
     assert.deepEqual([f.emoji, f.label, f.fuer, f.time, f.kosten, f.titel], ['🏛️', 'Finanzamt', null, null, 'kostenlos', '🏛️ Finanzamt · 💶 kostenlos']);
     const s = terminAnzeige(sache('s1', MITTWOCH, 'heim'), settings);

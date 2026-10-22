@@ -69,7 +69,7 @@ describe('Demo-Adapter: Fixkosten', () => {
     const adapter = createDemoAdapter({ speicher, jetzt: JETZT });
     await adapter.laden();
     const riesig = () => ({ v: 1, posten: Array.from({ length: 60 }, (_, i) => posten(`v${String(i).padStart(7, '0')}`, { name: 'N'.repeat(40), notiz: 'Z'.repeat(80) })) });
-    await assert.rejects(adapter.aendereFixShard(0, riesig), /Dieser Teil der Fixkosten ist voll/);
+    await assert.rejects(adapter.aendereFixShard(0, riesig), /Die Fixkosten sind voll/);
     await assert.rejects(adapter.aendereFixShard(4, () => leererShard()), /Ungültiger Teil der Fixkosten/);
     assert.deepEqual((await adapter.leseFixkosten()).shards, LEER4);
   });
@@ -135,7 +135,10 @@ describe('Beispieldaten: Fixkosten', () => {
     const posten = alle(heute);
     const namen = posten.map((p) => p.name);
     for (const name of ['Miete', 'Strom', 'Kfz-Versicherung Papa', 'Handy Mama', 'Krankenversicherung Kind', 'Fitnessstudio', 'Streaming', 'ORF-Beitrag', 'Fernwärme', 'Friseur']) assert.ok(namen.includes(name), name);
-    for (const echt of ['Alex', 'Maria', 'Iris']) assert.ok(!JSON.stringify(posten).includes(echt), echt);
+    // nur erfundene Bezeichnungen mit Rollen statt Namen: jeder Name steht in dieser Liste (keine Vornamen)
+    const ERLAUBT = ['Miete', 'Strom', 'Fernwärme', 'ORF-Beitrag', 'Kfz-Versicherung Papa', 'Krankenversicherung Kind', 'Handy Mama', 'Internet', 'Fitnessstudio', 'Streaming', 'Friseur', 'Kontoführung', 'Babyschwimmen'];
+    for (const name of namen) assert.ok(ERLAUBT.includes(name), name);
+    assert.ok(posten.every((p) => p.notiz === undefined), 'keine Notizen mit Namen oder Nummern');
     assert.deepEqual([...new Set(posten.map((p) => p.person))].sort(), ['gemeinsam', 'kind', 'mama', 'papa']);
     assert.ok(new Set(posten.map((p) => p.kategorie)).size >= 6);
     const nach = Object.fromEntries(posten.map((p) => [p.name, p]));
@@ -212,7 +215,7 @@ describe('Google-Adapter: Fixkosten', () => {
     const { api, roh } = apiAttrappe();
     const adapter = createGoogleAdapter({ api, kalender, jetzt: JETZT });
     const riesig = () => ({ v: 1, posten: Array.from({ length: 60 }, (_, i) => posten(`v${String(i).padStart(7, '0')}`, { name: 'N'.repeat(40), notiz: 'Z'.repeat(80) })) });
-    await assert.rejects(adapter.aendereFixShard(1, riesig), /Dieser Teil der Fixkosten ist voll/);
+    await assert.rejects(adapter.aendereFixShard(1, riesig), /Die Fixkosten sind voll/);
     assert.equal(roh('kan', 'fkfest1'), null);
     await assert.rejects(adapter.aendereFixShard(-1, () => leererShard()), /Ungültiger Teil der Fixkosten/);
 

@@ -340,6 +340,7 @@ test.describe('Fixkosten mit Google', () => {
   });
 
   test('Speichern scheitert (HTTP 500): Meldung, Archivieren/Zurückholen bleiben benutzbar, kein Fehler auf der Seite', async ({ page }) => {
+    test.setTimeout(90_000); // der Store versucht das Schreiben mehrmals, bevor er aufgibt
     const teil = (nr, p) => ({ id: `fkfest${nr}`, summary: '💶 fk Fixkosten (nicht löschen)', description: JSON.stringify({ v: 1, p }), start: { date: '2000-01-01' }, end: { date: '2000-01-02' }, transparency: 'transparent' });
     const miete = { i: 'aaaa0001', n: 'Miete', c: 90000, m: 1, d: '1', s: '2026-01', k: 'wohnen', w: 'gemeinsam' };
     const alt = { i: 'aaaa0002', n: 'Zeitung', c: 2000, m: 1, d: '1', s: '2026-01', k: 'sonstiges', w: 'gemeinsam', a: '2026-05-01' };
@@ -349,14 +350,18 @@ test.describe('Fixkosten mit Google', () => {
     for (const p of [miete, alt]) teile.set(shardFuer(p.i), [...(teile.get(shardFuer(p.i)) ?? []), p]);
     await starteGoogleVerbunden(page, { route: '#/konto', ereignisse: [...teile].map(([nr, p]) => teil(nr, p)), speicher: { 'fk.konto.ansicht.v1': 'fixkosten' } });
     await expect(gross(page)).toHaveText('900 €');
-    // ab jetzt scheitert jedes Schreiben der Fixkosten
-    await page.route(/\/events(\/fkfest\d)?(\?.*)?$/, (route) => (route.request().method() === 'GET' ? route.fallback() : route.fulfill({ status: 500, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ error: { code: 500, message: 'kaputt' } }) })));
+    // ab jetzt scheitert jedes Schreiben der Fixkosten (nach kurzer Wartezeit, damit der laufende Zustand zu sehen ist)
+    await page.route(/\/events(\/fkfest\d)?(\?.*)?$/, async (route) => {
+      if (route.request().method() === 'GET') return route.fallback();
+      await new Promise((fertig) => setTimeout(fertig, 400));
+      return route.fulfill({ status: 500, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ error: { code: 500, message: 'kaputt' } }) });
+    });
 
     await zeile(page, 'Wohnen & Energie', 'Miete').click();
     await dialog(page, 'Fixkosten ändern').getByRole('button', { name: '🗄️ Archivieren' }).click();
     const archivieren = dialog(page, '„Miete“ archivieren').getByRole('button', { name: 'Archivieren', exact: true });
     await archivieren.click();
-    await expect(page.locator('.toast.fehler')).toBeVisible();
+    await expect(page.locator('.toast.fehler')).toBeVisible({ timeout: 15_000 });
     await expect(archivieren).toBeEnabled();
     await expect(gross(page)).toHaveText('900 €');
     await page.keyboard.press('Escape');
@@ -366,7 +371,19 @@ test.describe('Fixkosten mit Google', () => {
     await karte(page, 'Archiv').locator('.fk-pos', { hasText: 'Zeitung' }).click();
     const zurueck = dialog(page, 'Zeitung').getByRole('button', { name: 'Zurückholen' });
     await zurueck.click();
-    await expect(page.locator('.toast.fehler')).toBeVisible();
+    await expect(page.locator('.toast.fehler')).toBeVisible({ timeout: 15_000 });
+    await expect(zurueck).toBeEnabled();
+    await expect(karte(page, 'Archiv').locator('.fk-n > b')).toHaveText(['Zeitung']);
+
+    // „Endgültig löschen“: während es läuft, sind beide Knöpfe aus (kein zweites Löschen); nach dem Fehler wieder benutzbar
+    const loeschen = dialog(page, 'Zeitung').getByRole('button', { name: 'Endgültig löschen' });
+    await page.locator('.toast').evaluateAll((t) => t.forEach((x) => x.remove()));
+    await loeschen.click();
+    await dialog(page, 'Endgültig löschen?').getByRole('button', { name: 'Endgültig löschen' }).click();
+    await expect(loeschen).toBeDisabled();
+    await expect(zurueck).toBeDisabled();
+    await expect(page.locator('.toast.fehler')).toBeVisible({ timeout: 15_000 });
+    await expect(loeschen).toBeEnabled();
     await expect(zurueck).toBeEnabled();
     await expect(karte(page, 'Archiv').locator('.fk-n > b')).toHaveText(['Zeitung']);
   });

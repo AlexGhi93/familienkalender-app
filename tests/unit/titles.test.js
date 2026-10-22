@@ -46,8 +46,8 @@ describe('buildDayTitle', () => {
 describe('buildTerminTitle', () => {
   test('alle Segmente in fester Reihenfolge', () => {
     assert.equal(
-      buildTerminTitle({ emoji: '🩺', label: 'Kinderarzt', fuer: 'Iris', time: '09:15', mitnehmen: ['e-card', 'MuKi-Pass'], kosten: { betrag: 12.5 } }),
-      '🩺 Kinderarzt (Iris) 09:15 · 🎒 e-card, MuKi-Pass · 💶 12,50 €',
+      buildTerminTitle({ emoji: '🩺', label: 'Kinderarzt', fuer: 'Mia', time: '09:15', mitnehmen: ['e-card', 'MuKi-Pass'], kosten: { betrag: 12.5 } }),
+      '🩺 Kinderarzt (Mia) 09:15 · 🎒 e-card, MuKi-Pass · 💶 12,50 €',
     );
     assert.equal(buildTerminTitle({ emoji: '🎈', label: 'Fest' }), '🎈 Fest');
     assert.equal(buildTerminTitle({ emoji: '🎈', label: 'Fest', kosten: { kostenlos: true } }), '🎈 Fest · 💶 kostenlos');
@@ -75,9 +75,9 @@ describe('Bauen und Zurücklesen', () => {
   });
 
   test('Name des Kindes wird als „kind“ erkannt, unbekannte Namen bleiben in der Bezeichnung', () => {
-    const titel = buildFamilieTitle({ text: 'Schwimmkurs', fuer: 'Iris', time: '16:00' });
-    assert.equal(titel, '🎈 Schwimmkurs (Iris) 16:00');
-    assert.deepEqual(parseTerminTitle(titel, { kindname: 'Iris' }), { emoji: '🎈', label: 'Schwimmkurs', time: '16:00', mitnehmen: [], kosten: null, fuer: 'Iris', fuerSchluessel: 'kind' });
+    const titel = buildFamilieTitle({ text: 'Schwimmkurs', fuer: 'Mia', time: '16:00' });
+    assert.equal(titel, '🎈 Schwimmkurs (Mia) 16:00');
+    assert.deepEqual(parseTerminTitle(titel, { kindname: 'Mia' }), { emoji: '🎈', label: 'Schwimmkurs', time: '16:00', mitnehmen: [], kosten: null, fuer: 'Mia', fuerSchluessel: 'kind' });
     const fremd = parseTerminTitle('🎈 Kaffee (Oma) 15:00');
     assert.equal(fremd.label, 'Kaffee (Oma)');
     assert.equal(fremd.fuerSchluessel, undefined);
@@ -139,7 +139,7 @@ describe('Hilfen rund um den Titel', () => {
 
 describe('Für wen', () => {
   test('fuerName', () => {
-    assert.equal(fuerName('kind', { kindname: ' Iris ' }), 'Iris');
+    assert.equal(fuerName('kind', { kindname: ' Mia ' }), 'Mia');
     assert.equal(fuerName('kind', { kindname: '' }), 'Kind');
     assert.equal(fuerName('kind'), 'Kind');
     assert.equal(fuerName('mama'), 'Mama');
@@ -150,15 +150,15 @@ describe('Für wen', () => {
 
   test('fuerAusText', () => {
     assert.equal(fuerAusText('Kind'), 'kind');
-    assert.equal(fuerAusText('Iris', { kindname: 'Iris' }), 'kind');
-    assert.equal(fuerAusText('Iris'), null);
+    assert.equal(fuerAusText('Mia', { kindname: 'Mia' }), 'kind');
+    assert.equal(fuerAusText('Mia'), null);
     assert.equal(fuerAusText(' Papa '), 'papa');
     assert.equal(fuerAusText(''), null);
     assert.equal(fuerAusText(undefined), null);
   });
 
   test('fuerAuswahl: Kind, Mama, Papa, Alle zuletzt', () => {
-    assert.deepEqual(fuerAuswahl({ kindname: 'Iris' }).map((f) => [f.id, f.label]), [['kind', 'Iris'], ['mama', 'Mama'], ['papa', 'Papa'], ['alle', 'Alle']]);
+    assert.deepEqual(fuerAuswahl({ kindname: 'Mia' }).map((f) => [f.id, f.label]), [['kind', 'Mia'], ['mama', 'Mama'], ['papa', 'Papa'], ['alle', 'Alle']]);
   });
 });
 

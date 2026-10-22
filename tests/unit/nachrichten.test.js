@@ -5,7 +5,7 @@ import { ANLAESSE, GRUPPEN, GRUSSFORMELN, KRANKHEITEN, TONARTEN, anredeEingabe, 
 import { MAX_ANREDE, normalizeSettings } from '../../src/domain/settings.js';
 
 const heute = '2026-10-14'; // Mittwoch
-const voll = { kindname: 'Iris', geschlecht: 'w', einrichtung: 'Krabbelstube', tag: 'heute', zeit: '09:30', person: 'Oma', datum: '2026-10-16', krankheit: 'Scharlach', heute };
+const voll = { kindname: 'Mia', geschlecht: 'w', einrichtung: 'Krabbelstube', tag: 'heute', zeit: '09:30', person: 'Oma', datum: '2026-10-16', krankheit: 'Scharlach', heute };
 const kern = (text) => text.split('\n\n')[1];
 
 describe('Anlässe', () => {
@@ -59,7 +59,7 @@ describe('Grammatik der Einrichtung', () => {
 
 describe('sie, er oder der Name', () => {
   test('weiblich, männlich, ohne Angabe', () => {
-    assert.equal(kern(nachrichtText('fieber', { kindname: 'Iris', geschlecht: 'w' })), 'Iris hat Fieber und bleibt heute zu Hause. Sie kommt erst wieder, wenn sie mindestens 24 Stunden fieberfrei ist.');
+    assert.equal(kern(nachrichtText('fieber', { kindname: 'Mia', geschlecht: 'w' })), 'Mia hat Fieber und bleibt heute zu Hause. Sie kommt erst wieder, wenn sie mindestens 24 Stunden fieberfrei ist.');
     assert.equal(kern(nachrichtText('fieber', { kindname: 'Max', geschlecht: 'm' })), 'Max hat Fieber und bleibt heute zu Hause. Er kommt erst wieder, wenn er mindestens 24 Stunden fieberfrei ist.');
     assert.equal(kern(nachrichtText('fieber', { kindname: 'Kim', geschlecht: '' })), 'Kim hat Fieber und bleibt heute zu Hause. Kim kommt erst wieder, wenn Kim mindestens 24 Stunden fieberfrei ist.');
   });
@@ -72,7 +72,7 @@ describe('sie, er oder der Name', () => {
   });
 
   test('ein klein geschriebener Name wird am Satzanfang groß', () => {
-    assert.match(kern(nachrichtText('familie', { kindname: 'iris' })), /^Iris bleibt heute aus familiären Gründen zu Hause\.$/);
+    assert.match(kern(nachrichtText('familie', { kindname: 'mia' })), /^Mia bleibt heute aus familiären Gründen zu Hause\.$/);
   });
 });
 
@@ -83,20 +83,20 @@ describe('Angaben im Text', () => {
   });
 
   test('jemand anderes holt ab', () => {
-    assert.equal(kern(nachrichtText('abholer', { ...voll, tag: 'morgen', person: ' Oma ', zeit: '15:00' })), 'Morgen holt Oma Iris gegen 15:00 Uhr ab. Oma kann sich bei Bedarf gern ausweisen.');
-    assert.equal(kern(nachrichtText('abholer', { kindname: 'Iris', person: 'opa Karl' })), 'Heute holt opa Karl Iris ab. Opa Karl kann sich bei Bedarf gern ausweisen.');
-    assert.equal(kern(nachrichtText('abholer', { kindname: 'Iris' })), 'Heute holt … Iris ab. … kann sich bei Bedarf gern ausweisen.');
+    assert.equal(kern(nachrichtText('abholer', { ...voll, tag: 'morgen', person: ' Oma ', zeit: '15:00' })), 'Morgen holt Oma Mia gegen 15:00 Uhr ab. Oma kann sich bei Bedarf gern ausweisen.');
+    assert.equal(kern(nachrichtText('abholer', { kindname: 'Mia', person: 'opa Karl' })), 'Heute holt opa Karl Mia ab. Opa Karl kann sich bei Bedarf gern ausweisen.');
+    assert.equal(kern(nachrichtText('abholer', { kindname: 'Mia' })), 'Heute holt … Mia ab. … kann sich bei Bedarf gern ausweisen.');
   });
 
   test('ansteckende Krankheit (frei änderbar)', () => {
-    assert.match(kern(nachrichtText('ansteckend', { ...voll, krankheit: '  Windpocken ' })), /^Iris hat leider Windpocken \(ärztlich bestätigt\)/);
-    assert.match(kern(nachrichtText('ansteckend', { ...voll, krankheit: '' })), /^Iris hat leider eine ansteckende Krankheit/);
+    assert.match(kern(nachrichtText('ansteckend', { ...voll, krankheit: '  Windpocken ' })), /^Mia hat leider Windpocken \(ärztlich bestätigt\)/);
+    assert.match(kern(nachrichtText('ansteckend', { ...voll, krankheit: '' })), /^Mia hat leider eine ansteckende Krankheit/);
   });
 
   test('länger krank: bis wann und wann sie wiederkommt', () => {
     assert.equal(
       kern(nachrichtText('laenger', { ...voll, datum: '2026-10-16' })),
-      'Iris ist leider krank und bleibt voraussichtlich bis einschließlich Freitag, 16. Oktober zu Hause. Sie kommt dann am Montag, 19. Oktober wieder. Wir melden uns, falls sich daran etwas ändert.',
+      'Mia ist leider krank und bleibt voraussichtlich bis einschließlich Freitag, 16. Oktober zu Hause. Sie kommt dann am Montag, 19. Oktober wieder. Wir melden uns, falls sich daran etwas ändert.',
     );
     assert.match(kern(nachrichtText('laenger', { ...voll, datum: heute })), /Sie kommt dann morgen wieder\./);
     assert.match(kern(nachrichtText('laenger', { ...voll, datum: '' })), /ein paar Tage zu Hause\. Wir melden uns, sobald sie wieder kommen kann\.$/);
@@ -109,13 +109,13 @@ describe('Angaben im Text', () => {
   });
 
   test('Urlaub / freie Tage', () => {
-    assert.equal(kern(nachrichtText('frei', { ...voll, datum: '2026-10-16' })), 'Iris hat bis einschließlich Freitag, 16. Oktober frei (Familienurlaub) und kommt am Montag, 19. Oktober wieder in die Krabbelstube.');
+    assert.equal(kern(nachrichtText('frei', { ...voll, datum: '2026-10-16' })), 'Mia hat bis einschließlich Freitag, 16. Oktober frei (Familienurlaub) und kommt am Montag, 19. Oktober wieder in die Krabbelstube.');
     assert.match(kern(nachrichtText('frei', { kindname: 'Max', geschlecht: 'm' })), /wann er wiederkommt\.$/);
   });
 
   test('Grußformel und Unterschrift', () => {
-    assert.ok(nachrichtText('familie', { ...voll, gruss: 'Viele Grüße' }).endsWith('\n\nViele Grüße\nDie Eltern von Iris'));
-    assert.ok(nachrichtText('familie', { ...voll, gruss: 'Servus' }).endsWith('\n\nLiebe Grüße\nDie Eltern von Iris'));
+    assert.ok(nachrichtText('familie', { ...voll, gruss: 'Viele Grüße' }).endsWith('\n\nViele Grüße\nDie Eltern von Mia'));
+    assert.ok(nachrichtText('familie', { ...voll, gruss: 'Servus' }).endsWith('\n\nLiebe Grüße\nDie Eltern von Mia'));
     assert.ok(nachrichtText('familie', { ...voll, unterschrift: '  Anna und Ben ' }).endsWith('\nAnna und Ben'));
     assert.deepEqual(GRUSSFORMELN, ['Liebe Grüße', 'Viele Grüße', 'Mit freundlichen Grüßen']);
   });
@@ -138,9 +138,9 @@ describe('naechsterWerktag', () => {
 
 describe('Betreff und Senden', () => {
   test('Betreff', () => {
-    assert.equal(nachrichtBetreff('fieber', { kindname: 'iris' }), 'Iris: Fieber');
+    assert.equal(nachrichtBetreff('fieber', { kindname: 'mia' }), 'Mia: Fieber');
     assert.equal(nachrichtBetreff('abholer', {}), 'Unser Kind: Jemand anderes holt ab');
-    assert.equal(nachrichtBetreff('gibtsnicht', { kindname: 'Iris' }), 'Iris: Nachricht');
+    assert.equal(nachrichtBetreff('gibtsnicht', { kindname: 'Mia' }), 'Mia: Nachricht');
   });
 
   test('whatsappNummer: österreichische Schreibweisen → internationale Ziffern', () => {
@@ -157,10 +157,10 @@ describe('Betreff und Senden', () => {
 
   test('sendeLinks: WhatsApp, SMS und E-Mail; fehlt die Angabe, ist der Link null', () => {
     const text = 'Liebe Grüße & bis morgen?';
-    const l = sendeLinks({ telefon: '0664 123 4567', email: ' kita@example.at ', text, betreff: 'Iris: Fieber' });
+    const l = sendeLinks({ telefon: '0664 123 4567', email: ' kita@example.at ', text, betreff: 'Mia: Fieber' });
     assert.equal(l.whatsapp, `https://wa.me/436641234567?text=${encodeURIComponent(text)}`);
     assert.equal(l.sms, `sms:06641234567?&body=${encodeURIComponent(text)}`);
-    assert.equal(l.email, `mailto:kita@example.at?subject=Iris%3A%20Fieber&body=${encodeURIComponent(text)}`);
+    assert.equal(l.email, `mailto:kita@example.at?subject=Mia%3A%20Fieber&body=${encodeURIComponent(text)}`);
     assert.deepEqual(sendeLinks({ text, betreff: 'x' }), { whatsapp: null, sms: null, email: null });
     assert.equal(sendeLinks({ telefon: '+43 664 1234567', text, betreff: 'x' }).sms, `sms:+436641234567?&body=${encodeURIComponent(text)}`);
     // zu kurze Nummer: kein WhatsApp-Link, SMS bleibt möglich
@@ -170,7 +170,7 @@ describe('Betreff und Senden', () => {
   });
 
   test('standardUnterschrift', () => {
-    assert.equal(standardUnterschrift(' Iris '), 'Die Eltern von Iris');
+    assert.equal(standardUnterschrift(' Mia '), 'Die Eltern von Mia');
     assert.equal(standardUnterschrift(''), 'Die Eltern');
     assert.equal(standardUnterschrift(undefined), 'Die Eltern');
   });
@@ -262,16 +262,16 @@ describe('Einfach zu Hause: Situationen ohne Krankheit', () => {
   });
 
   test('Ruhetag betont: gesund, nur eine Pause', () => {
-    assert.equal(kern(nachrichtText('ruhetag', voll)), 'Iris ist nach den letzten Tagen etwas erschöpft und darf heute einen ruhigen Tag zu Hause verbringen. Sie ist gesund – es ist einfach eine kleine Pause.');
-    assert.equal(kern(nachrichtText('ruhetag', { ...voll, ton: 'kurz', tag: 'morgen' })), 'Iris bleibt morgen zu Hause und macht einen Ruhetag.');
+    assert.equal(kern(nachrichtText('ruhetag', voll)), 'Mia ist nach den letzten Tagen etwas erschöpft und darf heute einen ruhigen Tag zu Hause verbringen. Sie ist gesund – es ist einfach eine kleine Pause.');
+    assert.equal(kern(nachrichtText('ruhetag', { ...voll, ton: 'kurz', tag: 'morgen' })), 'Mia bleibt morgen zu Hause und macht einen Ruhetag.');
   });
 
   test('Wir haben frei, Besuch, Ausflug, Feier, Termin: Heute/Morgen und Uhrzeit stehen im Text', () => {
-    assert.equal(kern(nachrichtText('wirfrei', { ...voll, tag: 'morgen' })), 'Wir haben morgen frei und verbringen den Tag gemeinsam als Familie. Deshalb kommt Iris nicht in die Krabbelstube.');
-    assert.match(kern(nachrichtText('besuch', voll)), /^Bei uns ist heute Familienbesuch, deshalb bleibt Iris zu Hause/);
-    assert.match(kern(nachrichtText('ausflug', { ...voll, einrichtung: 'Kindergarten' })), /^Wir machen heute einen Familienausflug, deshalb kommt Iris nicht in den Kindergarten\.$/);
+    assert.equal(kern(nachrichtText('wirfrei', { ...voll, tag: 'morgen' })), 'Wir haben morgen frei und verbringen den Tag gemeinsam als Familie. Deshalb kommt Mia nicht in die Krabbelstube.');
+    assert.match(kern(nachrichtText('besuch', voll)), /^Bei uns ist heute Familienbesuch, deshalb bleibt Mia zu Hause/);
+    assert.match(kern(nachrichtText('ausflug', { ...voll, einrichtung: 'Kindergarten' })), /^Wir machen heute einen Familienausflug, deshalb kommt Mia nicht in den Kindergarten\.$/);
     assert.match(kern(nachrichtText('feier', voll)), /^Wir haben heute eine Familienfeier/);
-    assert.equal(kern(nachrichtText('termin', voll)), 'Wir haben heute um 09:30 Uhr einen wichtigen Termin, zu dem Iris mitkommt. Danach bringen wir sie in die Krabbelstube. Falls es länger dauert, melden wir uns.');
+    assert.equal(kern(nachrichtText('termin', voll)), 'Wir haben heute um 09:30 Uhr einen wichtigen Termin, zu dem Mia mitkommt. Danach bringen wir sie in die Krabbelstube. Falls es länger dauert, melden wir uns.');
     assert.match(kern(nachrichtText('termin', { ...voll, zeit: '' })), /um … einen wichtigen Termin/);
   });
 });

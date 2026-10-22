@@ -92,11 +92,11 @@ test('Angaben je Situation landen im Text: Uhrzeit, wer abholt, Datum, Krankheit
   // die Uhrzeit bleibt beim Wechsel der Situation stehen (Feld und Text), der Name fehlt noch
   await expect(blatt(page).getByRole('textbox', { name: 'Abholen gegen (optional)', exact: true })).toHaveValue('09:30');
   await expect(textfeld(page)).toHaveValue(/Heute holt … unser Kind gegen 09:30 Uhr ab\. … kann sich bei Bedarf gern ausweisen\./);
-  await blatt(page).getByRole('textbox', { name: 'Wer holt ab?' }).fill('Oma Maria');
+  await blatt(page).getByRole('textbox', { name: 'Wer holt ab?' }).fill('Oma Erika');
   await blatt(page).getByRole('textbox', { name: 'Abholen gegen (optional)', exact: true }).fill('14:00');
-  await expect(textfeld(page)).toHaveValue(/Heute holt Oma Maria unser Kind gegen 14:00 Uhr ab\. Oma Maria kann sich bei Bedarf gern ausweisen\./);
+  await expect(textfeld(page)).toHaveValue(/Heute holt Oma Erika unser Kind gegen 14:00 Uhr ab\. Oma Erika kann sich bei Bedarf gern ausweisen\./);
   await wann(page).getByRole('button', { name: 'Morgen' }).click();
-  await expect(textfeld(page)).toHaveValue(/Morgen holt Oma Maria unser Kind gegen 14:00 Uhr ab\./);
+  await expect(textfeld(page)).toHaveValue(/Morgen holt Oma Erika unser Kind gegen 14:00 Uhr ab\./);
 
   // Freitag krank: zurück am nächsten Werktag (Montag)
   await situation(page, 'Länger krank').click();
@@ -254,7 +254,7 @@ test('Name, „Das Kind ist“, Grußformel und Unterschrift aus Mehr stehen in 
   await starteDemo(page, { route: '#/mehr' });
   await page.locator('.menue-eintrag[data-id="familie"] .menue-zeile').click();
   const familie = page.locator('#menue-familie');
-  await familie.getByRole('textbox', { name: 'Name des Kindes' }).fill('Iris');
+  await familie.getByRole('textbox', { name: 'Name des Kindes' }).fill('Mia');
   await familie.getByRole('textbox', { name: 'Name des Kindes' }).blur();
   await erwarteToast(page, 'Gespeichert ✓');
   const geschlecht = familie.locator('.feld').filter({ hasText: 'Das Kind ist' });
@@ -270,14 +270,14 @@ test('Name, „Das Kind ist“, Grußformel und Unterschrift aus Mehr stehen in 
   await nachrichten.getByRole('button', { name: 'Viele Grüße' }).click();
   await expect(page.locator('#menue-nachrichten .chip.aktiv')).toHaveText('Viele Grüße');
   const unterschrift = page.locator('#menue-nachrichten').getByRole('textbox', { name: 'Unterschrift' });
-  await expect(unterschrift).toHaveAttribute('placeholder', 'Die Eltern von Iris');
+  await expect(unterschrift).toHaveAttribute('placeholder', 'Die Eltern von Mia');
   await unterschrift.fill('Anna und Tom');
   await unterschrift.press('Enter');
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('fk.demo.v1')).settings.nachrichtUnterschrift)).toBe('Anna und Tom');
 
   await page.locator('#menue-nachrichten').getByRole('button', { name: 'Nachricht schreiben' }).click();
   await expect(textfeld(page)).toHaveValue(
-    'Liebes Krabbelstuben-Team,\n\nIris fühlt sich leider nicht wohl und bleibt deshalb heute zu Hause. Wir melden uns, sobald sie wieder in die Krabbelstube kommen kann.\n\nViele Grüße\nAnna und Tom',
+    'Liebes Krabbelstuben-Team,\n\nMia fühlt sich leider nicht wohl und bleibt deshalb heute zu Hause. Wir melden uns, sobald sie wieder in die Krabbelstube kommen kann.\n\nViele Grüße\nAnna und Tom',
   );
   await page.keyboard.press('Escape');
   await expect(blatt(page)).toHaveCount(0);

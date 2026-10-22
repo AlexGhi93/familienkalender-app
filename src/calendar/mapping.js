@@ -287,7 +287,10 @@ export function fixShardZuEreignis(nr, shard) {
   return schichtEreignis(fixShardId(nr), '💶 fk Fixkosten (nicht löschen)', shardText(shard), 'fixkosten');
 }
 
-/** Liest einen Teil: { shard, warnungen }; fehlendes JSON → leerer Teil, kaputtes → leerer Teil mit Warnung, beschädigte Posten fallen einzeln weg. */
+/**
+ * Liest einen Teil → { shard, warnungen, unlesbar? } (siehe shardLesen): fehlender Text → leerer Teil; unlesbarer Text → leerer, gesperrter
+ * Teil (`unlesbar: true`, mit Warnung); Posten, die diese Version nicht versteht, bleiben als `fremd` erhalten.
+ */
 export function fixShardAusEreignis(event) {
   return shardLesen(event?.description);
 }

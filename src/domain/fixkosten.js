@@ -102,7 +102,10 @@ const PERSONEN = FIX_PERSONEN.map((p) => p.id);
 const FRIST_MONATE = { '1m': 1, '2m': 2, '3m': 3, '6m': 6 }; // '2w' = 14 Tage
 const FRISTEN = FIX_FRISTEN.map((f) => f.id);
 
-const ZU_VOLL = 'Dieser Teil der Fixkosten ist voll. Bitte Notizen kürzen oder archivierte Posten endgültig löschen.';
+const ZU_VOLL = 'Die Fixkosten sind voll. Bitte Notizen kürzen oder archivierte Posten endgültig löschen.';
+export const TEXT_FIX_VOLL = ZU_VOLL;
+/** Ein neuer Posten passt nirgends hin, weil alle Teile unlesbar sind (beschädigt oder von einer neueren App-Version). */
+export const TEXT_FIX_UNLESBAR = 'Die Fixkosten sind unlesbar (beschädigt oder von einer neueren App-Version) und lassen sich hier nicht ergänzen – bitte die App auf beiden Telefonen aktualisieren.';
 const ZU_VIELE = `Höchstens ${MAX_FIX_POSTEN} Fixkosten-Posten (mit Archiv). Bitte archivierte Posten endgültig löschen.`;
 
 /** Meldung, wenn ein Teil unlesbar ist (beschädigt oder von einer neueren App-Version): er wird dann nie überschrieben. */
@@ -121,7 +124,8 @@ const sauber = (text) => (typeof text === 'string' ? text.normalize('NFC').repla
 const zeichen = (text) => [...text].length; // Zeichen, nicht UTF-16-Einheiten
 const istObjekt = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 const tageImMonat = (jahr, monat) => new Date(Date.UTC(jahr, monat, 0)).getUTCDate();
-const monatsIndex = (jm) => Number(jm.slice(0, 4)) * 12 + Number(jm.slice(5, 7)) - 1;
+/** 'JJJJ-MM' → fortlaufende Monatsnummer (für Abstände in Monaten). */
+export const monatsIndex = (jm) => Number(jm.slice(0, 4)) * 12 + Number(jm.slice(5, 7)) - 1;
 
 /** 12 oder '12' → 12, sonst NaN (für Auswahlfelder, die Text liefern). */
 const zahl = (x) => (typeof x === 'number' ? x : typeof x === 'string' && /^\d+$/.test(x) ? Number(x) : NaN);
@@ -487,6 +491,13 @@ export function vertragStatus(posten, heute) {
   const kuendbarBis = kuendbarVor(ende, v.frist);
   return { ende, kuendbarBis, erinnerung: plusMonate(kuendbarBis, -1), beendet: ende < heute, tage: diffDays(heute, kuendbarBis) };
 }
+
+/**
+ * Verlängert sich der Vertrag um weniger als 3 Monate (aber überhaupt, also monatlich), ist er „monatlich kündbar“: dafür gibt es keine
+ * Kündigungs-Erinnerung (sonst jeden Monat eine) und nie ⚠, nur das Abzeichen. Ohne Verlängerung (0, befristet) gilt das nicht.
+ * Eine Stelle für den Push-Plan (push/plan.js) und die Seite (app/views/fixkosten-model.js).
+ */
+export const monatlichKuendbar = (vertrag) => Boolean(vertrag) && vertrag.verlaengerung > 0 && vertrag.verlaengerung < 3;
 
 /** Die laufenden Verträge der aktiven Posten als [{ posten, status }], die nächste Kündigungsmöglichkeit zuerst. */
 export function kuendigungsfristen(posten, heute) {

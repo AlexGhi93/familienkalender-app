@@ -193,7 +193,7 @@ export function oeffneNachricht({ store, ui }, optionen = {}) {
           autocomplete: 'off',
           autocapitalize: 'words',
           enterkeyhint: 'done',
-          placeholder: 'z. B. Oma Maria',
+          placeholder: 'z. B. Oma Erika',
           value: z.person,
           onInput: (e) => {
             z.person = e.target.value;

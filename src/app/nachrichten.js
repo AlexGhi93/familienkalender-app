@@ -276,7 +276,7 @@ export function nachrichtText(anlass, angaben = {}) {
   return `${anrede},\n\n${kern}\n\n${gruss}\n${unterschrift}`;
 }
 
-/** Betreff für E-Mails, z. B. „Iris – heute nicht in der Krabbelstube“. */
+/** Betreff für E-Mails, z. B. „Mia – heute nicht in der Krabbelstube“. */
 export function nachrichtBetreff(anlass, angaben = {}) {
   const { Name } = personFormen(angaben.kindname, angaben.geschlecht);
   const titel = ANLAESSE.find((a) => a.id === anlass)?.titel ?? 'Nachricht';

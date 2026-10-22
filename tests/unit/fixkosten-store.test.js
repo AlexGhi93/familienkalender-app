@@ -517,17 +517,16 @@ describe('Unlesbare Teile werden nie überschrieben, fremde Posten bleiben erhal
     ['kaputtes JSON', '{"v":1,"p":[{"i":"aaaa3","n":"Mie'],
     ['neuere Version (v: 2)', JSON.stringify({ v: 2, p: [{ i: 'aaaa3', n: 'Miete', z: 'neu' }] })],
   ]) {
-    test(`${art}: Anlegen, Archivieren, Löschen in diesem Teil werden abgelehnt, der Text bleibt; andere Teile gehen; nach der Reparatur wieder`, async () => {
+    test(`${art}: Archivieren, Löschen, Zurückholen in diesem Teil werden abgelehnt, ein neuer Posten geht in einen anderen Teil; der Text bleibt; nach der Reparatur wieder`, async () => {
       const ids = kennungen();
-      const [in2, in0, nochIn2] = [ids.imTeil(2), ids.imTeil(0), ids.imTeil(2)];
-      const t = await google({ texte: { 2: kaputt }, idsFuer: () => [in2, in0, nochIn2] });
+      const [in2, in0, in2b, in1, nochIn2] = [ids.imTeil(2), ids.imTeil(0), ids.imTeil(2), ids.imTeil(1), ids.imTeil(2)];
+      const t = await google({ texte: { 2: kaputt }, idsFuer: () => [in2, in0, in2b, in1, nochIn2] });
       assert.equal(await t.store.fixLaden(), true);
       const f = t.store.getState().fixkosten;
       assert.deepEqual(f.unlesbar, [2]);
       assert.equal(f.warnungen.length, 1);
 
       const vorher = t.store.getState();
-      assert.deepEqual(await t.store.fixPostenSpeichern(entwurf({ name: 'Strom' })), { ok: false, fehler: TEXT_TEIL_GESPERRT });
       assert.deepEqual(await t.store.fixPostenArchivieren('aaaa3', '2026-11-01'), { ok: false, fehler: TEXT_TEIL_GESPERRT });
       assert.deepEqual(await t.store.fixPostenLoeschen('aaaa3'), { ok: false, fehler: TEXT_TEIL_GESPERRT });
       assert.deepEqual(await t.store.fixPostenWiederherstellen('aaaa3'), { ok: false, fehler: TEXT_TEIL_GESPERRT });
@@ -535,9 +534,9 @@ describe('Unlesbare Teile werden nie überschrieben, fremde Posten bleiben erhal
       assert.equal(t.text(2), kaputt);
       assert.deepEqual(t.geschrieben(), ['PUT fkfest2']); // nur das Anlegen des kaputten Teils im Test
 
-      // ein anderer Teil geht weiterhin
-      const r0 = await t.store.fixPostenSpeichern(entwurf({ name: 'Internet' }));
-      assert.deepEqual(r0, { ok: true, id: in0 });
+      // ein neuer Posten: die Kennung für den gesperrten Teil wird übersprungen, er landet in einem anderen
+      assert.deepEqual(await t.store.fixPostenSpeichern(entwurf({ name: 'Internet' })), { ok: true, id: in0 });
+      assert.deepEqual(await t.store.fixPostenSpeichern(entwurf({ name: 'Handy' })), { ok: true, id: in1 });
       assert.equal(t.text(2), kaputt);
 
       // repariert (z. B. die neuere App hat ihn zurückgeschrieben) und neu gelesen: wieder beschreibbar, nichts geht verloren
@@ -561,6 +560,55 @@ describe('Unlesbare Teile werden nie überschrieben, fremde Posten bleiben erhal
     assert.ok(!t.geschrieben().includes('PATCH fkfest2'));
     assert.deepEqual(t.store.getState().fixkosten.unlesbar, [2]);
     assert.deepEqual(await t.store.fixPostenSpeichern({ ...posten('aaaa3'), cents: 1 }), { ok: false, fehler: TEXT_TEIL_GESPERRT }, 'danach gleich gesperrt');
+  });
+
+  /** Ein Teil, in den kein weiterer langer Posten mehr passt (Kennungen aus `ids.imTeil(nr)`). */
+  function vollerTeil(ids, nr) {
+    const lang = (id) => ({ ...entwurf(), id, start: '2026-01', name: 'N'.repeat(40), notiz: 'Z'.repeat(80), vertrag: { bis: '2026-12-31', verlaengerung: 12, frist: '1m' } });
+    let shard = leererShard();
+    for (;;) {
+      try {
+        shard = postenSetzen(shard, lang(ids.imTeil(nr)));
+      } catch {
+        return shard;
+      }
+    }
+  }
+
+  test('neuer Posten: Kennung, deren Teil lesbar ist und Platz hat (unlesbarer und voller Teil werden übersprungen)', async () => {
+    const ids = kennungen();
+    const voll = vollerTeil(ids, 0);
+    const [in2, in0, in1] = [ids.imTeil(2), ids.imTeil(0), ids.imTeil(1)];
+    const t = await google({ texte: { 0: shardText(voll), 2: '{"v":1,"p":[{"i":"kap' }, idsFuer: () => [in2, in0, in1] });
+    await t.store.fixLaden();
+    const vorher = t.geschrieben().length;
+    // ein langer Posten passt nicht mehr in Teil 0; Teil 2 ist gesperrt; Teil 1 hat Platz
+    const r = await t.store.fixPostenSpeichern(entwurf({ name: 'N'.repeat(40), notiz: 'Z'.repeat(80) }));
+    assert.deepEqual(r, { ok: true, id: in1 });
+    assert.deepEqual(t.geschrieben().slice(vorher), ['POST fkfest1']); // nur Teil 1 (neu angelegt)
+    assert.equal(t.text(2), '{"v":1,"p":[{"i":"kap');
+  });
+
+  test('neuer Posten: passt in keinen Teil → verständliche Meldung ohne „Dieser Teil“, nichts geschrieben', async () => {
+    const ids = kennungen();
+    const [voll0, voll1] = [vollerTeil(ids, 0), vollerTeil(ids, 1)];
+    const viele = [0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3].map((nr) => ids.imTeil(nr));
+    const t = await google({ texte: { 0: shardText(voll0), 1: shardText(voll1), 2: 'kaputt', 3: '{"v":2,"p":[]}' }, idsFuer: () => [...viele] });
+    await t.store.fixLaden();
+    const vorher = t.geschrieben().length;
+    const r = await t.store.fixPostenSpeichern(entwurf({ name: 'N'.repeat(40), notiz: 'Z'.repeat(80) }));
+    assert.equal(r.ok, false);
+    assert.doesNotMatch(r.fehler, /Dieser Teil/);
+    assert.match(r.fehler, /^Die Fixkosten sind voll/);
+    assert.equal(t.geschrieben().length, vorher);
+
+    // alle vier Teile unlesbar
+    const u = await google({ texte: { 0: 'x', 1: 'x', 2: 'x', 3: 'x' }, idsFuer: () => [...viele] });
+    await u.store.fixLaden();
+    const r2 = await u.store.fixPostenSpeichern(entwurf());
+    assert.equal(r2.ok, false);
+    assert.doesNotMatch(r2.fehler, /Dieser Teil/);
+    assert.match(r2.fehler, /^Die Fixkosten sind unlesbar/);
   });
 
   test('ein Posten mit unbekannter Kategorie (neuere Version) bleibt beim Ändern des gültigen unverändert im Text; zählt nicht', async () => {
@@ -601,9 +649,11 @@ describe('Unlesbare Teile werden nie überschrieben, fremde Posten bleiben erhal
     const gelesen = await basis.leseFixkosten();
     assert.deepEqual(gelesen.unlesbar, [{ nr: 1, text: JSON.stringify(roh) }]);
     await assert.rejects(basis.aendereFixShard(1, (s) => s), (e) => e.message === TEXT_TEIL_GESPERRT);
-    assert.deepEqual(await store.fixPostenSpeichern(entwurf()), { ok: false, fehler: TEXT_TEIL_GESPERRT });
+    // ein neuer Posten landet nicht im gesperrten Teil: die Kennung für Teil 1 wird übersprungen, die für Teil 3 genommen
+    const r = await store.fixPostenSpeichern(entwurf());
+    assert.equal(r.ok, true);
+    assert.equal(shardFuer(r.id), 3);
     assert.deepEqual(gespeichert(speicher).fixkosten.shards[1], roh);
-    assert.equal((await store.fixPostenSpeichern(entwurf())).ok, true);
   });
 
   test('Sicherung und Schnappschuss: unlesbare Teile als Rohtext bzw. markiert, fremde Posten roh dabei (nie zurückgeschrieben)', async () => {

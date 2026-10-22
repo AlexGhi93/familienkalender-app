@@ -39,9 +39,9 @@ describe('laden und Demo-Adapter', () => {
     const kaputt = aufbau({ speicher: speicherAttrappe({ 'fk.demo.v1': '{kaputt' }) });
     await kaputt.store.laden();
     assert.equal(kaputt.store.getState().termine.length, 8);
-    const alt = aufbau({ speicher: speicherAttrappe({ 'fk.demo.v1': JSON.stringify({ settings: { kindname: 'Iris' }, tage: {}, urlaub: [], termine: [] }) }) });
+    const alt = aufbau({ speicher: speicherAttrappe({ 'fk.demo.v1': JSON.stringify({ settings: { kindname: 'Mia' }, tage: {}, urlaub: [], termine: [] }) }) });
     await alt.store.laden();
-    assert.deepEqual([alt.store.getState().settings.kindname, alt.store.getState().einkauf.e, alt.store.getState().konto.p], ['Iris', [], { papa: {}, mama: {} }]);
+    assert.deepEqual([alt.store.getState().settings.kindname, alt.store.getState().einkauf.e, alt.store.getState().konto.p], ['Mia', [], { papa: {}, mama: {} }]);
     const falsch = aufbau({ speicher: speicherAttrappe({ 'fk.demo.v1': JSON.stringify({ settings: { zielWochen: 0 }, tage: {}, urlaub: [], termine: [] }) }) });
     await falsch.store.laden();
     assert.equal(falsch.store.getState().termine.length, 8);
@@ -333,9 +333,9 @@ describe('Einstellungen und Sicherung', () => {
   test('Einstellungen werden geprüft und gespeichert', async () => {
     const { store, speicher } = aufbau();
     await store.laden();
-    await store.einstellungen({ erwartung: [0, 2, 4], kindname: 'Iris' });
-    assert.deepEqual([store.getState().settings.erwartung, store.getState().settings.kindname], [[0, 2, 4], 'Iris']);
-    assert.equal(gespeichert(speicher).settings.kindname, 'Iris');
+    await store.einstellungen({ erwartung: [0, 2, 4], kindname: 'Mia' });
+    assert.deepEqual([store.getState().settings.erwartung, store.getState().settings.kindname], [[0, 2, 4], 'Mia']);
+    assert.equal(gespeichert(speicher).settings.kindname, 'Mia');
     await assert.rejects(store.einstellungen({ bringzeit: '25:00' }), /bringzeit/);
     assert.equal(store.getState().settings.bringzeit, '07:30');
   });

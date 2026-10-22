@@ -6,7 +6,7 @@ import { FUER } from '../domain/types.js';
 import { dienstFuer } from '../domain/dienst.js';
 import { instantZuWien, wienZuInstant } from '../domain/instant.js';
 import { SCHICHT_PERSONEN, artFuer, standardKatalog, vorladeMonate } from '../domain/schicht.js';
-import { vertragStatus } from '../domain/fixkosten.js';
+import { monatlichKuendbar, vertragStatus } from '../domain/fixkosten.js';
 import { datumAnzeige } from '../domain/eingabe.js';
 import { terminAnzeige } from '../app/views/gemeinsam.js';
 import { urlaubChecksWunsch } from '../app/urlaub-check.js';
@@ -17,8 +17,7 @@ const STUNDE = 3600_000;
 // Sekunden, die der Push-Server von Google/Apple die Nachricht für ein Telefon ohne Netz aufhebt: kommt es rechtzeitig wieder ins Netz, wird sie noch zugestellt
 // („1 Stunde vorher“ nur bis kurz vor dem Termin, danach wäre sie sinnlos).
 const TTL = { tag: 21600, stunde: 3300, vortag: 21600, abend: 14400, konto: 10800, konto2: 5400, frist: 21600 };
-// Verträge, die sich um weniger als so viele Monate verlängern (z. B. monatlich kündbar), bekommen keine Erinnerung (sonst jeden Monat eine).
-const FRIST_AB_VERLAENGERUNG = 3;
+// Monatlich kündbare Verträge bekommen keine Erinnerung (sonst jeden Monat eine): Regel `monatlichKuendbar` in domain/fixkosten.js.
 
 async function kennung(terminId, art) {
   const hash = new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${terminId}|${art}`)));
@@ -144,7 +143,7 @@ async function fristErinnerungen(state, von, bis) {
 async function fristenEinesPostens(posten, heute, von, bis) {
   const v = posten?.vertrag;
   if (posten?.archiv) return []; // archiviert = gekündigt (siehe fristErinnerungen)
-  if (!v || (v.verlaengerung > 0 && v.verlaengerung < FRIST_AB_VERLAENGERUNG)) return [];
+  if (!v || monatlichKuendbar(v)) return []; // monatlich kündbar: keine Erinnerung (siehe domain/fixkosten.js)
   if (typeof v.bis !== 'string' || !isValidDate(v.bis)) return []; // sonst fände die Verlängerung kein Ende
   const plan = [];
   let tag = heute;

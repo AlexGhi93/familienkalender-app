@@ -405,15 +405,15 @@ describe('Teile (Shards)', () => {
         shard = postenSetzen(shard, lang(i));
         i += 1;
       } catch (e) {
-        assert.equal(e.message, 'Dieser Teil der Fixkosten ist voll. Bitte Notizen kürzen oder archivierte Posten endgültig löschen.');
+        assert.equal(e.message, 'Die Fixkosten sind voll. Bitte Notizen kürzen oder archivierte Posten endgültig löschen.');
         break;
       }
     }
     assert.ok(i >= 15, `nur ${i} Posten`);
     assert.equal(shard.posten.length, i);
     assert.ok(shardText(shard).length <= MAX_FIX_ZEICHEN);
-    assert.throws(() => postenSetzen(shard, lang(999)), /Dieser Teil der Fixkosten ist voll/);
-    assert.throws(() => shardText({ v: 1, posten: Array.from({ length: 40 }, (_, n) => lang(n)) }), /Dieser Teil der Fixkosten ist voll/); // harte Grenze beim Schreiben
+    assert.throws(() => postenSetzen(shard, lang(999)), /Die Fixkosten sind voll/);
+    assert.throws(() => shardText({ v: 1, posten: Array.from({ length: 40 }, (_, n) => lang(n)) }), /Die Fixkosten sind voll/); // harte Grenze beim Schreiben
   });
 
   test('postenAnzahlPruefen: höchstens 100 Posten insgesamt (archivierte mitgezählt); bestehender darf geändert werden', () => {
@@ -535,7 +535,7 @@ describe('Voller Teil: Archivieren geht immer', () => {
       try {
         shard = postenSetzen(shard, lang(i));
       } catch (e) {
-        assert.match(e.message, /Dieser Teil der Fixkosten ist voll/);
+        assert.match(e.message, /Die Fixkosten sind voll/);
         return shard;
       }
     }
@@ -558,7 +558,7 @@ describe('Voller Teil: Archivieren geht immer', () => {
   test('Wiederherstellen eines archivierten Postens im vollen Teil klappt ebenfalls', () => {
     let shard = voll();
     shard = postenArchivieren(shard, lang(0).id, '2026-11-01');
-    assert.throws(() => postenSetzen(shard, lang(9999)), /Dieser Teil der Fixkosten ist voll/); // die Reserve ist kein neuer Platz
+    assert.throws(() => postenSetzen(shard, lang(9999)), /Die Fixkosten sind voll/); // die Reserve ist kein neuer Platz
     shard = postenWiederherstellen(shard, lang(0).id);
     assert.equal(shard.posten[0].archiv, undefined);
     assert.doesNotThrow(() => postenArchivieren(shard, lang(1).id, '2026-11-01'));
@@ -608,5 +608,20 @@ describe('Vorwärts-Verträglichkeit: Unbekanntes bleibt erhalten, Unlesbares wi
     assert.match(postenAnzahlPruefen([{ v: 1, posten: [], fremd }, null, null, null], 'neu00001'), /Höchstens 100/);
     const { shard } = shardLesen(text(k(), k({ i: 'bbbb1', k: 'haustier', c: 999999 })));
     assert.equal(summen(shard.posten, { jm: '2026-10', heute: '2026-10-14' }).monatlich, 100);
+  });
+});
+
+describe('Regeln für Abzeichen und Erinnerung (eine Stelle für Push-Plan und Seite)', () => {
+  test('monatlichKuendbar: Verlängerung 1 (unter 3 Monaten, nicht 0); 0, 3, 12 nicht; ohne Vertrag nicht', async () => {
+    const { monatlichKuendbar } = await import('../../src/domain/fixkosten.js');
+    assert.deepEqual([0, 1, 3, 6, 12, 24, 36].map((verlaengerung) => monatlichKuendbar({ bis: '2026-12-31', verlaengerung, frist: '1m' })), [false, true, false, false, false, false, false]);
+    assert.equal(monatlichKuendbar(null), false);
+    assert.equal(monatlichKuendbar(undefined), false);
+  });
+
+  test('monatsIndex: Monate seit Jahr 0 (für Abstände in Monaten)', async () => {
+    const { monatsIndex } = await import('../../src/domain/fixkosten.js');
+    assert.equal(monatsIndex('2026-10') - monatsIndex('2025-12'), 10);
+    assert.equal(monatsIndex('2026-01'), 2026 * 12);
   });
 });

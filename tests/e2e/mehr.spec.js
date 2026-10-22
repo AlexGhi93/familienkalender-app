@@ -165,33 +165,33 @@ test('Familie: Name des Kindes erscheint bei „Für wen“; ungültige Zeichen 
   await starteDemo(page, { route: '#/mehr' });
   await zeile(page, 'familie').click();
   const name = tafel(page, 'familie').getByRole('textbox', { name: 'Name des Kindes' });
-  await name.fill('Iris, Max');
+  await name.fill('Mia, Max');
   await name.press('Enter');
   await name.blur();
   await erwarteToast(page, 'Bitte ohne Klammern, Kommas und „ · “.');
-  await name.fill('Iris');
+  await name.fill('Mia');
   await name.blur();
   await erwarteToast(page, 'Gespeichert ✓');
   await expect(tafel(page, 'familie')).toBeVisible();
-  await expect(name).toHaveValue('Iris');
+  await expect(name).toHaveValue('Mia');
   await tab(page, 'Neu');
   await page.locator('.kachel').filter({ hasText: 'Arzttermin' }).click();
-  await expect(page.locator('.chip.aktiv').filter({ hasText: '🧒' })).toHaveText('🧒 Iris');
+  await expect(page.locator('.chip.aktiv').filter({ hasText: '🧒' })).toHaveText('🧒 Mia');
   await page.getByRole('button', { name: 'Speichern', exact: true }).click();
   await erwarteToast(page, 'Termin gespeichert ✓');
   await page.goto('/#/verlauf');
-  await expect(page.getByRole('button', { name: 'Kinderarzt (Iris), Mi 14. Okt. · 09:00' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Kinderarzt (Mia), Mi 14. Okt. · 09:00' })).toBeVisible();
 });
 
 test('Vorschau im Arzttermin nennt den Namen des Kindes aus den Einstellungen', async ({ page }) => {
   await starteDemo(page, { route: '#/mehr' });
   await zeile(page, 'familie').click();
-  await tafel(page, 'familie').getByRole('textbox', { name: 'Name des Kindes' }).fill('Iris');
+  await tafel(page, 'familie').getByRole('textbox', { name: 'Name des Kindes' }).fill('Mia');
   await tafel(page, 'familie').getByRole('textbox', { name: 'Name des Kindes' }).blur();
   await erwarteToast(page, 'Gespeichert ✓');
   await tab(page, 'Neu');
   await page.locator('.kachel').filter({ hasText: 'Arzttermin' }).click();
-  await expect(page.locator('.vorschau b')).toHaveText('🩺 Kinderarzt (Iris) 09:00 · 🎒 e-card, MuKi-Pass, Impfpass');
+  await expect(page.locator('.vorschau b')).toHaveText('🩺 Kinderarzt (Mia) 09:00 · 🎒 e-card, MuKi-Pass, Impfpass');
 });
 
 test('Mitnehmen beim Arzt: Liste ergänzen und zurücksetzen', async ({ page }) => {

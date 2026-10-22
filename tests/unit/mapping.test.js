@@ -44,7 +44,7 @@ import { leererShard, postenArchivieren, postenSetzen, shardText } from '../../s
 import { katalogText, leererMonat, monatText, setzeNotiz, setzeSchicht, standardKatalog } from '../../src/domain/schicht.js';
 
 const settings = normalizeSettings();
-const mitName = normalizeSettings({ kindname: 'Iris' });
+const mitName = normalizeSettings({ kindname: 'Mia' });
 
 /** Ein gebautes Ereignis so, wie Google es zurückgibt (Zeitzone im dateTime statt im Feld). */
 function wieVonGoogle({ body }) {
@@ -74,7 +74,7 @@ describe('Ereignisse bauen', () => {
   test('Termin mit Uhrzeit: 30 Minuten, Wiener Zeit, 1 Tag und 1 Stunde vorher; Für wen und Notiz versteckt', () => {
     const e = terminZuEreignis({ id: 't1abc', typ: 'arzt', subtyp: 'ekp', fuer: 'kind', notiz: 'Gewicht', date: '2026-10-14', time: '09:00', mitnehmen: ['e-card', 'MuKi-Pass'], kosten: null }, mitName);
     assert.equal(e.kalender, 'termine');
-    assert.equal(e.body.summary, '📒 Mutter-Kind-Pass (Iris) 09:00 · 🎒 e-card, MuKi-Pass');
+    assert.equal(e.body.summary, '📒 Mutter-Kind-Pass (Mia) 09:00 · 🎒 e-card, MuKi-Pass');
     assert.deepEqual(e.body.start, { dateTime: '2026-10-14T09:00:00', timeZone: 'Europe/Vienna' });
     assert.deepEqual(e.body.end, { dateTime: '2026-10-14T09:30:00', timeZone: 'Europe/Vienna' });
     assert.deepEqual(e.body.reminders.overrides, ERINNERUNG_VORHER);
@@ -188,9 +188,9 @@ describe('versteckte Ereignisse zurücklesen', () => {
     assert.deepEqual(einstellungenAusEreignis({ description: '' }), { settings, warnungen: [] });
     assert.deepEqual(einstellungenAusEreignis({ description: '{kaputt' }), { settings, warnungen: ['JSON'] });
     assert.deepEqual(einstellungenAusEreignis({ description: '[1,2]' }), { settings, warnungen: ['JSON'] });
-    const teils = einstellungenAusEreignis({ description: JSON.stringify({ v: 1, kindname: 'Iris', bringzeit: '7 Uhr', zielWochen: 99, unbekannt: 1 }) });
+    const teils = einstellungenAusEreignis({ description: JSON.stringify({ v: 1, kindname: 'Mia', bringzeit: '7 Uhr', zielWochen: 99, unbekannt: 1 }) });
     assert.deepEqual(teils.warnungen, ['bringzeit', 'zielWochen']);
-    assert.deepEqual([teils.settings.kindname, teils.settings.bringzeit, teils.settings.zielWochen], ['Iris', '07:30', 5]);
+    assert.deepEqual([teils.settings.kindname, teils.settings.bringzeit, teils.settings.zielWochen], ['Mia', '07:30', 5]);
   });
 
   test('Einkauf, Konto, Geräte', () => {
@@ -226,7 +226,7 @@ describe('ereignisseZuZustand', () => {
     assert.deepEqual(z.resync.map((r) => r.id), ['spaet']);
     assert.deepEqual(z.urlaub.map((u) => u.id), ['u1', 'u2']);
     assert.deepEqual(z.urlaubChecks.map((c) => c.id), ['fkc20270301', 'fkc20270501']);
-    assert.equal(z.einstellungen.settings.kindname, 'Iris');
+    assert.equal(z.einstellungen.settings.kindname, 'Mia');
   });
 
   test('ohne Ereignisse', () => {
@@ -316,7 +316,7 @@ describe('Fixkosten: versteckte Ereignisse (4 Teile)', () => {
 
   test('zu voller Teil wird vor dem Schreiben abgelehnt', () => {
     const riesig = { v: 1, posten: Array.from({ length: 60 }, (_, i) => p(`v${String(i).padStart(7, '0')}`, 'N'.repeat(40), { notiz: 'Z'.repeat(80) })) };
-    assert.throws(() => fixShardZuEreignis(0, riesig), /Dieser Teil der Fixkosten ist voll/);
+    assert.throws(() => fixShardZuEreignis(0, riesig), /Die Fixkosten sind voll/);
   });
 
   test('zurücklesen: gleicher Teil, ohne Warnung; kaputt → leerer Teil mit Warnung, ohne Ausnahme', () => {

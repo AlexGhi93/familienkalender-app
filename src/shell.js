@@ -28,6 +28,7 @@ import { createSchichtAbgleich, schichtAktualisierenFaellig } from './app/schich
 import { monatVor } from './domain/konto.js';
 import { planQuellen, quellenGeaendert } from './push/plan.js';
 import { createSchichtVorlader } from './app/schicht-vorladen.js';
+import { nurHintergrundGeaendert } from './app/hintergrund.js';
 
 const SEITEN = {
   heute: heuteScreen,
@@ -61,15 +62,6 @@ const BANNER_INTERVALL_MS = 30_000;
 const SNAPSHOT_VERZOEGERUNG_MS = 1000;
 const VORLADEN_PRUEFEN_MS = 60_000; // ob nach einem Monatswechsel neu vorgeladen werden muss (sonst wartet der Push-Plan)
 const CHECKS_VERZOEGERUNG_MS = 2500; // Urlaub-Checks erst abgleichen, wenn sich der Urlaub kurz nicht mehr ändert
-
-// Teile des Zustands, die im Hintergrund vorgeladen werden, und die Seite, die sie zeigt.
-const HINTERGRUND_SEITE = { schicht: 'schicht', fixkosten: 'konto' };
-
-/** Unterscheiden sich zwei Zustände nur in vorgeladenen Teilen, die `seite` nicht zeigt (Schichtplan, Fixkosten)? */
-function nurHintergrundGeaendert(a, b, seite) {
-  const geaendert = [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((k) => a[k] !== b[k]);
-  return geaendert.length > 0 && geaendert.every((k) => HINTERGRUND_SEITE[k] && HINTERGRUND_SEITE[k] !== seite);
-}
 
 /**
  * `auth` und `snapshot` gibt es nur im Google-Modus; `konto` bündelt, was „Konto & App“ dafür braucht
@@ -353,7 +345,7 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
   store.subscribe((state) => {
     // Hat sich nur der Schichtplan oder die Fixkosten geändert (z. B. das Vorladen im Hintergrund), bleibt jede Seite, die sie nicht zeigt,
     // wie sie ist; neu gezeichnet würde sie z. B. die Animationen in „Mehr“ abbrechen. Offene Blätter melden sich selbst an.
-    const nurHintergrund = nurHintergrundGeaendert(gemeldet, state, ui.seite());
+    const nurHintergrund = nurHintergrundGeaendert(gemeldet, state, { seite: ui.seite(), kontoAnsicht: ui.kontoAnsicht });
     gemeldet = state;
     if (state.fehler && state.fehler !== letzterFehler) toast(state.fehler, { art: 'fehler', dauer: 6000 });
     else if (!state.fehler && letzterFehler) entferneFehlerToast();

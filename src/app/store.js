@@ -8,7 +8,7 @@ import { normalisiereTermin } from './termin.js';
 import { urlaubChecksAbgleich, urlaubChecksWunsch } from './urlaub-check.js';
 import { entferneExtra, entferneStand, fuegeExtraHinzu, leeresKonto, monatVor, normalisiereKonto, setzeStand } from '../domain/konto.js';
 import { artAendern, artArchivieren, artHinzufuegen, artVerschieben, katalogErgaenzen, leererMonat, normalisiereKatalog, normalisiereMonat, schaltePinsel, schichtAm, setzeNotiz, setzeSchicht, standardKatalog, tageImMonat, vorladeMonate, zusatzEntfernen, zusatzHinzufuegen } from '../domain/schicht.js';
-import { FIX_SHARDS, TEXT_TEIL_GESPERRT, leererShard, neueFixId, normalisiereShard, postenAnzahlPruefen, postenArchivieren, postenLoeschen, postenPruefen, postenSetzen, postenWiederherstellen, shardFuer } from '../domain/fixkosten.js';
+import { FIX_SHARDS, TEXT_FIX_UNLESBAR, TEXT_FIX_VOLL, TEXT_TEIL_GESPERRT, leererShard, neueFixId, normalisiereShard, postenAnzahlPruefen, postenArchivieren, postenLoeschen, postenPruefen, postenSetzen, postenWiederherstellen, shardFuer } from '../domain/fixkosten.js';
 import { MAX_SERIEN_WOCHEN, naechsterWochentag, wochenSerie } from './serie.js';
 
 const KITA_TYPEN = ['kita_essen', 'kita_ohne'];
@@ -426,12 +426,34 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     return nr >= 0 ? nr : shardFuer(id);
   }
 
-  /** Eine neue Kennung, die es in den angezeigten Teilen noch nicht gibt (auch nicht unter den fremden Posten). */
-  function freieFixId() {
-    const vergeben = new Set((state.fixkosten.shards ?? []).flatMap((s) => [...(s?.posten.map((p) => p.id) ?? []), ...(s?.fremd ?? []).map((k) => k?.i)]));
-    let id = fixId();
-    for (let i = 0; i < 10 && vergeben.has(id); i += 1) id = fixId();
-    return id;
+  /**
+   * Kennung für einen neuen Posten: noch nicht vergeben (auch nicht unter den fremden Posten), und ihr Teil ist lesbar und hat für
+   * `posten` noch Platz (geprüft am angezeigten Stand). Der Teil hängt an der zufälligen Kennung; deshalb werden so lange neue gezogen,
+   * bis eine passt oder jeder Teil ausgeschieden ist. → { id } | { fehler } (verständlich, ohne „Teil“).
+   */
+  function neueFixIdFuer(posten) {
+    const shards = state.fixkosten.shards ?? fixTeile(null);
+    const vergeben = new Set(shards.flatMap((s) => [...(s?.posten.map((p) => p.id) ?? []), ...(s?.fremd ?? []).map((k) => k?.i)]));
+    const raus = new Set(); // Teile, die nicht in Frage kommen (unlesbar oder voll)
+    let voll = false;
+    for (let versuch = 0; versuch < 64 && raus.size < FIX_SHARDS; versuch += 1) {
+      const id = fixId();
+      if (typeof id !== 'string' || id === '') break; // eingespeiste Kennungen (Tests) sind aufgebraucht
+      const nr = shardFuer(id);
+      if (vergeben.has(id) || raus.has(nr)) continue;
+      if (fixGesperrt(nr)) {
+        raus.add(nr);
+        continue;
+      }
+      try {
+        postenSetzen(shards[nr] ?? leererShard(), { ...posten, id });
+        return { id };
+      } catch {
+        raus.add(nr);
+        voll = true;
+      }
+    }
+    return { fehler: voll ? TEXT_FIX_VOLL : raus.size >= FIX_SHARDS ? TEXT_FIX_UNLESBAR : TEXT_FEHLER };
   }
 
   /** Ist Teil `nr` gesperrt, weil diese Version ihn nicht lesen kann? */
@@ -1170,9 +1192,11 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       const nichtBereit = await fixBereit();
       if (nichtBereit) return { ok: false, fehler: nichtBereit };
       if (neu) {
-        posten.id = freieFixId(); // erst nach dem Lesen: so ist sie sicher noch nicht vergeben
-        const zuViele = postenAnzahlPruefen(state.fixkosten.shards, posten.id);
+        const zuViele = postenAnzahlPruefen(state.fixkosten.shards, null);
         if (zuViele) return { ok: false, fehler: zuViele };
+        const wahl = neueFixIdFuer(posten); // erst nach dem Lesen: so ist sie sicher noch nicht vergeben, und ihr Teil hat Platz
+        if (wahl.fehler) return { ok: false, fehler: wahl.fehler };
+        posten.id = wahl.id;
       }
       const nr = neu ? shardFuer(posten.id) : fixTeilVon(posten.id);
       if (fixGesperrt(nr)) return { ok: false, fehler: TEXT_TEIL_GESPERRT };

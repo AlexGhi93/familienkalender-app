@@ -10,8 +10,8 @@ describe('normalizeSettings: Standardwerte', () => {
   });
 
   test('fehlende Felder werden ergänzt, unbekannte fallen weg', () => {
-    const s = normalizeSettings({ kindname: 'Iris', geheim: 1, v: 1 });
-    assert.equal(s.kindname, 'Iris');
+    const s = normalizeSettings({ kindname: 'Mia', geheim: 1, v: 1 });
+    assert.equal(s.kindname, 'Mia');
     assert.equal(s.bringzeit, '07:30');
     assert.equal('geheim' in s, false);
     assert.equal('v' in s, false);
@@ -41,8 +41,8 @@ describe('normalizeSettings: Werte werden bereinigt', () => {
   });
 
   test('kindname wird getrimmt; leere Uhrzeiten schalten Erinnerungen aus', () => {
-    const s = normalizeSettings({ kindname: '  Iris ', vorabend: '', kontoErinnerung: '' });
-    assert.equal(s.kindname, 'Iris');
+    const s = normalizeSettings({ kindname: '  Mia ', vorabend: '', kontoErinnerung: '' });
+    assert.equal(s.kindname, 'Mia');
     assert.equal(s.vorabend, '');
     assert.equal(s.kontoErinnerung, '');
   });
@@ -100,9 +100,9 @@ describe('normalizeSettings: jede ungültige Angabe wirft mit dem Feldnamen', ()
     ['vorabend', { vorabend: null }],
     ['kontoErinnerung', { kontoErinnerung: '18' }],
     ['kindname', { kindname: 'x'.repeat(21) }],
-    ['kindname', { kindname: 'Iris (3)' }],
-    ['kindname', { kindname: 'Iris, Max' }],
-    ['kindname', { kindname: 'Iris · Max' }],
+    ['kindname', { kindname: 'Mia (3)' }],
+    ['kindname', { kindname: 'Mia, Max' }],
+    ['kindname', { kindname: 'Mia · Max' }],
     ['kindname', { kindname: 7 }],
   ];
   for (const [feld, wert] of faelle) {

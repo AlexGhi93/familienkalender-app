@@ -141,8 +141,8 @@ describe('terminVorschau', () => {
   });
 
   test('mit dem Namen des Kindes aus den Einstellungen', () => {
-    const mitName = normalizeSettings({ kindname: 'Iris' });
-    assert.equal(terminVorschau(terminEntwurf('arzt', { settings: mitName, heute }), mitName).titel, '🩺 Kinderarzt (Iris) 09:00 · 🎒 e-card, MuKi-Pass, Impfpass');
+    const mitName = normalizeSettings({ kindname: 'Mia' });
+    assert.equal(terminVorschau(terminEntwurf('arzt', { settings: mitName, heute }), mitName).titel, '🩺 Kinderarzt (Mia) 09:00 · 🎒 e-card, MuKi-Pass, Impfpass');
   });
 
   test('zu lang für die Benachrichtigung', () => {
