@@ -1028,3 +1028,94 @@ describe('Schichtplan im Hintergrund vorladen', () => {
     assert.equal(log.filter((x) => x === 'arten').length, 1);
   });
 });
+
+
+describe('Schichtplan vor dem Senden des Push-Plans frisch lesen (zwei Telefone)', () => {
+  /** Zwei Telefone (zwei Stores) auf einem Kalender; beide geladen und vorgeladen. */
+  async function zweiTelefone({ aendern = (a) => a } = {}) {
+    const kalender = createDemoAdapter({ speicher: speicherAttrappe(), jetzt: () => JETZT });
+    const papaAdapter = aendern(kalender);
+    const papa = createStore(papaAdapter, { jetzt: () => JETZT });
+    const mama = createStore(kalender, { jetzt: () => JETZT });
+    for (const s of [papa, mama]) {
+      await s.laden();
+      await s.schichtVorladen();
+    }
+    const meldungen = [];
+    papa.subscribe((s) => meldungen.push(s));
+    const db = mama.getState().schicht.katalog.arten.mama.find((a) => a.kuerzel === 'DB').k;
+    const dbTage = (store) => Object.keys(store.getState().schicht.monate['2026-10'].z.mama).filter((t) => store.getState().schicht.monate['2026-10'].z.mama[t].some((z) => z.k === db));
+    return { papa, mama, meldungen, db, dbTage };
+  }
+
+  test('Mama trägt eine DB ein: Papas veralteter Stand holt sie vor dem Senden; Mama löscht sie: sie verschwindet auch bei Papa', async () => {
+    const t = await zweiTelefone();
+    await t.mama.schichtZusatzHinzufuegen('2026-10', 20, 'mama', { k: t.db, von: '18:30', bis: '19:30' });
+    assert.ok(t.dbTage(t.mama).includes('20'));
+    assert.ok(!t.dbTage(t.papa).includes('20'), 'Papas Telefon kennt sie noch nicht');
+    assert.equal(await t.papa.schichtFrischLesen(), true);
+    assert.ok(t.dbTage(t.papa).includes('20'));
+    assert.equal(t.meldungen.length, 1, 'eine echte Änderung: einmal gemeldet');
+
+    await t.mama.schichtZusatzEntfernen('2026-10', 20, 'mama', { k: t.db, von: '18:30', bis: '19:30' });
+    assert.equal(await t.papa.schichtFrischLesen(), true);
+    assert.ok(!t.dbTage(t.papa).includes('20'));
+  });
+
+  test('nichts geändert: kein neuer Zustand, keine Meldung', async () => {
+    const t = await zweiTelefone();
+    const vorher = t.papa.getState();
+    assert.equal(await t.papa.schichtFrischLesen(), true);
+    assert.equal(t.papa.getState(), vorher);
+    assert.equal(t.meldungen.length, 0);
+  });
+
+  test('Lesefehler: false, Zustand bleibt; höchstens ein Lesen gleichzeitig (Schichtarten + drei Monate)', async () => {
+    let kaputt = false;
+    const log = [];
+    const t = await zweiTelefone({
+      aendern: (a) => ({
+        ...a,
+        leseSchichtarten: async () => (log.push('arten'), a.leseSchichtarten()),
+        leseSchichtMonat: async (jm) => {
+          log.push(jm);
+          if (kaputt && jm === '2026-11') throw new Error('Netz');
+          return a.leseSchichtMonat(jm);
+        },
+      }),
+    });
+    kaputt = true; // das Vorladen hat geklappt, das Frisch-Lesen nicht
+    log.length = 0;
+    const vorher = t.papa.getState();
+    assert.equal(await t.papa.schichtFrischLesen(), false);
+    assert.equal(t.papa.getState(), vorher);
+    kaputt = false;
+    log.length = 0;
+    const [a, b] = await Promise.all([t.papa.schichtFrischLesen(), t.papa.schichtFrischLesen()]);
+    assert.deepEqual([a, b], [true, true]);
+    assert.deepEqual([...log].sort(), ['2026-10', '2026-11', '2026-12', 'arten']);
+  });
+
+  test('der vorgeladene Monat zählt nach einem neuen Laden nicht mehr (Rückkehr in die App): erst frisch vorladen', async () => {
+    const t = await zweiTelefone();
+    assert.equal(t.papa.getState().schicht.vorgeladen, '2026-10');
+    await t.papa.laden();
+    assert.equal(t.papa.getState().schicht.vorgeladen, null);
+    await t.papa.schichtVorladen();
+    assert.equal(t.papa.getState().schicht.vorgeladen, '2026-10');
+  });
+
+  test('frisch gelesen gilt auch als vorgeladen für den laufenden Monat', async () => {
+    const t = await zweiTelefone();
+    await t.papa.laden();
+    assert.equal(await t.papa.schichtFrischLesen(), true);
+    assert.equal(t.papa.getState().schicht.vorgeladen, '2026-10');
+  });
+
+  test('vor dem Laden, nur gespeicherter Stand oder Anmeldung nötig: false, ohne zu lesen', async () => {
+    const log = [];
+    const { store } = aufbau({ aendern: (a) => ({ ...a, leseSchichtMonat: async (jm) => (log.push(jm), a.leseSchichtMonat(jm)) }) });
+    assert.equal(await store.schichtFrischLesen(), false);
+    assert.deepEqual(log, []);
+  });
+});

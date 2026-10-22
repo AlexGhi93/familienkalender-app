@@ -42,8 +42,9 @@ const NICHT_ERREICHBAR = () => new PushFehler('dienst-nicht-erreichbar', 'Der Pu
 /**
  * `store` (getState), `adapter` (leseGeraete, aendereGeraete), `config` ({ dienst, vapidPublic }), `fetch`, `navigator`, `Notification`,
  * `speicher` (localStorage-artig), `umgebung` (siehe erkenneUmgebung), `jetzt`, `zeitgeber` ({ setze, loesche }).
+ * `vorbereiten()` → true, wenn der Zustand jetzt frisch genug zum Senden ist (Standard: `store.schichtFrischLesen`).
  */
-export function createPush({ store, adapter, config, fetch, navigator, Notification, speicher, umgebung, jetzt = () => new Date(), zeitgeber = { setze: (f, ms) => setTimeout(f, ms), loesche: (id) => clearTimeout(id) } }) {
+export function createPush({ store, adapter, config, fetch, navigator, Notification, speicher, umgebung, jetzt = () => new Date(), zeitgeber = { setze: (f, ms) => setTimeout(f, ms), loesche: (id) => clearTimeout(id) }, vorbereiten = () => (store.schichtFrischLesen ? store.schichtFrischLesen() : true) }) {
   let letzterFehler = null;
   let timer = null;
   let registriert = null; // zuletzt bekannt: steht dieses Telefon im Register? (null = noch nicht geprüft)
@@ -166,8 +167,9 @@ export function createPush({ store, adapter, config, fetch, navigator, Notificat
    * Register, aber kein Plan geht hinaus – er würde die Erinnerungen an Zusätze löschen; sobald vorgeladen ist, stößt die Shell neu an.
    */
   async function sync({ erzwingen = false } = {}) {
+    wartet = false;
     if (!eingerichtet() || !aktiv()) return { art: 'uebersprungen' };
-    const state = store.getState();
+    let state = store.getState();
     if (!state.geladen || state.nurSnapshot || Notification.permission !== 'granted') return { art: 'uebersprungen' };
     const sub = await abonnement();
     if (!sub) return { art: 'uebersprungen' };
@@ -184,11 +186,22 @@ export function createPush({ store, adapter, config, fetch, navigator, Notificat
       merkeRegister(register);
     }
 
-    if (!planQuellen(state, jetzt())) {
+    // Erst wenn überhaupt gesendet würde, den Schichtplan frisch lesen (das andere Telefon hat vielleicht Zusätze geändert); geht das
+    // nicht, wird nicht gesendet: ein Plan aus einem alten Stand würde dessen Erinnerungen löschen oder zurückbringen.
+    let bereit = Boolean(planQuellen(state, jetzt()));
+    if (bereit) {
+      try {
+        bereit = (await vorbereiten()) === true;
+      } catch {
+        bereit = false;
+      }
+      state = store.getState();
+      bereit &&= Boolean(planQuellen(state, jetzt()));
+    }
+    if (!bereit) {
       wartet = true;
       return { art: 'wartet' };
     }
-    wartet = false;
     const plan = await planeErinnerungen(state, { jetzt: jetzt(), tage: TAGE_VORAUS });
     const geraete = register.geraete;
     const digest = await planDigest(register.fid, plan, geraete); // ändert sich auch, wenn sich ändert, wer welche Erinnerung bekommt

@@ -6,6 +6,9 @@ import { planeErinnerungen } from '../../src/push/plan.js';
 import { baueMeldungen, fuerGeraet, planDigest } from '../../src/push/meldungen.js';
 import { mitGeraet, neuesRegister, normalisiereRegister, personenMitTelefon } from '../../src/push/geraete.js';
 import { createPush } from '../../src/push/client.js';
+import { createStore } from '../../src/app/store.js';
+import { createDemoAdapter } from '../../src/app/demo-adapter.js';
+import { speicherAttrappe } from './hilfen.js';
 import { bytesZuB64u } from '../../src/push/base64url.js';
 import { normalizeSettings } from '../../src/domain/settings.js';
 import { leeresKonto } from '../../src/domain/konto.js';
@@ -158,7 +161,7 @@ test('personenMitTelefon: wem mindestens ein Telefon im Register gehört; Telefo
 });
 
 /** createPush mit nachgebauten Teilen: Speicher, Abonnement, Register im „Kalender“ und Push-Dienst (merkt sich die PUTs). */
-async function aufbau({ person = '', eigenePerson, state = zustand({ dienstErinnerung: 'dienst' }) } = {}) {
+async function aufbau({ person = '', eigenePerson, state = zustand({ dienstErinnerung: 'dienst' }), store, vorbereiten } = {}) {
   const daten = new Map([['fk.push.geraet.v1', 'eigenTel1'], ['fk.push.aktiv.v1', '1']]);
   if (person) daten.set('fk.push.person.v1', person);
   const speicher = { getItem: (k) => daten.get(k) ?? null, setItem: (k, v) => daten.set(k, String(v)), removeItem: (k) => daten.delete(k) };
@@ -185,7 +188,8 @@ async function aufbau({ person = '', eigenePerson, state = zustand({ dienstErinn
   let geplant = null;
   let aktuell = state;
   const push = createPush({
-    store: { getState: () => aktuell },
+    store: store ?? { getState: () => aktuell },
+    ...(vorbereiten ? { vorbereiten } : {}),
     adapter,
     config: { dienst: 'https://dienst.example', vapidPublic: 'x' },
     fetch,
@@ -305,4 +309,42 @@ test('sync: wartet (sendet nichts), solange der Schichtplan nicht für den laufe
   assert.equal((await t.push.sync()).art, 'gesendet');
   assert.equal(t.anfragen.length, 1);
   assert.equal((await t.push.status()).wartet, false);
+});
+
+
+test('sync: liest den Schichtplan vor dem Senden frisch (das andere Telefon hat eine DB eingetragen) – ihr Plan geht mit', async () => {
+  const kalender = createDemoAdapter({ speicher: speicherAttrappe(), jetzt: () => JETZT });
+  const papa = createStore(kalender, { jetzt: () => JETZT });
+  const mama = createStore(kalender, { jetzt: () => JETZT });
+  for (const s of [papa, mama]) {
+    await s.laden();
+    await s.schichtVorladen();
+  }
+  const db = mama.getState().schicht.katalog.arten.mama.find((a) => a.kuerzel === 'DB').k;
+  await mama.schichtZusatzHinzufuegen('2026-10', 20, 'mama', { k: db, von: '18:30', bis: '19:30' });
+  const mamasPlan = await planeErinnerungen(mama.getState(), { jetzt: JETZT, tage: 60 });
+  const mamasDb = mamasPlan.filter((p) => p.titel === '📋 Dienstbesprechung' && p.text.includes('18:30'));
+  assert.equal(mamasDb.length, 2);
+  assert.ok((await planeErinnerungen(papa.getState(), { jetzt: JETZT, tage: 60 })).every((p) => !mamasDb.some((m) => m.id === p.id)), 'Papas alter Stand kennt sie nicht');
+
+  const t = await aufbau({ store: papa }); // Papas Telefon sendet (z. B. weil er einen Termin eingetragen hat)
+  assert.equal((await t.push.sync()).art, 'gesendet');
+  const gesendet = new Set(t.anfragen[0].body.items.map((i) => i.id));
+  assert.ok(mamasDb.every((p) => gesendet.has(p.id)), 'Mamas neue DB-Erinnerungen bleiben im Plan');
+});
+
+test('sync: scheitert das Frisch-Lesen, wird nichts gesendet (wartet); ohne Vorladen wird gar nicht erst gelesen', async () => {
+  let ok = false;
+  let gelesen = 0;
+  const t = await aufbau({ vorbereiten: async () => (gelesen++, ok) });
+  assert.equal((await t.push.sync({ erzwingen: true })).art, 'wartet');
+  assert.equal(t.anfragen.length, 0);
+  assert.equal((await t.push.status()).wartet, true);
+  ok = true;
+  assert.equal((await t.push.sync()).art, 'gesendet');
+  assert.equal(gelesen, 2);
+  const basis = zustand();
+  t.setzeZustand({ ...basis, schicht: { ...basis.schicht, vorgeladen: null } });
+  assert.equal((await t.push.sync({ erzwingen: true })).art, 'wartet');
+  assert.equal(gelesen, 2, 'nicht vorgeladen: kein Lesen, es würde ohnehin nichts gesendet');
 });

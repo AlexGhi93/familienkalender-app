@@ -88,6 +88,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
   let einkaufGeprueft = null; // wann die Einkaufsliste zuletzt mit dem Kalender abgeglichen war (ms): Laden, Aktualisieren, eigenes Speichern
   let einkaufHolen = null; // laufende Abfrage der Einkaufsliste: mehrfaches Anstoßen fragt nur einmal
   let schichtVorladenLaeuft = null; // laufendes Vorladen des Schichtplans: mehrfaches Anstoßen fragt nur einmal
+  let schichtFrischLaeuft = null; // laufendes Frisch-Lesen vor dem Senden des Push-Plans (siehe schichtFrischLesen): höchstens eines
   const melden = () => {
     for (const h of hoerer) h(state);
   };
@@ -452,7 +453,9 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     async laden() {
       try {
         const daten = await adapter.laden();
-        state = { ...state, ...ladeFelder(daten, state), geladen: true, fehler: null, anmeldungNoetig: false, nurSnapshot: false, stand: null };
+        // Der Schichtplan bleibt, wie er ist, gilt aber nicht mehr als vorgeladen: er kann so alt sein wie der letzte Start (App lag im
+        // Hintergrund). Bis er frisch gelesen ist, wartet der Push-Plan (er würde sonst Erinnerungen des anderen Telefons löschen).
+        state = { ...state, ...ladeFelder(daten, state), schicht: { ...state.schicht, vorgeladen: null }, geladen: true, fehler: null, anmeldungNoetig: false, nurSnapshot: false, stand: null };
         geladeneBereiche.length = 0;
         letzteLadung = jetzt().getTime();
         einkaufGeprueft = letzteLadung;
@@ -832,6 +835,32 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
           schichtVorladenLaeuft = null;
         });
       return schichtVorladenLaeuft;
+    },
+
+    /**
+     * Unmittelbar vor jedem Senden des Push-Plans (push/client.js `sync`): Schichtarten und die vorgeladenen Monate (der laufende und
+     * die zwei danach) frisch aus dem Kalender. Der Plan ersetzt beim Push-Dienst den der ganzen Familie; aus einem veralteten Stand
+     * würde er Zusätze löschen (oder zurückbringen), die das andere Telefon inzwischen eingetragen (oder entfernt) hat – und für sie gibt
+     * es keine Erinnerung von Google Kalender. Gemeldet wird nur eine echte Änderung (siehe `schichtAktualisieren`); danach gilt der
+     * laufende Monat als vorgeladen. Ergebnis: true = aktuell, false = ging gerade nicht (nicht geladen, Lesefehler, eigene Änderung wird
+     * noch gespeichert) – dann nicht senden. Höchstens ein Lesen gleichzeitig; wirft nicht.
+     */
+    schichtFrischLesen() {
+      if (schichtFrischLaeuft) return schichtFrischLaeuft;
+      const jm = todayVienna(jetzt()).slice(0, 7);
+      schichtFrischLaeuft = (async () => {
+        const ok = await store.schichtAktualisieren(vorladeMonate(jm));
+        if (ok && state.schicht.vorgeladen !== jm) {
+          state = { ...state, schicht: { ...state.schicht, vorgeladen: jm } };
+          melden();
+        }
+        return ok;
+      })()
+        .catch(() => false)
+        .finally(() => {
+          schichtFrischLaeuft = null;
+        });
+      return schichtFrischLaeuft;
     },
 
     /**
