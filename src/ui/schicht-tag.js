@@ -1,18 +1,20 @@
 // Tagesblatt des Schichtplans (ein Tipp auf einen Tag ohne Pinsel): beide Personen, gleich welcher Filter auf der Seite gilt.
 // Je Person: die eingetragene Art (mit Zeiten, ☾ bei Nacht), Knöpfe der aktiven Dienst-Arten und „Frei“ (ein Tipp speichert sofort),
-// eine Notiz (eine Zeile, gespeichert beim Verlassen des Feldes oder mit Enter) und die Zusätze des Tages mit ✕ und „＋ Zusatz“.
+// eine Notiz (eine Zeile, gespeichert beim Verlassen des Feldes oder mit Enter) und die Zusätze des Tages mit ✕; je Zusatz-Art ein
+// Knopf „＋ <Name>“ (z. B. „＋ Dienstbesprechung“), der gleich Von/Bis öffnet, darunter der Hinweis auf die Erinnerung.
 import { h } from './dom.js';
 import { blatt, toast } from './components.js';
 import { zeitFeld } from './eingabefelder.js';
 import { schichtTagModel } from '../app/views/schicht-model.js';
 import { MAX_NOTIZ } from '../domain/schicht.js';
+import { musterKlassen } from './schicht-pinsel.js';
 
 const ALLGEMEINER_FEHLER = 'Das hat nicht geklappt. Bitte noch einmal versuchen.';
 const gleicheNotiz = (a, b) => a.replace(/\s+/g, ' ').trim() === b;
 
-/** Kürzel als farbige Pille (wie in der Pinsel-Leiste), Urlaub zusätzlich gestreift; „Frei“ gestrichelt. */
+/** Kürzel als farbige Pille (wie in der Pinsel-Leiste), Urlaub und Ersatzdienst zusätzlich gestreift; „Frei“ gestrichelt. */
 const kuerzelPille = (kuerzel, klasse) => h('i', { class: `sp-tag-kuerzel ${klasse}` }, kuerzel);
-const farbKlasse = (a) => `sf-${a.farbe}${a.urlaub ? ' urlaub' : ''}`;
+const farbKlasse = (a) => `sf-${a.farbe} ${musterKlassen(a.muster)}`.trim();
 
 /** Öffnet das Tagesblatt für `datum` ('JJJJ-MM-TT'); es zeichnet sich bei Änderungen im Store neu (nur wenn sich an dem Tag etwas ändert). */
 export function oeffneSchichtTag({ store }, datum) {
@@ -20,7 +22,7 @@ export function oeffneSchichtTag({ store }, datum) {
   const tag = Number(datum.slice(8));
   const entwurf = { papa: null, mama: null }; // getippte, noch nicht gespeicherte Notizen (überstehen das Neuzeichnen)
   const notizFelder = {}; // die Notizfelder der letzten Zeichnung, je Person
-  let zusatz = null; // offenes Formular „＋ Zusatz“: { person, k, von, bis }
+  let zusatz = null; // offenes Formular „＋ <Name>“: { person, k, von, bis }
   let zeichnet = false; // während des Neuzeichnens zählt das Verlassen eines Feldes nicht als „fertig“
   let notizStill = false; // eine eigene Notiz wird gerade übernommen: das Feld zeigt sie schon, also nicht neu zeichnen
   let letzterStand = '';
@@ -154,72 +156,67 @@ export function oeffneSchichtTag({ store }, datum) {
     }
   }
 
-  function zusatzBereich(p) {
-    if (p.zusatzArten.length === 0) return null; // diese Person hat keine Zusatz-Art (anlegen unter „Schichtarten bearbeiten“)
-    if (zusatz?.person !== p.person) {
-      return h(
-        'button',
-        {
-          class: 'knopf klein sp-tag-plus',
-          type: 'button',
-          onClick: () => {
-            const a = p.zusatzArten[0];
-            zusatz = { person: p.person, k: a.k, von: a.von, bis: a.bis };
-            neuZeichnen();
-          },
-        },
-        '＋ Zusatz',
-      );
-    }
-    const form = zusatz;
+  /** Je Zusatz-Art ein Knopf „＋ <Name>“ (z. B. „＋ Dienstbesprechung“); er öffnet gleich Von/Bis mit den Zeiten der Art. */
+  function zusatzKnoepfe(p) {
     return h(
       'div',
-      { class: 'sp-tag-zusatz-form' },
-      h(
-        'div',
-        { class: 'sp-tag-zusatzarten', role: 'group', 'aria-label': 'Art des Zusatzes' },
-        p.zusatzArten.map((a) =>
-          h(
-            'button',
-            {
-              class: `sp-tag-art ${a.k === form.k ? 'aktiv' : ''}`.trim(),
-              type: 'button',
-              'aria-pressed': a.k === form.k ? 'true' : 'false',
-              onClick: () => {
-                zusatz = { ...form, k: a.k, von: a.von, bis: a.bis }; // eine andere Art bringt ihre eigenen Zeiten mit
-                neuZeichnen();
-              },
-            },
-            kuerzelPille(a.kuerzel, `sf-${a.farbe}`),
-            ' ',
-            a.name,
-          ),
-        ),
-      ),
-      h(
-        'div',
-        { class: 'sp-tag-zeiten' },
-        h('div', { class: 'feld' }, h('span', { 'aria-hidden': 'true' }, 'Von'), zeitFeld({ wert: form.von, beschriftung: 'Von', beiAenderung: (w) => (form.von = w) })),
-        h('div', { class: 'feld' }, h('span', { 'aria-hidden': 'true' }, 'Bis'), zeitFeld({ wert: form.bis, beschriftung: 'Bis', beiAenderung: (w) => (form.bis = w) })),
-      ),
-      h(
-        'div',
-        { class: 'knopfzeile' },
+      { class: 'sp-tag-plus-reihe' },
+      p.zusatzArten.map((a) =>
         h(
           'button',
           {
-            class: 'knopf klein',
+            class: 'knopf klein sp-tag-plus',
             type: 'button',
             onClick: () => {
-              zusatz = null;
+              zusatz = { person: p.person, k: a.k, von: a.von, bis: a.bis };
               neuZeichnen();
             },
           },
-          'Abbrechen',
+          `＋ ${a.name}`,
         ),
-        h('button', { class: 'knopf klein primaer', type: 'button', onClick: zusatzHinzufuegen }, 'Hinzufügen'),
       ),
     );
+  }
+
+  function zusatzBereich(p) {
+    if (p.zusatzArten.length === 0) return null; // diese Person hat keine Zusatz-Art (anlegen unter „Schichtarten bearbeiten“)
+    const form = zusatz?.person === p.person ? zusatz : null;
+    const art = form ? p.zusatzArten.find((a) => a.k === form.k) : null;
+    if (!art) {
+      if (form) zusatz = null; // die Art wurde inzwischen ausgeblendet (z. B. auf dem anderen Telefon): Formular zu
+      return zusatzKnoepfe(p);
+    }
+    return [
+      h(
+        'div',
+        { class: 'sp-tag-zusatz-form' },
+        h('p', { class: 'sp-tag-zusatz-kopf' }, kuerzelPille(art.kuerzel, `sf-${art.farbe}`), ' ', art.name),
+        h(
+          'div',
+          { class: 'sp-tag-zeiten' },
+          h('div', { class: 'feld' }, h('span', { 'aria-hidden': 'true' }, 'Von'), zeitFeld({ wert: form.von, beschriftung: 'Von', beiAenderung: (w) => (form.von = w) })),
+          h('div', { class: 'feld' }, h('span', { 'aria-hidden': 'true' }, 'Bis'), zeitFeld({ wert: form.bis, beschriftung: 'Bis', beiAenderung: (w) => (form.bis = w) })),
+        ),
+        h(
+          'div',
+          { class: 'knopfzeile' },
+          h(
+            'button',
+            {
+              class: 'knopf klein',
+              type: 'button',
+              onClick: () => {
+                zusatz = null;
+                neuZeichnen();
+              },
+            },
+            'Abbrechen',
+          ),
+          h('button', { class: 'knopf klein primaer', type: 'button', onClick: zusatzHinzufuegen }, 'Hinzufügen'),
+        ),
+      ),
+      art.hinweis ? h('p', { class: 'sp-tag-erinnerung' }, art.hinweis) : null,
+    ];
   }
 
   function personKarte(p) {

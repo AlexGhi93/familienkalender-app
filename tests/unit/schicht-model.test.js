@@ -2,7 +2,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { SCHICHT_FILTER_SCHLUESSEL, artEntwurf, artEntwurfFehler, pinselAktion, pinselModel, pinselStart, rasterFilter, schichtFilterLesen, schichtFilterSpeichern, schichtArtenModel, schichtMonatModel, schichtTagModel } from '../../src/app/views/schicht-model.js';
-import { artArchivieren, artHinzufuegen, artVerschieben, leererMonat, setzeNotiz, setzeSchicht, standardKatalog, zusatzHinzufuegen } from '../../src/domain/schicht.js';
+import { artAendern, artArchivieren, artHinzufuegen, artVerschieben, leererMonat, setzeNotiz, setzeSchicht, standardKatalog, zusatzHinzufuegen } from '../../src/domain/schicht.js';
 import { speicherAttrappe, zustand } from './hilfen.js';
 
 const JM = '2026-10';
@@ -57,15 +57,25 @@ describe('schichtMonatModel', () => {
 
   test('Streifen: Farbe und Kürzel der Art, Nacht ☾, Urlaub gestreift, unbekannte Art grau mit „?“, leerer Tag = null', () => {
     const m = model();
-    assert.deepEqual(zelleAm(m, 1).streifen.papa, { k: k('papa', 'F'), kuerzel: 'F', name: 'Frühdienst', farbe: 'gruen', nacht: false, urlaub: false, unbekannt: false });
+    assert.deepEqual(zelleAm(m, 1).streifen.papa, { k: k('papa', 'F'), kuerzel: 'F', name: 'Frühdienst', farbe: 'gruen', nacht: false, muster: null, unbekannt: false });
     assert.equal(zelleAm(m, 3).streifen.papa.nacht, true);
     assert.equal(zelleAm(m, 3).streifen.papa.kuerzel, 'N');
     assert.equal(zelleAm(m, 2).streifen.mama.nacht, true); // Nachtdienst 17:30–07:00: Nacht aus den Zeiten
-    assert.equal(zelleAm(m, 5).streifen.papa.urlaub, true);
+    assert.equal(zelleAm(m, 5).streifen.papa.muster, 'urlaub');
     assert.equal(zelleAm(m, 5).streifen.papa.farbe, 'tuerkis');
-    assert.deepEqual(zelleAm(m, 8).streifen.papa, { k: 'z', kuerzel: '?', name: 'Unbekannte Art', farbe: 'grau', nacht: false, urlaub: false, unbekannt: true });
+    assert.deepEqual(zelleAm(m, 8).streifen.papa, { k: 'z', kuerzel: '?', name: 'Unbekannte Art', farbe: 'grau', nacht: false, muster: null, unbekannt: true });
     assert.equal(zelleAm(m, 8).streifen.mama, null);
     assert.deepEqual(Object.keys(zelleAm(m, 8).streifen), ['papa', 'mama']);
+  });
+
+  test('Ersatzdienst E: gelb und gestreift wie Urlaub (Muster „offen“), aber am Kürzel E zu erkennen', () => {
+    const monat = setzeSchicht(testMonat(), { person: 'papa', tag: 9, k: k('papa', 'E') });
+    const m = model(zustand({ schicht: { katalog, monate: { [JM]: monat }, status: { [JM]: 'geladen' } } }));
+    assert.deepEqual(zelleAm(m, 9).streifen.papa, { k: k('papa', 'E'), kuerzel: 'E', name: 'Ersatzdienst', farbe: 'gelb', nacht: false, muster: 'offen', unbekannt: false });
+    assert.equal(m.legende.papa.find((e) => e.kuerzel === 'E').muster, 'offen');
+    assert.equal(m.legende.papa.find((e) => e.kuerzel === 'E').text, 'Ersatzdienst');
+    assert.equal(m.legende.papa.find((e) => e.kuerzel === 'U').muster, 'urlaub');
+    assert.equal(pinselModel(stateMit(), { person: 'papa', k: k('papa', 'E') }).arten.find((a) => a.kuerzel === 'E').muster, 'offen');
   });
 
   test('Zusatz oben rechts: erster Zusatz und Anzahl der weiteren („DB+1“); Notiz als Marke', () => {
@@ -110,7 +120,7 @@ describe('schichtMonatModel', () => {
     assert.ok(!papa.includes('Schulung'));
     assert.deepEqual(model().legende.papa.map((e) => e.kuerzel), ['F', 'M', 'NM', 'N', '2T', 'Ü', 'S', 'U', 'E']);
     const tag = model().legende.mama.find((e) => e.kuerzel === 'T');
-    assert.deepEqual(tag, { k: k('mama', 'T'), kuerzel: 'T', name: 'Tagdienst', farbe: 'gelb', text: 'Tagdienst 07:00–17:45', nacht: false, urlaub: false });
+    assert.deepEqual(tag, { k: k('mama', 'T'), kuerzel: 'T', name: 'Tagdienst', farbe: 'gelb', text: 'Tagdienst 07:00–17:45', nacht: false, muster: null });
     assert.equal(model().legende.mama.find((e) => e.kuerzel === 'DB').text, 'Dienstbesprechung 18:00–19:30');
     assert.equal(model().legende.papa.find((e) => e.kuerzel === 'N').nacht, true);
   });
@@ -192,12 +202,12 @@ describe('Pinsel', () => {
     const p = pinselModel(stateMit(), { person: 'mama', k: k('mama', 'DB') });
     assert.equal(p.person, 'mama');
     assert.deepEqual(p.arten.map((a) => a.kuerzel), ['T', 'N', 'S', 'Ü', 'U', 'DB']);
-    assert.deepEqual(p.arten.find((a) => a.kuerzel === 'DB'), { k: k('mama', 'DB'), kuerzel: 'DB', name: 'Dienstbesprechung', farbe: 'schiefer', urlaub: false, gewaehlt: true });
+    assert.deepEqual(p.arten.find((a) => a.kuerzel === 'DB'), { k: k('mama', 'DB'), kuerzel: 'DB', name: 'Dienstbesprechung', farbe: 'schiefer', muster: null, gewaehlt: true });
     assert.equal(p.arten.filter((a) => a.gewaehlt).length, 1);
     assert.equal(p.frei, false);
     assert.equal(p.k, k('mama', 'DB'));
     assert.match(p.hinweis, /Dienstbesprechung 18:00–19:30/);
-    assert.equal(pinselModel(stateMit(), { person: 'papa', k: k('papa', 'U') }).arten.find((a) => a.kuerzel === 'U').urlaub, true);
+    assert.equal(pinselModel(stateMit(), { person: 'papa', k: k('papa', 'U') }).arten.find((a) => a.kuerzel === 'U').muster, 'urlaub');
     const frei = pinselModel(stateMit(), { person: 'papa', k: null });
     assert.equal(frei.frei, true);
     assert.equal(frei.arten.some((a) => a.gewaehlt), false);
@@ -279,8 +289,9 @@ describe('schichtTagModel (Tagesblatt)', () => {
     assert.deepEqual(papa.arten.filter((a) => a.aktiv).map((a) => a.kuerzel), ['N']);
     assert.equal(papa.frei, false);
     assert.deepEqual(papa.schicht, { text: 'Nacht', nacht: true });
-    assert.deepEqual(papa.arten[0], { k: k('papa', 'F'), kuerzel: 'F', name: 'Frühdienst', farbe: 'gruen', urlaub: false, aktiv: false });
-    assert.equal(papa.arten.find((a) => a.kuerzel === 'U').urlaub, true);
+    assert.deepEqual(papa.arten[0], { k: k('papa', 'F'), kuerzel: 'F', name: 'Frühdienst', farbe: 'gruen', muster: null, aktiv: false });
+    assert.equal(papa.arten.find((a) => a.kuerzel === 'U').muster, 'urlaub');
+    assert.equal(papa.arten.find((a) => a.kuerzel === 'E').muster, 'offen');
     assert.equal(papa.nichtWaehlbar, null);
     const mama = person(tagModel(stateMit(), '2026-10-01'), 'mama');
     assert.deepEqual(mama.arten.map((a) => a.kuerzel), ['T', 'N', 'S', 'Ü', 'U']); // DB ist ein Zusatz, kein Dienst
@@ -306,21 +317,33 @@ describe('schichtTagModel (Tagesblatt)', () => {
       { k: db, von: '18:00', bis: '19:30', kuerzel: 'DB', name: 'Dienstbesprechung', farbe: 'schiefer', text: 'Dienstbesprechung 18:00–19:30' },
       { k: db, von: '20:00', bis: '21:00', kuerzel: 'DB', name: 'Dienstbesprechung', farbe: 'schiefer', text: 'Dienstbesprechung 20:00–21:00' },
     ]);
-    assert.deepEqual(mama.zusatzArten, [{ k: db, kuerzel: 'DB', name: 'Dienstbesprechung', farbe: 'schiefer', von: '18:00', bis: '19:30' }]);
+    assert.deepEqual(mama.zusatzArten, [
+      { k: db, kuerzel: 'DB', name: 'Dienstbesprechung', farbe: 'schiefer', von: '18:00', bis: '19:30', hinweis: '🔔 Erinnerung 1 Tag und 1 Stunde vorher auf dem Telefon von Mama' },
+    ]);
     assert.deepEqual(person(tagModel(stateMit(), '2026-10-21'), 'papa').zusatzArten, []);
+  });
+
+  test('Zusatz-Arten: Hinweis auf die Erinnerung nur bei „Erinnern“, auf dem Telefon der Person (Papa bzw. Mama)', () => {
+    let kat = artHinzufuegen(katalog, 'papa', { name: 'Teamsitzung', kuerzel: 'TS', farbe: 'braun', gruppe: 'zusatz', von: '14:00', bis: '15:00' });
+    kat = artHinzufuegen(kat, 'papa', { name: 'Elternabend', kuerzel: 'EA', farbe: 'oliv', gruppe: 'zusatz', von: '19:00', bis: '20:00', erinnern: false });
+    const papa = person(tagModel(stateMit({ katalog: kat }), '2026-10-21'), 'papa');
+    assert.deepEqual(papa.zusatzArten.map((a) => [a.name, a.hinweis]), [
+      ['Teamsitzung', '🔔 Erinnerung 1 Tag und 1 Stunde vorher auf dem Telefon von Papa'],
+      ['Elternabend', null],
+    ]);
   });
 
   test('eingetragene archivierte Art: kein Knopf, aber als „(ausgeblendet)“ zu sehen; unbekannte Art: „Unbekannte Art“', () => {
     const kat = artArchivieren(katalog, 'papa', k('papa', 'F'), true);
     const papa = person(tagModel(stateMit({ katalog: kat }), '2026-10-01'), 'papa');
     assert.equal(papa.arten.some((a) => a.kuerzel === 'F'), false);
-    assert.deepEqual(papa.nichtWaehlbar, { kuerzel: 'F', name: 'Frühdienst (ausgeblendet)', farbe: 'gruen', urlaub: false });
+    assert.deepEqual(papa.nichtWaehlbar, { kuerzel: 'F', name: 'Frühdienst (ausgeblendet)', farbe: 'gruen', muster: null });
     assert.deepEqual(papa.schicht, { text: 'Frühdienst', nacht: false });
     assert.equal(papa.frei, false);
     // an einem anderen Tag fehlt sie einfach
     assert.equal(person(tagModel(stateMit({ katalog: kat }), '2026-10-03'), 'papa').nichtWaehlbar, null);
     const unbekannt = person(tagModel(stateMit(), '2026-10-08'), 'papa');
-    assert.deepEqual(unbekannt.nichtWaehlbar, { kuerzel: '?', name: 'Unbekannte Art', farbe: 'grau', urlaub: false });
+    assert.deepEqual(unbekannt.nichtWaehlbar, { kuerzel: '?', name: 'Unbekannte Art', farbe: 'grau', muster: null });
     assert.deepEqual(unbekannt.schicht, { text: 'Unbekannte Art', nacht: false });
     assert.equal(unbekannt.arten.some((a) => a.aktiv), false);
   });
@@ -351,8 +374,8 @@ describe('Schichtarten bearbeiten', () => {
     assert.deepEqual(m.map((p) => [p.person, p.emoji, p.name]), [['papa', '👨', 'Papa'], ['mama', '👩', 'Mama']]);
     const papa = personIn(m, 'papa');
     assert.deepEqual(papa.aktiv.map((a) => a.text), ['Frühdienst', 'Mittagsdienst', 'Nachmittagsdienst', 'Nacht ☾', '2Teiler', 'Überstunde', 'Schulung', 'Urlaub', 'Ersatzdienst']);
-    assert.deepEqual(papa.aktiv[0], { k: k('papa', 'F'), kuerzel: 'F', name: 'Frühdienst', farbe: 'gruen', urlaub: false, text: 'Frühdienst', hoch: 0, runter: 1 });
-    assert.equal(papa.aktiv.find((a) => a.kuerzel === 'U').urlaub, true);
+    assert.deepEqual(papa.aktiv[0], { k: k('papa', 'F'), kuerzel: 'F', name: 'Frühdienst', farbe: 'gruen', muster: null, text: 'Frühdienst', hoch: 0, runter: 1 });
+    assert.equal(papa.aktiv.find((a) => a.kuerzel === 'U').muster, 'urlaub');
     assert.equal(papa.aktiv.at(-1).kuerzel, 'E');
     assert.equal(papa.aktiv.at(-1).runter, 0);
     assert.deepEqual(papa.ausgeblendet, []);
@@ -385,17 +408,19 @@ describe('Schichtarten bearbeiten', () => {
     assert.equal(personIn(m, 'papa').aktiv.length, 9);
   });
 
-  test('Entwurf zum Bearbeiten: Felder der Art, leere Zeiten als „“, Nacht nur wenn angehakt; Muster bleibt draußen', () => {
+  test('Entwurf zum Bearbeiten: Felder der Art, leere Zeiten als „“, Nacht nur wenn angehakt; Muster bleibt draußen; Erinnern (Dienst: true)', () => {
     const state = zustand({ schicht: { katalog, monate: {}, status: {} } });
-    assert.deepEqual(artEntwurf(state, 'papa', k('papa', 'N')), { name: 'Nacht', kuerzel: 'N', farbe: 'dunkelblau', gruppe: 'dienst', von: '', bis: '', nacht: true });
-    assert.deepEqual(artEntwurf(state, 'mama', k('mama', 'DB')), { name: 'Dienstbesprechung', kuerzel: 'DB', farbe: 'schiefer', gruppe: 'zusatz', von: '18:00', bis: '19:30', nacht: false });
+    assert.deepEqual(artEntwurf(state, 'papa', k('papa', 'N')), { name: 'Nacht', kuerzel: 'N', farbe: 'dunkelblau', gruppe: 'dienst', von: '', bis: '', nacht: true, erinnern: true });
+    assert.deepEqual(artEntwurf(state, 'mama', k('mama', 'DB')), { name: 'Dienstbesprechung', kuerzel: 'DB', farbe: 'schiefer', gruppe: 'zusatz', von: '18:00', bis: '19:30', nacht: false, erinnern: true });
     assert.equal('muster' in artEntwurf(state, 'papa', k('papa', 'U')), false);
+    const ohne = zustand({ schicht: { katalog: artAendern(katalog, 'mama', k('mama', 'DB'), { erinnern: false }), monate: {}, status: {} } });
+    assert.equal(artEntwurf(ohne, 'mama', k('mama', 'DB')).erinnern, false);
   });
 
   test('Entwurf für eine neue Art: leer, Dienst, die erste Farbe, die bei der Person noch frei ist (sonst Grau)', () => {
     const state = zustand({ schicht: { katalog, monate: {}, status: {} } });
     // Papa nutzt grün, orange, hellblau, dunkelblau, rosa, rot, violett, türkis, gelb (E) → dunkellila ist die erste freie
-    assert.deepEqual(artEntwurf(state, 'papa', null), { name: '', kuerzel: '', farbe: 'dunkellila', gruppe: 'dienst', von: '', bis: '', nacht: false });
+    assert.deepEqual(artEntwurf(state, 'papa', null), { name: '', kuerzel: '', farbe: 'dunkellila', gruppe: 'dienst', von: '', bis: '', nacht: false, erinnern: true });
     let voll = katalog;
     for (const [i, farbe] of ['dunkellila', 'schiefer', 'braun', 'oliv', 'cyan', 'magenta', 'grau'].entries()) {
       voll = artHinzufuegen(voll, 'papa', { name: `Art ${i}`, kuerzel: `A${i}`, farbe });

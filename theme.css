@@ -3216,10 +3216,11 @@ html:has(.screen.einkauf) {
   height: 33px;
 }
 
-.sp-streifen.urlaub,
-.sp-lg-kuerzel.urlaub,
-.sp-pinsel-kuerzel.urlaub,
-.sp-tag-kuerzel.urlaub {
+/* gestreift: Urlaub und z. B. Ersatzdienst E (Muster „offen“) gleich; die Arten unterscheiden sich an Kürzel und Farbe */
+.sp-streifen.gestreift,
+.sp-lg-kuerzel.gestreift,
+.sp-pinsel-kuerzel.gestreift,
+.sp-tag-kuerzel.gestreift {
   background-image: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.35) 0 4px, transparent 4px 8px);
 }
 
@@ -3424,7 +3425,7 @@ html:has(.screen.einkauf) {
 }
 
 .sp-tag-arten,
-.sp-tag-zusatzarten {
+.sp-tag-plus-reihe {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
@@ -3498,6 +3499,23 @@ html:has(.screen.einkauf) {
   padding: 10px;
   border: 1.5px dashed var(--linie);
   border-radius: var(--radius-klein);
+}
+
+.sp-tag-zusatz-kopf {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+/* „🔔 Erinnerung 1 Tag und 1 Stunde vorher auf dem Telefon von Mama“ unter dem Formular */
+.sp-tag-erinnerung {
+  margin: -2px 0 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--ink-2);
 }
 
 .sp-tag-zeiten {
@@ -3574,7 +3592,7 @@ html:has(.screen.einkauf) {
   text-align: center;
 }
 
-.sp-art-kuerzel.urlaub {
+.sp-art-kuerzel.gestreift {
   background-image: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.35) 0 4px, transparent 4px 8px);
 }
 

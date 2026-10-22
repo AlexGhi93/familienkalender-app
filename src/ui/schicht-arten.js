@@ -1,6 +1,6 @@
 // Blatt „Schichtarten“ (Knopf „Schichtarten bearbeiten“ auf der Schichtplan-Seite): je Person die Arten mit farbigem Kürzel, Name und
 // Zeiten, ↑ ↓ für die Reihenfolge, „Bearbeiten“, „Entfernen“ (ausblenden; aufklappbar unter „Ausgeblendet (n)“ mit „Wiederherstellen“)
-// und „＋ Neue Art“. Das Formular (Name, Kürzel, Farbe, Gruppe, Nacht, Von/Bis) ersetzt die Liste, bis gespeichert oder abgebrochen
+// und „＋ Neue Art“. Das Formular (Name, Kürzel, Farbe, Gruppe, bei Zusatz „🔔 Erinnern“, Nacht, Von/Bis) ersetzt die Liste, bis gespeichert oder abgebrochen
 // wird. Es schließt sich erst, wenn die Art im Kalender gespeichert ist; abgelehnte Eingaben (auch erst auf der neuesten Fassung, z. B.
 // das andere Telefon hat dasselbe Kürzel schon vergeben) melden sich als Fehler und das Formular bleibt mit der Eingabe offen.
 import { h } from './dom.js';
@@ -8,6 +8,7 @@ import { blatt, toast } from './components.js';
 import { zeitFeld } from './eingabefelder.js';
 import { artEntwurf, artEntwurfFehler, schichtArtenModel } from '../app/views/schicht-model.js';
 import { MAX_KUERZEL, MAX_NAME, PALETTE } from '../domain/schicht.js';
+import { musterKlassen } from './schicht-pinsel.js';
 
 const ALLGEMEINER_FEHLER = 'Das hat nicht geklappt. Bitte noch einmal versuchen.';
 const FALSCHE_UHRZEIT = 'Bitte eine Uhrzeit wie 07:30 eingeben.';
@@ -16,7 +17,7 @@ const GRUPPEN = [
   ['zusatz', 'Zusatz'],
 ];
 
-const kuerzelPille = (a) => h('i', { class: `sp-art-kuerzel sf-${a.farbe}${a.urlaub ? ' urlaub' : ''}` }, a.kuerzel);
+const kuerzelPille = (a) => h('i', { class: `sp-art-kuerzel sf-${a.farbe} ${musterKlassen(a.muster)}`.trim() }, a.kuerzel);
 
 /** Knöpfe einer Gruppe, von denen genau einer gewählt ist: wechselt die Wahl an Ort und Stelle (kein Neuzeichnen, getippte Zeiten bleiben). */
 function waehleIn(gruppe, gewaehlt) {
@@ -250,6 +251,7 @@ export function oeffneSchichtarten({ store }) {
             onClick: (ev) => {
               e.gruppe = wert;
               waehleIn(gruppen, ev.currentTarget);
+              erinnernZeile.hidden = wert !== 'zusatz'; // „Erinnern“ gibt es nur bei Zusätzen
             },
           },
           text,
@@ -263,6 +265,14 @@ export function oeffneSchichtarten({ store }) {
       },
     });
     nacht.checked = e.nacht;
+    const erinnern = h('input', {
+      type: 'checkbox',
+      onChange: (ev) => {
+        e.erinnern = ev.target.checked;
+      },
+    });
+    erinnern.checked = e.erinnern;
+    const erinnernZeile = h('label', { class: 'sp-art-nacht sp-art-erinnern', hidden: e.gruppe !== 'zusatz' }, erinnern, ' 🔔 Erinnern (1 Tag und 1 Stunde vorher)');
 
     return h(
       'section',
@@ -271,6 +281,7 @@ export function oeffneSchichtarten({ store }) {
       h('div', { class: 'sp-art-felder' }, textFeld('Name', 'name', MAX_NAME), textFeld('Kürzel', 'kuerzel', MAX_KUERZEL, { autocapitalize: 'characters', class: 'sp-art-kuerzel-feld' })),
       h('div', { class: 'feld' }, h('span', { 'aria-hidden': 'true' }, 'Farbe'), farben),
       h('div', { class: 'feld' }, h('span', { 'aria-hidden': 'true' }, 'Gruppe'), gruppen, h('small', { class: 'leise' }, 'Dienst: einer pro Tag. Zusatz: kommt dazu, mit Uhrzeit.')),
+      erinnernZeile,
       h('label', { class: 'sp-art-nacht' }, nacht, ' Nacht ☾'),
       h('small', { class: 'leise' }, 'Zeiten über Mitternacht (z. B. 22:00–06:00) gelten auch ohne Haken als Nacht.'),
       h(

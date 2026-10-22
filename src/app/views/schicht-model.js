@@ -37,13 +37,15 @@ export function schichtFilterSpeichern(filter, speicher = globalThis.localStorag
 export const personenFuer = (filter) => (gueltigerFilter(filter) === 'beide' ? [...SCHICHT_PERSONEN] : [gueltigerFilter(filter)]);
 
 const zeitenText = (art) => (art.von && art.bis ? `${art.von}–${art.bis}` : null);
+/** Muster einer Art für die Anzeige: 'urlaub' oder 'offen' (beide gestreift, z. B. Ersatzdienst E), sonst null. */
+const musterVon = (art) => art.muster ?? null;
 
 /** Ein Streifen für den Schlüssel `k`; eine Art, die der Katalog (noch) nicht kennt, wird grau mit „?“ gezeigt – verloren geht nichts. */
 function streifen(katalog, person, k) {
   if (k === null) return null;
   const art = artFuer(katalog, person, k);
-  if (!art) return { k, kuerzel: '?', name: 'Unbekannte Art', farbe: 'grau', nacht: false, urlaub: false, unbekannt: true };
-  return { k, kuerzel: art.kuerzel, name: art.name, farbe: art.farbe, nacht: istNacht(art), urlaub: art.muster === 'urlaub', unbekannt: false };
+  if (!art) return { k, kuerzel: '?', name: 'Unbekannte Art', farbe: 'grau', nacht: false, muster: null, unbekannt: true };
+  return { k, kuerzel: art.kuerzel, name: art.name, farbe: art.farbe, nacht: istNacht(art), muster: musterVon(art), unbekannt: false };
 }
 
 /** Marke oben rechts: der erste Zusatz der angezeigten Personen (Papa vor Mama); `weitere` = Anzahl der übrigen (Anzeige „+1“), `mehr` = es gibt welche. */
@@ -71,7 +73,7 @@ function legende(monat, katalog, person) {
     .filter((a) => aktiv.has(a.k) || benutzt.has(a.k))
     .map((a) => {
       const zeiten = zeitenText(a);
-      return { k: a.k, kuerzel: a.kuerzel, name: a.name, farbe: a.farbe, text: zeiten ? `${a.name} ${zeiten}` : a.name, nacht: istNacht(a), urlaub: a.muster === 'urlaub' };
+      return { k: a.k, kuerzel: a.kuerzel, name: a.name, farbe: a.farbe, text: zeiten ? `${a.name} ${zeiten}` : a.name, nacht: istNacht(a), muster: musterVon(a) };
     });
 }
 
@@ -152,7 +154,7 @@ export function pinselStart(state, filter) {
 export function pinselModel(state, { person, k }) {
   const aktiv = aktiveArten(katalogVon(state), person);
   const gewaehlt = k === null ? null : (aktiv.find((a) => a.k === k) ?? aktiv[0] ?? null);
-  const arten = aktiv.map((a) => ({ k: a.k, kuerzel: a.kuerzel, name: a.name, farbe: a.farbe, urlaub: a.muster === 'urlaub', gewaehlt: a === gewaehlt }));
+  const arten = aktiv.map((a) => ({ k: a.k, kuerzel: a.kuerzel, name: a.name, farbe: a.farbe, muster: musterVon(a), gewaehlt: a === gewaehlt }));
   let hinweis = 'Frei: Tage antippen löscht den Dienst; Notiz und Zusätze bleiben.';
   if (gewaehlt?.gruppe === 'zusatz') hinweis = `${gewaehlt.kuerzel} ${gewaehlt.name} ${zeitenText(gewaehlt)}: Tage antippen. Nochmal tippen: wieder weg.`;
   else if (gewaehlt) hinweis = `${gewaehlt.kuerzel} ${gewaehlt.name}: Tage antippen. Nochmal tippen: wieder frei.`;
@@ -179,23 +181,33 @@ export function pinselAktion(state, jm, tag, { person, k }) {
 const PERSONEN_TAG = { papa: { name: 'Papa', emoji: '👨' }, mama: { name: 'Mama', emoji: '👩' } };
 const UNBEKANNT = { kuerzel: '?', name: 'Unbekannte Art', farbe: 'grau' };
 
-/** Eine Person im Tagesblatt: Kopf (Art mit Zeiten, Nacht), Knöpfe der aktiven Dienst-Arten, Notiz, Zusätze und Zusatz-Arten zum Hinzufügen. */
+/** Eine Person im Tagesblatt: Kopf (Art mit Zeiten, Nacht), Knöpfe der aktiven Dienst-Arten, Notiz, Zusätze und Zusatz-Arten zum Hinzufügen (mit Hinweis auf die Erinnerung). */
 function tagPerson(katalog, monat, person, tag) {
   const k = schichtAm(monat, person, tag);
   const art = k === null ? null : artFuer(katalog, person, k);
-  const arten = aktiveArten(katalog, person, 'dienst').map((a) => ({ k: a.k, kuerzel: a.kuerzel, name: a.name, farbe: a.farbe, urlaub: a.muster === 'urlaub', aktiv: a.k === k }));
+  const arten = aktiveArten(katalog, person, 'dienst').map((a) => ({ k: a.k, kuerzel: a.kuerzel, name: a.name, farbe: a.farbe, muster: musterVon(a), aktiv: a.k === k }));
   let schicht = { text: 'Frei', nacht: false };
   if (k !== null) schicht = art ? { text: zeitenText(art) ? `${art.name} ${zeitenText(art)}` : art.name, nacht: istNacht(art) } : { text: UNBEKANNT.name, nacht: false };
   // Eingetragen, aber nicht (mehr) wählbar: archiviert, unbekannt oder inzwischen ein Zusatz – sichtbar, aber kein Knopf
   let nichtWaehlbar = null;
   if (k !== null && !arten.some((a) => a.aktiv)) {
-    nichtWaehlbar = art ? { kuerzel: art.kuerzel, name: art.archiv ? `${art.name} (ausgeblendet)` : art.name, farbe: art.farbe, urlaub: art.muster === 'urlaub' } : { ...UNBEKANNT, urlaub: false };
+    nichtWaehlbar = art ? { kuerzel: art.kuerzel, name: art.archiv ? `${art.name} (ausgeblendet)` : art.name, farbe: art.farbe, muster: musterVon(art) } : { ...UNBEKANNT, muster: null };
   }
   const zusaetze = (monat?.z?.[person]?.[tag] ?? []).map((z) => {
     const a = artFuer(katalog, person, z.k) ?? UNBEKANNT;
     return { k: z.k, von: z.von, bis: z.bis, kuerzel: a.kuerzel, name: a.name, farbe: a.farbe, text: `${a.name} ${z.von}–${z.bis}` };
   });
-  const zusatzArten = aktiveArten(katalog, person, 'zusatz').map((a) => ({ k: a.k, kuerzel: a.kuerzel, name: a.name, farbe: a.farbe, von: a.von ?? '', bis: a.bis ?? '' }));
+  // je Zusatz-Art ein Knopf „＋ <Name>“; `hinweis` nur mit „Erinnern“ (die Erinnerung kommt nur auf das Telefon der Person)
+  const hinweis = `🔔 Erinnerung 1 Tag und 1 Stunde vorher auf dem Telefon von ${PERSONEN_TAG[person].name}`;
+  const zusatzArten = aktiveArten(katalog, person, 'zusatz').map((a) => ({
+    k: a.k,
+    kuerzel: a.kuerzel,
+    name: a.name,
+    farbe: a.farbe,
+    von: a.von ?? '',
+    bis: a.bis ?? '',
+    hinweis: a.erinnern === false ? null : hinweis,
+  }));
   return { person, ...PERSONEN_TAG[person], schicht, arten, frei: k === null, nichtWaehlbar, notiz: monat?.n?.[person]?.[tag] ?? '', zusaetze, zusatzArten };
 }
 
@@ -219,7 +231,7 @@ function artListenText(a) {
   return `${a.name}${zeiten ? ` ${zeiten}` : ''}${istNacht(a) ? ' ☾' : ''}${a.gruppe === 'zusatz' ? ' · Zusatz' : ''}`;
 }
 
-const artZeile = (a) => ({ k: a.k, kuerzel: a.kuerzel, name: a.name, farbe: a.farbe, urlaub: a.muster === 'urlaub', text: artListenText(a) });
+const artZeile = (a) => ({ k: a.k, kuerzel: a.kuerzel, name: a.name, farbe: a.farbe, muster: musterVon(a), text: artListenText(a) });
 
 /**
  * Blatt „Schichtarten“: je Person die aktiven Arten in Katalog-Reihenfolge und die ausgeblendeten. `hoch`/`runter` = so viele
@@ -248,15 +260,16 @@ export function schichtArtenModel(state) {
 /**
  * Formular-Entwurf: die Felder der Art `k` zum Bearbeiten, mit `k` null für eine neue Art (leer, „Dienst“, die erste Farbe, die bei
  * der Person noch keine aktive Art hat, sonst Grau). Zeiten fehlen als '', „Nacht“ nur wenn angehakt (über Mitternacht gilt ohnehin
- * als Nacht). Muster und Archiv gehören nicht dazu: artAendern lässt sie unverändert.
+ * als Nacht). `erinnern` (Haken „🔔 Erinnern“, nur bei Zusatz zu sehen): wie gespeichert, bei Diensten und neuen Arten angehakt – wird
+ * eine Art zum Zusatz, erinnert sie also. Muster und Archiv gehören nicht dazu: artAendern lässt sie unverändert.
  */
 export function artEntwurf(state, person, k) {
   const katalog = katalogVon(state);
   const art = k === null ? null : artFuer(katalog, person, k);
-  if (art) return { name: art.name, kuerzel: art.kuerzel, farbe: art.farbe, gruppe: art.gruppe, von: art.von ?? '', bis: art.bis ?? '', nacht: art.nacht === true };
+  if (art) return { name: art.name, kuerzel: art.kuerzel, farbe: art.farbe, gruppe: art.gruppe, von: art.von ?? '', bis: art.bis ?? '', nacht: art.nacht === true, erinnern: art.erinnern !== false };
   const belegt = new Set(aktiveArten(katalog, person).map((a) => a.farbe));
   const farbe = PALETTE.find((f) => !belegt.has(f.id))?.id ?? 'grau';
-  return { name: '', kuerzel: '', farbe, gruppe: 'dienst', von: '', bis: '', nacht: false };
+  return { name: '', kuerzel: '', farbe, gruppe: 'dienst', von: '', bis: '', nacht: false, erinnern: true };
 }
 
 /** Prüft einen Entwurf wie beim Speichern (neu: `k` null) und gibt die deutsche Meldung zurück, oder null, wenn alles passt. */

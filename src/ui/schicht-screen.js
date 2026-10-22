@@ -5,7 +5,7 @@ import { h } from './dom.js';
 import { datumLang } from '../app/format-de.js';
 import { FEIERTAG_EMOJI } from '../app/views/gemeinsam.js';
 import { rasterFilter, schichtMonatModel } from '../app/views/schicht-model.js';
-import { pinselLeiste, pinselTippen, pinselUmschalten } from './schicht-pinsel.js';
+import { musterKlassen, pinselLeiste, pinselTippen, pinselUmschalten } from './schicht-pinsel.js';
 
 const PERSON = { papa: { name: 'Papa', emoji: '👨' }, mama: { name: 'Mama', emoji: '👩' } };
 const FILTER = [
@@ -14,10 +14,10 @@ const FILTER = [
   ['mama', '👩 Mama'],
 ];
 
-/** Ein Streifen: Farbe der Art und ihr Kürzel (nie nur Farbe), ☾ bei Nacht, Urlaub zusätzlich gestreift; frei = gepunkteter Rahmen. */
+/** Ein Streifen: Farbe der Art und ihr Kürzel (nie nur Farbe), ☾ bei Nacht, Urlaub und Ersatzdienst zusätzlich gestreift; frei = gepunkteter Rahmen. */
 function streifenKnoten(person, s) {
   if (!s) return h('span', { class: `sp-streifen ${person} leer`, 'aria-hidden': 'true' });
-  const klassen = ['sp-streifen', person, `sf-${s.farbe}`, s.urlaub ? 'urlaub' : '', s.unbekannt ? 'unbekannt' : ''];
+  const klassen = ['sp-streifen', person, `sf-${s.farbe}`, musterKlassen(s.muster), s.unbekannt ? 'unbekannt' : ''];
   return h('span', { class: klassen.filter(Boolean).join(' '), 'aria-hidden': 'true' }, s.kuerzel, s.nacht ? h('span', { class: 'sp-mond' }, '☾') : null);
 }
 
@@ -66,7 +66,7 @@ function zelle(z, m, { store, ui }) {
 }
 
 function legendeEintrag(e) {
-  const klassen = ['sp-lg-kuerzel', `sf-${e.farbe}`, e.urlaub ? 'urlaub' : ''];
+  const klassen = ['sp-lg-kuerzel', `sf-${e.farbe}`, musterKlassen(e.muster)];
   return h('span', { class: 'sp-lg' }, h('i', { class: klassen.filter(Boolean).join(' ') }, e.kuerzel), e.text);
 }
 

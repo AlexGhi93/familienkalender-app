@@ -58,6 +58,32 @@ test('‹ und › wechseln den Monat (auch übers Jahr)', async ({ page }) => {
   await expect(page.locator('.sp-zelle .sp-streifen.papa:not(.leer)').first()).toBeVisible();
 });
 
+test('Ersatzdienst E: in Legende, Pinsel und Raster gelb und gestreift wie Urlaub, aber mit eigenem Kürzel', async ({ page }) => {
+  await starteDemo(page, { route: '#/schicht' });
+  const muster = (loc) => loc.evaluate((el) => getComputedStyle(el).backgroundImage);
+  const e = page.locator('.sp-legende .sp-lg').filter({ hasText: 'Ersatzdienst' });
+  await expect(e.locator('.sp-lg-kuerzel')).toHaveText('E');
+  await expect(e.locator('.sp-lg-kuerzel')).toHaveClass(/sf-gelb/);
+  await expect(e.locator('.sp-lg-kuerzel')).toHaveClass(/gestreift/);
+  await expect(e.locator('.sp-lg-kuerzel')).toHaveClass(/muster-offen/);
+  const urlaub = page.locator('.sp-legende .sp-lg').filter({ hasText: 'Urlaub' }).first().locator('.sp-lg-kuerzel');
+  await expect(urlaub).toHaveClass(/muster-urlaub/);
+  expect(await muster(e.locator('.sp-lg-kuerzel'))).toContain('repeating-linear-gradient');
+  expect(await muster(e.locator('.sp-lg-kuerzel'))).toBe(await muster(urlaub)); // dieselben Streifen wie Urlaub
+  await page.getByRole('button', { name: '✏️ Eintragen' }).click();
+  const knopfE = page.locator('.sp-pinsel').getByRole('button', { name: 'E Ersatzdienst', exact: true });
+  await expect(knopfE.locator('.sp-pinsel-kuerzel')).toHaveClass(/sf-gelb/);
+  await expect(knopfE.locator('.sp-pinsel-kuerzel')).toHaveClass(/muster-offen/);
+  expect(await muster(knopfE.locator('.sp-pinsel-kuerzel'))).toContain('repeating-linear-gradient');
+  await knopfE.click();
+  await zelle(page, '2026-10-08').click();
+  await expect(streifen(page, '2026-10-08', 'papa')).toHaveText('E');
+  await expect(streifen(page, '2026-10-08', 'papa')).toHaveClass(/sf-gelb/);
+  await expect(streifen(page, '2026-10-08', 'papa')).toHaveClass(/muster-offen/);
+  expect(await muster(streifen(page, '2026-10-08', 'papa'))).toContain('repeating-linear-gradient');
+  await expect(zelle(page, '2026-10-08')).toHaveAttribute('aria-label', /Papa Ersatzdienst/);
+});
+
 test('Filter „👨 Papa“ blendet Mama aus und bleibt nach dem Neuladen', async ({ page }) => {
   await starteDemo(page, { route: '#/schicht' });
   await expect(page.getByRole('button', { name: 'Beide' })).toHaveAttribute('aria-pressed', 'true');
@@ -475,7 +501,7 @@ test.describe('Tagesblatt (ein Tag)', () => {
     await starteDemo(page, { route: '#/schicht' });
     await zelle(page, '2026-10-22').click();
     await notizFeld(page, 'papa').fill('Dienst 12');
-    await karte(page, 'mama').getByRole('button', { name: '＋ Zusatz' }).click();
+    await karte(page, 'mama').getByRole('button', { name: '＋ Dienstbesprechung' }).click();
     await expect(karte(page, 'mama').locator('.sp-tag-zusatz-form')).toBeVisible();
     await expect.poll(async () => (await demo(page)).n.papa['22']).toBe('Dienst 12');
     await notizFeld(page, 'papa').fill('Dienst 48');
@@ -497,18 +523,19 @@ test.describe('Tagesblatt (ein Tag)', () => {
     await expect.poll(async () => (await demo(page)).n.mama['22']).toBe('x'.repeat(40));
   });
 
-  test('Mama „＋ Zusatz“: DB mit 18:30–20:00 hinzufügen (Liste und Marke im Raster), ✕ nimmt ihn weg; höchstens drei', async ({ page }) => {
+  test('Mama „＋ Dienstbesprechung“: DB mit 18:30–20:00 hinzufügen (Liste und Marke im Raster), ✕ nimmt ihn weg; höchstens drei', async ({ page }) => {
     await starteDemo(page, { route: '#/schicht' });
     await zelle(page, '2026-10-22').click();
     const zusaetze = karte(page, 'mama').locator('.sp-tag-zusatz');
-    const plus = karte(page, 'mama').getByRole('button', { name: '＋ Zusatz' });
+    const plus = karte(page, 'mama').getByRole('button', { name: '＋ Dienstbesprechung' });
     const form = karte(page, 'mama').locator('.sp-tag-zusatz-form');
     const von = form.getByRole('textbox', { name: 'Von', exact: true });
     const bis = form.getByRole('textbox', { name: 'Bis', exact: true });
     await expect(zusaetze).toHaveCount(0);
-    await expect(karte(page, 'papa').getByRole('button', { name: '＋ Zusatz' })).toHaveCount(0); // Papa hat (noch) keine Zusatz-Art
+    await expect(karte(page, 'papa').getByRole('button', { name: /^＋/ })).toHaveCount(0); // Papa hat (noch) keine Zusatz-Art
     await plus.click();
-    await expect(form.getByRole('button', { name: 'DB Dienstbesprechung' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(form.locator('.sp-tag-zusatz-kopf')).toHaveText('DB Dienstbesprechung'); // die Art steht fest, keine Auswahl
+    await expect(form.getByRole('group', { name: 'Art des Zusatzes' })).toHaveCount(0);
     await expect(von).toHaveValue('18:00'); // vorbelegt mit den Zeiten der Art
     await expect(bis).toHaveValue('19:30');
     await von.fill('18:30');
@@ -556,7 +583,7 @@ test.describe('Tagesblatt (ein Tag)', () => {
     await zelle(page, '2026-10-21').click(); // Beispiel: Mama DB 18:00–19:30
     const zusaetze = karte(page, 'mama').locator('.sp-tag-zusatz');
     const form = karte(page, 'mama').locator('.sp-tag-zusatz-form');
-    await karte(page, 'mama').getByRole('button', { name: '＋ Zusatz' }).click();
+    await karte(page, 'mama').getByRole('button', { name: '＋ Dienstbesprechung' }).click();
     await form.getByRole('textbox', { name: 'Bis', exact: true }).fill('20:00');
     await form.getByRole('button', { name: 'Hinzufügen' }).click();
     await expect(zusaetze).toHaveText(['DB Dienstbesprechung 18:00–19:30 ✕', 'DB Dienstbesprechung 18:00–20:00 ✕']);
@@ -564,6 +591,48 @@ test.describe('Tagesblatt (ein Tag)', () => {
     await expect(zusaetze).toHaveText(['DB Dienstbesprechung 18:00–19:30 ✕']);
     await expect.poll(async () => (await demo(page)).z.mama['21']).toEqual([{ k: expect.any(String), von: '18:00', bis: '19:30' }]);
     await expect(zelle(page, '2026-10-21').locator('.sp-zusatz')).toHaveText('DB');
+  });
+
+  test('„＋ Dienstbesprechung“ öffnet direkt Von/Bis (vorbelegt): 19:00–20:30 → Marke DB und Zeile; Hinweis auf die Erinnerung', async ({ page }) => {
+    await starteDemo(page, { route: '#/schicht' });
+    await zelle(page, '2026-10-23').click();
+    const form = karte(page, 'mama').locator('.sp-tag-zusatz-form');
+    await knopf(page, 'mama', '＋ Dienstbesprechung').click();
+    await expect(form.getByRole('textbox', { name: 'Von', exact: true })).toHaveValue('18:00');
+    await expect(form.getByRole('textbox', { name: 'Bis', exact: true })).toHaveValue('19:30');
+    await expect(karte(page, 'mama').locator('.sp-tag-erinnerung')).toHaveText('🔔 Erinnerung 1 Tag und 1 Stunde vorher auf dem Telefon von Mama');
+    await expect(knopf(page, 'mama', '＋ Dienstbesprechung')).toHaveCount(0); // solange das Formular offen ist
+    await form.getByRole('textbox', { name: 'Von', exact: true }).fill('19:00');
+    await form.getByRole('textbox', { name: 'Bis', exact: true }).fill('20:30');
+    await form.getByRole('button', { name: 'Hinzufügen' }).click();
+    await expect(form).toHaveCount(0);
+    await expect(karte(page, 'mama').locator('.sp-tag-erinnerung')).toHaveCount(0);
+    await expect(karte(page, 'mama').locator('.sp-tag-zusatz')).toHaveText(['DB Dienstbesprechung 19:00–20:30 ✕']);
+    await expect(zelle(page, '2026-10-23').locator('.sp-zusatz')).toHaveText('DB');
+    await expect.poll(async () => (await demo(page)).z.mama['23']).toEqual([{ k: expect.any(String), von: '19:00', bis: '20:30' }]);
+  });
+
+  test('ohne „Erinnern“ kein Hinweis; eine zweite Zusatz-Art bekommt ihren eigenen Knopf', async ({ page }) => {
+    await starteDemo(page, { route: '#/schicht' });
+    await expect(zelle(page, '2026-10-21')).toBeVisible();
+    await page.evaluate(() => {
+      const daten = JSON.parse(localStorage.getItem('fk.demo.v1'));
+      const arten = daten.schicht.katalog.arten.mama;
+      arten.find((a) => a.kuerzel === 'DB').erinnern = false;
+      arten.push({ k: 'X', kuerzel: 'EA', name: 'Elternabend', farbe: 'oliv', gruppe: 'zusatz', von: '19:00', bis: '20:00', erinnern: true });
+      localStorage.setItem('fk.demo.v1', JSON.stringify(daten));
+    });
+    await page.reload();
+    await zelle(page, '2026-10-23').click();
+    await expect(karte(page, 'mama').getByRole('button', { name: /^＋/ })).toHaveText(['＋ Dienstbesprechung', '＋ Elternabend']);
+    await knopf(page, 'mama', '＋ Dienstbesprechung').click();
+    await expect(karte(page, 'mama').locator('.sp-tag-zusatz-form')).toBeVisible();
+    await expect(karte(page, 'mama').locator('.sp-tag-erinnerung')).toHaveCount(0);
+    await karte(page, 'mama').getByRole('button', { name: 'Abbrechen' }).click();
+    await knopf(page, 'mama', '＋ Elternabend').click();
+    await expect(karte(page, 'mama').locator('.sp-tag-zusatz-kopf')).toHaveText('EA Elternabend');
+    await expect(karte(page, 'mama').getByRole('textbox', { name: 'Von', exact: true })).toHaveValue('19:00');
+    await expect(karte(page, 'mama').locator('.sp-tag-erinnerung')).toHaveText('🔔 Erinnerung 1 Tag und 1 Stunde vorher auf dem Telefon von Mama');
   });
 
   test('eine ausgeblendete (archivierte) Art des Tages steht da, ist aber kein Knopf; eine unbekannte heißt „Unbekannte Art“', async ({ page }) => {
@@ -608,7 +677,7 @@ test.describe('Tagesblatt (ein Tag)', () => {
   test('auf 375 px ragt im Tagesblatt nichts seitwärts hinaus', async ({ page }) => {
     await starteDemo(page, { route: '#/schicht' });
     await zelle(page, '2026-10-21').click();
-    await karte(page, 'mama').getByRole('button', { name: '＋ Zusatz' }).click();
+    await karte(page, 'mama').getByRole('button', { name: '＋ Dienstbesprechung' }).click();
     const masse = await page.evaluate(() => {
       const b = document.querySelector('.blatt');
       return { scroll: b.scrollWidth, breite: b.clientWidth, rechts: Math.max(...[...b.querySelectorAll('button, input:not(.picker-unsichtbar)')].map((e) => e.getBoundingClientRect().right)) };
@@ -772,6 +841,7 @@ test.describe('Schichtarten bearbeiten', () => {
     await formular(page).getByRole('button', { name: 'Zusatz', exact: true }).click();
     await expect(formular(page).getByRole('button', { name: 'Zusatz', exact: true })).toHaveAttribute('aria-pressed', 'true');
     await expect(formular(page).getByRole('button', { name: 'Dienst', exact: true })).toHaveAttribute('aria-pressed', 'false');
+    await expect(formular(page).getByRole('checkbox', { name: '🔔 Erinnern (1 Tag und 1 Stunde vorher)' })).toBeChecked(); // neu als Zusatz: an
     await formular(page).getByRole('button', { name: 'Speichern' }).click();
     await expect(page.locator('.toast.fehler')).toHaveText('Ein Zusatz braucht Von und Bis.');
     await expect(formular(page)).toBeVisible();
@@ -781,7 +851,7 @@ test.describe('Schichtarten bearbeiten', () => {
     await formular(page).getByRole('button', { name: 'Speichern' }).click();
     await expect(formular(page)).toHaveCount(0);
     await expect(zeilen(page, 'papa').last().locator('.sp-art-text')).toHaveText('Bereitschaft 22:00–06:00 ☾ · Zusatz');
-    await expect.poll(async () => (await katalog(page)).arten.papa.at(-1)).toMatchObject({ kuerzel: 'BR', gruppe: 'zusatz', von: '22:00', bis: '06:00', nacht: true });
+    await expect.poll(async () => (await katalog(page)).arten.papa.at(-1)).toMatchObject({ kuerzel: 'BR', gruppe: 'zusatz', von: '22:00', bis: '06:00', nacht: true, erinnern: true });
 
     // Bearbeiten und Abbrechen: nichts ändert sich
     await abschnitt(page, 'mama').getByRole('button', { name: 'Tagdienst bearbeiten' }).click();
@@ -835,6 +905,39 @@ test.describe('Schichtarten bearbeiten', () => {
     await formular(page).getByRole('button', { name: 'Speichern' }).click();
     await expect(formular(page)).toHaveCount(0);
     await expect(zeilen(page, 'papa').last().locator('.sp-art-text')).toHaveText('Spät');
+  });
+
+  test('„🔔 Erinnern“ nur bei Zusatz: bei DB angehakt, abhaken bleibt nach dem Neuladen; im Tagesblatt fehlt dann der Hinweis', async ({ page }) => {
+    await starteDemo(page, { route: '#/schicht' });
+    const erinnern = () => formular(page).getByRole('checkbox', { name: '🔔 Erinnern (1 Tag und 1 Stunde vorher)' });
+    await oeffnen(page);
+    // ein Dienst hat keine Erinnerung; wechselt das Formular auf „Zusatz“, erscheint sie (angehakt)
+    await abschnitt(page, 'mama').getByRole('button', { name: 'Tagdienst bearbeiten' }).click();
+    await expect(formular(page)).toBeVisible();
+    await expect(erinnern()).toBeHidden();
+    await formular(page).getByRole('button', { name: 'Zusatz', exact: true }).click();
+    await expect(erinnern()).toBeVisible();
+    await expect(erinnern()).toBeChecked();
+    await formular(page).getByRole('button', { name: 'Dienst', exact: true }).click();
+    await expect(erinnern()).toBeHidden();
+    await formular(page).getByRole('button', { name: 'Abbrechen' }).click();
+
+    await abschnitt(page, 'mama').getByRole('button', { name: 'Dienstbesprechung bearbeiten' }).click();
+    await expect(erinnern()).toBeChecked();
+    await erinnern().uncheck();
+    await formular(page).getByRole('button', { name: 'Speichern' }).click();
+    await expect(formular(page)).toHaveCount(0);
+    await expect.poll(async () => (await katalog(page)).arten.mama.find((a) => a.kuerzel === 'DB').erinnern).toBe(false);
+    await page.reload();
+    await oeffnen(page);
+    await abschnitt(page, 'mama').getByRole('button', { name: 'Dienstbesprechung bearbeiten' }).click();
+    await expect(erinnern()).not.toBeChecked();
+    await formular(page).getByRole('button', { name: 'Abbrechen' }).click();
+    await schliessen(page);
+    await zelle(page, '2026-10-23').click();
+    await page.locator('.sp-tag-karte[data-person="mama"]').getByRole('button', { name: '＋ Dienstbesprechung' }).click();
+    await expect(page.locator('.sp-tag-karte[data-person="mama"] .sp-tag-zusatz-form')).toBeVisible();
+    await expect(page.locator('.sp-tag-erinnerung')).toHaveCount(0);
   });
 
   test('nach dem Neuladen ist alles noch da: neue Art, Reihenfolge, ausgeblendet', async ({ page }) => {

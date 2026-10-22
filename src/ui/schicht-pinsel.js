@@ -9,6 +9,13 @@ const PERSONEN = [
   ['mama', '👩 Mama'],
 ];
 
+/**
+ * CSS-Klassen zum Muster einer Art ('urlaub', 'offen' oder null): `gestreift` zeichnet die Streifen (Urlaub und z. B. Ersatzdienst E
+ * gleich), `muster-…` sagt welches; unterscheiden lassen sich die Arten weiter an Kürzel und Farbe. Gilt für Raster, Legende, Pinsel,
+ * Tagesblatt und Schichtarten.
+ */
+export const musterKlassen = (muster) => (muster ? `gestreift muster-${muster}` : '');
+
 /** Öffnet den Pinsel (Person nach Filter, erste aktive Art) bzw. schließt ihn. */
 export function pinselUmschalten({ store, ui }) {
   ui.schicht.pinsel = ui.schicht.pinsel ? null : pinselStart(store.getState(), ui.schicht.filter);
@@ -94,7 +101,7 @@ export function pinselLeiste({ store, ui }) {
     h(
       'div',
       { class: 'sp-pinsel-arten', role: 'group', 'aria-label': 'Schichtart' },
-      p.arten.map((a) => artKnopf(a.gewaehlt, `sf-${a.farbe}${a.urlaub ? ' urlaub' : ''}`, a.kuerzel, a.name, a.k)),
+      p.arten.map((a) => artKnopf(a.gewaehlt, `sf-${a.farbe} ${musterKlassen(a.muster)}`.trim(), a.kuerzel, a.name, a.k)),
       artKnopf(p.frei, 'frei', '–', 'Frei', null),
     ),
     h('p', { class: 'sp-pinsel-hinweis' }, p.hinweis),
