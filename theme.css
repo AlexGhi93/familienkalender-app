@@ -21,6 +21,39 @@
   --grau: #a7a2b2;
   --serie-papa: #2a78d6; /* Diagramm-Farben: blau/orange, mit dem Farbprüfer für Hell und Dunkel validiert */
   --serie-mama: #eb6834;
+  /* Schichtplan: Fläche --sf-<id> und Kürzel-Schrift --sf-<id>-ink je Palettenfarbe (src/domain/schicht.js), Kontrast ≥ 4,5:1 */
+  --sf-gruen: #16a34a;
+  --sf-gruen-ink: #03210e;
+  --sf-orange: #f59e0b;
+  --sf-orange-ink: #2b1700;
+  --sf-hellblau: #7dd3fc;
+  --sf-hellblau-ink: #0c2a44;
+  --sf-dunkelblau: #1e3a8a;
+  --sf-dunkelblau-ink: #ffffff;
+  --sf-rosa: #ec4899;
+  --sf-rosa-ink: #2d0418;
+  --sf-rot: #dc2626;
+  --sf-rot-ink: #ffffff;
+  --sf-violett: #7c3aed;
+  --sf-violett-ink: #ffffff;
+  --sf-tuerkis: #28b5c4;
+  --sf-tuerkis-ink: #06343a;
+  --sf-gelb: #eab308;
+  --sf-gelb-ink: #2a1f00;
+  --sf-dunkellila: #4c1d95;
+  --sf-dunkellila-ink: #ffffff;
+  --sf-schiefer: #64748b;
+  --sf-schiefer-ink: #ffffff;
+  --sf-braun: #92400e;
+  --sf-braun-ink: #ffffff;
+  --sf-oliv: #4d7c0f;
+  --sf-oliv-ink: #ffffff;
+  --sf-cyan: #0891b2;
+  --sf-cyan-ink: #00171f;
+  --sf-magenta: #c026d3;
+  --sf-magenta-ink: #ffffff;
+  --sf-grau: #a8a29e;
+  --sf-grau-ink: #1c1917;
 
   --radius: 20px;
   --radius-klein: 14px;
@@ -44,6 +77,39 @@
     --schatten: 0 1px 0 rgba(0, 0, 0, 0.2), 0 8px 22px rgba(0, 0, 0, 0.3);
     --serie-papa: #3987e5;
     --serie-mama: #d95926;
+    /* Schichtplan dunkel: dunkle Töne aufgehellt (≥ 2:1 auf --karte), Kürzel weiter ≥ 4,5:1; in beiden dunklen Blöcken gleich */
+    --sf-gruen: #22c55e;
+    --sf-gruen-ink: #03210e;
+    --sf-orange: #fb923c;
+    --sf-orange-ink: #2b1100;
+    --sf-hellblau: #7dd3fc;
+    --sf-hellblau-ink: #0c2a44;
+    --sf-dunkelblau: #2f6ae8;
+    --sf-dunkelblau-ink: #ffffff;
+    --sf-rosa: #f472b6;
+    --sf-rosa-ink: #3b0a24;
+    --sf-rot: #dc2626;
+    --sf-rot-ink: #ffffff;
+    --sf-violett: #a78bfa;
+    --sf-violett-ink: #1e0a4a;
+    --sf-tuerkis: #28b5c4;
+    --sf-tuerkis-ink: #06343a;
+    --sf-gelb: #facc15;
+    --sf-gelb-ink: #2a1f00;
+    --sf-dunkellila: #7e3fd0;
+    --sf-dunkellila-ink: #ffffff;
+    --sf-schiefer: #64748b;
+    --sf-schiefer-ink: #ffffff;
+    --sf-braun: #9a5a2c;
+    --sf-braun-ink: #ffffff;
+    --sf-oliv: #65a30d;
+    --sf-oliv-ink: #132302;
+    --sf-cyan: #0891b2;
+    --sf-cyan-ink: #00171f;
+    --sf-magenta: #c026d3;
+    --sf-magenta-ink: #ffffff;
+    --sf-grau: #a8a29e;
+    --sf-grau-ink: #1c1917;
     color-scheme: dark;
   }
 }
@@ -61,6 +127,39 @@
   --schatten: 0 1px 0 rgba(0, 0, 0, 0.2), 0 8px 22px rgba(0, 0, 0, 0.3);
   --serie-papa: #3987e5;
   --serie-mama: #d95926;
+  /* Schichtplan dunkel: dunkle Töne aufgehellt (≥ 2:1 auf --karte), Kürzel weiter ≥ 4,5:1; in beiden dunklen Blöcken gleich */
+  --sf-gruen: #22c55e;
+  --sf-gruen-ink: #03210e;
+  --sf-orange: #fb923c;
+  --sf-orange-ink: #2b1100;
+  --sf-hellblau: #7dd3fc;
+  --sf-hellblau-ink: #0c2a44;
+  --sf-dunkelblau: #2f6ae8;
+  --sf-dunkelblau-ink: #ffffff;
+  --sf-rosa: #f472b6;
+  --sf-rosa-ink: #3b0a24;
+  --sf-rot: #dc2626;
+  --sf-rot-ink: #ffffff;
+  --sf-violett: #a78bfa;
+  --sf-violett-ink: #1e0a4a;
+  --sf-tuerkis: #28b5c4;
+  --sf-tuerkis-ink: #06343a;
+  --sf-gelb: #facc15;
+  --sf-gelb-ink: #2a1f00;
+  --sf-dunkellila: #7e3fd0;
+  --sf-dunkellila-ink: #ffffff;
+  --sf-schiefer: #64748b;
+  --sf-schiefer-ink: #ffffff;
+  --sf-braun: #9a5a2c;
+  --sf-braun-ink: #ffffff;
+  --sf-oliv: #65a30d;
+  --sf-oliv-ink: #132302;
+  --sf-cyan: #0891b2;
+  --sf-cyan-ink: #00171f;
+  --sf-magenta: #c026d3;
+  --sf-magenta-ink: #ffffff;
+  --sf-grau: #a8a29e;
+  --sf-grau-ink: #1c1917;
   color-scheme: dark;
 }
 
@@ -816,7 +915,7 @@ small.notiz {
   height: calc(var(--tabs-hoehe) + env(safe-area-inset-bottom, 0px));
   padding-bottom: env(safe-area-inset-bottom, 0px);
   display: grid;
-  grid-template-columns: repeat(3, 1fr) 64px repeat(3, 1fr); /* „Neu“ genau in der Mitte */
+  grid-template-columns: repeat(3, 1fr) 52px repeat(4, 1fr); /* „Neu“ als runder Hauptknopf an vierter Stelle, sieben gleich breite Karten */
   align-items: center;
   background: color-mix(in srgb, var(--karte) 92%, transparent);
   -webkit-backdrop-filter: blur(14px);
@@ -830,10 +929,13 @@ small.notiz {
   flex-direction: column;
   align-items: center;
   gap: 2px;
+  min-width: 0;
   color: var(--ink-2);
   text-decoration: none;
-  font-size: 0.72rem;
+  font-size: 0.66rem; /* acht Karten: „Einkauf“ und „Schicht“ passen auf 375 px ganz hinein */
   font-weight: 800;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
   padding: 6px 0;
 }
 
@@ -844,7 +946,7 @@ small.notiz {
 
 @media (max-width: 359px) {
   .tab {
-    font-size: 0.64rem;
+    font-size: 0.58rem; /* kleiner, aber nie abgeschnitten */
   }
 }
 
@@ -859,9 +961,9 @@ small.notiz {
 .tab.fab .tab-symbol {
   display: grid;
   place-items: center;
-  width: 54px;
-  height: 54px;
-  margin-top: -22px;
+  width: 48px;
+  height: 48px;
+  margin-top: -20px;
   border-radius: 50%;
   background: var(--akzent);
   color: var(--akzent-ink);
@@ -2845,6 +2947,88 @@ html:has(.screen.einkauf) {
   margin-top: 4px;
 }
 
+/* ---------- Schichtplan: Farbflächen je Palettenfarbe ---------- */
+
+.sf-gruen {
+  background: var(--sf-gruen);
+  color: var(--sf-gruen-ink);
+}
+
+.sf-orange {
+  background: var(--sf-orange);
+  color: var(--sf-orange-ink);
+}
+
+.sf-hellblau {
+  background: var(--sf-hellblau);
+  color: var(--sf-hellblau-ink);
+}
+
+.sf-dunkelblau {
+  background: var(--sf-dunkelblau);
+  color: var(--sf-dunkelblau-ink);
+}
+
+.sf-rosa {
+  background: var(--sf-rosa);
+  color: var(--sf-rosa-ink);
+}
+
+.sf-rot {
+  background: var(--sf-rot);
+  color: var(--sf-rot-ink);
+}
+
+.sf-violett {
+  background: var(--sf-violett);
+  color: var(--sf-violett-ink);
+}
+
+.sf-tuerkis {
+  background: var(--sf-tuerkis);
+  color: var(--sf-tuerkis-ink);
+}
+
+.sf-gelb {
+  background: var(--sf-gelb);
+  color: var(--sf-gelb-ink);
+}
+
+.sf-dunkellila {
+  background: var(--sf-dunkellila);
+  color: var(--sf-dunkellila-ink);
+}
+
+.sf-schiefer {
+  background: var(--sf-schiefer);
+  color: var(--sf-schiefer-ink);
+}
+
+.sf-braun {
+  background: var(--sf-braun);
+  color: var(--sf-braun-ink);
+}
+
+.sf-oliv {
+  background: var(--sf-oliv);
+  color: var(--sf-oliv-ink);
+}
+
+.sf-cyan {
+  background: var(--sf-cyan);
+  color: var(--sf-cyan-ink);
+}
+
+.sf-magenta {
+  background: var(--sf-magenta);
+  color: var(--sf-magenta-ink);
+}
+
+.sf-grau {
+  background: var(--sf-grau);
+  color: var(--sf-grau-ink);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .anim-auto.spielt {
     animation: none; /* steht nach der allgemeinen Regel des Menüs und muss deshalb hier noch einmal aus */
@@ -2852,4 +3036,660 @@ html:has(.screen.einkauf) {
   .dienst-knopf:active {
     transform: none;
   }
+}
+
+/* ---------- Schichtplan ---------- */
+
+.sp-kopf {
+  gap: 10px;
+}
+
+.sp-kopf .gruss {
+  font-size: 1.55rem;
+}
+
+@media (max-width: 359px) {
+  .sp-kopf .gruss {
+    font-size: 1.4rem; /* „🗓️ Schichtplan“ bleibt neben „Eintragen“ in einer Zeile */
+  }
+}
+
+.sp-eintragen {
+  flex: none;
+  font-weight: 800;
+}
+
+.sp-monat {
+  background: var(--karte);
+  border: 1.5px solid var(--linie);
+  border-radius: var(--radius);
+  padding: 6px 8px;
+}
+
+.sp-monat h2 {
+  font-size: 1.1rem;
+  font-weight: 800;
+}
+
+.sp-filter {
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+
+.sp-filter .chip {
+  white-space: nowrap;
+  font-weight: 700;
+}
+
+.schicht-seite .wochentage,
+.sp-raster {
+  gap: 4px;
+}
+
+.schicht-seite .wochentage {
+  margin-bottom: -10px;
+}
+
+.sp-raster {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.sp-zelle {
+  min-width: 0;
+  min-height: 58px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px 1px 3px;
+  border: 1.5px solid var(--linie);
+  border-radius: 10px;
+  background: var(--karte);
+  text-align: center;
+}
+
+.sp-zelle.we {
+  background: color-mix(in srgb, var(--linie) 30%, var(--karte));
+}
+
+.sp-zelle.heute {
+  border: 2.5px solid var(--akzent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--akzent) 22%, transparent);
+}
+
+.sp-zkopf {
+  display: flex;
+  flex-wrap: wrap; /* ein sehr voller Tag (Feiertag, DB+2, Notiz) bekommt eine zweite Zeile statt über den Rand zu ragen */
+  align-items: center;
+  gap: 1px 1px;
+  min-height: 14px;
+  min-width: 0;
+  line-height: 13px;
+}
+
+.sp-zkopf > * {
+  flex: none;
+}
+
+.sp-zkopf .nr {
+  font-size: 0.68rem;
+  font-weight: 800;
+  color: var(--ink-2);
+  padding-left: 1px;
+}
+
+.sp-zelle.heute .nr {
+  color: var(--akzent);
+}
+
+.sp-feiertag {
+  font-size: 0.55rem;
+}
+
+.sp-marken {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  white-space: nowrap;
+}
+
+.sp-zusatz {
+  font-size: 0.5rem;
+  font-weight: 900;
+  border-radius: 5px;
+  padding: 0 2px;
+  line-height: 11px;
+}
+
+.sp-mehr {
+  font-size: 0.5rem;
+  font-weight: 900;
+  color: var(--ink-2);
+  letter-spacing: -0.02em;
+}
+
+.sp-notiz {
+  font-size: 0.6rem;
+  color: var(--ink-2);
+}
+
+@media (max-width: 359px) {
+  /* schmale Felder: „DB +2 ✎“ passt ohne Abstände noch ins Feld */
+  .sp-marken {
+    gap: 0;
+  }
+
+  .sp-zusatz {
+    padding: 0 1px;
+  }
+}
+
+.sp-streifen {
+  height: 17px;
+  min-width: 0;
+  border-radius: 5px;
+  font-size: 0.66rem;
+  font-weight: 900;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.sp-streifen.leer {
+  height: 14px;
+  margin: 1.5px 0;
+  background: transparent;
+  border: 1.5px dashed var(--linie);
+}
+
+.sp-raster.eine-person .sp-streifen {
+  height: 36px;
+  font-size: 0.8rem;
+}
+
+.sp-raster.eine-person .sp-streifen.leer {
+  height: 33px;
+}
+
+.sp-streifen.urlaub,
+.sp-lg-kuerzel.urlaub,
+.sp-pinsel-kuerzel.urlaub,
+.sp-tag-kuerzel.urlaub {
+  background-image: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.35) 0 4px, transparent 4px 8px);
+}
+
+.sp-mond {
+  font-size: 0.6rem;
+  opacity: 0.9;
+}
+
+.sp-person-zeile {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 10px;
+  align-items: baseline;
+  font-size: 0.84rem;
+}
+
+.sp-zaehlung {
+  gap: 6px;
+}
+
+.sp-legende {
+  gap: 10px;
+}
+
+.sp-legende .sp-person-zeile {
+  grid-template-columns: 1fr;
+}
+
+.sp-lg-liste {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 10px;
+  font-size: 0.76rem;
+  color: var(--ink-2);
+}
+
+.sp-lg {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sp-lg-kuerzel {
+  font-style: normal;
+  font-weight: 900;
+  font-size: 0.64rem;
+  border-radius: 5px;
+  padding: 1px 4px;
+  min-width: 18px;
+  text-align: center;
+}
+
+.sp-arten {
+  align-self: center;
+}
+
+/* Pinsel: feste Leiste über den Registerkarten; die Seite bekommt unten so viel Platz, wie die Leiste hoch ist (--pinsel-hoehe, gemessen) */
+.schicht-seite.mit-pinsel {
+  padding-bottom: calc(var(--tabs-hoehe) + env(safe-area-inset-bottom, 0px) + var(--pinsel-hoehe, 240px) + 16px);
+}
+
+.sp-zelle {
+  touch-action: manipulation; /* schnelles Antippen hintereinander zoomt nicht */
+}
+
+.sp-pinsel {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--tabs-hoehe) + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  width: min(100%, 520px);
+  max-height: 50dvh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px 10px;
+  background: var(--karte);
+  border-top: 2px solid var(--akzent);
+  border-radius: 22px 22px 0 0;
+  box-shadow: 0 -10px 24px rgba(20, 16, 36, 0.14);
+  z-index: 39; /* unter den Registerkarten (40) und der Meldung (60) */
+}
+
+.sp-pinsel-kopf {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sp-pinsel-wer {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--akzent) 12%, var(--karte));
+}
+
+.sp-pinsel-wer button {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  font-size: 0.85rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.sp-pinsel-wer button[aria-pressed='true'] {
+  background: var(--akzent);
+  color: var(--akzent-ink);
+}
+
+.sp-pinsel-fertig {
+  min-height: 38px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--akzent);
+  color: var(--akzent-ink);
+  font-weight: 800;
+}
+
+.sp-pinsel-arten {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+/* Art-Knöpfe: Pinsel-Leiste und Tagesblatt sehen gleich aus */
+.sp-pinsel-art,
+.sp-tag-art {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px; /* kompakt wie in der Machette; drei Reihen für Papas acht Arten und „Frei“ */
+  padding: 2px 9px 2px 3px;
+  border: 1.5px solid var(--linie);
+  border-radius: 999px;
+  background: var(--karte);
+  font-size: 0.74rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.sp-pinsel-art.aktiv,
+.sp-tag-art.aktiv {
+  border-color: var(--akzent);
+  box-shadow: 0 0 0 2px var(--akzent);
+  background: color-mix(in srgb, var(--akzent) 10%, var(--karte));
+  font-weight: 800;
+}
+
+.sp-pinsel-kuerzel,
+.sp-tag-kuerzel {
+  font-style: normal;
+  font-weight: 900;
+  font-size: 0.64rem;
+  min-width: 20px;
+  padding: 2px 5px;
+  border-radius: 999px;
+  text-align: center;
+}
+
+.sp-pinsel-kuerzel.frei,
+.sp-tag-kuerzel.frei {
+  background: transparent;
+  border: 1.5px dashed var(--ink-2);
+  color: var(--ink-2);
+}
+
+.sp-pinsel-hinweis {
+  font-size: 0.72rem;
+  color: var(--ink-2);
+}
+
+/* ---------- Schichtplan: Tagesblatt (ein Tag, beide Personen) ---------- */
+
+.sp-tag-karte {
+  gap: 10px;
+  padding: 12px;
+}
+
+.blatt-inhalt h3.sp-tag-kopf {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.95rem;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink);
+}
+
+.sp-tag-kopf small {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--ink-2);
+  text-align: right;
+}
+
+.sp-tag-arten,
+.sp-tag-zusatzarten {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sp-tag-art {
+  min-height: 40px; /* im Blatt ist Platz: etwas größer als in der Pinsel-Leiste */
+  font-size: 0.8rem;
+}
+
+/* eingetragen, aber nicht mehr wählbar (ausgeblendet oder unbekannt): sichtbar, kein Knopf */
+.sp-tag-art.inaktiv {
+  border-style: dashed;
+  border-color: var(--ink-2);
+  color: var(--ink-2);
+  white-space: normal;
+}
+
+.sp-tag-notiz input {
+  min-height: 44px;
+  font: inherit;
+}
+
+.sp-tag-zusaetze {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sp-tag-zusatz {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 2px 4px 2px 10px;
+  border-radius: var(--radius-klein);
+  background: color-mix(in srgb, var(--ink-2) 10%, var(--karte));
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.sp-tag-zusatz-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.sp-tag-weg {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink-2);
+  font-size: 1rem;
+}
+
+.sp-tag-plus {
+  align-self: flex-start;
+  color: var(--akzent);
+}
+
+.sp-tag-zusatz-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  border: 1.5px dashed var(--linie);
+  border-radius: var(--radius-klein);
+}
+
+.sp-tag-zeiten {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+}
+
+@media (max-width: 359px) {
+  .sp-tag-zeiten {
+    grid-template-columns: minmax(0, 1fr); /* Von und Bis untereinander: „HH:MM“ wird nicht abgeschnitten */
+  }
+}
+
+/* ---------- Schichtplan: Blatt „Schichtarten“ (anlegen, ändern, ausblenden, ordnen) ---------- */
+
+.sp-arten-blatt {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sp-arten-person,
+.sp-art-form {
+  gap: 10px;
+  padding: 12px;
+}
+
+.blatt-inhalt .sp-arten-person h3,
+.blatt-inhalt .sp-art-form h3 {
+  font-size: 0.95rem;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink);
+}
+
+.sp-arten-liste {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* eine Zeile: Kürzel, Text, ↑ ↓; darunter „Bearbeiten“ und „Entfernen“ */
+.sp-art-zeile {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    'kuerzel text pfeile'
+    '. aktionen aktionen';
+  align-items: center;
+  gap: 4px 8px;
+  padding: 6px 0;
+  border-top: 1px solid var(--linie);
+}
+
+.sp-art-zeile:first-child {
+  border-top: 0;
+}
+
+.sp-art-zeile.aus {
+  grid-template-areas: 'kuerzel text pfeile';
+}
+
+.sp-art-kuerzel {
+  grid-area: kuerzel;
+  font-style: normal;
+  font-weight: 900;
+  font-size: 0.72rem;
+  min-width: 40px; /* Kürzel wie „F“, „NM“, „2T“ gleich breit: Texte und Knöpfe der Zeilen stehen bündig */
+  padding: 3px 6px;
+  border-radius: 999px;
+  text-align: center;
+}
+
+.sp-art-kuerzel.urlaub {
+  background-image: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.35) 0 4px, transparent 4px 8px);
+}
+
+.sp-art-text {
+  grid-area: text;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.sp-art-pfeile {
+  grid-area: pfeile;
+  display: flex;
+  gap: 4px;
+}
+
+.sp-art-zeile.aus > .knopf {
+  grid-area: pfeile;
+}
+
+.sp-art-pfeil {
+  width: 40px;
+  height: 40px;
+  border: 1.5px solid var(--linie);
+  border-radius: 50%;
+  background: var(--karte);
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.sp-art-pfeil:disabled {
+  opacity: 0.35;
+}
+
+.sp-art-aktionen {
+  grid-area: aktionen;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sp-art-aktionen .knopf.klein,
+.sp-art-zeile.aus > .knopf.klein {
+  min-height: 36px;
+  padding: 4px 12px;
+  font-size: 0.85rem;
+}
+
+.sp-arten-aus summary {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  font-weight: 800;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.sp-arten-aus .leise {
+  font-size: 0.8rem;
+}
+
+.sp-arten-neu {
+  align-self: flex-start;
+  color: var(--akzent);
+}
+
+.sp-art-felder {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 84px;
+  gap: 10px;
+}
+
+.sp-art-felder input {
+  width: 100%;
+  font: inherit;
+}
+
+/* Farbwahl: 16 runde Flächen; die gewählte trägt ✓ und einen Ring (nicht nur Farbe) */
+.sp-farben {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr)); /* zwei gleiche Reihen zu acht */
+  gap: 6px;
+}
+
+.sp-farbe {
+  aspect-ratio: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  font-size: 1.05rem;
+  font-weight: 900;
+}
+
+.sp-farbe.aktiv {
+  box-shadow:
+    0 0 0 2px var(--karte),
+    0 0 0 4px var(--ink);
+}
+
+.sp-art-nacht {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  font-weight: 800;
+}
+
+.sp-art-nacht input {
+  width: 22px;
+  height: 22px;
+  accent-color: var(--akzent);
+}
+
+.sp-art-form .leise {
+  font-size: 0.8rem;
 }

@@ -19,5 +19,5 @@ export function speicherAttrappe(anfang = {}, { kaputt = false } = {}) {
 
 /** Kleiner Zustand der App mit Standard-Einstellungen; `teil` überschreibt einzelne Felder (settings werden normalisiert). */
 export function zustand({ settings = {}, ...rest } = {}) {
-  return { tage: {}, urlaub: [], termine: [], einkauf: leereListe(), konto: leeresKonto(), ...rest, settings: normalizeSettings(settings) };
+  return { tage: {}, urlaub: [], termine: [], einkauf: leereListe(), konto: leeresKonto(), schicht: { katalog: null, monate: {}, status: {} }, ...rest, settings: normalizeSettings(settings) };
 }

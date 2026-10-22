@@ -1,0 +1,504 @@
+// Schichtplan: Schichtarten (Katalog), Monat (ein Zeichen je Tag), Pinsel, Notizen, Zusätze, Zählung – alles rein und ohne Veränderung des Arguments.
+import { test, describe } from 'node:test';
+import assert from 'node:assert/strict';
+import * as domain from '../../src/domain/index.js';
+import {
+  LEER,
+  MAX_ARTEN,
+  MAX_SCHICHT_ZEICHEN,
+  PALETTE,
+  SCHICHT_PERSONEN,
+  SCHLUESSEL_ZEICHEN,
+  aktiveArten,
+  artAendern,
+  artArchivieren,
+  artFuer,
+  artHinzufuegen,
+  artVerschieben,
+  istNacht,
+  katalogAusText,
+  katalogText,
+  leererMonat,
+  monatAusText,
+  monatText,
+  monatZaehlung,
+  normalisiereKatalog,
+  normalisiereMonat,
+  schaltePinsel,
+  schichtAm,
+  setzeNotiz,
+  setzeSchicht,
+  standardKatalog,
+  tageImMonat,
+  zusatzEntfernen,
+  zusatzHinzufuegen,
+} from '../../src/domain/schicht.js';
+
+const kopie = (x) => structuredClone(x);
+const kuerzel = (katalog, person) => katalog.arten[person].map((a) => a.kuerzel);
+const neueArt = (ueber = {}) => ({ kuerzel: 'X', name: 'Extra', farbe: 'braun', gruppe: 'dienst', ...ueber });
+
+/** Fügt `n` gültige Arten mit Kürzeln „Q1“, „Q2“, … hinzu. */
+function mitVielenArten(katalog, person, n) {
+  let k = katalog;
+  for (let i = 1; i <= n; i += 1) k = artHinzufuegen(k, person, neueArt({ kuerzel: `Q${i}`, name: `Art ${i}` }));
+  return k;
+}
+
+describe('Konstanten', () => {
+  test('Personen, Schlüsselzeichen, Palette', () => {
+    assert.deepEqual([...SCHICHT_PERSONEN], ['papa', 'mama']);
+    assert.equal(SCHLUESSEL_ZEICHEN.length, 62);
+    assert.equal(new Set(SCHLUESSEL_ZEICHEN).size, 62);
+    assert.equal(LEER, '.');
+    assert.equal(MAX_SCHICHT_ZEICHEN, 6000);
+    assert.deepEqual(
+      PALETTE.map((f) => f.id),
+      ['gruen', 'orange', 'hellblau', 'dunkelblau', 'rosa', 'rot', 'violett', 'tuerkis', 'gelb', 'dunkellila', 'schiefer', 'braun', 'oliv', 'cyan', 'magenta', 'grau'],
+    );
+    assert.equal(PALETTE[0].name, 'Grün');
+    assert.ok(PALETTE.every((f) => typeof f.name === 'string' && f.name !== ''));
+    assert.ok(Object.isFrozen(PALETTE) && Object.isFrozen(PALETTE[0]) && Object.isFrozen(SCHICHT_PERSONEN));
+  });
+
+  test('domain/index.js bündelt die Schicht-Regeln, ohne MAX_NOTIZ der Termin-Notiz zu verdecken', () => {
+    for (const name of ['standardKatalog', 'artHinzufuegen', 'leererMonat', 'schaltePinsel', 'monatZaehlung', 'monatText']) assert.equal(typeof domain[name], 'function', name);
+    assert.equal(domain.MAX_NOTIZ, 300); // Termin-Notiz (notiz.js)
+    assert.equal(domain.MAX_SCHICHT_NOTIZ, 40);
+  });
+});
+
+describe('Katalog', () => {
+  test('standardKatalog: Kürzel, Schlüssel, Zeiten, Nacht, Zusatz', () => {
+    const k = standardKatalog();
+    assert.deepEqual(kuerzel(k, 'papa'), ['F', 'M', 'NM', 'N', '2T', 'Ü', 'S', 'U']);
+    assert.deepEqual(kuerzel(k, 'mama'), ['T', 'N', 'S', 'Ü', 'U', 'DB']);
+    assert.equal(k.arten.papa.map((a) => a.k).join(''), 'ABCDEFGH');
+    assert.equal(k.arten.mama.map((a) => a.k).join(''), 'ABCDEF');
+    const mama = Object.fromEntries(k.arten.mama.map((a) => [a.kuerzel, a]));
+    const papa = Object.fromEntries(k.arten.papa.map((a) => [a.kuerzel, a]));
+    assert.equal(mama.T.von, '07:00');
+    assert.equal(mama.T.bis, '17:45');
+    assert.equal(mama.N.von, '17:30');
+    assert.equal(mama.N.bis, '07:00');
+    assert.equal(istNacht(mama.N), true);
+    assert.equal(istNacht(mama.T), false);
+    assert.equal(papa.N.nacht, true);
+    assert.equal(istNacht(papa.N), true);
+    assert.equal(istNacht(papa.F), false);
+    assert.equal(mama.DB.gruppe, 'zusatz');
+    assert.equal(mama.DB.von, '18:00');
+    assert.equal(mama.DB.bis, '19:30');
+    assert.equal(papa.U.muster, 'urlaub');
+    assert.equal(mama.U.muster, 'urlaub');
+    assert.equal(k.v, 1);
+    assert.ok([...k.arten.papa, ...k.arten.mama].every((a) => PALETTE.some((f) => f.id === a.farbe)));
+    assert.notEqual(standardKatalog(), standardKatalog()); // jedes Mal ein neues Objekt
+  });
+
+  test('artHinzufuegen: Prüfungen mit genauen Meldungen und erster freier Schlüssel', () => {
+    const k = standardKatalog();
+    assert.throws(() => artHinzufuegen(k, 'papa', neueArt({ kuerzel: 'f' })), { message: 'Dieses Kürzel gibt es schon.' });
+    assert.throws(() => artHinzufuegen(k, 'papa', neueArt({ name: '   ' })), { message: 'Bitte einen Namen eingeben.' });
+    assert.throws(() => artHinzufuegen(k, 'papa', neueArt({ kuerzel: 'ABCD' })), { message: 'Das Kürzel muss 1 bis 3 Zeichen haben.' });
+    assert.throws(() => artHinzufuegen(k, 'papa', neueArt({ kuerzel: '' })), { message: 'Das Kürzel muss 1 bis 3 Zeichen haben.' });
+    assert.throws(() => artHinzufuegen(k, 'papa', neueArt({ farbe: 'pink' })), { message: 'Unbekannte Farbe.' });
+    assert.throws(() => artHinzufuegen(k, 'papa', neueArt({ gruppe: 'zusatz' })), { message: 'Ein Zusatz braucht Von und Bis.' });
+    assert.throws(() => artHinzufuegen(k, 'papa', neueArt({ gruppe: 'zusatz', von: '18:00' })), { message: 'Ein Zusatz braucht Von und Bis.' });
+    assert.throws(() => artHinzufuegen(k, 'papa', neueArt({ von: '7.30', bis: '12:00' })), { message: 'Bitte eine Uhrzeit wie 07:30 eingeben.' });
+    assert.throws(() => artHinzufuegen(k, 'papa', neueArt({ von: '24:00', bis: '12:00' })), { message: 'Bitte eine Uhrzeit wie 07:30 eingeben.' });
+    // Mama hat „DB“; dasselbe Kürzel bei Papa ist erlaubt (eindeutig nur je Person)
+    assert.doesNotThrow(() => artHinzufuegen(k, 'papa', neueArt({ kuerzel: 'DB' })));
+
+    const neu = artHinzufuegen(k, 'papa', neueArt({ kuerzel: ' X ', name: '  Bereitschaft  ', von: '', bis: '' }));
+    assert.deepEqual(neu.arten.papa.at(-1), { k: 'I', kuerzel: 'X', name: 'Bereitschaft', farbe: 'braun', gruppe: 'dienst' });
+    assert.deepEqual(neu.arten.mama, k.arten.mama);
+
+    const zusatz = artHinzufuegen(k, 'papa', neueArt({ kuerzel: 'Z', gruppe: 'zusatz', von: '18:30', bis: '20:00' }));
+    assert.deepEqual(zusatz.arten.papa.at(-1), { k: 'I', kuerzel: 'Z', name: 'Extra', farbe: 'braun', gruppe: 'zusatz', von: '18:30', bis: '20:00' });
+  });
+
+  test('höchstens 24 Arten je Person (archivierte zählen mit)', () => {
+    const k = mitVielenArten(standardKatalog(), 'papa', MAX_ARTEN - 8);
+    assert.equal(k.arten.papa.length, 24);
+    assert.throws(() => artHinzufuegen(k, 'papa', neueArt({ kuerzel: 'ZZ' })), { message: 'Höchstens 24 Schichtarten pro Person.' });
+    const archiviert = artArchivieren(k, 'papa', 'A', true);
+    assert.throws(() => artHinzufuegen(archiviert, 'papa', neueArt({ kuerzel: 'ZZ' })), { message: 'Höchstens 24 Schichtarten pro Person.' });
+    assert.doesNotThrow(() => artHinzufuegen(k, 'mama', neueArt({ kuerzel: 'ZZ' })));
+  });
+
+  test('Schlüssel werden nie wiederverwendet; Archivieren und Wiederherstellen', () => {
+    const mitI = artHinzufuegen(standardKatalog(), 'papa', neueArt({ kuerzel: 'BE', name: 'Bereitschaft' }));
+    assert.equal(artFuer(mitI, 'papa', 'I').kuerzel, 'BE');
+    const archiviert = artArchivieren(mitI, 'papa', 'I', true);
+    const mitJ = artHinzufuegen(archiviert, 'papa', neueArt({ kuerzel: 'RE', name: 'Reserve' }));
+    assert.equal(mitJ.arten.papa.at(-1).k, 'J');
+    assert.equal(artFuer(mitJ, 'papa', 'I').kuerzel, 'BE');
+    assert.equal(artFuer(mitJ, 'papa', 'I').archiv, true);
+    assert.ok(!aktiveArten(mitJ, 'papa').some((a) => a.k === 'I'));
+    assert.ok(aktiveArten(mitJ, 'papa').some((a) => a.k === 'J'));
+    // auch das Kürzel einer archivierten Art bleibt vergeben (sonst gäbe es beim Wiederherstellen zwei gleiche)
+    assert.throws(() => artHinzufuegen(mitJ, 'papa', neueArt({ kuerzel: 'be' })), { message: 'Dieses Kürzel gibt es schon.' });
+    const zurueck = artArchivieren(mitJ, 'papa', 'I', false);
+    assert.equal(artFuer(zurueck, 'papa', 'I').archiv, undefined);
+    assert.ok(aktiveArten(zurueck, 'papa').some((a) => a.k === 'I'));
+    // wiederholbar
+    assert.deepEqual(artArchivieren(archiviert, 'papa', 'I', true), archiviert);
+    assert.deepEqual(artArchivieren(mitI, 'papa', 'I', false), mitI);
+    assert.equal(artFuer(mitI, 'papa', 'z'), null);
+    assert.equal(artFuer(mitI, 'mama', 'I'), null);
+  });
+
+  test('aktiveArten nach Gruppe', () => {
+    const k = standardKatalog();
+    assert.deepEqual(aktiveArten(k, 'mama', 'zusatz').map((a) => a.kuerzel), ['DB']);
+    assert.deepEqual(aktiveArten(k, 'mama', 'dienst').map((a) => a.kuerzel), ['T', 'N', 'S', 'Ü', 'U']);
+    assert.equal(aktiveArten(k, 'mama').length, 6);
+    assert.deepEqual(aktiveArten(k, 'papa', 'zusatz'), []);
+  });
+
+  test('artAendern: Name, Kürzel, Farbe, Zeiten ändern; Schlüssel und Archiv bleiben', () => {
+    const k = standardKatalog();
+    const neu = artAendern(k, 'papa', 'A', { name: 'Frühschicht', kuerzel: 'FR', farbe: 'oliv', von: '05:00', bis: '13:00' });
+    assert.deepEqual(artFuer(neu, 'papa', 'A'), { k: 'A', kuerzel: 'FR', name: 'Frühschicht', farbe: 'oliv', gruppe: 'dienst', von: '05:00', bis: '13:00' });
+    // eigenes Kürzel (andere Schreibung) ist kein Doppel
+    assert.equal(artFuer(artAendern(k, 'papa', 'A', { kuerzel: 'f' }), 'papa', 'A').kuerzel, 'f');
+    assert.throws(() => artAendern(k, 'papa', 'A', { kuerzel: 'm' }), { message: 'Dieses Kürzel gibt es schon.' });
+    assert.throws(() => artAendern(k, 'papa', 'A', { name: '' }), { message: 'Bitte einen Namen eingeben.' });
+    assert.throws(() => artAendern(k, 'mama', 'F', { von: '' }), { message: 'Ein Zusatz braucht Von und Bis.' });
+    assert.throws(() => artAendern(k, 'papa', 'A', { farbe: 'lila' }), { message: 'Unbekannte Farbe.' });
+    assert.throws(() => artAendern(k, 'papa', 'z', { name: 'X' }), /Unbekannte Schichtart/);
+    // Zeiten und Nacht wieder entfernen
+    const ohne = artAendern(k, 'mama', 'B', { von: '', bis: '' });
+    assert.deepEqual(artFuer(ohne, 'mama', 'B'), { k: 'B', kuerzel: 'N', name: 'Nachtdienst', farbe: 'dunkellila', gruppe: 'dienst' });
+    assert.equal(artFuer(artAendern(k, 'papa', 'D', { nacht: false }), 'papa', 'D').nacht, undefined);
+    // archivierte Art bleibt beim Ändern archiviert
+    const arch = artArchivieren(k, 'papa', 'B', true);
+    assert.equal(artFuer(artAendern(arch, 'papa', 'B', { name: 'Mittag' }), 'papa', 'B').archiv, true);
+  });
+
+  test('artVerschieben: tauscht mit dem Nachbarn, an den Enden ändert sich nichts', () => {
+    const k = standardKatalog();
+    assert.deepEqual(kuerzel(artVerschieben(k, 'papa', 'B', -1), 'papa'), ['M', 'F', 'NM', 'N', '2T', 'Ü', 'S', 'U']);
+    assert.deepEqual(kuerzel(artVerschieben(k, 'papa', 'B', 1), 'papa'), ['F', 'NM', 'M', 'N', '2T', 'Ü', 'S', 'U']);
+    assert.deepEqual(artVerschieben(k, 'papa', 'A', -1), k);
+    assert.deepEqual(artVerschieben(k, 'papa', 'H', 1), k);
+    assert.deepEqual(artVerschieben(k, 'mama', 'F', 1), k);
+  });
+
+  test('Katalog-Funktionen verändern ihr Argument nicht', () => {
+    const k = standardKatalog();
+    const vorher = kopie(k);
+    artHinzufuegen(k, 'papa', neueArt());
+    artAendern(k, 'papa', 'A', { name: 'Neu' });
+    artArchivieren(k, 'papa', 'A', true);
+    artVerschieben(k, 'papa', 'B', -1);
+    normalisiereKatalog(k);
+    katalogText(k);
+    assert.deepEqual(k, vorher);
+  });
+
+  test('normalisiereKatalog: tolerant, mit Warnungen', () => {
+    const leer = normalisiereKatalog(null);
+    assert.deepEqual(leer.katalog, standardKatalog());
+    assert.deepEqual(leer.warnungen, []);
+
+    const art = (k, kz) => ({ k, kuerzel: kz, name: `Art ${kz}`, farbe: 'gruen', gruppe: 'dienst' });
+    const ohneK = normalisiereKatalog({ v: 1, arten: { papa: [{ kuerzel: 'F', name: 'Früh', farbe: 'gruen', gruppe: 'dienst' }, art('B', 'M')], mama: [] } });
+    assert.deepEqual(kuerzel(ohneK.katalog, 'papa'), ['M']);
+    assert.ok(ohneK.warnungen.length > 0);
+
+    const doppelt = normalisiereKatalog({ v: 1, arten: { papa: [art('A', 'F'), art('A', 'M')], mama: [art('A', 'T')] } });
+    assert.deepEqual(kuerzel(doppelt.katalog, 'papa'), ['F']);
+    assert.deepEqual(kuerzel(doppelt.katalog, 'mama'), ['T']);
+    assert.ok(doppelt.warnungen.length > 0);
+
+    // unbekannte Farbe → grau, kaputte Uhrzeit entfällt, unbekannte Felder fallen weg; die Art bleibt
+    const repariert = normalisiereKatalog({ v: 1, arten: { papa: [{ ...art('C', 'X'), farbe: 'pink', von: '25:00', bis: '08:00', foo: 1 }], mama: [] } });
+    assert.deepEqual(repariert.katalog.arten.papa, [{ k: 'C', kuerzel: 'X', name: 'Art X', farbe: 'grau', gruppe: 'dienst' }]);
+    assert.ok(repariert.warnungen.length >= 2);
+
+    // Unbrauchbares → Standardarten mit Warnung; fehlende Person → leere Liste mit Warnung
+    for (const roh of ['Quatsch', 42, [], { v: 2, arten: {} }, { v: 1 }]) {
+      const r = normalisiereKatalog(roh);
+      assert.deepEqual(r.katalog, standardKatalog());
+      assert.ok(r.warnungen.length > 0);
+    }
+    const nurPapa = normalisiereKatalog({ v: 1, arten: { papa: [art('A', 'F')] } });
+    assert.deepEqual(nurPapa.katalog.arten.mama, []);
+    assert.ok(nurPapa.warnungen.length > 0);
+
+    // ein gültiger Katalog bleibt unverändert und ohne Warnungen
+    const gut = normalisiereKatalog(artArchivieren(standardKatalog(), 'papa', 'A', true));
+    assert.deepEqual(gut.katalog, artArchivieren(standardKatalog(), 'papa', 'A', true));
+    assert.deepEqual(gut.warnungen, []);
+  });
+
+  test('katalogText / katalogAusText hin und zurück, kaputter Text → Standard mit Warnung', () => {
+    const k = artArchivieren(artHinzufuegen(standardKatalog(), 'mama', neueArt({ kuerzel: 'BS', gruppe: 'zusatz', von: '20:00', bis: '21:00' })), 'papa', 'C', true);
+    const zurueck = katalogAusText(katalogText(k));
+    assert.deepEqual(zurueck.katalog, k);
+    assert.deepEqual(zurueck.warnungen, []);
+    const kaputt = katalogAusText('{nicht json');
+    assert.deepEqual(kaputt.katalog, standardKatalog());
+    assert.ok(kaputt.warnungen.length > 0);
+    assert.deepEqual(katalogAusText('').katalog, standardKatalog());
+  });
+
+  test('katalogText lehnt zu große Kataloge ab', () => {
+    const lang = (i) => ({ k: SCHLUESSEL_ZEICHEN[i], kuerzel: `${i}`.padStart(3, 'Q'), name: 'N'.repeat(24), farbe: 'dunkelblau', gruppe: 'dienst', von: '07:00', bis: '17:45', nacht: true, muster: 'urlaub', archiv: true });
+    const riesig = { v: 1, arten: { papa: Array.from({ length: 24 }, (_, i) => lang(i)), mama: Array.from({ length: 24 }, (_, i) => lang(i)) } };
+    assert.throws(() => katalogText(riesig), /^Error: Zu viele Schichtarten/);
+  });
+});
+
+describe('Monat', () => {
+  test('tageImMonat und leererMonat (auch Schaltjahre)', () => {
+    assert.equal(tageImMonat('2026-02'), 28);
+    assert.equal(tageImMonat('2028-02'), 29);
+    assert.equal(tageImMonat('2026-10'), 31);
+    assert.equal(tageImMonat('2026-11'), 30);
+    assert.throws(() => tageImMonat('2026-13'), /Ungültiger Monat/);
+    const m = leererMonat('2026-02');
+    assert.equal(m.t.papa, '.'.repeat(28));
+    assert.equal(m.t.mama, '.'.repeat(28));
+    assert.deepEqual(m, { v: 1, jm: '2026-02', t: { papa: '.'.repeat(28), mama: '.'.repeat(28) }, n: { papa: {}, mama: {} }, z: { papa: {}, mama: {} } });
+  });
+
+  test('setzeSchicht, schichtAm, schaltePinsel', () => {
+    const m0 = leererMonat('2026-10');
+    assert.equal(schichtAm(m0, 'papa', 1), null);
+    const m1 = setzeSchicht(m0, { person: 'papa', tag: 1, k: 'A' });
+    assert.equal(schichtAm(m1, 'papa', 1), 'A');
+    assert.equal(m1.t.papa, 'A' + '.'.repeat(30));
+    assert.equal(schichtAm(m1, 'mama', 1), null);
+    const m31 = setzeSchicht(m1, { person: 'mama', tag: 31, k: 'B' });
+    assert.equal(m31.t.mama, '.'.repeat(30) + 'B');
+    assert.deepEqual(setzeSchicht(m1, { person: 'papa', tag: 1, k: 'A' }), m1); // wiederholbar
+    assert.equal(schichtAm(setzeSchicht(m1, { person: 'papa', tag: 1, k: null }), 'papa', 1), null);
+    assert.deepEqual(setzeSchicht(m1, { person: 'papa', tag: 1, k: null }), m0);
+
+    const p1 = schaltePinsel(m0, { person: 'mama', tag: 5, k: 'C' });
+    assert.equal(schichtAm(p1, 'mama', 5), 'C');
+    const p2 = schaltePinsel(p1, { person: 'mama', tag: 5, k: 'C' });
+    assert.equal(schichtAm(p2, 'mama', 5), null);
+    assert.deepEqual(p2, m0);
+    const p3 = schaltePinsel(p1, { person: 'mama', tag: 5, k: 'D' });
+    assert.equal(schichtAm(p3, 'mama', 5), 'D');
+
+    assert.throws(() => setzeSchicht(m0, { person: 'oma', tag: 1, k: 'A' }), /Ungültige Person/);
+    assert.throws(() => setzeSchicht(m0, { person: 'papa', tag: 32, k: 'A' }), /Ungültiger Tag/);
+    assert.throws(() => setzeSchicht(m0, { person: 'papa', tag: 0, k: 'A' }), /Ungültiger Tag/);
+    assert.throws(() => setzeSchicht(m0, { person: 'papa', tag: 1, k: '.' }), /Ungültige Schichtart/);
+    assert.throws(() => setzeSchicht(m0, { person: 'papa', tag: 1, k: 'AB' }), /Ungültige Schichtart/);
+    assert.throws(() => schaltePinsel(m0, { person: 'papa', tag: 1, k: null }), /Ungültige Schichtart/);
+  });
+
+  test('setzeNotiz: ein Zeile, höchstens 40 Zeichen, leer löscht', () => {
+    const m0 = leererMonat('2026-10');
+    const m1 = setzeNotiz(m0, { person: 'papa', tag: 13, text: '  Dienst 12\n Tausch ' });
+    assert.equal(m1.n.papa['13'], 'Dienst 12 Tausch');
+    assert.deepEqual(m1.n.mama, {});
+    assert.deepEqual(setzeNotiz(m1, { person: 'papa', tag: 13, text: 'Dienst 12 Tausch' }), m1);
+    assert.throws(() => setzeNotiz(m0, { person: 'papa', tag: 13, text: 'x'.repeat(41) }), { message: 'Höchstens 40 Zeichen.' });
+    assert.doesNotThrow(() => setzeNotiz(m0, { person: 'papa', tag: 13, text: 'Ü'.repeat(40) }));
+    const geloescht = setzeNotiz(m1, { person: 'papa', tag: 13, text: '   ' });
+    assert.ok(!('13' in geloescht.n.papa));
+    assert.deepEqual(geloescht, m0);
+    assert.deepEqual(setzeNotiz(m0, { person: 'papa', tag: 13, text: '' }), m0);
+    // die Schicht des Tages bleibt
+    const mitSchicht = setzeSchicht(m0, { person: 'papa', tag: 13, k: 'A' });
+    assert.equal(schichtAm(setzeNotiz(mitSchicht, { person: 'papa', tag: 13, text: 'x' }), 'papa', 13), 'A');
+  });
+
+  test('zusatzHinzufuegen / zusatzEntfernen: wiederholbar, höchstens 3', () => {
+    const m0 = leererMonat('2026-10');
+    const db = { person: 'mama', tag: 21, k: 'F', von: '18:30', bis: '20:00' };
+    const m1 = zusatzHinzufuegen(m0, db);
+    assert.deepEqual(m1.z.mama['21'], [{ k: 'F', von: '18:30', bis: '20:00' }]);
+    const m2 = zusatzHinzufuegen(m1, db);
+    assert.equal(m2.z.mama['21'].length, 1);
+    assert.deepEqual(m2, m1);
+    const m3 = zusatzHinzufuegen(zusatzHinzufuegen(m1, { ...db, von: '08:00', bis: '09:00' }), { ...db, k: 'G', von: '10:00', bis: '11:00' });
+    assert.equal(m3.z.mama['21'].length, 3);
+    assert.throws(() => zusatzHinzufuegen(m3, { ...db, von: '12:00', bis: '13:00' }), { message: 'Höchstens 3 Zusätze pro Tag.' });
+    assert.deepEqual(zusatzHinzufuegen(m3, db), m3); // ein schon vorhandener ist kein vierter
+    assert.throws(() => zusatzHinzufuegen(m0, { ...db, von: '1830' }), { message: 'Bitte eine Uhrzeit wie 07:30 eingeben.' });
+    assert.throws(() => zusatzHinzufuegen(m0, { ...db, k: null }), /Ungültige Schichtart/);
+
+    assert.deepEqual(zusatzEntfernen(m1, { person: 'mama', tag: 21, k: 'F', von: '07:00' }), m1);
+    assert.deepEqual(zusatzEntfernen(m1, { person: 'papa', tag: 21, k: 'F', von: '18:30' }), m1);
+    const weg = zusatzEntfernen(m1, { person: 'mama', tag: 21, k: 'F', von: '18:30' });
+    assert.deepEqual(weg, m0);
+    assert.deepEqual(zusatzEntfernen(weg, { person: 'mama', tag: 21, k: 'F', von: '18:30' }), m0);
+    const zwei = zusatzEntfernen(m3, { person: 'mama', tag: 21, k: 'F', von: '08:00' });
+    assert.deepEqual(zwei.z.mama['21'], [{ k: 'F', von: '18:30', bis: '20:00' }, { k: 'G', von: '10:00', bis: '11:00' }]);
+  });
+
+  test('zusatzEntfernen mit Bis: gleiche Art und Von, anderes Bis → nur genau dieser geht weg (wiederholbar); ohne Bis wie bisher', () => {
+    const db = { person: 'mama', tag: 21, k: 'F' };
+    const m = zusatzHinzufuegen(zusatzHinzufuegen(leererMonat('2026-10'), { ...db, von: '18:00', bis: '19:30' }), { ...db, von: '18:00', bis: '20:00' });
+    assert.equal(m.z.mama['21'].length, 2);
+    const eins = zusatzEntfernen(m, { ...db, von: '18:00', bis: '20:00' });
+    assert.deepEqual(eins.z.mama['21'], [{ k: 'F', von: '18:00', bis: '19:30' }]);
+    assert.deepEqual(zusatzEntfernen(eins, { ...db, von: '18:00', bis: '20:00' }), eins); // wiederholbar
+    assert.deepEqual(zusatzEntfernen(m, { ...db, von: '18:00', bis: '21:00' }), m); // kein passender → nichts
+    assert.deepEqual(m.z.mama['21'].length, 2); // Argument unverändert
+    assert.equal(zusatzEntfernen(m, { ...db, von: '18:00' }).z.mama['21'], undefined); // ohne Bis: alle mit Art und Von
+  });
+
+  test('Monats-Funktionen verändern ihr Argument nicht', () => {
+    let m = leererMonat('2026-10');
+    m = setzeSchicht(m, { person: 'papa', tag: 2, k: 'A' });
+    m = setzeNotiz(m, { person: 'papa', tag: 2, text: 'alt' });
+    m = zusatzHinzufuegen(m, { person: 'mama', tag: 3, k: 'F', von: '18:00', bis: '19:30' });
+    const vorher = kopie(m);
+    setzeSchicht(m, { person: 'papa', tag: 2, k: 'B' });
+    setzeSchicht(m, { person: 'papa', tag: 2, k: null });
+    schaltePinsel(m, { person: 'papa', tag: 2, k: 'A' });
+    schaltePinsel(m, { person: 'mama', tag: 9, k: 'A' });
+    setzeNotiz(m, { person: 'papa', tag: 2, text: 'neu' });
+    setzeNotiz(m, { person: 'papa', tag: 2, text: '' });
+    setzeNotiz(m, { person: 'mama', tag: 4, text: 'x' });
+    zusatzHinzufuegen(m, { person: 'mama', tag: 3, k: 'F', von: '20:00', bis: '21:00' });
+    zusatzHinzufuegen(m, { person: 'papa', tag: 3, k: 'F', von: '20:00', bis: '21:00' });
+    zusatzEntfernen(m, { person: 'mama', tag: 3, k: 'F', von: '18:00' });
+    normalisiereMonat(m, '2026-10');
+    monatText(m);
+    monatZaehlung(m, standardKatalog(), 'papa');
+    assert.deepEqual(m, vorher);
+  });
+
+  test('normalisiereMonat: auffüllen, kürzen, ungültige Zeichen, kaputte Notizen und Zusätze', () => {
+    const leer = normalisiereMonat(null, '2026-10');
+    assert.deepEqual(leer.monat, leererMonat('2026-10'));
+    assert.deepEqual(leer.warnungen, []);
+
+    const kurz = normalisiereMonat({ v: 1, t: { papa: 'AAAA..BB.C', mama: '' } }, '2026-10');
+    assert.equal(kurz.monat.t.papa, 'AAAA..BB.C' + '.'.repeat(21));
+    assert.equal(kurz.monat.t.papa.length, 31);
+    assert.equal(kurz.monat.t.mama, '.'.repeat(31));
+    assert.ok(kurz.warnungen.length > 0);
+
+    const lang = normalisiereMonat({ v: 1, t: { papa: 'A'.repeat(31), mama: 'B'.repeat(31) } }, '2026-02');
+    assert.equal(lang.monat.t.papa, 'A'.repeat(28));
+    assert.ok(lang.warnungen.length > 0);
+
+    const zeichen = normalisiereMonat({ v: 1, t: { papa: '!' + 'A'.repeat(30), mama: '.'.repeat(31) } }, '2026-10');
+    assert.equal(zeichen.monat.t.papa, '.' + 'A'.repeat(30));
+    assert.ok(zeichen.warnungen.length > 0);
+
+    const notizen = normalisiereMonat(
+      { v: 1, t: { papa: '.'.repeat(31), mama: '.'.repeat(31) }, n: { papa: { 3: 'x'.repeat(50), 40: 'zu spät', abc: 'kein Tag', 5: 7, 6: '  ' }, mama: 'Quatsch' } },
+      '2026-10',
+    );
+    assert.deepEqual(notizen.monat.n.papa, { 3: 'x'.repeat(40) });
+    assert.deepEqual(notizen.monat.n.mama, {});
+    assert.ok(notizen.warnungen.length > 0);
+
+    const zusaetze = normalisiereMonat(
+      {
+        v: 1,
+        t: { papa: '.'.repeat(31), mama: '.'.repeat(31) },
+        z: {
+          mama: {
+            1: [{ k: 'F', von: '18:00', bis: '19:30' }, { k: 'F', von: '18:00', bis: '19:30' }, { k: '!', von: '18:00', bis: '19:00' }, { k: 'F', von: '9', bis: '10:00' }, null],
+            2: 'nein',
+            3: [{ k: 'A', von: '01:00', bis: '02:00' }, { k: 'B', von: '01:00', bis: '02:00' }, { k: 'C', von: '01:00', bis: '02:00' }, { k: 'D', von: '01:00', bis: '02:00' }],
+            4: [],
+          },
+        },
+      },
+      '2026-10',
+    );
+    assert.deepEqual(zusaetze.monat.z.mama, {
+      1: [{ k: 'F', von: '18:00', bis: '19:30' }],
+      3: [{ k: 'A', von: '01:00', bis: '02:00' }, { k: 'B', von: '01:00', bis: '02:00' }, { k: 'C', von: '01:00', bis: '02:00' }],
+    });
+    assert.deepEqual(zusaetze.monat.z.papa, {});
+    assert.ok(zusaetze.warnungen.length > 0);
+
+    for (const roh of ['Quatsch', [], { v: 2 }, { v: 1, t: 'x' }]) {
+      const r = normalisiereMonat(roh, '2026-10');
+      assert.deepEqual(r.monat, leererMonat('2026-10'));
+      assert.ok(r.warnungen.length > 0);
+    }
+  });
+
+  test('monatText / monatAusText hin und zurück; leere n/z werden nicht geschrieben', () => {
+    const m0 = leererMonat('2026-10');
+    const text0 = monatText(m0);
+    const json0 = JSON.parse(text0);
+    assert.ok(!('n' in json0) && !('z' in json0));
+    assert.deepEqual(monatAusText(text0, '2026-10'), { monat: m0, warnungen: [] });
+
+    let m = setzeSchicht(m0, { person: 'papa', tag: 1, k: 'A' });
+    m = setzeNotiz(m, { person: 'papa', tag: 13, text: 'Dienst 12' });
+    m = zusatzHinzufuegen(m, { person: 'mama', tag: 21, k: 'F', von: '18:30', bis: '20:00' });
+    const text = monatText(m);
+    const json = JSON.parse(text);
+    assert.deepEqual(json.n, { papa: { 13: 'Dienst 12' } }); // leere Personen fallen weg
+    assert.deepEqual(json.z, { mama: { 21: [{ k: 'F', von: '18:30', bis: '20:00' }] } });
+    assert.deepEqual(monatAusText(text, '2026-10'), { monat: m, warnungen: [] });
+
+    const kaputt = monatAusText('{kaputt', '2026-10');
+    assert.deepEqual(kaputt.monat, m0);
+    assert.ok(kaputt.warnungen.length > 0);
+    assert.deepEqual(monatAusText('', '2026-10'), { monat: m0, warnungen: [] });
+    assert.deepEqual(monatAusText(undefined, '2026-10'), { monat: m0, warnungen: [] });
+  });
+
+  test('Größe: übervoller Monat wird abgelehnt, ein typischer passt', () => {
+    const jm = '2026-10';
+    const voll = leererMonat(jm);
+    for (const p of SCHICHT_PERSONEN) {
+      voll.t[p] = 'A'.repeat(31);
+      for (let tag = 1; tag <= 31; tag += 1) {
+        voll.n[p][tag] = 'x'.repeat(40);
+        voll.z[p][tag] = [
+          { k: 'F', von: '06:00', bis: '07:00' },
+          { k: 'F', von: '18:00', bis: '19:30' },
+          { k: 'G', von: '20:00', bis: '21:00' },
+        ];
+      }
+    }
+    assert.throws(() => monatText(voll), { message: 'Zu viele Notizen in diesem Monat. Bitte einige kürzen oder löschen.' });
+
+    let typisch = leererMonat(jm);
+    for (let tag = 1; tag <= 31; tag += 1) {
+      typisch = setzeSchicht(typisch, { person: 'papa', tag, k: SCHLUESSEL_ZEICHEN[tag % 8] });
+      typisch = setzeSchicht(typisch, { person: 'mama', tag, k: SCHLUESSEL_ZEICHEN[tag % 5] });
+      typisch = setzeNotiz(typisch, { person: tag % 2 ? 'papa' : 'mama', tag, text: 'y'.repeat(40) });
+    }
+    typisch = zusatzHinzufuegen(typisch, { person: 'mama', tag: 7, k: 'F', von: '18:00', bis: '19:30' });
+    assert.ok(monatText(typisch).length <= MAX_SCHICHT_ZEICHEN);
+
+    // Schreib-Funktionen lehnen ab, bevor der Monat zu groß wird
+    const fastVoll = kopie(voll);
+    for (const p of SCHICHT_PERSONEN) for (let tag = 1; tag <= 31; tag += 1) fastVoll.z[p][tag] = [];
+    let m = normalisiereMonat(fastVoll, jm).monat;
+    assert.throws(() => {
+      for (let tag = 1; tag <= 31; tag += 1) for (const von of ['01:00', '02:00', '03:00']) m = zusatzHinzufuegen(m, { person: 'mama', tag, k: 'F', von, bis: '04:00' });
+    }, { message: 'Zu viele Notizen in diesem Monat. Bitte einige kürzen oder löschen.' });
+    assert.ok(monatText(m).length <= MAX_SCHICHT_ZEICHEN); // der letzte gültige Stand bleibt schreibbar
+  });
+
+  test('monatZaehlung: Dienste ohne Urlaub, je Art in Katalog-Reihenfolge, unbekannte Schlüssel stören nicht', () => {
+    const k = standardKatalog(); // Papa: A=F, D=N, H=U
+    let m = leererMonat('2026-10');
+    for (const [tag, s] of [[1, 'D'], [2, 'A'], [3, 'H'], [4, 'A'], [5, 'D'], [6, 'H'], [7, 'A'], [8, 'z']]) m = setzeSchicht(m, { person: 'papa', tag, k: s });
+    m = setzeSchicht(m, { person: 'mama', tag: 1, k: 'A' });
+    assert.deepEqual(monatZaehlung(m, k, 'papa'), {
+      dienste: 5,
+      jeArt: [
+        { k: 'A', kuerzel: 'F', anzahl: 3 },
+        { k: 'D', kuerzel: 'N', anzahl: 2 },
+        { k: 'H', kuerzel: 'U', anzahl: 2 },
+      ],
+    });
+    assert.deepEqual(monatZaehlung(m, k, 'mama'), { dienste: 1, jeArt: [{ k: 'A', kuerzel: 'T', anzahl: 1 }] });
+    assert.deepEqual(monatZaehlung(leererMonat('2026-10'), k, 'papa'), { dienste: 0, jeArt: [] });
+    // archivierte Arten werden weiter gezählt (alte Tage bleiben richtig)
+    assert.equal(monatZaehlung(m, artArchivieren(k, 'papa', 'A', true), 'papa').dienste, 5);
+  });
+});

@@ -1,6 +1,6 @@
 // Gemeinsame Helfer der End-to-End-Tests: feste Uhrzeit, Demo-/Google-Start (auch mit einer Attrappe von Google) und eine Wache, die jeden Fehler im Browser meldet.
 import { test as basis, expect } from '@playwright/test';
-import { einkaufZuEreignis } from '../../src/calendar/mapping.js';
+import { einkaufZuEreignis, schichtartenZuEreignis } from '../../src/calendar/mapping.js';
 
 /** Mittwoch, 14. Oktober 2026, 08:00 in Wien: ein gewöhnlicher Werktag (kein Feiertag, kein Urlaub in der Demo). */
 export const WERKTAG = '2026-10-14T08:00:00+02:00';
@@ -102,19 +102,26 @@ async function loginDienstAntwort(route) {
 
 /**
  * Google ohne Netz, aber anmeldbar: das Anmeldeskript ist eine Attrappe (siehe oben), die Kalender-API ein kleiner Speicher im Test
- * (Ereignisse nach ID; Listen sind leer). `einkauf` = Einkaufsliste, die schon im Kalender steht.
- * Ergebnis: { anfragen: ['GET /calendars/…/events/fkeinkauf', …], dienste, setzeEinkauf(liste) } – `setzeEinkauf` spielt das andere Telefon.
+ * (Ereignisse nach ID; Listen sind leer, mit `listenMitAllen` enthalten sie jedes gespeicherte Ereignis, unabhängig vom Zeitraum).
+ * `einkauf` = Einkaufsliste, `ereignisse` = Ereignisse (Google-Form, mit `id`), die schon im Kalender stehen.
+ * Ergebnis: { anfragen: ['GET /calendars/…/events/fkeinkauf', …], geschrieben: ['POST fksch202610', 'PATCH …', …], dienste,
+ * ereignis(id) (gespeicherte Fassung oder null), setzeEinkauf(liste), setzeSchichtarten(katalog) } – die beiden `setze…` spielen
+ * das andere Telefon.
  * Der Login-Dienst ist eine Attrappe (siehe oben; mit `loginDienst: false` nicht erreichbar), der Push-Dienst ist nicht erreichbar.
  * Alle Anfragen an beide Dienste landen in `dienste`.
  */
-export async function googleAttrappe(page, { einkauf = null, loginDienst = true } = {}) {
+export async function googleAttrappe(page, { einkauf = null, ereignisse: vorhanden = [], listenMitAllen = false, loginDienst = true } = {}) {
   const ereignisse = new Map();
   const anfragen = [];
+  const geschrieben = [];
   const dienste = [];
   let etag = 1;
   const merke = (e) => ereignisse.set(e.id, { ...e, status: 'confirmed', etag: `"${(etag += 1)}"` });
   const setzeEinkauf = (liste) => merke(einkaufZuEreignis(liste).body);
+  const setzeSchichtarten = (katalog) => merke(schichtartenZuEreignis(katalog).body);
+  const ereignis = (id) => (ereignisse.has(id) ? structuredClone(ereignisse.get(id)) : null);
   if (einkauf) setzeEinkauf(einkauf);
+  for (const e of vorhanden) merke(e);
 
   await page.route('https://accounts.google.com/gsi/client', (r) => r.fulfill({ contentType: 'text/javascript', body: GIS_ATTRAPPE }));
   await page.route(/workers\.dev/, (r) => {
@@ -132,9 +139,11 @@ export async function googleAttrappe(page, { einkauf = null, loginDienst = true 
     const treffer = /^\/calendars\/[^/]+\/events(?:\/([^/]+))?$/.exec(pfad);
     if (!treffer) return antwort(200, { items: [] }); // Kalenderliste u. Ä.
     const id = treffer[1];
-    if (methode === 'GET') return id ? (ereignisse.has(id) ? antwort(200, ereignisse.get(id)) : fehlt()) : antwort(200, { items: [] });
+    if (methode === 'GET') return id ? (ereignisse.has(id) ? antwort(200, ereignisse.get(id)) : fehlt()) : antwort(200, { items: listenMitAllen ? [...ereignisse.values()] : [] });
+    if (methode !== 'POST') geschrieben.push(`${methode} ${id}`);
     if (methode === 'POST') {
       const body = anfrage.postDataJSON();
+      geschrieben.push(`POST ${body.id}`);
       if (ereignisse.has(body.id)) return antwort(409, { error: { code: 409, message: 'The requested identifier already exists.' } });
       merke(body);
       return antwort(200, ereignisse.get(body.id));
@@ -147,18 +156,18 @@ export async function googleAttrappe(page, { einkauf = null, loginDienst = true 
     if (methode === 'DELETE') return ereignisse.delete(id) ? antwort(204) : fehlt();
     return antwort(405, { error: { code: 405, message: 'Nicht in der Attrappe' } });
   });
-  return { anfragen, dienste, setzeEinkauf };
+  return { anfragen, geschrieben, dienste, ereignis, setzeEinkauf, setzeSchichtarten };
 }
 
 /**
  * Google-Modus, angemeldet über die Attrappe (siehe googleAttrappe): erster Start ohne gespeicherten Stand, „Mit Google anmelden“,
  * bis „Verbunden ✓“. Mit `uhrLaeuft` läuft die Uhr ab `zeit` weiter (page.clock.install, für Zeitgeber wie den 30-Sekunden-Abgleich),
- * sonst steht sie. Gibt die Attrappe zurück.
+ * sonst steht sie. `ereignisse` und `listenMitAllen` gehen an die Attrappe. Gibt die Attrappe zurück.
  */
-export async function starteGoogleVerbunden(page, { route = '#/heute', zeit = WERKTAG, einkauf = null, uhrLaeuft = false, loginDienst = true } = {}) {
+export async function starteGoogleVerbunden(page, { route = '#/heute', zeit = WERKTAG, einkauf = null, ereignisse = [], listenMitAllen = false, uhrLaeuft = false, loginDienst = true } = {}) {
   if (uhrLaeuft) await page.clock.install({ time: new Date(zeit) });
   else await page.clock.setFixedTime(new Date(zeit));
-  const google = await googleAttrappe(page, { einkauf, loginDienst });
+  const google = await googleAttrappe(page, { einkauf, ereignisse, listenMitAllen, loginDienst });
   await speicherVorbelegen(page, { 'fk.config.v1': KONFIG_GOOGLE });
   await page.goto(`/${route}`);
   await page.getByRole('button', { name: 'Mit Google anmelden' }).click();

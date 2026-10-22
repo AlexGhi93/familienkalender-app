@@ -52,12 +52,13 @@ test('Sicherung: vorbereiten zeigt „Bereit“, Datei speichern lädt das JSON 
   await starteDemo(page, { route: '#/app' });
   const karte = page.locator('article.karte').filter({ has: page.getByRole('heading', { name: 'Sicherung' }) });
   await karte.getByRole('button', { name: 'Sicherung vorbereiten' }).click();
-  await expect(karte.locator('.sichern-bereit p')).toHaveText(/^Bereit: \d+ Tage · 2 Urlaube · 8 Termine · 4 Artikel auf der Einkaufsliste · 10 Kontostände\.$/);
+  await expect(karte.locator('.sichern-bereit p')).toHaveText(/^Bereit: \d+ Tage · 2 Urlaube · 8 Termine · 4 Artikel auf der Einkaufsliste · 10 Kontostände · 3 Monate Schichtplan\.$/);
   const speichern = karte.getByRole('button', { name: 'Datei speichern (familienkalender-sicherung-2026-10-14.json)' });
   const [download] = await Promise.all([page.waitForEvent('download'), speichern.click()]);
   expect(download.suggestedFilename()).toBe('familienkalender-sicherung-2026-10-14.json');
   const sicherung = JSON.parse(await readFile(await download.path(), 'utf8'));
   expect(sicherung).toMatchObject({ app: 'familienkalender', sicherungVersion: 1, appVersion: VERSION, erstelltAm: '2026-10-14T06:00:00.000Z' });
+  expect(Object.keys(sicherung.schicht.monate)).toEqual(['2026-09', '2026-10', '2026-11']);
   expect(sicherung.termine.find((t) => t.id === 'demo-t1').titel).toBe('🩺 Kinderarzt (Kind) 10:00 · 🎒 e-card, MuKi-Pass, Impfpass');
   // „Bereit“ übersteht das Neuzeichnen der Seite
   await page.getByRole('button', { name: '‹ Zurück' }).click();

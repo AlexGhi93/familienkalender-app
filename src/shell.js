@@ -19,11 +19,18 @@ import { VERSION } from './app/version.js';
 import { istNeueVersionVerfuegbar } from './app/version-check.js';
 import { fortschrittLeiste } from './ui/fortschritt.js';
 import { createEinkaufAbgleich } from './app/einkauf-abgleich.js';
+import { schichtScreen } from './ui/schicht-screen.js';
+import { oeffneSchichtTag } from './ui/schicht-tag.js';
+import { oeffneSchichtarten } from './ui/schicht-arten.js';
+import { schichtFilterLesen, schichtFilterSpeichern } from './app/views/schicht-model.js';
+import { createSchichtAbgleich, schichtAktualisierenFaellig } from './app/schicht-abgleich.js';
+import { monatVor } from './domain/konto.js';
 
 const SEITEN = {
   heute: heuteScreen,
   monat: monatScreen,
   neu: neuScreen,
+  schicht: schichtScreen, // „Schichtplan“: wer wann welchen Dienst hat
   urlaub: urlaubScreen,
   mehr: mehrScreen,
   einkauf: einkaufScreen, // Registerkarte; auch erreichbar von „Heute“ (Karte) und „Neu“ (Kachel)
@@ -32,14 +39,16 @@ const SEITEN = {
   app: appScreen, // „Konto & App“: erreichbar von „Mehr“
 };
 
-const SEITEN_TITEL = { einkauf: 'Einkauf', verlauf: 'Verlauf', konto: 'Kontostand', app: 'Konto & App' }; // Fenstertitel, wo er von der Registerkarte abweicht oder es keine gibt
+const SEITEN_TITEL = { einkauf: 'Einkauf', schicht: 'Schichtplan', verlauf: 'Verlauf', konto: 'Kontostand', app: 'Konto & App' }; // Fenstertitel, wo er von der Registerkarte abweicht oder es keine gibt
 
-// Drei links, „Neu“ in der Mitte, drei rechts. „Kontostand“ passt bei sieben Karten nicht in die Leiste, daher kurz „Konto“.
+// Drei links, dann „Neu“ als runder Hauptknopf, gleich danach „Schicht“, dann drei. Lange Namen passen bei acht Karten nicht in die
+// Leiste („Kontostand“ → „Konto“, „Schichtplan“ → „Schicht“); der Fenstertitel sagt es ganz.
 const TABS = [
   ['heute', '🏠', 'Heute'],
   ['monat', '📅', 'Monat'],
   ['einkauf', '🛒', 'Einkauf'],
   ['neu', '＋', 'Neu'],
+  ['schicht', '🗓️', 'Schicht'],
   ['urlaub', '✈️', 'Urlaub'],
   ['konto', '💶', 'Konto'],
   ['mehr', '⚙️', 'Mehr'],
@@ -61,6 +70,8 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
   fuelle(wurzel, banner, fortschritt, inhalt, leiste);
 
   let neueVersion = false;
+  let schichtAngefragt = null; // Monat, den der Schichtplan zuletzt geladen hat (null = beim nächsten Zeichnen neu laden)
+  let schichtRueckkehr = null; // Zeitpunkt (ms) des letzten Neu-Holens beim Zurückkehren in die App
   let letzteSeite = null; // zuletzt gezeichnete Seite (für `ui.seiteBetreten`)
   const versionPruefen = async () => {
     if (neueVersion || !(await istNeueVersionVerfuegbar({ aktuell: VERSION }))) return;
@@ -89,6 +100,7 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
       await anmeldung;
       await store.wiederholeAusstehende();
       await store.laden();
+      schichtAngefragt = null; // ein offener Schichtplan lädt seine Monate jetzt neu
       ui.verbindung = { laeuft: false, fehler: null };
       toast('Verbunden ✓');
     } catch (fehler) {
@@ -110,6 +122,7 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
     monat: jetztMonat(),
     neu: { auswahl: null },
     urlaubJahr: 0, // gewähltes Kindergartenjahr auf der Urlaub-Seite (0 = aktuelles)
+    schicht: { jm: store.heute().slice(0, 7), filter: schichtFilterLesen(), pinsel: null }, // angezeigter Monat, Filter (je Telefon gemerkt), Pinsel
     verlauf: { typ: 'alle', jahr: null, text: '', von: null, laedt: false }, // Filter und geladener Bereich des Verlaufs
     titel: () => 'Familienkalender',
     seite: () => {
@@ -136,12 +149,32 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
         if (seite === 'monat') ui.monatLaden();
         if (seite === 'urlaub') ui.urlaubLaden();
         if (seite === 'verlauf') ui.verlaufLaden();
+        if (seite === 'schicht') ui.schichtLaden();
+        else schichtAngefragt = null; // beim nächsten Öffnen frisch laden
       }
       inhalt.scrollTop = alt;
       fenster.scrollTo(0, scrollY);
       fuelle(leiste, TABS.map(([id, symbol, text]) => tab(id, symbol, text, seite)));
       document.title = `${ui.titel()} · ${SEITEN_TITEL[seite] ?? TABS.find(([id]) => id === seite)?.[2]}`;
       einkaufAbgleich.pruefen(); // Einkaufsliste offen (und Google verbunden): alle 30 Sekunden nachsehen, sonst nicht
+      if (seite === 'schicht' && auth) schichtAbgleich.start(); // nur mit Google: in der Demo gibt es kein anderes Telefon
+      else schichtAbgleich.stop();
+    },
+    /** Lädt Schichtarten und den angezeigten Monat samt Nachbarmonaten, einmal beim Öffnen der Seite und bei jedem Monatswechsel. */
+    schichtLaden() {
+      if (schichtAngefragt === ui.schicht.jm) return;
+      schichtAngefragt = ui.schicht.jm;
+      store.schichtLaden(ui.schicht.jm).catch(() => {}); // Lesefehler stehen im Status des Monats
+    },
+    /** Die Monate, die der Schichtplan gerade braucht: der angezeigte und seine Nachbarn. */
+    schichtMonate: () => [monatVor(ui.schicht.jm, 1), ui.schicht.jm, monatVor(ui.schicht.jm, -1)],
+    setzeSchichtMonat(jm) {
+      ui.schicht.jm = jm;
+      ui.rendern();
+    },
+    setzeSchichtFilter(filter) {
+      ui.schicht.filter = schichtFilterSpeichern(filter);
+      ui.rendern();
     },
     /**
      * Holt nur die Einkaufsliste neu (alle 30 Sekunden, beim Zurückkehren, „Ziehen zum Aktualisieren“); Ergebnis wie store.einkaufAktualisieren.
@@ -189,6 +222,10 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
       ui.rendern();
     },
     tagesblatt: (date) => oeffneTagesblatt({ store, ui }, date),
+    /** Tagesblatt des Schichtplans: ein Tag, beide Personen (Tipp auf einen Tag ohne Pinsel). */
+    schichtTag: (datum) => oeffneSchichtTag({ store, ui }, datum),
+    /** Blatt „Schichtarten“: anlegen, ändern, ausblenden, ordnen (Knopf „Schichtarten bearbeiten“). */
+    schichtArten: () => oeffneSchichtarten({ store, ui }),
     /** Formular für einen neuen Termin der Art `art` (oder `termin` bearbeiten); `datum` = Tag, mit dem ein neuer Eintrag beginnt (sonst der Vorschlag). */
     neuTerminStarten(art, termin = null, { datum = null } = {}) {
       ui.neu = terminEntwurf(art, { settings: store.getState().settings, heute: store.heute(), termin, state: store.getState(), datum });
@@ -230,6 +267,11 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
     holen: () => ui.einkaufAktualisieren(),
     zuletzt: () => store.einkaufGeprueftAm(),
     jetzt: () => store.jetzt().getTime(),
+  });
+
+  const schichtAbgleich = createSchichtAbgleich({
+    aktiv: () => ui.seite() === 'schicht' && document.visibilityState === 'visible' && googleBereit(),
+    holen: () => store.schichtAktualisieren(ui.schichtMonate()),
   });
 
   fenster.addEventListener('hashchange', () => ui.rendern());
@@ -280,6 +322,8 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
     }
     await store.wiederholeAusstehende();
     await store.laden();
+    schichtAngefragt = null; // ein offener Schichtplan lädt seine Monate jetzt neu
+    ui.rendern();
   }
 
   // Rückkehr in die App (z. B. am nächsten Tag): neu zeichnen, damit „heute“ stimmt, und – mit gültiger Anmeldung – höchstens einmal pro Minute neu laden.
@@ -290,6 +334,11 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
     if (auth?.dauerAnmeldung?.()?.dauerhaft) stillVerbinden().catch(() => {});
     else if (auth) store.aktualisieren();
     einkaufAbgleich.sofort(); // zurück auf der Einkaufsliste: gleich einmal nachsehen
+    const jetzt = store.jetzt().getTime();
+    if (ui.seite() === 'schicht' && googleBereit() && schichtAktualisierenFaellig(schichtRueckkehr, jetzt)) {
+      schichtRueckkehr = jetzt; // zurück auf dem Schichtplan: nachsehen, was das andere Telefon eingetragen hat (höchstens einmal pro Minute)
+      store.schichtAktualisieren(ui.schichtMonate()).catch(() => {});
+    }
     versionPruefen();
   });
 
