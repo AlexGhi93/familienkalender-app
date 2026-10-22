@@ -37,10 +37,12 @@ function fixkostenAusSpeicher(roh) {
 
 /**
  * Sparziele aus dem Speicher lesen, genau wie beim Google-Adapter (gespeichert ist der Kalendertext): { daten, unlesbar, warnungen, text }.
- * Kein Text (alter Speicher) → leere Daten; unlesbarer Text → leer, gesperrt (nie überschreiben), mit dem Rohtext für die Sicherung.
+ * Nichts (alter Speicher) → leere Daten; unlesbarer Text oder etwas anderes als Text → leer, gesperrt (nie überschreiben), mit dem
+ * Rohtext für die Sicherung.
  */
-function zieleGelesen(text) {
-  const { daten, unlesbar } = zieleLesen(typeof text === 'string' ? text : null);
+function zieleGelesen(roh) {
+  const text = roh == null || typeof roh === 'string' ? roh : JSON.stringify(roh); // kein Text → als Text gelesen: unlesbar
+  const { daten, unlesbar } = zieleLesen(text ?? null);
   return { daten, unlesbar, warnungen: zieleWarnungen({ daten, unlesbar }), text: unlesbar ? text : null };
 }
 
@@ -91,7 +93,9 @@ export function createDemoAdapter({ speicher = globalThis.localStorage, jetzt = 
           daten.konto = normalisiereKonto(daten.konto ?? leeresKonto()); // … und noch keine Kontostände
           daten.schicht = schichtAusSpeicher(daten.schicht); // … und noch keinen Schichtplan
           daten.fixkosten = fixkostenAusSpeicher(daten.fixkosten); // … und noch keine Fixkosten
-          daten.ziele = typeof daten.ziele === 'string' ? daten.ziele : null; // … und noch keine Sparziele (Text wie im Kalender)
+          // … und noch keine Sparziele (null); Text wie im Kalender. Etwas anderes als Text (beschädigt, neuere Version) gilt als
+          // unlesbar und bleibt stehen: wie bei Google wird es nie überschrieben.
+          if (daten.ziele === undefined) daten.ziele = null;
         }
       }
       return nachAussen();

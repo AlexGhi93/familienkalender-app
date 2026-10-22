@@ -8,7 +8,8 @@ import { createDemoAdapter } from '../../src/app/demo-adapter.js';
 import { createSnapshot, SNAPSHOT_KEY } from '../../src/calendar/snapshot.js';
 import { createGoogleAdapter } from '../../src/calendar/google-adapter.js';
 import { sicherungAnzahlText, sicherungErstellen } from '../../src/app/sicherung.js';
-import { TEXT_NICHT_LOESCHBAR, TEXT_NUR_ABGESCHLOSSENE, TEXT_ZIELE_GESPERRT, leereZiele, sparVerlauf, zieleText } from '../../src/domain/sparziele.js';
+import { TEXT_NICHT_LOESCHBAR, TEXT_NUR_ABGESCHLOSSENE, TEXT_ZIELE_GESPERRT, TEXT_ZIELE_NICHT_GELADEN, leereZiele, sparVerlauf, zieleGesperrtFehler, zieleText } from '../../src/domain/sparziele.js';
+import { kontoZuEreignis } from '../../src/calendar/mapping.js';
 import { apiAttrappe, speicherAttrappe } from './hilfen.js';
 
 const JETZT = new Date('2026-10-22T08:00:00+02:00');
@@ -475,5 +476,177 @@ describe('Schnappschuss (offline), Sicherung, Beispieldaten entfernen, Zurückse
     await store.zuruecksetzen();
     assert.deepEqual(store.getState().ziele.daten.z.map((z) => z.id), ['demo0001', 'demo0002', 'demo0003']);
     assert.equal(store.getState().ziele.status, 'geladen');
+  });
+});
+
+// ---------------------------------------------------------------- Fix-Runde 1 (Review: I-1, m-1 … m-4)
+
+/** Google-Store, bei dem das Lesen von „fksparen“ mit `fehler()` scheitert, solange `fehler` gesetzt ist. */
+async function googleMitLesefehler({ text, ids = [] } = {}) {
+  const t = await google({ text, ids });
+  const st = { fehler: null };
+  const holen = t.api.ereignisse.holen;
+  t.api.ereignisse.holen = async (k, id) => {
+    if (id === 'fksparen' && st.fehler) throw st.fehler();
+    return holen(k, id);
+  };
+  return { ...t, st };
+}
+const http500 = () => Object.assign(new Error('HTTP 500'), { status: 500 });
+
+describe('Fix-Runde 1: Sparziele nicht lesbar (Netz) – die App lädt trotzdem, Ändern gesperrt bis zum nächsten Lesen (I-1)', () => {
+  const AUTO = { id: 'auto0001', name: 'Auto', emoji: '🚗', zielCents: 2300000, datum: '2028-07', vorlaeufig: false, erstellt: '2026-10' };
+
+  test('HTTP 500 nur bei „fksparen“: laden() gelingt, der Rest ist da, Sparziele bleiben wie zuvor mit Status „fehler“ und Hinweis; Ändern abgelehnt', async () => {
+    const t = await googleMitLesefehler({ text: zieleText({ v: 1, z: [AUTO], m: [] }), ids: ['neu00001', 'neu00002'] });
+    const konto = { v: 1, p: { papa: { '2026-09': 100000 }, mama: { '2026-09': 50000 } }, x: [] };
+    await t.api.ereignisse.schreibe('kan', kontoZuEreignis(konto).body);
+    await t.store.laden();
+    assert.deepEqual(ziele(t.store).map((z) => z.id), ['auto0001']);
+    t.st.fehler = http500;
+    await t.store.laden(); // wirft nicht
+    const s = t.store.getState();
+    assert.equal(s.geladen, true);
+    assert.equal(s.anmeldungNoetig, false);
+    assert.equal(s.konto.p.papa['2026-09'], 100000, 'Kontostand geladen');
+    assert.deepEqual(s.ziele.daten.z.map((z) => z.id), ['auto0001'], 'die zuletzt gelesenen Ziele bleiben sichtbar');
+    assert.equal(s.ziele.status, 'fehler');
+    assert.deepEqual(s.ziele.warnungen, [TEXT_ZIELE_NICHT_GELADEN]);
+    assert.match(TEXT_ZIELE_NICHT_GELADEN, /^Die Sparziele konnten nicht geladen werden/);
+    const vorher = t.geschrieben().length;
+    for (const r of [
+      await t.store.zielSpeichern(entwurf()),
+      await t.store.zielBeenden('auto0001', 'frei'),
+      await t.store.zielLoeschen('auto0001'),
+      await t.store.zielAusblenden('auto0001'),
+      await t.store.freiVerschieben('auto0001', 100),
+    ]) assert.deepEqual(r, { ok: false, fehler: TEXT_ZIELE_NICHT_GELADEN });
+    assert.equal(t.geschrieben().length, vorher, 'nichts geschrieben');
+    // nur die Sparziele neu lesen: scheitert weiter → false; gelingt → wieder beschreibbar
+    assert.equal(await t.store.zieleLaden(), false);
+    assert.equal(t.store.getState().ziele.status, 'fehler');
+    t.st.fehler = null;
+    assert.equal(await t.store.zieleLaden(), true);
+    assert.deepEqual([t.store.getState().ziele.status, t.store.getState().ziele.warnungen], ['geladen', []]);
+    assert.deepEqual(await t.store.zielSpeichern(entwurf()), { ok: true, id: 'neu00001' });
+  });
+
+  test('ein späteres gelungenes laden() hebt die Sperre ebenso auf', async () => {
+    const t = await googleMitLesefehler({ ids: ['neu00001'] });
+    t.st.fehler = http500;
+    await t.store.laden();
+    assert.equal(t.store.getState().ziele.status, 'fehler');
+    assert.deepEqual(t.store.getState().ziele.daten, leereZiele());
+    t.st.fehler = null;
+    await t.store.laden();
+    assert.equal(t.store.getState().ziele.status, 'geladen');
+    assert.equal((await t.store.zielSpeichern(entwurf())).ok, true);
+  });
+
+  test('abgelaufene Anmeldung beim Lesen von „fksparen“: wie bisher (anmeldungNoetig, kein Fehler); zieleLaden ebenso', async () => {
+    const t = await googleMitLesefehler();
+    await t.store.laden();
+    t.st.fehler = authFehler;
+    await t.store.laden();
+    assert.equal(t.store.getState().anmeldungNoetig, true);
+    assert.equal(t.store.getState().ziele.status, 'geladen', 'der Stand bleibt; das Laden wartet auf die Anmeldung');
+    assert.equal(await t.store.zieleLaden(), false);
+    assert.equal(t.store.getState().anmeldungNoetig, true);
+  });
+
+  test('noch nie gelesen (vor dem Laden): Ändern abgelehnt; der Schnappschuss nimmt nur gelesene Sparziele mit', async () => {
+    const t = await googleMitLesefehler({ ids: ['neu00001'] });
+    assert.deepEqual(await t.store.zielSpeichern(entwurf()), { ok: false, fehler: TEXT_ZIELE_NICHT_GELADEN });
+    t.st.fehler = http500;
+    await t.store.laden();
+    const speicher = speicherAttrappe();
+    createSnapshot({ speicher, jetzt: () => JETZT }).speichern(t.store.getState(), HEUTE);
+    assert.equal(JSON.parse(speicher.getItem(SNAPSHOT_KEY)).ziele, null);
+  });
+
+  test('zieleLaden: eine eigene Änderung während des Lesens geht vor (die Antwort könnte älter sein); mehrfaches Anstoßen liest einmal', async () => {
+    const t = await googleMitLesefehler({ ids: ['neu00001'] });
+    await t.store.laden();
+    const vorher = t.log.filter((x) => x === 'GET fksparen').length;
+    const [a, b] = [t.store.zieleLaden(), t.store.zieleLaden()];
+    assert.equal(a, b);
+    await a;
+    assert.equal(t.log.filter((x) => x === 'GET fksparen').length, vorher + 1);
+    const lesen = t.store.zieleLaden();
+    const schreiben = t.store.zielSpeichern(entwurf());
+    await Promise.all([lesen, schreiben]);
+    assert.deepEqual(ziele(t.store).map((z) => z.id), ['neu00001']);
+  });
+});
+
+describe('Fix-Runde 1: zwei Telefone verschieben gleichzeitig aus „Frei“ (m-1)', () => {
+  test('das zweite wird auf der neuesten Fassung neu gedeckelt: beide gespeichert, zusammen genau das freie Geld, danach Frei = 0', async () => {
+    const { api, roh } = apiAttrappe();
+    // August Basis, September +20.000 €: Auto braucht ~1.000 €, der Rest ist „Frei“
+    const konto = { v: 1, p: { papa: { '2026-08': 100000, '2026-09': 2100000 }, mama: { '2026-08': 50000, '2026-09': 50000 } }, x: [] };
+    await api.ereignisse.schreibe('kan', kontoZuEreignis(konto).body);
+    const auto = { id: 'auto0001', name: 'Auto', emoji: '🚗', zielCents: 2300000, datum: '2028-07', vorlaeufig: false, erstellt: '2026-09' };
+    await api.ereignisse.schreibe('kan', { id: 'fksparen', description: zieleText({ v: 1, z: [auto], m: [] }) });
+    const telefon = (ids) => createStore(createGoogleAdapter({ api, kalender: KALENDER, jetzt: () => JETZT }), { jetzt: () => JETZT, zielId: () => ids.shift() });
+    const a = telefon(['ver0000a']);
+    const b = telefon(['ver0000b']);
+    await Promise.all([a.laden(), b.laden()]);
+    const frei = sparVerlauf(a.getState().ziele.daten, a.getState().konto, HEUTE).frei;
+    assert.ok(frei > 1_000_000, String(frei));
+    // jedes Telefon will (fast) alles: Frei − 1 €
+    const [ra, rb] = await Promise.all([a.freiVerschieben('auto0001', frei - 100), b.freiVerschieben('auto0001', frei - 100)]);
+    assert.deepEqual([ra.ok, rb.ok], [true, true]);
+    const gespeichert = JSON.parse(roh('kan', 'fksparen').description).m;
+    assert.deepEqual(gespeichert.map((v) => v.i).sort(), ['ver0000a', 'ver0000b']);
+    assert.equal(gespeichert.reduce((n, v) => n + v.c, 0), frei, 'zusammen genau das freie Geld');
+    assert.equal(ra.cents + rb.cents, frei);
+    await a.laden();
+    assert.equal(sparVerlauf(a.getState().ziele.daten, a.getState().konto, HEUTE).frei, 0);
+  });
+});
+
+describe('Fix-Runde 1: Sperre und Warteschlange (m-2 … m-4)', () => {
+  test('m-2: Änderung wartet auf die Anmeldung, inzwischen macht das andere Telefon „fksparen“ unlesbar → nach dem Anmelden nichts geschrieben, gesperrt, Meldung', async () => {
+    const t = await googleMitLesefehler({ ids: ['neu00001'] });
+    await t.store.laden();
+    t.st.fehler = authFehler;
+    assert.deepEqual(await t.store.zielSpeichern(entwurf()), { ok: false, wartet: true, fehler: TEXT_ANMELDEN });
+    t.st.fehler = null;
+    const neuer = JSON.stringify({ v: 2, z: [{ i: 'neu00009' }] });
+    await t.api.ereignisse.schreibe('kan', { id: 'fksparen', description: neuer });
+    await t.store.wiederholeAusstehende();
+    assert.equal(t.text(), neuer, 'Text unverändert');
+    const s = t.store.getState();
+    assert.equal(s.ziele.unlesbar, true);
+    assert.deepEqual(s.ziele.daten, leereZiele());
+    assert.equal(s.fehler, TEXT_ZIELE_GESPERRT);
+    assert.equal(t.store.ausstehend(), 0);
+  });
+
+  test('m-3: eine schon am angezeigten Stand abgelehnte Eingabe hält ein gleichzeitiges Laden nicht davon ab, neue Sparziele zu zeigen', async () => {
+    const t = await google({ ids: ['neu00001'] });
+    await t.store.laden();
+    const AUTO = { id: 'auto0001', name: 'Auto', emoji: '🚗', zielCents: 2300000, datum: '2028-07', vorlaeufig: false, erstellt: '2026-10' };
+    await t.api.ereignisse.schreibe('kan', { id: 'fksparen', description: zieleText({ v: 1, z: [AUTO], m: [] }) }); // das andere Telefon
+    const laden = t.store.laden();
+    assert.deepEqual(await t.store.zielSpeichern(entwurf({ name: '' })), { ok: false, fehler: 'Bitte einen Namen eingeben.' });
+    await laden;
+    assert.deepEqual(ziele(t.store).map((z) => z.id), ['auto0001']);
+  });
+
+  test('m-4: Speichern trifft auf unlesbare Sparziele und das neu Lesen scheitert: trotzdem leer gezeigt und gesperrt (nie veraltete Ziele mit „unlesbar“)', async () => {
+    const { store } = aufbau({
+      ids: ['neu00001', 'neu00002'],
+      aendern: (a) => ({ ...a, aendereZiele: async () => { throw zieleGesperrtFehler(); }, leseZiele: async () => { throw new Error('Netz weg'); } }),
+    });
+    await store.laden();
+    assert.equal(ziele(store).length, 3);
+    const [r1, r2] = await Promise.all([store.zielSpeichern(entwurf()), store.zielSpeichern(entwurf({ name: 'Laptop', emoji: '💻' }))]);
+    assert.deepEqual(r1, { ok: false, fehler: TEXT_ZIELE_GESPERRT });
+    assert.equal(r2.ok, false);
+    const z = store.getState().ziele;
+    assert.equal(z.unlesbar, true);
+    assert.deepEqual(z.daten, leereZiele());
+    assert.deepEqual(await store.zielSpeichern(entwurf()), { ok: false, fehler: TEXT_ZIELE_GESPERRT });
   });
 });

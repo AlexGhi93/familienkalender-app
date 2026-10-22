@@ -10,7 +10,7 @@ import { entferneExtra, entferneStand, fuegeExtraHinzu, leeresKonto, monatVor, n
 import { artAendern, artArchivieren, artHinzufuegen, artVerschieben, katalogErgaenzen, leererMonat, normalisiereKatalog, normalisiereMonat, schaltePinsel, schichtAm, setzeNotiz, setzeSchicht, standardKatalog, tageImMonat, vorladeMonate, zusatzEntfernen, zusatzHinzufuegen } from '../domain/schicht.js';
 import { FIX_SHARDS, TEXT_FIX_UNLESBAR, TEXT_FIX_VOLL, TEXT_TEIL_GESPERRT, leererShard, neueFixId, normalisiereShard, postenAnzahlPruefen, postenArchivieren, postenLoeschen, postenPruefen, postenSetzen, postenWiederherstellen, shardFuer } from '../domain/fixkosten.js';
 import { MAX_SERIEN_WOCHEN, naechsterWochentag, wochenSerie } from './serie.js';
-import { TEXT_ZIELE_GESPERRT, freiVerschieben as zielFreiVerschieben, leereZiele, neueZielId, startMonat, zielAusblenden as zielAusblendenRein, zielBeenden as zielBeendenRein, zielLoeschen as zielLoeschenRein, zielSchluss, zielSetzen, zieleWarnungen } from '../domain/sparziele.js';
+import { TEXT_ZIELE_GESPERRT, TEXT_ZIELE_NICHT_GELADEN, freiVerschieben as zielFreiVerschieben, leereZiele, neueZielId, startMonat, zielAusblenden as zielAusblendenRein, zielBeenden as zielBeendenRein, zielLoeschen as zielLoeschenRein, zielSchluss, zielSetzen, zieleWarnungen } from '../domain/sparziele.js';
 
 const KITA_TYPEN = ['kita_essen', 'kita_ohne'];
 const MIN_ABSTAND_MS = 60_000; // höchstens einmal pro Minute neu laden
@@ -78,8 +78,10 @@ const fixAusDaten = (roh) => (Array.isArray(roh?.shards) ? { shards: fixTeile(ro
 /**
  * Sparziele im Zustand: `daten` = { v, beginn?, z, m, fremd? } (siehe domain/sparziele.js; bei unlesbaren Sparzielen leer), `status`
  * null (noch nie gelesen) | 'gespeichert' (aus dem Schnappschuss, noch nicht aus dem Kalender) | 'geladen' (mit laden(), zusammen mit
- * dem Kontostand), `unlesbar` = diese Version kann die gespeicherten Sparziele nicht lesen (beschädigt oder neuere Version): leer
- * gezeigt und gesperrt, `warnungen` = Hinweise für die Anzeige (zieleWarnungen).
+ * dem Kontostand, oder mit zieleLaden()) | 'fehler' (das letzte Lesen ist gescheitert: `daten` wie zuletzt gelesen, Hinweis
+ * TEXT_ZIELE_NICHT_GELADEN in `warnungen`), `unlesbar` = diese Version kann die gespeicherten Sparziele nicht lesen (beschädigt oder
+ * neuere Version): leer gezeigt und gesperrt, `warnungen` = Hinweise für die Anzeige (zieleWarnungen). Geändert werden darf nur bei
+ * 'geladen' oder 'gespeichert' (dann wartet es ohnehin auf die Anmeldung und wird auf die neueste Fassung angewendet) und lesbar.
  */
 const leererZieleZustand = () => ({ daten: leereZiele(), status: null, unlesbar: false, warnungen: [] });
 
@@ -150,8 +152,19 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
   // begonnener Änderungen: ein Laden, das älter sein könnte als eine eigene Änderung, ersetzt die angezeigten Sparziele nicht.
   const zieleOffen = new Map();
   let zieleStand = 0;
-  /** Sparziele nach einem Laden (`stand` = zieleStand beim Beginn): nur übernommen, wenn seitdem nichts selbst geändert wurde. */
-  const zieleNachLaden = (daten, stand) => (!daten?.ziele || zieleOffen.size > 0 || stand !== zieleStand ? state.ziele : zieleZustand(daten.ziele, 'geladen'));
+  let zieleLesenLaeuft = null; // laufendes zieleLaden(): mehrfaches Anstoßen liest nur einmal
+  /** Die zuletzt gelesenen Sparziele bleiben, aber gesperrt: das Lesen ist gescheitert (Netz). */
+  const zieleNichtGelesen = () => ({ ...state.ziele, status: 'fehler', warnungen: [TEXT_ZIELE_NICHT_GELADEN] });
+  /**
+   * Sparziele nach einem Laden (`stand` = zieleStand beim Beginn): `ziele: null` = ihr Lesen ist gescheitert → gesperrt (siehe
+   * zieleNichtGelesen); sonst nur übernommen, wenn seitdem nichts selbst geändert wurde. Liefert der Adapter keine (undefined): unverändert.
+   */
+  function zieleNachLaden(daten, stand) {
+    if (daten?.ziele === null) return zieleNichtGelesen();
+    return !daten?.ziele || zieleOffen.size > 0 || stand !== zieleStand ? state.ziele : zieleZustand(daten.ziele, 'geladen');
+  }
+  /** Ist Ändern gerade verboten? → Meldung oder null (unlesbar, oder nicht (erfolgreich) gelesen). */
+  const zieleGesperrt = () => (state.ziele.unlesbar ? TEXT_ZIELE_GESPERRT : state.ziele.status === 'geladen' || state.ziele.status === 'gespeichert' ? null : TEXT_ZIELE_NICHT_GELADEN);
   const melden = () => {
     for (const h of hoerer) h(state);
   };
@@ -541,8 +554,14 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
    * gespeichert); nie ein Wurf (lehnt `fn` schon den angezeigten Stand ab, ändert sich nichts und `fehler` ist seine Meldung).
    */
   async function zieleAendern(fn) {
-    if (state.ziele.unlesbar) return { ok: false, fehler: TEXT_ZIELE_GESPERRT };
+    const gesperrt = zieleGesperrt();
+    if (gesperrt) return { ok: false, fehler: gesperrt };
     if (!adapter.aendereZiele) return { ok: false, fehler: TEXT_FEHLER };
+    try {
+      fn(state.ziele.daten); // schon am angezeigten Stand abgelehnt: nichts ändern, nichts zählen (ein Laden läuft ungestört weiter)
+    } catch (e) {
+      return { ok: false, fehler: e?.message || TEXT_FEHLER };
+    }
     zieleStand += 1;
     try {
       const { ergebnis, fehler } = await teilAendern(zieleOffen, 'ziele', fn, {
@@ -553,10 +572,16 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
           try {
             return await adapter.aendereZiele(f);
           } catch (e) {
-            // inzwischen (z. B. durch das andere Telefon) unlesbar: der Adapter hat nichts geschrieben; ab jetzt gesperrt
+            // inzwischen (z. B. durch das andere Telefon) unlesbar: der Adapter hat nichts geschrieben; ab jetzt gesperrt und leer
+            // gezeigt (auch wenn das folgende neu Lesen scheitert), wartende Änderungen fallen weg (ihr Speichern wird ebenso abgelehnt)
             if (e?.name === 'ZieleGesperrt') {
               FACHLICH.add(e);
-              state = { ...state, ziele: { ...state.ziele, unlesbar: true, warnungen: zieleWarnungen({ unlesbar: true }) } };
+              const eintrag = zieleOffen.get('ziele');
+              if (eintrag) {
+                eintrag.basis = leereZiele();
+                eintrag.offen.length = 0;
+              }
+              state = { ...state, ziele: { ...state.ziele, daten: leereZiele(), unlesbar: true, warnungen: zieleWarnungen({ unlesbar: true }) } };
             }
             throw e;
           }
@@ -585,6 +610,38 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       if (!vergeben.has(id)) return id;
     }
     return null;
+  }
+
+  /**
+   * Liest nur die Sparziele neu (z. B. nach „konnten nicht geladen werden“ oder beim Öffnen ihrer Seite). Gelingt es, gelten sie als
+   * 'geladen' (Ändern wieder möglich); scheitert es, Status 'fehler' (gesperrt) bzw. bei abgelaufener Anmeldung `anmeldungNoetig`
+   * (der Stand bleibt). Wurde inzwischen selbst etwas geändert, bleiben die angezeigten Daten (die Antwort könnte älter sein).
+   * → true, wenn gelesen; höchstens ein Lesen gleichzeitig; wirft nie.
+   */
+  function zieleLesenNeu() {
+    if (zieleLesenLaeuft) return zieleLesenLaeuft;
+    if (!adapter.leseZiele) return Promise.resolve(false);
+    zieleLesenLaeuft = (async () => {
+      const stand = zieleStand;
+      let g;
+      try {
+        g = await adapter.leseZiele();
+      } catch (fehler) {
+        state = istAuthFehler(fehler) ? { ...state, anmeldungNoetig: true } : { ...state, ziele: zieleNichtGelesen() };
+        melden();
+        return false;
+      }
+      const frisch = zieleZustand(g, 'geladen');
+      const eigene = zieleOffen.size > 0 || stand !== zieleStand;
+      state = { ...state, ziele: eigene ? { ...frisch, daten: state.ziele.daten } : frisch };
+      melden();
+      return true;
+    })()
+      .catch(() => false)
+      .finally(() => {
+        zieleLesenLaeuft = null;
+      });
+    return zieleLesenLaeuft;
   }
 
   /** Sparziele für die Sicherung: frisch aus dem Kalender (Anmeldefehler laufen nach oben), sonst der angezeigte Stand. → { daten, unlesbar, text }. */
@@ -1071,7 +1128,8 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     async zielSpeichern(entwurf) {
       const heute = todayVienna(jetzt());
       const { erstellt: _e, beendet: _b, aus: _a, ...roh } = istObjekt(entwurf) ? entwurf : {};
-      if (state.ziele.unlesbar) return { ok: false, fehler: TEXT_ZIELE_GESPERRT };
+      const gesperrt = zieleGesperrt();
+      if (gesperrt) return { ok: false, fehler: gesperrt };
       if (roh.id) {
         const r = await zieleAendern((d) => (zielVorhanden(d, roh.id), zielSetzen(d, roh, { heute })));
         return r.ok ? { ok: true, id: roh.id } : r;
@@ -1117,7 +1175,8 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     async freiVerschieben(ziel, cents) {
       const heute = todayVienna(jetzt());
       const konto = state.konto;
-      if (state.ziele.unlesbar) return { ok: false, fehler: TEXT_ZIELE_GESPERRT };
+      const gesperrt = zieleGesperrt();
+      if (gesperrt) return { ok: false, fehler: gesperrt };
       const id = neueZielKennung();
       if (!id) return { ok: false, fehler: TEXT_FEHLER };
       const r = await zieleAendern((d) => (zielVorhanden(d, ziel), zielFreiVerschieben(d, { id, monat: heute.slice(0, 7), ziel, cents }, { konto, heute })));
@@ -1305,6 +1364,9 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     schichtArtArchivieren: (person, k, archiv) => schichtKatalogAendern((kat) => artArchivieren(kat, person, k, archiv)),
     /** Art mit der Nachbarin tauschen (−1 hoch, 1 runter); Ergebnis wie `schichtKatalogAendern`. */
     schichtArtVerschieben: (person, k, richtung) => schichtKatalogAendern((kat) => artVerschieben(kat, person, k, richtung)),
+
+    /** Nur die Sparziele neu lesen (siehe `zieleLesenNeu`): hebt die Sperre nach einem gescheiterten Lesen auf. → true, wenn gelesen; wirft nie. */
+    zieleLaden: () => zieleLesenNeu(),
 
     /** Fixkosten beim Öffnen ihrer Seite: die vier Teile lesen (siehe `fixLesen`). → true, wenn gelesen; wirft nicht. */
     fixLaden: () => fixLesen(),

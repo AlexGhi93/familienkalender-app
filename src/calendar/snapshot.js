@@ -70,9 +70,12 @@ function pruefeZiele(roh) {
   return gelesen.unlesbar ? null : { daten: gelesen.daten, unlesbar: roh.unlesbar === true };
 }
 
-/** Sparziele für den Schnappschuss: als Kalendertext (kurz, mit fremden Einträgen); noch nie gelesen oder unbrauchbar → null. */
+/**
+ * Sparziele für den Schnappschuss: als Kalendertext (kurz, mit fremden Einträgen); nur gelesene (Status 'geladen' oder 'gespeichert') –
+ * noch nie gelesen, beim letzten Laden gescheitert ('fehler') oder unbrauchbar → null.
+ */
 function zieleFuerSnapshot(ziele) {
-  if (!ziele?.status) return null;
+  if (ziele?.status !== 'geladen' && ziele?.status !== 'gespeichert') return null;
   try {
     return { text: zieleText(ziele.daten), unlesbar: ziele.unlesbar === true };
   } catch {

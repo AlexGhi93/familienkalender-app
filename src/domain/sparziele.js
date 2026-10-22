@@ -21,6 +21,9 @@
 //   { v: 1, a: beginn, z: [ … ], m: [ … ] }
 //   Ziel:          i=id  n=name  e=emoji  c=zielCents  d=datum  p=vorlaeufig (nur 1)  s=erstellt  b=beendet { m=monat, a=art }  h=aus (nur 1)
 //   Verschiebung:  i=id  m=monat  z=ziel  c=cents
+// Neue Felder: auf oberster Ebene (neben v, a, z, m) versteht diese Version nichts Weiteres und schreibt es nicht mit – eine spätere
+// Version, die dort etwas ergänzt, muss deshalb `v` erhöhen (dann ist alles hier „unlesbar“ und wird nie überschrieben). Neue Felder
+// in einzelnen Zielen oder Verschiebungen sind dagegen sicher: solche Einträge bleiben als `fremd` unverändert erhalten.
 // Jede Änderung ist eine reine Funktion Daten → Daten, die (nach HTTP 412) auf die NEUESTE Fassung angewendet wird: das Argument wird
 // nie verändert, zweimal angewendet = einmal angewendet. Unlesbare Daten (kaputtes JSON, andere Version) werden nie überschrieben.
 // Endgültig gelöscht werden darf nur ein Ziel, das nie Geld bekommen hat (zielLoeschbar); alle anderen lassen sich nur ausblenden.
@@ -51,6 +54,9 @@ export const TEXT_NUR_ABGESCHLOSSENE = 'Nur abgeschlossene Sparziele lassen sich
 
 /** Meldung, wenn die gespeicherten Sparziele unlesbar sind (beschädigt oder von einer neueren App-Version): sie werden dann nie überschrieben. */
 export const TEXT_ZIELE_GESPERRT = 'Die Sparziele sind unlesbar (beschädigt oder von einer neueren App-Version). Damit nichts verloren geht, lassen sie sich hier nicht ändern – bitte die App auf beiden Telefonen aktualisieren.';
+
+/** Meldung, wenn die Sparziele beim Laden nicht gelesen werden konnten (Netz): sie bleiben, wie zuletzt gelesen, aber gesperrt. */
+export const TEXT_ZIELE_NICHT_GELADEN = 'Die Sparziele konnten nicht geladen werden. Bis sie wieder gelesen sind, lassen sie sich nicht ändern – bitte später noch einmal versuchen.';
 
 /** Fehler „Sparziele gesperrt“ (Name 'ZieleGesperrt'): ein Adapter wirft ihn, statt unlesbare Sparziele zu überschreiben. */
 export const zieleGesperrtFehler = () => Object.assign(new Error(TEXT_ZIELE_GESPERRT), { name: 'ZieleGesperrt' });

@@ -136,6 +136,25 @@ describe('Google-Adapter: Sparziele', () => {
     assert.ok(t.text().includes(JSON.stringify(fremdeVerschiebung)), 'Verschiebung Byte für Byte');
   });
 
+  test('Lesefehler nur bei „fksparen“ (HTTP 500): laden() gelingt trotzdem, Sparziele = null; abgelaufene Anmeldung läuft weiter nach oben', async () => {
+    const t = await aufbau();
+    let fehler = null;
+    const holen = t.api.ereignisse.holen;
+    t.api.ereignisse.holen = async (k, id) => {
+      if (id === 'fksparen' && fehler) throw fehler();
+      return holen(k, id);
+    };
+    fehler = () => Object.assign(new Error('HTTP 500'), { status: 500 });
+    const geladen = await t.adapter.laden();
+    assert.equal(geladen.ziele, null);
+    assert.ok(geladen.konto && geladen.settings && Array.isArray(geladen.termine), 'der Rest ist geladen');
+    await assert.rejects(t.adapter.leseZiele(), /HTTP 500/); // einzeln gelesen: der Fehler kommt an
+    fehler = () => Object.assign(new Error('abgelaufen'), { name: 'AuthAbgelaufen' });
+    await assert.rejects(t.adapter.laden(), (e) => e.name === 'AuthAbgelaufen');
+    fehler = null;
+    assert.equal((await t.adapter.laden()).ziele.unlesbar, false);
+  });
+
   test('zu volle Daten: Fehler, nichts geschrieben', async () => {
     const t = await aufbau();
     const z = Array.from({ length: 80 }, (_, i) => auto({ id: `a${String(i).padStart(7, '0')}`, name: 'Ü'.repeat(30) }));
@@ -160,7 +179,7 @@ describe('Demo-Adapter: Sparziele', () => {
     assert.equal(await zweiter.aendereZiele(() => null), null);
   });
 
-  test('unlesbarer Text im Speicher: gesperrt wie bei Google, der Speicher bleibt unverändert; Unbrauchbares (kein Text) gilt als leer', async () => {
+  test('unlesbarer Text im Speicher: gesperrt wie bei Google, der Speicher bleibt unverändert; Unbrauchbares (kein Text) ebenso unlesbar', async () => {
     const kaputt = JSON.stringify({ v: 2, z: 'neu' });
     const speicher = speicherAttrappe({ [KEY]: JSON.stringify({ settings: {}, tage: {}, urlaub: [], termine: [], ziele: kaputt }) });
     const adapter = createDemoAdapter({ speicher, jetzt: JETZT });
@@ -168,8 +187,16 @@ describe('Demo-Adapter: Sparziele', () => {
     assert.deepEqual(await adapter.leseZiele(), { daten: leereZiele(), unlesbar: true, warnungen: [(await adapter.leseZiele()).warnungen[0]], text: kaputt });
     await assert.rejects(adapter.aendereZiele(mitZiel(auto())), (e) => e.name === 'ZieleGesperrt');
     assert.equal(gespeichert(speicher).ziele, kaputt);
+    // kein Text, aber etwas (z. B. von einer neueren Version): ebenso unlesbar, nie überschrieben (m-6)
     const unsinn = speicherAttrappe({ [KEY]: JSON.stringify({ settings: {}, tage: {}, urlaub: [], termine: [], ziele: { quatsch: 1 } }) });
-    assert.deepEqual((await createDemoAdapter({ speicher: unsinn, jetzt: JETZT }).laden()).ziele.daten, leereZiele());
+    const demo = createDemoAdapter({ speicher: unsinn, jetzt: JETZT });
+    const g = (await demo.laden()).ziele;
+    assert.deepEqual([g.daten, g.unlesbar, g.text], [leereZiele(), true, '{"quatsch":1}']);
+    await assert.rejects(demo.aendereZiele(mitZiel(auto())), (e) => e.name === 'ZieleGesperrt');
+    assert.deepEqual(gespeichert(unsinn).ziele, { quatsch: 1 });
+    // null (alter Speicher) bleibt leer und beschreibbar
+    const alt = speicherAttrappe({ [KEY]: JSON.stringify({ settings: {}, tage: {}, urlaub: [], termine: [], ziele: null }) });
+    assert.equal((await createDemoAdapter({ speicher: alt, jetzt: JETZT }).laden()).ziele.unlesbar, false);
   });
 
   test('zu volle Daten werden wie bei Google abgelehnt, nichts gespeichert', async () => {

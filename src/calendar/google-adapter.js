@@ -98,7 +98,13 @@ export function createGoogleAdapter({ api, kalender, jetzt = () => new Date(), a
       const z = ereignisseZuZustand({ ereignisse: await ereignisseLesen(von, bis), settings });
       await titelKorrigieren(z.resync);
       const einkauf = (await this.leseEinkauf()).liste;
-      const [{ konto }, ziele] = await Promise.all([this.leseKonto(), this.leseZiele()]); // Sparziele werden mit dem Kontostand gerechnet
+      // Sparziele werden mit dem Kontostand gerechnet. Scheitert nur ihr Lesen (Netz, 500 …), lädt der Rest trotzdem: `ziele: null`
+      // (der Store sperrt sie dann bis zum nächsten Lesen); eine abgelaufene Anmeldung läuft wie sonst nach oben.
+      const zieleGelesen = this.leseZiele().catch((fehler) => {
+        if (fehler?.name === 'AuthAbgelaufen') throw fehler;
+        return null;
+      });
+      const [{ konto }, ziele] = await Promise.all([this.leseKonto(), zieleGelesen]);
       return { settings, tage: z.tage, urlaub: z.urlaub, termine: z.termine, konflikte: z.konflikte, warnungen: gelesen.warnungen, fenster: { von, bis }, einkauf, konto, ziele, urlaubChecks: z.urlaubChecks };
     },
 
