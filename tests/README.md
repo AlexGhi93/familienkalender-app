@@ -71,9 +71,13 @@ $env:CI=1; npm run test:e2e
 | `unit/store.test.js` | Store mit Demo-Adapter: sofort sichtbar, Fehler, abgelaufene Anmeldung, Rückgängig, Serien, Einkauf, Kontostand |
 | `unit/mapping.test.js` | Google-Ereignisse ↔ App (alle Arten, Uhrzeit-Korrektur, versteckte Ereignisse), Zusammenfassung mit Konflikten |
 | `unit/speicher.test.js` | Konfiguration, gespeicherter Stand (strenge Prüfung, Größe), Einrichtungscode, Freigabe |
+| `unit/schicht.test.js` | Schichtplan-Regeln: Schichtarten (Kürzel, nie wiederverwendete Schlüssel, ausblenden, ordnen, Zusatz mit Uhrzeit), Monat (Länge, Schaltjahr), Pinsel/Setzen/Notiz/Zusatz idempotent, Größe ≤ 6000 Zeichen, Zählung, kaputte Daten |
+| `unit/schicht-speicher.test.js` | Schichtplan im Demo- und Google-Adapter (versteckte Ereignisse `fkschichtarten`, `fksch<JJJJMM>`) und Beispieldaten |
+| `unit/schicht-model.test.js` | View-Modelle des Schichtplans: Monatsraster, Filter dieses Telefons, Pinsel, Tagesblatt, Schichtarten bearbeiten |
+| `unit/schicht-abgleich.test.js`, `unit/schicht-farben.test.js` | Abgleich alle 30 Sekunden und bei der Rückkehr (höchstens einmal pro Minute); Farbpalette hell/dunkel im Theme (Kontrast der Kürzel) |
 | `unit/push-*.test.js` | Push-Plan (Zeiten in Wien, Zeitumstellung, Monatsende) und Meldungen (RFC-8291-Testvektor, Entschlüsselung, stabiles `h`) |
 | `e2e/willkommen.spec.js` | Erster Start mit drei Wegen, Demo starten, falscher Code |
-| `e2e/tabs.spec.js` | Tab-Leiste: sieben Registerkarten (Heute, Monat, Einkauf, ＋ Neu, Urlaub, Konto, Mehr), Fenstertitel je Seite („Kontostand“ für `#/konto`), Einkauf und Kontostand ohne „‹ Zurück“, „＋ Neu“ genau in der Mitte bei 375 und 390 px |
+| `e2e/tabs.spec.js` | Tab-Leiste: acht Registerkarten (Heute, Monat, Einkauf, ＋ Neu, Schicht, Urlaub, Konto, Mehr), Fenstertitel je Seite („Kontostand“ für `#/konto`, „Schichtplan“ für `#/schicht`), Einkauf und Kontostand ohne „‹ Zurück“, „＋ Neu“ rund an vierter Stelle, bei 320, 375 und 390 px nichts abgeschnitten oder überlappt |
 | `e2e/heute.spec.js` | Abschnitte, „Demnächst“ als kompakte Zeilen (Antippen öffnet den Tag), Schnell-Eintrag, offene Tage, Wochenende, Kontostand am Monatsende, Sachen erledigt |
 | `e2e/monat.spec.js` | Blättern, Tagesblatt mit „Eintragen“, Typ setzen und im Raster sehen; „Neu an diesem Tag“ (Arzttermin, Termin, Sachen mit dem angetippten Tag); „Bringen & Abholen“ im Tagesblatt (nur künftige Betreuungstage, nur für diesen Tag) |
 | `e2e/neu.spec.js` | Jede Kachel öffnet ihr Formular; Mutter-Kind-Pass speichern und in Heute/Monat/Verlauf wiederfinden |
@@ -84,6 +88,8 @@ $env:CI=1; npm run test:e2e
 | `e2e/mehr.spec.js` | Menü mit elf Zeilen (neun klappen auf, zwei führen weiter): Intro-Animation (elf `m-*`), Akkordeon, offen nach dem Speichern, reduzierte Bewegung, Wege; getippte Uhrzeit/Datum wird mit Enter bzw. beim Verlassen gespeichert |
 | `e2e/nachrichten.spec.js` | Nachricht an Krabbelstube/Kindergarten: Wege (Heute, „Benachrichtigen“ nach „Krank“/„Abwesend“, Mehr), 14 Situationen, Heute/Morgen, Angaben, änderbarer Text, Links für WhatsApp (`wa.me/43…`), SMS und E-Mail, Teilen, Kopieren, Einstellungen (Kontakt, Gruß, Unterschrift, „Das Kind ist“) |
 | `e2e/bringen-holen.spec.js` | Wer bringt, wer holt: Wochenplan in Mehr (— → 👨 Papa → 👩 Mama → —), Benachrichtigungen, „🚗 Heute“ mit Ausnahme nur für diesen Tag, am Abend „Morgen“ |
+| `e2e/schichtplan.spec.js` | Schichtplan (Demo): Registerkarte „Schicht“, Monatsraster mit Streifen Papa/Mama, Monatswechsel, Filter (gemerkt), Zählung, Legende; 375 und 320 px ohne Abschneiden; Pinsel, Tagesblatt (Art, Notiz, Zusatz mit Uhrzeit), Schichtarten anlegen/ändern/ausblenden/ordnen, alles nach dem Neuladen noch da |
+| `e2e/schichtplan-google.spec.js` | Schichtplan mit der Google-Attrappe: erst die Seite liest `fkschichtarten` und drei Monate, der Pinsel schreibt `fksch202610` (Titel ohne Inhalt, JSON ≤ 6000 Zeichen, versteckt), nichts davon in Heute/Monat/Verlauf, ohne Netz nach dem Neuladen: besuchter Monat aus der Offline-Kopie, unbesuchter „Noch nicht geladen“ |
 | `e2e/app.spec.js` | Konto & App: Karten, Hell/Dunkel, Sicherung als Download, Demo zurücksetzen, Version |
 | `e2e/google.spec.js` | Google-Modus ohne Netz aus dem gespeicherten Stand: Banner, Status in Mehr, fünf Karten, „Dieses Telefon gehört“; Login-Dienst aus: Verhalten wie bisher (Token-Weg, „gilt eine Stunde“, keine Sitzung, keine Anfrage an den Dienst) |
 
@@ -108,8 +114,9 @@ und stehen dort mit Datei und Zeile im Kommentar. Wird ein Fehler behoben, die M
 - `await starteDemo(page, { route: '#/monat' })` startet die Demo zur festen Zeit (Mittwoch, 14.10.2026, 08:00 Wien);
   mit `zeit: '…'` eine andere Uhrzeit, mit `speicher: { … }` vorbelegter `localStorage`.
   `starteGoogleAusSnapshot(page)` startet den Google-Modus ohne Netz (dazu `test.use({ erlaubteFehler: NETZFEHLER })`).
-  `starteGoogleVerbunden(page, { einkauf, uhrLaeuft })` meldet sich über eine Attrappe an (Google-Skript und Kalender-API im Test,
-  siehe `googleAttrappe`); das Ergebnis zählt die Anfragen (`anfragen`) und spielt mit `setzeEinkauf(liste)` das andere Telefon.
+  `starteGoogleVerbunden(page, { einkauf, ereignisse, listenMitAllen, uhrLaeuft })` meldet sich über eine Attrappe an (Google-Skript und
+  Kalender-API im Test, siehe `googleAttrappe`); das Ergebnis zählt die Anfragen (`anfragen`, geschrieben: `geschrieben`), zeigt mit
+  `ereignis(id)` den gespeicherten Stand und spielt mit `setzeEinkauf(liste)`/`setzeSchichtarten(katalog)` das andere Telefon.
 - Uhr: Standard ist eine stehende Uhr (`page.clock.setFixedTime`). Wer Zeitgeber prüft (z. B. den 30-Sekunden-Abgleich), lässt sie
   laufen (`uhrLaeuft: true`, intern `page.clock.install`) und springt mit `page.clock.fastForward(…)` – nie mit festen Wartezeiten.
 - Wischen und Ziehen: echte Touch-Ereignisse über das DevTools-Protokoll (`Input.dispatchTouchEvent`, siehe `einkauf-aktuell.spec.js`).

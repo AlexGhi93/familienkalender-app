@@ -147,6 +147,48 @@ test.describe('Telefon mit 375 px Breite', () => {
   });
 });
 
+test.describe('Telefon mit 320 px Breite', () => {
+  test.use({ viewport: { width: 320, height: 640 } });
+
+  test('Titel in einer Zeile neben „Eintragen“; „DB +2 ✎“ bleibt im Feld; Von und Bis untereinander, „HH:MM“ ganz zu sehen', async ({ page }) => {
+    await starteDemo(page, { route: '#/schicht' });
+    await expect(zelle(page, '2026-10-26')).toBeVisible();
+    const titel = await page.locator('.sp-kopf h1').evaluate((h) => ({ hoehe: h.getBoundingClientRect().height, zeile: parseFloat(getComputedStyle(h).lineHeight) }));
+    expect(titel.hoehe).toBeLessThan(titel.zeile * 1.5);
+    await page.evaluate(() => {
+      const daten = JSON.parse(localStorage.getItem('fk.demo.v1'));
+      const monat = daten.schicht.monate['2026-10'];
+      const db = daten.schicht.katalog?.arten?.mama?.find((a) => a.kuerzel === 'DB')?.k ?? 'F';
+      monat.z.mama['26'] = [['07:00', '08:00'], ['12:00', '13:00'], ['18:00', '19:30']].map(([von, bis]) => ({ k: db, von, bis }));
+      monat.n.mama['26'] = 'Viel los';
+      localStorage.setItem('fk.demo.v1', JSON.stringify(daten));
+    });
+    await page.reload();
+    await expect(zelle(page, '2026-10-26').locator('.sp-mehr')).toHaveText('+2');
+    const feld = await zelle(page, '2026-10-26').evaluate((z) => {
+      const r = z.getBoundingClientRect();
+      const m = z.querySelector('.sp-marken').getBoundingClientRect();
+      return { links: r.left + z.clientLeft, rechts: r.left + z.clientLeft + z.clientWidth, mLinks: m.left, mRechts: m.right };
+    });
+    expect(feld.mLinks).toBeGreaterThanOrEqual(feld.links - 0.5);
+    expect(feld.mRechts).toBeLessThanOrEqual(feld.rechts + 0.5);
+    // Von und Bis im Formular für eine neue Art
+    await page.getByRole('button', { name: 'Schichtarten bearbeiten' }).click();
+    await page.locator('.sp-arten-person[data-person="papa"]').getByRole('button', { name: '＋ Neue Art' }).click();
+    const von = page.locator('.sp-art-form').getByRole('textbox', { name: 'Von', exact: true });
+    const bis = page.locator('.sp-art-form').getByRole('textbox', { name: 'Bis', exact: true });
+    await expect(von).toBeVisible();
+    expect((await bis.boundingBox()).y).toBeGreaterThan((await von.boundingBox()).y + 20);
+    const platz = await von.evaluate((e) => {
+      const s = getComputedStyle(e);
+      const c = document.createElement('canvas').getContext('2d');
+      c.font = `${s.fontWeight} ${s.fontSize} ${s.fontFamily}`;
+      return e.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight) - c.measureText(e.placeholder).width;
+    });
+    expect(platz).toBeGreaterThanOrEqual(0);
+  });
+});
+
 test.describe('ohne Verbindung', () => {
   test.use({ erlaubteFehler: NETZFEHLER });
 

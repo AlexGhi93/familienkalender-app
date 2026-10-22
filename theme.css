@@ -3048,6 +3048,12 @@ html:has(.screen.einkauf) {
   font-size: 1.55rem;
 }
 
+@media (max-width: 359px) {
+  .sp-kopf .gruss {
+    font-size: 1.4rem; /* „🗓️ Schichtplan“ bleibt neben „Eintragen“ in einer Zeile */
+  }
+}
+
 .sp-eintragen {
   flex: none;
   font-weight: 800;
@@ -3166,6 +3172,17 @@ html:has(.screen.einkauf) {
 .sp-notiz {
   font-size: 0.6rem;
   color: var(--ink-2);
+}
+
+@media (max-width: 359px) {
+  /* schmale Felder: „DB +2 ✎“ passt ohne Abstände noch ins Feld */
+  .sp-marken {
+    gap: 0;
+  }
+
+  .sp-zusatz {
+    padding: 0 1px;
+  }
 }
 
 .sp-streifen {
@@ -3489,6 +3506,12 @@ html:has(.screen.einkauf) {
   gap: 10px;
 }
 
+@media (max-width: 359px) {
+  .sp-tag-zeiten {
+    grid-template-columns: minmax(0, 1fr); /* Von und Bis untereinander: „HH:MM“ wird nicht abgeschnitten */
+  }
+}
+
 /* ---------- Schichtplan: Blatt „Schichtarten“ (anlegen, ändern, ausblenden, ordnen) ---------- */
 
 .sp-arten-blatt {
@@ -3545,7 +3568,7 @@ html:has(.screen.einkauf) {
   font-style: normal;
   font-weight: 900;
   font-size: 0.72rem;
-  min-width: 30px;
+  min-width: 40px; /* Kürzel wie „F“, „NM“, „2T“ gleich breit: Texte und Knöpfe der Zeilen stehen bündig */
   padding: 3px 6px;
   border-radius: 999px;
   text-align: center;
