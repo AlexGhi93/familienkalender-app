@@ -6,7 +6,7 @@
 // wieder benutzbar. Alle Zahlen kommen aus sparziele-model.js (Domäne), alle Texte als Text in die Seite.
 import { fuelle, h } from './dom.js';
 import { bestaetigen, blatt, toast } from './components.js';
-import { bedarfVorschau, entwurfZuZiel, sparzieleModel, zielEntwurf, zielLoeschFrage, zieleSperre, zielSymbole } from '../app/views/sparziele-model.js';
+import { bedarfVorschau, entwurfZuZiel, sparzieleModel, verschiebungFrage, zielEntwurf, zielLoeschFrage, zieleSperre, zielSymbole } from '../app/views/sparziele-model.js';
 import { MAX_ZIEL_NAME, TEXT_NICHT_LOESCHBAR, zielSchluss } from '../domain/sparziele.js';
 import { geloeschtMelden } from './fortschritt.js';
 import { betragText, centsAusText } from '../domain/konto.js';
@@ -39,6 +39,9 @@ export async function sicher(lauf) {
 /** Knöpfe während einer Speicherung sperren; nach einem Fehler wieder freigeben (nach `await` ist ev.currentTarget schon null). */
 const sperren = (knoepfe, an) => knoepfe.forEach((k) => k && (k.disabled = an));
 
+/** Nach einem Fehler: Knöpfe wieder frei – außer die Sparziele sind inzwischen gesperrt (unlesbar oder nicht geladen). */
+const freigeben = (store, knoepfe) => sperren(knoepfe, Boolean(zieleSperre(store.getState().ziele)));
+
 const gesperrtHinweis = (text) => h('article', { class: 'karte fk-meldung warn' }, h('b', {}, '🔒 Nicht änderbar'), h('p', {}, text));
 
 function auswahl(beschriftung, optionen, wert, beiAenderung) {
@@ -63,7 +66,7 @@ export function oeffneZielFormular({ store }, id) {
     toast('Dieses Sparziel gibt es nicht mehr.', { art: 'fehler' });
     return null;
   }
-  const gesperrt = zieleSperre(state.ziele);
+  const gesperrtJetzt = () => zieleSperre(store.getState().ziele); // bei jedem Zeichnen neu (z. B. nach einem Fehler gesperrt)
   const symbolListe = zielSymbole(state.settings);
   const e = zielEntwurf(original, heute);
   // laufend: immer löschbar (sein Geld wird neu verteilt); abgeschlossen nur ohne Geld – Knopf und Rückfrage aus zielLoeschFrage
@@ -171,6 +174,7 @@ export function oeffneZielFormular({ store }, id) {
         ),
       ),
     );
+    const gesperrt = gesperrtJetzt();
     const aus = Boolean(gesperrt) || speichert;
     const speichernKnopf = h('button', { class: 'knopf klein primaer sz-speichern', type: 'button', disabled: aus, onClick: () => speichern() }, speichert ? 'Speichert …' : 'Speichern');
     felder = h(
@@ -213,7 +217,7 @@ export function oeffneZielBeenden({ store }, ziel, danach = () => {}) {
         if (erledigt(await sicher(store.zielBeenden(ziel.id, art)), erfolg)) {
           schliessen();
           danach();
-        } else sperren(knoepfe, false); // nochmal versuchen
+        } else freigeben(store, knoepfe); // nochmal versuchen
       };
       const ausgegeben = h('button', { class: 'knopf sz-wahl', type: 'button', onClick: () => beenden('ausgegeben', 'Ziel beendet ✓') }, h('b', {}, '🛍️ Geld wurde ausgegeben'), h('small', {}, 'Das Gesparte wurde vom Konto bezahlt (z. B. Urlaub). Die Zahlung steckt schon im Kontostand – deshalb wird sie ausgeglichen, nichts fehlt doppelt.'));
       const zurueck = h('button', { class: 'knopf sz-wahl', type: 'button', onClick: () => beenden('frei', 'Ziel beendet – Geld zurück zu Frei ✓') }, h('b', {}, '💜 Geld zurück zu Frei'), h('small', {}, 'Das Gesparte geht zu „Frei verfügbar“ und lässt sich anderen Zielen geben.'));
@@ -235,14 +239,14 @@ export function zurueckZuFreiFragen({ store }, ziel, knoepfe = []) {
     ja: 'Zurück zu Frei',
     beiJa: async () => {
       sperren(knoepfe, true);
-      if (!erledigt(await sicher(store.zielZurueckZuFrei(ziel.id)), 'Zurück zu Frei ✓')) sperren(knoepfe, false); // nochmal versuchen
+      if (!erledigt(await sicher(store.zielZurueckZuFrei(ziel.id)), 'Zurück zu Frei ✓')) freigeben(store, knoepfe); // nochmal versuchen
     },
   });
 }
 
 /**
- * Rückfrage vor dem Löschen (Text aus zielLoeschFrage: ein laufendes Ziel mit Geld sagt, wohin das Geld geht); danach „Gelöscht ✓ ·
- * Rückgängig“. `knoepfe` werden während des Löschens gesperrt (bei einem Fehler wieder frei).
+ * Rückfrage vor dem Löschen (Text aus zielLoeschFrage: ein laufendes Ziel mit Geld sagt, dass das Geld zu „Frei“ geht); danach
+ * „Gelöscht ✓ · Rückgängig“. `knoepfe` werden während des Löschens gesperrt (bei einem Fehler wieder frei, außer jetzt gesperrt).
  */
 export function zielLoeschenFragen({ store }, ziel, danach = () => {}, knoepfe = []) {
   const frage = zielLoeschFrage(store.getState(), store.heute(), ziel.id);
@@ -258,23 +262,29 @@ export function zielLoeschenFragen({ store }, ziel, danach = () => {}, knoepfe =
     beiJa: async () => {
       sperren(knoepfe, true);
       if (geloeschtMelden(await sicher(store.zielLoeschen(ziel.id)))) danach();
-      else sperren(knoepfe, false); // nochmal versuchen
+      else freigeben(store, knoepfe); // nochmal versuchen
     },
   });
 }
 
 /**
- * „Rückgängig“ einer Verschiebung aus „Frei“ (im Verlauf): erst die Rückfrage, dann „Gelöscht ✓ · Rückgängig“ (das holt sie zurück).
- * `knoepfe` werden währenddessen gesperrt.
+ * „Rückgängig“ einer Verschiebung aus „Frei“ (im Verlauf): erst die Rückfrage mit der tatsächlichen Wirkung (Probe-Rechnung, siehe
+ * verschiebungFrage), dann „Verschiebung rückgängig gemacht ✓“ mit „Rückgängig“ (das holt sie zurück). `knoepfe` sind währenddessen aus.
  */
-export function verschiebungRueckgaengigFragen({ store }, verschiebung, knoepfe = []) {
+export function verschiebungRueckgaengigFragen({ store }, id, knoepfe = []) {
+  const text = verschiebungFrage(store.getState(), store.heute(), id);
+  if (!text) {
+    toast('Diese Verschiebung lässt sich nicht mehr rückgängig machen.', { art: 'fehler' });
+    return null;
+  }
   return bestaetigen({
     titel: 'Verschiebung rückgängig machen?',
-    text: verschiebung.frage,
+    text,
     ja: 'Rückgängig machen',
     beiJa: async () => {
       sperren(knoepfe, true);
-      if (!geloeschtMelden(await sicher(store.verschiebungLoeschen(verschiebung.id)))) sperren(knoepfe, false); // nochmal versuchen
+      const r = await sicher(store.verschiebungLoeschen(id));
+      if (!geloeschtMelden(r, { text: 'Verschiebung rückgängig gemacht ✓', zurueck: 'Verschiebung wieder da ✓' })) freigeben(store, knoepfe); // nochmal versuchen
     },
   });
 }

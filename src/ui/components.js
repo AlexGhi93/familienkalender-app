@@ -92,10 +92,13 @@ export function wochenStepper({ wert, min, max, beschriftung, beiAenderung }) {
 }
 
 let toastZeitgeber = null;
-/** Kurze Meldung unten; mit `aktion` ({ text, beiKlick }) bleibt sie 10 Sekunden und bietet z. B. „Rückgängig“ an. */
-export function toast(text, { aktion = null, dauer = aktion ? 10000 : 2600, art = '' } = {}) {
+/**
+ * Kurze Meldung unten; mit `aktion` ({ text, beiKlick }) bleibt sie 10 Sekunden und bietet z. B. „Rückgängig“ an. `ersetztFehler`:
+ * die Meldung gehört zu einer GELUNGENEN neuen Aktion und darf eine noch stehende Fehlermeldung (einer früheren Aktion) ersetzen.
+ */
+export function toast(text, { aktion = null, dauer = aktion ? 10000 : 2600, art = '', ersetztFehler = false } = {}) {
   // Eine Fehlermeldung wird nicht von einer „Gespeichert ✓“-Meldung derselben Aktion überdeckt.
-  if (art !== 'fehler' && document.querySelector('.toast.fehler')) return;
+  if (art !== 'fehler' && !ersetztFehler && document.querySelector('.toast.fehler')) return;
   document.querySelector('.toast')?.remove();
   clearTimeout(toastZeitgeber);
   const el = h(

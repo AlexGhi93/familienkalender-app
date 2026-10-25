@@ -30,11 +30,13 @@ export function geloeschtMelden(r, { text = 'Gelöscht ✓', zurueck = 'Wiederhe
     if (!r?.gemeldet) toast(r?.fehler ?? ALLGEMEINER_FEHLER, { art: 'fehler' });
     return false;
   }
+  // gelöscht ist gelöscht: eine noch stehende Fehlermeldung einer früheren Aktion darf die Meldung (und ihr Rückgängig) nicht verschlucken
   if (!r.rueckgaengig) {
-    toast(text);
+    toast(text, { ersetztFehler: true });
     return true;
   }
   toast(text, {
+    ersetztFehler: true,
     dauer: GELOESCHT_DAUER,
     aktion: {
       text: 'Rückgängig',
@@ -49,7 +51,7 @@ export function geloeschtMelden(r, { text = 'Gelöscht ✓', zurueck = 'Wiederhe
           if (!e.gemeldet && !e.wartet) toast(e.fehler ?? ALLGEMEINER_FEHLER, { art: 'fehler' });
           return;
         }
-        toast(zurueck);
+        toast(zurueck, { ersetztFehler: true });
       },
     },
   });

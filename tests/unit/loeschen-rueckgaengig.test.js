@@ -7,9 +7,12 @@ import { createStore } from '../../src/app/store.js';
 import { createDemoAdapter } from '../../src/app/demo-adapter.js';
 import { extraWiederherstellen, leeresKonto, standWiederherstellen } from '../../src/domain/konto.js';
 import { leererMonat, zusatzHinzufuegen, zusatzWiederherstellen } from '../../src/domain/schicht.js';
-import { TEXT_TEIL_GESPERRT, postenLoeschen, postenSetzen, leererShard, shardFuer } from '../../src/domain/fixkosten.js';
+import { TEXT_TEIL_GESPERRT, postenLoeschen, postenSetzen, postenWiederanlegen, leererShard, shardFuer } from '../../src/domain/fixkosten.js';
 import { TEXT_ZIELE_NICHT_GELADEN, sparVerlauf } from '../../src/domain/sparziele.js';
-import { speicherAttrappe } from './hilfen.js';
+import { createGoogleAdapter } from '../../src/calendar/google-adapter.js';
+import { terminZuEreignis } from '../../src/calendar/mapping.js';
+import { normalizeSettings } from '../../src/domain/settings.js';
+import { apiAttrappe, speicherAttrappe } from './hilfen.js';
 
 const JETZT = new Date('2026-10-22T08:00:00+02:00');
 const HEUTE = '2026-10-22';
@@ -62,6 +65,16 @@ describe('Domäne: exakt wiederherstellen', () => {
     let voll = zurueck;
     voll = zusatzHinzufuegen(voll, { person: 'mama', tag: 3, k: 'F', von: '20:00', bis: '21:00' });
     assert.throws(() => zusatzWiederherstellen(voll, { person: 'mama', tag: 3, k: 'F', von: '06:00', bis: '07:00' }, 0), /Höchstens 3 Zusätze/);
+  });
+
+  test('postenWiederanlegen (M6): derselbe Posten an seiner alten Stelle; schon da = derselbe Teil; geprüft wie postenSetzen', () => {
+    const p = (id, name) => ({ id, name, cents: 1399, ungefaehr: false, intervall: 1, tag: '1', start: '2026-10', kategorie: 'freizeit', person: 'gemeinsam' });
+    const s = [p('aaaa1', 'Eins'), p('aaaa2', 'Zwei'), p('aaaa3', 'Drei')].reduce((t, x) => postenSetzen(t, x), leererShard());
+    const ohne = postenLoeschen(s, 'aaaa2');
+    const zurueck = postenWiederanlegen(ohne, s.posten[1], 1);
+    assert.deepEqual(zurueck, s);
+    assert.equal(postenWiederanlegen(zurueck, s.posten[1], 1), zurueck);
+    assert.throws(() => postenWiederanlegen(ohne, { ...s.posten[1], cents: 0 }, 1), /Betrag/);
   });
 
   test('postenLoeschen: auch ein AKTIVER Posten lässt sich endgültig löschen', () => {
@@ -286,7 +299,7 @@ describe('Sparziele: laufendes Ziel löschen und Verschiebung rückgängig – m
     return v.frei + v.summeZiele + v.ausgleichOffen;
   };
 
-  test('gefördertes laufendes Ziel samt Verschiebung löschen: zurückgelegt + Frei bleibt; Rückgängig bringt beides zurück', async () => {
+  test('gefördertes laufendes Ziel mit Verschiebung löschen: zurückgelegt + Frei bleibt; Rückgängig bringt genau den alten Stand zurück', async () => {
     const { store, speicher } = aufbau({ ids: ['ver00001'] });
     await store.laden();
     const vorher = store.getState().ziele.daten;
@@ -295,8 +308,10 @@ describe('Sparziele: laufendes Ziel löschen und Verschiebung rückgängig – m
     const gesamt = summe(store.getState());
     const r = await store.zielLoeschen('demo0002');
     assert.equal(r.ok, true);
-    assert.deepEqual(store.getState().ziele.daten.z.map((z) => z.id), ['demo0001', 'demo0003']);
-    assert.deepEqual(store.getState().ziele.daten.m, []);
+    // „gelöscht“ abgeschlossen: bleibt gespeichert (mit Verschiebung), sein Gespartes ging zu Frei
+    assert.deepEqual(store.getState().ziele.daten.z.map((z) => z.id), ['demo0001', 'demo0002', 'demo0003']);
+    assert.equal(store.getState().ziele.daten.z[1].geloescht, true);
+    assert.deepEqual(store.getState().ziele.daten.m, mitVerschiebung.m);
     assert.equal(summe(store.getState()), gesamt, 'nichts verloren');
     assert.deepEqual(await r.rueckgaengig(), { ok: true });
     assert.deepEqual(store.getState().ziele.daten, mitVerschiebung);
@@ -342,5 +357,54 @@ describe('Sparziele: laufendes Ziel löschen und Verschiebung rückgängig – m
     assert.deepEqual(await store.verschiebungLoeschen('ver00001'), { ok: false, fehler: TEXT_ZIELE_NICHT_GELADEN });
     assert.deepEqual(await r.rueckgaengig(), { ok: false, fehler: TEXT_ZIELE_NICHT_GELADEN });
     assert.equal(schreibt, vorher);
+  });
+});
+
+// ---------------------------------------------------------------- Fix-Runde 1 (M1): Rückgängig überschreibt nie, was inzwischen wieder da ist
+
+describe('Rückgängig für Termin, Urlaub und Tag überschreibt nichts, was inzwischen (vom anderen Telefon) wieder eingetragen wurde', () => {
+  const SCHON_DA = 'Das ist inzwischen wieder eingetragen (wohl auf dem anderen Telefon) – nichts überschrieben.';
+
+  test('Demo: Termin, Urlaub und Tag inzwischen wieder da → Meldung (genau einmal), nichts überschrieben', async () => {
+    const { store, adapter } = aufbau();
+    await store.laden();
+    const t = store.getState().termine.find((x) => x.id === 'demo-t1');
+    const rt = await store.terminLoeschen('demo-t1');
+    await adapter.speichereTermin({ ...t, time: '11:00' }); // das andere Telefon trägt ihn neu ein
+    assert.deepEqual(await rt.rueckgaengig(), { ok: false, fehler: SCHON_DA, gemeldet: true });
+    assert.equal(store.getState().fehler, SCHON_DA);
+    assert.equal(store.getState().termine.find((x) => x.id === 'demo-t1').time, '11:00', 'der neue Stand gilt (neu geladen)');
+
+    const u = store.getState().urlaub.find((x) => x.id === 'demo-u2');
+    const ru = await store.urlaubLoeschen('demo-u2');
+    await adapter.speichereUrlaub({ ...u, end: u.start });
+    assert.deepEqual(await ru.rueckgaengig(), { ok: false, fehler: SCHON_DA, gemeldet: true });
+    assert.equal(store.getState().urlaub.find((x) => x.id === 'demo-u2').end, u.start);
+
+    await store.setTag('2026-10-22', 'krank');
+    const rtag = await store.loescheTag('2026-10-22');
+    await adapter.setzeTag('2026-10-22', 'abwesend');
+    assert.deepEqual(await rtag.rueckgaengig(), { ok: false, fehler: SCHON_DA, gemeldet: true });
+    assert.equal(store.getState().tage['2026-10-22'].typ, 'abwesend');
+  });
+
+  test('Google: das gelöschte Ereignis wird wieder bestätigt (genau das Gelöschte); inzwischen geändert → Meldung, nichts überschrieben', async () => {
+    const { api, roh } = apiAttrappe();
+    const KALENDER = { termine: 'kt', abwesenheit: 'kab', anwesenheit: 'kan' };
+    const termin = { id: 'u00000000001', typ: 'arzt', subtyp: 'zahnarzt', date: '2026-10-28', time: '09:00', mitnehmen: [], kosten: null };
+    await api.ereignisse.schreibe('kt', { ...terminZuEreignis(termin, normalizeSettings()).body, description: 'vom anderen Telefon ergänzt' });
+    const store = createStore(createGoogleAdapter({ api, kalender: KALENDER, jetzt: () => JETZT }), { jetzt: () => JETZT });
+    await store.laden();
+    assert.ok(store.getState().termine.some((x) => x.id === termin.id));
+    const r = await store.terminLoeschen(termin.id);
+    assert.equal(roh('kt', termin.id).status, 'cancelled');
+    assert.deepEqual(await r.rueckgaengig(), { ok: true });
+    assert.equal(roh('kt', termin.id).status, 'confirmed');
+    assert.equal(roh('kt', termin.id).description, 'vom anderen Telefon ergänzt', 'nichts mit dem alten lokalen Stand überschrieben');
+    // noch einmal löschen; das andere Telefon legt ihn neu an → Rückgängig überschreibt nicht
+    const r2 = await store.terminLoeschen(termin.id);
+    await api.ereignisse.schreibe('kt', { ...terminZuEreignis({ ...termin, time: '10:00' }, normalizeSettings()).body });
+    assert.deepEqual(await r2.rueckgaengig(), { ok: false, fehler: SCHON_DA, gemeldet: true });
+    assert.match(roh('kt', termin.id).start.dateTime, /T10:00/);
   });
 });

@@ -124,6 +124,22 @@ export function createDemoAdapter({ speicher = globalThis.localStorage, jetzt = 
       daten.termine = daten.termine.filter((t) => t.id !== id);
       sichern();
     },
+    /** „Rückgängig“ nach dem Löschen (wie beim Google-Adapter): inzwischen wieder da → { schonDa: true }, nichts überschrieben. */
+    async stelleTerminWieder(termin) {
+      if (daten.termine.some((t) => t.id === termin.id)) return { schonDa: true };
+      await this.speichereTermin(termin);
+      return { schonDa: false };
+    },
+    async stelleUrlaubWieder(urlaub) {
+      if (daten.urlaub.some((u) => u.id === urlaub.id)) return { schonDa: true };
+      await this.speichereUrlaub(urlaub);
+      return { schonDa: false };
+    },
+    async stelleTagWieder(date, typ) {
+      if (daten.tage[date]) return { schonDa: true };
+      await this.setzeTag(date, typ);
+      return { schonDa: false };
+    },
     /** Kontostände ändern: `aenderung(konto)` → neues Konto (wie beim Google-Adapter); gibt das gespeicherte Konto zurück. */
     async aendereKonto(aenderung) {
       const neu = aenderung(daten.konto ?? leeresKonto());

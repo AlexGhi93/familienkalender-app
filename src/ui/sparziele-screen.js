@@ -87,10 +87,10 @@ function freiKarte(m, ctx) {
 
 const zeile = (z, klasse) => h('div', { class: `sz-zeile ${klasse}`, 'data-cents': String(z.cents) }, h('span', {}, z.text), h('b', {}, z.betrag));
 
-/** Eine Verschiebung aus „Frei“ im Verlauf; zu einem laufenden Ziel mit „Rückgängig“ (Rückfrage, danach „Gelöscht ✓ · Rückgängig“). */
+/** Eine Verschiebung aus „Frei“ im Verlauf; zu einem laufenden Ziel mit „Rückgängig“ (Rückfrage mit der tatsächlichen Wirkung, danach Meldung mit „Rückgängig“). */
 function verschiebungZeile(z, ctx) {
   if (!z.rueckgaengig) return zeile(z, 'sz-verschoben');
-  const knopf = h('button', { class: 'knopf klein sz-rueckgaengig', type: 'button', 'aria-label': `Verschiebung rückgängig: ${z.text}`, onClick: () => verschiebungRueckgaengigFragen(ctx, z, [knopf]) }, 'Rückgängig');
+  const knopf = h('button', { class: 'knopf klein sz-rueckgaengig', type: 'button', 'aria-label': `Verschiebung rückgängig: ${z.text}`, onClick: () => verschiebungRueckgaengigFragen(ctx, z.id, [knopf]) }, 'Rückgängig');
   return h('div', { class: 'sz-zeile sz-verschoben', 'data-cents': String(z.cents), 'data-id': z.id }, h('span', {}, z.text), h('b', {}, z.betrag), h('div', { class: 'sz-zeile-aktion' }, knopf));
 }
 

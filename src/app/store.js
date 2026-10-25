@@ -8,7 +8,7 @@ import { normalisiereTermin } from './termin.js';
 import { urlaubChecksAbgleich, urlaubChecksWunsch } from './urlaub-check.js';
 import { entferneExtra, entferneStand, extraWiederherstellen, fuegeExtraHinzu, leeresKonto, monatVor, normalisiereKonto, setzeStand, standWiederherstellen } from '../domain/konto.js';
 import { artAendern, artArchivieren, artHinzufuegen, artVerschieben, katalogErgaenzen, leererMonat, normalisiereKatalog, normalisiereMonat, schaltePinsel, schichtAm, setzeNotiz, setzeSchicht, standardKatalog, tageImMonat, vorladeMonate, zusatzEntfernen, zusatzHinzufuegen, zusatzWiederherstellen } from '../domain/schicht.js';
-import { FIX_SHARDS, TEXT_FIX_UNLESBAR, TEXT_FIX_VOLL, TEXT_TEIL_GESPERRT, leererShard, neueFixId, normalisiereShard, postenAnzahlPruefen, postenArchivieren, postenLoeschen, postenPruefen, postenSetzen, postenWiederherstellen, shardFuer } from '../domain/fixkosten.js';
+import { FIX_SHARDS, TEXT_FIX_UNLESBAR, TEXT_FIX_VOLL, TEXT_TEIL_GESPERRT, leererShard, neueFixId, normalisiereShard, postenAnzahlPruefen, postenArchivieren, postenLoeschen, postenPruefen, postenSetzen, postenWiederanlegen, postenWiederherstellen, shardFuer } from '../domain/fixkosten.js';
 import { MAX_SERIEN_WOCHEN, naechsterWochentag, wochenSerie } from './serie.js';
 import { TEXT_ZIELE_GESPERRT, TEXT_ZIELE_NICHT_GELADEN, freiVerschieben as zielFreiVerschieben, leereZiele, neueZielId, startMonat, verschiebungLoeschen as verschiebungLoeschenRein, verschiebungWiederherstellen as verschiebungWiederherstellenRein, zielAusblenden as zielAusblendenRein, zielBeenden as zielBeendenRein, zielLoeschen as zielLoeschenRein, zielSchluss, zielSetzen, zielSpur, zielWiederherstellen as zielWiederherstellenRein, zieleWarnungen } from '../domain/sparziele.js';
 
@@ -34,6 +34,7 @@ const TEXT_ZIEL_NEUER = 'Dieses Sparziel hat das andere Telefon mit einer neuere
 const TEXT_ZIEL_ABGESCHLOSSEN = 'Dieses Sparziel ist schon abgeschlossen.';
 const TEXT_NICHT_AUTOMATISCH = 'Nur ein nach dem Zieldatum automatisch abgeschlossenes Ziel lässt sich so zurück zu Frei geben.';
 const TEXT_VERSCHIEBUNG_WEG = 'Diese Verschiebung gibt es nicht mehr – sie wurde wohl auf dem anderen Telefon rückgängig gemacht.';
+const TEXT_SCHON_WIEDER_DA = 'Das ist inzwischen wieder eingetragen (wohl auf dem anderen Telefon) – nichts überschrieben.';
 const TEXT_VERSCHIEBUNG_NEUER = 'Diese Verschiebung hat das andere Telefon mit einer neueren App-Version geändert. Bitte die App aktualisieren.';
 
 /**
@@ -273,6 +274,19 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
    * { ok: false, fehler, gemeldet: true } (zurückgenommen; die Meldung steht schon in state.fehler, die Shell zeigt sie – genau einmal).
    */
   const ergebnisVon = (e) => (e === 'ok' ? { ok: true } : e === 'auth' ? { ok: false, wartet: true, fehler: TEXT_ANMELDEN } : { ok: false, fehler: state.fehler ?? TEXT_FEHLER, gemeldet: true });
+
+  /**
+   * Schreibvorgang für „Rückgängig“ eines Termins, Urlaubs oder Tages: `stelle()` meldet { schonDa: true }, wenn inzwischen (vom anderen
+   * Telefon) wieder etwas eingetragen ist – dann wird nichts überschrieben: zurückgenommen, neu geladen, genau eine Meldung.
+   */
+  const ohneUeberschreiben = (stelle) => async () => {
+    const r = await stelle();
+    if (r?.schonDa) {
+      const e = new Error(TEXT_SCHON_WIEDER_DA);
+      FACHLICH.add(e);
+      throw e;
+    }
+  };
 
   /** `fn`, deren Ablehnung auf der neuesten Fassung als fachliche Meldung zählt (deren Text gezeigt wird, nicht „Speichern hat nicht geklappt“). */
   const fachlich = (fn) => (wert) => {
@@ -1060,7 +1074,9 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       const tage = { ...state.tage };
       delete tage[date];
       const r = ergebnisVon(await aendere({ tage }, () => adapter.loescheTag(date)));
-      return mitRueckgaengig(r, vorher.konflikt ? null : async () => ergebnisVon(await stelleTageWieder([[date, vorher.typ]])));
+      const zurueck = async () =>
+        ergebnisVon(await aendere({ tage: { ...state.tage, [date]: { typ: vorher.typ } } }, ohneUeberschreiben(() => (adapter.stelleTagWieder ? adapter.stelleTagWieder(date, vorher.typ) : adapter.setzeTag(date, vorher.typ)))));
+      return mitRueckgaengig(r, vorher.konflikt ? null : zurueck);
     },
 
     /** Legt einen Urlaub an; Betreuungstage darin werden umgewandelt (gelöscht). Gibt { id, umgewandelt, rueckgaengig } zurück. */
@@ -1100,7 +1116,8 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     async urlaubLoeschen(id) {
       const u = state.urlaub.find((x) => x.id === id);
       const r = ergebnisVon(await aendere({ urlaub: state.urlaub.filter((x) => x.id !== id) }, () => adapter.loescheUrlaub(id)));
-      const zurueck = async () => ergebnisVon(await aendere({ urlaub: [...state.urlaub.filter((x) => x.id !== id), u] }, () => adapter.speichereUrlaub(u)));
+      const zurueck = async () =>
+        ergebnisVon(await aendere({ urlaub: [...state.urlaub.filter((x) => x.id !== id), u] }, ohneUeberschreiben(() => (adapter.stelleUrlaubWieder ? adapter.stelleUrlaubWieder(u) : adapter.speichereUrlaub(u)))));
       return mitRueckgaengig(r, u && einzelnWiederherstellbar(id) ? zurueck : null);
     },
 
@@ -1114,12 +1131,14 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
 
     /**
      * Löscht einen Termin (oder eine einzelne Sache, auch aus einer Serie). → wie `loescheTag`; `rueckgaengig()` schreibt ihn unverändert
-     * mit derselben Kennung wieder (wie „Erledigt“ → „Rückgängig“) – nicht bei einem Termin einer wiederkehrenden Google-Serie.
+     * mit derselben Kennung wieder – nicht bei einem Termin einer wiederkehrenden Google-Serie; ist er inzwischen wieder da (anderes
+     * Telefon), bleibt er unverändert (Meldung).
      */
     async terminLoeschen(id) {
       const t = state.termine.find((x) => x.id === id);
       const r = ergebnisVon(await aendere({ termine: state.termine.filter((x) => x.id !== id) }, () => adapter.loescheTermin(id)));
-      const zurueck = async () => ergebnisVon(await aendere({ termine: [...state.termine.filter((x) => x.id !== id), t] }, () => adapter.speichereTermin(t)));
+      const zurueck = async () =>
+        ergebnisVon(await aendere({ termine: [...state.termine.filter((x) => x.id !== id), t] }, ohneUeberschreiben(() => (adapter.stelleTerminWieder ? adapter.stelleTerminWieder(t) : adapter.speichereTermin(t)))));
       return mitRueckgaengig(r, t && einzelnWiederherstellbar(id) ? zurueck : null);
     },
 
@@ -1674,20 +1693,23 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
      */
     async fixPostenLoeschen(id) {
       let weg = null;
+      let stelle = -1;
       const r = await fixPostenAendern(id, (shard) => {
-        weg = shard.posten.find((p) => p.id === id) ?? null; // auf der neuesten Fassung: das wirklich Gelöschte
+        stelle = shard.posten.findIndex((p) => p.id === id); // auf der neuesten Fassung: das wirklich Gelöschte und seine Stelle
+        weg = shard.posten[stelle] ?? null;
         return postenLoeschen(shard, id);
       });
-      return mitRueckgaengig(r, weg ? () => store.fixPostenWiederanlegen(weg) : null);
+      return mitRueckgaengig(r, weg ? () => store.fixPostenWiederanlegen(weg, stelle) : null);
     },
 
     /**
-     * „Rückgängig“ nach dem Löschen: speichert genau diesen Posten (mit seiner Kennung, auch archiviert) wieder – über denselben Weg wie
+     * „Rückgängig“ nach dem Löschen: speichert genau diesen Posten (mit seiner Kennung, auch archiviert; an seiner alten Stelle `stelle`,
+     * falls angegeben) wieder – über denselben Weg wie
      * einen neuen (Prüfung, vorher gelesen, höchstens 100 Posten, gesperrter Teil, Platz im Teil, auf der neuesten Fassung). Gibt es ihn
      * schon wieder, bleibt alles, wie es ist; ein Eintrag einer neueren Version mit derselben Kennung wird nie überschrieben.
      * → { ok: true, id } | { ok: false, fehler, gemeldet? } | { ok: false, wartet: true, fehler }. Wirft nie.
      */
-    async fixPostenWiederanlegen(posten) {
+    async fixPostenWiederanlegen(posten, stelle) {
       if (!istObjekt(posten) || typeof posten.id !== 'string' || posten.id === '') return { ok: false, fehler: 'Ungültige Kennung.' };
       const ungueltig = postenPruefen(posten);
       if (ungueltig) return { ok: false, fehler: ungueltig };
@@ -1701,7 +1723,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       const fn = (shard) => {
         if (shard.posten.some((p) => p.id === posten.id)) return shard;
         if ((shard.fremd ?? []).some((k) => k?.i === posten.id)) throw new Error(TEXT_FIX_NEUER);
-        return postenSetzen(shard, posten);
+        return postenWiederanlegen(shard, posten, stelle);
       };
       try {
         const r = await fixTeilAendern(nr, fn);

@@ -195,7 +195,9 @@ describe('Sparziele beenden, löschen, ausblenden, aus „Frei“ verschieben', 
     assert.equal(nachher.frei + nachher.summeZiele, vorher.frei + vorher.summeZiele, 'zurückgelegt + Frei bleibt');
     assert.equal((await store.zielLoeschen('neu00001')).ok, true);
     assert.equal(zielMit(store, 'neu00001'), undefined);
-    assert.deepEqual(gespeicherteZiele(speicher).z.map((k) => k.i), ['demo0002', 'demo0003']);
+    // das geförderte bleibt „gelöscht“ abgeschlossen gespeichert (die Vergangenheit ändert sich nie), das neue ist wirklich weg
+    assert.deepEqual(gespeicherteZiele(speicher).z.map((k) => k.i), ['demo0001', 'demo0002', 'demo0003']);
+    assert.deepEqual([zielMit(store, 'demo0001').geloescht, zielMit(store, 'demo0001').beendet], [true, { monat: '2026-10', art: 'frei' }]);
     assert.deepEqual(await store.zielLoeschen('neu00001'), { ok: false, fehler: TEXT_GELOESCHT });
   });
 

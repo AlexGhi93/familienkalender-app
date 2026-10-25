@@ -3506,8 +3506,8 @@ html:has(.screen.einkauf) {
 
 .sp-tag-weg {
   flex: none;
-  width: 40px;
-  height: 40px;
+  width: 44px; /* Tippfläche wie alle Knöpfe (löscht, mit Rückgängig) */
+  height: 44px;
   border: 0;
   border-radius: 50%;
   background: transparent;

@@ -7,29 +7,33 @@
 //   { v: 1, beginn?, z: [Ziel], m: [Verschiebung], fremd?: { z: [roh], m: [roh] } }
 //   beginn        'JJJJ-MM' = ab hier wird gerechnet: der Startmonat des ersten Ziels; rückt nie nach hinten (auch nicht, wenn ein
 //                 Ziel gelöscht wird), damit sich die Vergangenheit nie ändert. Fehlt es (alte Daten) → frühester `erstellt`.
-//   Ziel          { id, name, emoji, zielCents, datum, vorlaeufig, erstellt, beendet?: { monat, art }, aus?: true }
+//   Ziel          { id, name, emoji, zielCents, datum, vorlaeufig, erstellt, beendet?: { monat, art }, aus?: true, geloescht?: true }
 //     id          Kennung aus 0-9 und a-v (4–16 Zeichen, siehe neueZielId)
 //     name        1–30 Zeichen; emoji aus ZIEL_EMOJIS; zielCents MIN_ZIEL_CENTS … MAX_ZIEL_CENTS (1 € … 999.999 €)
 //     datum       'JJJJ-MM-TT' (fest) oder 'JJJJ-MM' (nur Monat); vorlaeufig = Datum noch nicht fix („bis ca.“)
 //     erstellt    'JJJJ-MM' = erster Monat, dessen Ersparnis zählt (startMonat; beim Anlegen festgelegt, danach nie geändert)
 //     beendet     von Hand beendet ab Monat `monat`: art 'ausgegeben' (das Gesparte ist weg) oder 'frei' (es geht zu „Frei“)
 //     aus         im Verlauf ausgeblendet (nur Anzeige; die Rechnung bleibt gleich)
+//     geloescht   gelöscht, solange es Spuren in der Rechnung hat (nur zusammen mit `beendet`, art 'frei'): sein Gespartes ging im Monat
+//                 des Löschens zu „Frei“; es erscheint nur noch als Zeile „… gelöscht“ in diesem Monat (siehe zielLoeschen)
 //   Verschiebung  { id, monat, ziel, cents } = `cents` aus „Frei“ zum Ziel `ziel`, nach der Aufteilung des Monats `monat`
 //   fremd         Einträge, die diese Version nicht versteht (neuere Version, beschädigt): roh, nicht gezeigt, unverändert mitgeschrieben
 //
 // Im Kalender (verstecktes Ereignis „fksparen“ – „fkziele“ ginge nicht, z liegt außerhalb von 0-9 und a-v): JSON ≤ MAX_ZIELE_ZEICHEN mit KURZEN Schlüsseln:
 //   { v: 1, a: beginn, z: [ … ], m: [ … ] }
 //   Ziel:          i=id  n=name  e=emoji  c=zielCents  d=datum  p=vorlaeufig (nur 1)  s=erstellt  b=beendet { m=monat, a=art }  h=aus (nur 1)
+//                  g=geloescht (nur 1 und nur mit b; ältere Versionen lesen ein solches Ziel als „fremd“ und lassen es unverändert)
 //   Verschiebung:  i=id  m=monat  z=ziel  c=cents
 // Neue Felder: auf oberster Ebene (neben v, a, z, m) versteht diese Version nichts Weiteres und schreibt es nicht mit – eine spätere
 // Version, die dort etwas ergänzt, muss deshalb `v` erhöhen (dann ist alles hier „unlesbar“ und wird nie überschrieben). Neue Felder
 // in einzelnen Zielen oder Verschiebungen sind dagegen sicher: solche Einträge bleiben als `fremd` unverändert erhalten.
 // Jede Änderung ist eine reine Funktion Daten → Daten, die (nach HTTP 412) auf die NEUESTE Fassung angewendet wird: das Argument wird
 // nie verändert, zweimal angewendet = einmal angewendet. Unlesbare Daten (kaputtes JSON, andere Version) werden nie überschrieben.
-// Löschen (zielLoeschbar): ein LAUFENDES Ziel immer – auch mit Geld; die Rechnung verteilt dann, als hätte es nie existiert (sein Anteil
-// geht an die anderen Ziele und „Frei“). Ein ABGESCHLOSSENES Ziel nur, wenn es nie Geld bekommen hat: sonst steckt seine Zahlung im
-// Kontostand, und ohne das Ziel müssten die anderen sie tragen – es lässt sich nur ausblenden. Verschiebungen aus „Frei“ zu einem
-// laufenden Ziel lassen sich rückgängig machen (verschiebungLoeschen). Für „Rückgängig“ nach dem Löschen: zielSpur → zielWiederherstellen.
+// Löschen (zielLoeschArt) – die Vergangenheit ändert sich nie: ein Ziel ohne jede Spur in der Rechnung wird wirklich entfernt; ein
+// LAUFENDES Ziel mit Spur (es hat Geld bekommen) wird im laufenden Monat „gelöscht“ abgeschlossen (beendet 'frei' + geloescht): sein
+// Gespartes geht zu „Frei“, frühere Monate und abgeschlossene Ziele bleiben genau gleich. Ein ABGESCHLOSSENES Ziel mit Geld lässt sich
+// nur ausblenden (seine Zahlung steckt im Kontostand). Verschiebungen aus „Frei“ zu einem laufenden Ziel lassen sich rückgängig machen
+// (verschiebungLoeschen). Für „Rückgängig“ nach dem Löschen: zielSpur → zielWiederherstellen.
 // Alles, was ein Datum „heute“ braucht, wirft sofort bei einem ungültigen (kein Text 'JJJJ-MM-TT'), siehe heutePruefen.
 
 import { isValidDate } from './dates.js';
@@ -75,7 +79,7 @@ const MONAT = /^\d{4}-(0[1-9]|1[0-2])$/;
 const KENNUNG = /^[0-9a-v]{4,16}$/;
 const ID_ZEICHEN = '0123456789abcdefghijklmnopqrstuv';
 const ID_LAENGE = 8;
-const ZIEL_SCHLUESSEL = new Set(['i', 'n', 'e', 'c', 'd', 'p', 's', 'b', 'h']);
+const ZIEL_SCHLUESSEL = new Set(['i', 'n', 'e', 'c', 'd', 'p', 's', 'b', 'h', 'g']);
 const ENDE_SCHLUESSEL = new Set(['m', 'a']);
 const VERSCHIEBUNG_SCHLUESSEL = new Set(['i', 'm', 'z', 'c']);
 
@@ -147,6 +151,7 @@ function normalisiereZiel(roh) {
   const z = { id: roh.id, name: sauber(roh.name), emoji: roh.emoji, zielCents: roh.zielCents, datum: roh.datum, vorlaeufig: roh.vorlaeufig === true, erstellt: roh.erstellt };
   if (istEnde(roh.beendet)) z.beendet = { monat: roh.beendet.monat, art: roh.beendet.art };
   if (roh.aus === true) z.aus = true;
+  if (roh.geloescht === true && z.beendet) z.geloescht = true;
   return z;
 }
 
@@ -188,6 +193,7 @@ function kurzZiel(z) {
   k.s = z.erstellt;
   if (z.beendet) k.b = { m: z.beendet.monat, a: z.beendet.art };
   if (z.aus) k.h = 1;
+  if (z.geloescht) k.g = 1;
   return k;
 }
 
@@ -198,9 +204,11 @@ const bekannt = (k, schluessel) => istObjekt(k) && Object.keys(k).every((s) => s
 
 function langZiel(k) {
   if (!bekannt(k, ZIEL_SCHLUESSEL) || ('b' in k && !bekannt(k.b, ENDE_SCHLUESSEL)) || ('p' in k && k.p !== 1) || ('h' in k && k.h !== 1)) return null;
+  if ('g' in k && (k.g !== 1 || !('b' in k))) return null; // „gelöscht“ nur mit Abschluss – sonst unverändert als fremd erhalten
   const z = { id: k.i, name: k.n, emoji: k.e, zielCents: k.c, datum: k.d, vorlaeufig: k.p === 1, erstellt: k.s };
   if ('b' in k) z.beendet = { monat: k.b.m, art: k.b.a };
   if (k.h === 1) z.aus = true;
+  if (k.g === 1) z.geloescht = true;
   return normalisiereZiel(z);
 }
 
@@ -303,7 +311,8 @@ function mit(alt, z, m, reserve, meldung = TEXT_ZIELE_VOLL) {
   } catch {
     throw new Error(meldung);
   }
-  const vorrat = z.reduce((n, x) => n + (x.beendet ? 0 : ENDE_ZEICHEN) + (x.aus ? 0 : AUS_ZEICHEN), 0);
+  // ,"g":1 (gelöscht) ist so lang wie ,"h":1: ein „gelöscht“ abgeschlossenes Ziel braucht kein Ausblenden mehr und nutzt diese Reserve
+  const vorrat = z.reduce((n, x) => n + (x.beendet ? 0 : ENDE_ZEICHEN) + (x.aus || x.geloescht ? 0 : AUS_ZEICHEN), 0);
   if (reserve && laenge + vorrat > MAX_ZIELE_ZEICHEN) throw new Error(meldung);
   return neu;
 }
@@ -361,32 +370,44 @@ function spurenlos(verlauf, id) {
 const ohneZiel = (daten, id) => baue(daten, (daten.z ?? []).filter((z) => z.id !== id), (daten.m ?? []).filter((v) => v.ziel !== id));
 
 /**
- * Darf das Ziel `id` endgültig gelöscht werden? Ein am Tag `heute` LAUFENDES Ziel immer (auch mit Geld: die Rechnung verteilt danach, als
- * hätte es nie existiert – zurückgelegt + Frei bleibt gleich). Ein ABGESCHLOSSENES (automatisch oder von Hand) nur, wenn es in der ganzen
- * Geschichte nie Geld bekommen hat (jede Zuteilung und jede Verschiebung zu ihm ist 0 – z. B. versehentlich angelegt) UND die Rechnung
- * ohne es in jedem Monat genau gleich bleibt (auch keine Rundung verschiebt sich). Unbekannte Kennung → false. Rein; `heute` wie bei
- * sparVerlauf.
+ * Wie lässt sich das Ziel `id` am Tag `heute` löschen, ohne dass sich die Vergangenheit ändert? → 'weg' | 'beenden' | null.
+ * 'weg': es hat in der ganzen Geschichte nie Geld bekommen (jede Zuteilung und jede Verschiebung zu ihm ist 0 – z. B. versehentlich
+ * angelegt) UND die Rechnung bleibt ohne es in jedem Monat genau gleich (auch keine Rundung verschiebt sich) – es wird wirklich entfernt.
+ * 'beenden': es läuft noch (weder von Hand noch automatisch abgeschlossen), hat aber Spuren – es wird im laufenden Monat „gelöscht“
+ * abgeschlossen (sein Gespartes geht zu „Frei“). null: abgeschlossen mit Geld (die Zahlung steckt im Kontostand) oder unbekannt.
+ * Rein; `heute` wie bei sparVerlauf.
  */
-export function zielLoeschbar(daten, konto, heute, id) {
+export function zielLoeschArt(daten, konto, heute, id) {
   heutePruefen(heute);
   const ziel = (daten?.z ?? []).find((z) => z.id === id);
-  if (!ziel) return false;
-  if (!abgeschlossenAm(ziel, heute)) return true;
+  if (!ziel) return null;
   const mitZiel = sparVerlauf(daten, konto, heute);
   const bekommen = mitZiel.monate.some((m) => m.zuteilung.some((t) => t.ziel === id && t.cents !== 0) || m.verschoben.some((v) => v.ziel === id && v.cents !== 0));
-  if (bekommen) return false;
-  return spurenlos(mitZiel, id) === spurenlos(sparVerlauf(ohneZiel(daten, id), konto, heute), id);
+  if (!bekommen && spurenlos(mitZiel, id) === spurenlos(sparVerlauf(ohneZiel(daten, id), konto, heute), id)) return 'weg';
+  return abgeschlossenAm(ziel, heute) ? null : 'beenden';
 }
 
+/** Darf das Ziel `id` gelöscht werden? Laufend immer, abgeschlossen nur ohne Geld (siehe zielLoeschArt). */
+export const zielLoeschbar = (daten, konto, heute, id) => zielLoeschArt(daten, konto, heute, id) !== null;
+
 /**
- * Löscht ein Ziel endgültig samt seinen Verschiebungen – nur, wenn zielLoeschbar (mit `konto` und `heute`); sonst
- * TEXT_NICHT_LOESCHBAR. `beginn` bleibt. Eine unbekannte Kennung ändert nichts.
+ * Löscht ein Ziel (siehe zielLoeschArt; mit `konto` und `heute`): ohne Spuren wirklich, samt seinen Verschiebungen; ein laufendes mit
+ * Spuren „gelöscht“ abgeschlossen ab dem laufenden Monat (beendet 'frei' + geloescht; ein späterer Abschluss von Hand und „aus“
+ * fallen weg, die Verschiebungen bleiben – die Vergangenheit ändert sich nie). Sonst TEXT_NICHT_LOESCHBAR. `beginn` bleibt. Eine
+ * unbekannte Kennung ändert nichts. Passt immer in den Kalender (es nutzt die Reserve für Beenden und Ausblenden, siehe mit).
  */
 export function zielLoeschen(daten, id, { heute, konto } = {}) {
   heutePruefen(heute);
-  if (!(daten.z ?? []).some((z) => z.id === id)) return daten;
-  if (!zielLoeschbar(daten, konto, heute, id)) throw new Error(TEXT_NICHT_LOESCHBAR);
-  return ohneZiel(daten, id);
+  const liste = daten.z ?? [];
+  if (!liste.some((z) => z.id === id)) return daten;
+  const art = zielLoeschArt(daten, konto, heute, id);
+  if (art === 'weg') return ohneZiel(daten, id);
+  if (art !== 'beenden') throw new Error(TEXT_NICHT_LOESCHBAR);
+  const geloescht = (z) => {
+    const { aus: _aus, ...rest } = z;
+    return normalisiereZiel({ ...rest, beendet: { monat: heute.slice(0, 7), art: 'frei' }, geloescht: true });
+  };
+  return mit(daten, liste.map((z) => (z.id === id ? geloescht(z) : z)), daten.m ?? [], false);
 }
 
 /**
@@ -414,7 +435,8 @@ const eingefuegt = (liste, eintrag, stelle) => {
 
 /**
  * „Rückgängig“ nach zielLoeschen: holt das Ziel aus `spur` (siehe zielSpur) an seine Stelle zurück, dazu seine Verschiebungen an ihren
- * Stellen – unverändert (Startmonat, Abschluss, Beträge). Gibt es das Ziel schon wieder → dieselben Daten (wiederholbar). Wirft mit
+ * Stellen – unverändert (Startmonat, Abschluss, Beträge). Ein „gelöscht“ abgeschlossenes Ziel bekommt seine Fassung aus `spur` zurück
+ * (Abschluss und Kennzeichen fallen weg). Gibt es das Ziel schon wieder → dieselben Daten (wiederholbar). Wirft mit
  * klarer Meldung, wenn die Kennung inzwischen einem Eintrag einer neueren Version gehört, wenn schon MAX_ZIELE_AKTIV Ziele laufen oder
  * wenn der Platz im Kalender nicht reicht. `beginn` bleibt, wie es war (es ist beim Löschen nie nach hinten gerückt).
  */
@@ -423,10 +445,11 @@ export function zielWiederherstellen(daten, spur, { heute } = {}) {
   const ziel = normalisiereZiel(spur?.ziel);
   if (!ziel) throw new Error('Ungültiges Sparziel.');
   const liste = daten.z ?? [];
-  if (liste.some((z) => z.id === ziel.id)) return daten;
+  const vorhanden = liste.find((z) => z.id === ziel.id);
+  if (vorhanden && !(vorhanden.geloescht && !ziel.geloescht)) return daten;
   if (fremdeKennung(daten, ziel.id, 'z')) throw new Error(TEXT_KENNUNG_NEUER);
   if (!abgeschlossenAm(ziel, heute)) {
-    const laufend = liste.filter((z) => !abgeschlossenAm(z, heute)).length + (daten.fremd?.z?.length ?? 0);
+    const laufend = liste.filter((z) => z.id !== ziel.id && !abgeschlossenAm(z, heute)).length + (daten.fremd?.z?.length ?? 0);
     if (laufend >= MAX_ZIELE_AKTIV) throw new Error(`Höchstens ${MAX_ZIELE_AKTIV} laufende Sparziele.`);
   }
   let m = daten.m ?? [];
@@ -437,7 +460,7 @@ export function zielWiederherstellen(daten, spur, { heute } = {}) {
     m = eingefuegt(m, v, stelle);
   }
   if (m.length + (daten.fremd?.m?.length ?? 0) > MAX_VERSCHIEBUNGEN) throw new Error(TEXT_VERSCHIEBUNGEN_VOLL);
-  return mit(daten, eingefuegt(liste, ziel, spur.stelle), m, true);
+  return mit(daten, vorhanden ? liste.map((z) => (z.id === ziel.id ? ziel : z)) : eingefuegt(liste, ziel, spur.stelle), m, true);
 }
 
 /**

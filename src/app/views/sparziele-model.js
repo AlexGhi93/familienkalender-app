@@ -2,7 +2,7 @@
 // Stand), Karten der laufenden Ziele (Balken, Beträge, Monate, Status), „Frei verfügbar“, Verlauf pro Monat (Ersparnis und Aufteilung),
 // abgeschlossene Ziele (Ausblenden, Löschen nur ohne Geld), Sperren und Warnungen; dazu Entwurf, Prüfung und Bedarf-Vorschau des Formulars.
 // Gerechnet wird ausschließlich mit src/domain/sparziele.js (sparVerlauf); hier wird nur formatiert.
-import { TEXT_ZIELE_GESPERRT, TEXT_ZIELE_NICHT_GELADEN, ZIEL_EMOJIS, sparVerlauf, startMonat, zielLoeschbar, zielPruefen, zielSchluss } from '../../domain/sparziele.js';
+import { TEXT_ZIELE_GESPERRT, TEXT_ZIELE_NICHT_GELADEN, ZIEL_EMOJIS, sparVerlauf, startMonat, verschiebungLoeschen, zielLoeschArt, zielLoeschbar, zielPruefen, zielSchluss } from '../../domain/sparziele.js';
 import { betragText, centsAusText, deltaText, monatVor } from '../../domain/konto.js';
 import { isValidDate } from '../../domain/dates.js';
 import { MONATE, monatText } from '../format-de.js';
@@ -73,16 +73,16 @@ const zeile = (text, cents, betrag = deltaText(cents)) => ({ text, cents, betrag
  * Monat ein Ausgleich verteilt (Ziel „ausgegeben“: die Zahlung steckt schon im Kontostand), steht je Ziel eine Zeile „… bezahlt (aus dem
  * Ziel)“ mit −Betrag; verteilt wird gespart + Ausgleich.
  */
-function monatEintrag(m, name, rueckgaengigMoeglich) {
-  const abschluesse = m.abschluss.map((a) =>
-    a.art === 'frei' ? zeile(`${name(a.ziel)} beendet – zurück zu Frei`, a.cents, `+${betragText(a.cents)} → Frei`) : zeile(`${name(a.ziel)} abgeschlossen (ausgegeben)`, a.cents, betragText(a.cents)),
-  );
+function monatEintrag(m, name, rueckgaengigMoeglich, geloescht) {
+  const abschluesse = m.abschluss.map((a) => {
+    if (geloescht(a.ziel)) return zeile(`🗑️ ${geloescht(a.ziel)} gelöscht – ${betragText(a.cents)} zurück zu „Frei“`, a.cents, `+${betragText(a.cents)} → Frei`);
+    return a.art === 'frei' ? zeile(`${name(a.ziel)} beendet – zurück zu Frei`, a.cents, `+${betragText(a.cents)} → Frei`) : zeile(`${name(a.ziel)} abgeschlossen (ausgegeben)`, a.cents, betragText(a.cents));
+  });
   // Jede Verschiebung mit ihrer Kennung; „Rückgängig“ nur zu einem noch laufenden Ziel (siehe domain verschiebungLoeschen)
   const verschoben = m.verschoben.map((v) => ({
     ...zeile(`💜 → ${name(v.ziel)} (aus Frei verschoben${v.cents < v.gewuenscht ? `, gewünscht ${betragText(v.gewuenscht)}` : ''})`, v.cents),
     id: v.id,
     rueckgaengig: rueckgaengigMoeglich(v.ziel),
-    frage: `${betragText(v.cents)} gehen von „${name(v.ziel)}“ zurück zu „Frei verfügbar“.`,
   }));
   let teile = [];
   let hinweis = null;
@@ -146,7 +146,8 @@ export function sparzieleModel(state, heute, { ausgeblendeteZeigen = false } = {
   const laufend = v.ziele.filter((z) => !z.abgeschlossen);
   const monat = heute.slice(0, 7);
   const verschiebbar = laufend.filter((z) => z.erstellt <= monat && z.offen > 0 && !z.faellig);
-  const fertig = v.ziele.filter((z) => z.abgeschlossen).sort((a, b) => (a.abgeschlossen.monat < b.abgeschlossen.monat ? 1 : a.abgeschlossen.monat > b.abgeschlossen.monat ? -1 : 0));
+  // „gelöscht“ abgeschlossene Ziele erscheinen nirgends mehr als Ziel – nur als Zeile im Monat des Löschens
+  const fertig = v.ziele.filter((z) => z.abgeschlossen && !z.geloescht).sort((a, b) => (a.abgeschlossen.monat < b.abgeschlossen.monat ? 1 : a.abgeschlossen.monat > b.abgeschlossen.monat ? -1 : 0));
   return {
     zustand: zs.status === null && !zs.unlesbar ? 'nichtGeladen' : 'ok',
     gesperrt,
@@ -160,7 +161,7 @@ export function sparzieleModel(state, heute, { ausgeblendeteZeigen = false } = {
       stand: v.standMonat ? `Stand: Kontostand ${monatText(v.standMonat)} (beide)` : 'Stand: noch kein Kontostand von beiden',
     },
     ohneKontostand: v.standMonat === null,
-    leer: (daten.z ?? []).length === 0,
+    leer: (daten.z ?? []).every((z) => z.geloescht), // „gelöschte“ Ziele zählen nicht
     ziele: laufend.map((z, i) => zielKarte(z, i, heute)),
     frei: {
       betrag: betragText(v.frei),
@@ -168,7 +169,7 @@ export function sparzieleModel(state, heute, { ausgeblendeteZeigen = false } = {
       kannVerschieben: !gesperrt && v.frei > 0 && verschiebbar.length > 0,
       ziele: verschiebbar.map((z) => ({ id: z.id, titel: `${z.emoji} ${z.name}`, text: `${z.emoji} ${z.name} (offen ${betragText(z.offen)})`, offen: z.offen })),
     },
-    verlauf: v.monate.map((m) => monatEintrag(m, name, (id) => !gesperrt && Boolean(nachId.get(id)) && !nachId.get(id).abgeschlossen)),
+    verlauf: v.monate.map((m) => monatEintrag(m, name, (id) => !gesperrt && Boolean(nachId.get(id)) && !nachId.get(id).abgeschlossen, (id) => (nachId.get(id)?.geloescht ? nachId.get(id).name : null))),
     abgeschlossen: fertig
       .filter((z) => ausgeblendeteZeigen || !z.aus)
       .map((z) => ({
@@ -190,16 +191,51 @@ export function sparzieleModel(state, heute, { ausgeblendeteZeigen = false } = {
 
 /**
  * Rückfrage vor dem Löschen des Ziels `id` am Tag `heute` → { titel, text, ja, knopf } oder null (nicht löschbar / unbekannt). Ein
- * laufendes Ziel mit Geld sagt, wohin sein Geld geht (gespart laut Rechnung); ein abgeschlossenes ist nur ohne Geld löschbar.
+ * laufendes Ziel mit Geld wird „gelöscht“ abgeschlossen: sein Gespartes (laut Rechnung) geht zu „Frei“ – die Rückfrage sagt das.
  */
 export function zielLoeschFrage(state, heute, id) {
   const daten = state.ziele?.daten ?? { v: 1, z: [], m: [] };
-  if (!zielLoeschbar(daten, state.konto, heute, id)) return null;
-  const z = sparVerlauf(daten, state.konto, heute).ziele.find((x) => x.id === id);
+  const art = zielLoeschArt(daten, state.konto, heute, id);
+  const z = art ? sparVerlauf(daten, state.konto, heute).ziele.find((x) => x.id === id) : null;
   if (!z) return null;
-  if (z.abgeschlossen) return { titel: 'Endgültig löschen?', text: `„${z.name}“ hat nie Geld bekommen und wird endgültig gelöscht.`, ja: 'Endgültig löschen', knopf: 'Endgültig löschen' };
-  const text = z.gespart > 0 ? `„${z.name}“ wird gelöscht. Das bisher zugeteilte Geld (${betragText(z.gespart)}) wird auf die anderen Ziele und „Frei“ verteilt.` : `„${z.name}“ hat noch kein Geld bekommen und wird gelöscht.`;
+  if (art === 'weg' && z.abgeschlossen) return { titel: 'Endgültig löschen?', text: `„${z.name}“ hat nie Geld bekommen und wird endgültig gelöscht.`, ja: 'Endgültig löschen', knopf: 'Endgültig löschen' };
+  const text =
+    art === 'weg'
+      ? `„${z.name}“ hat noch kein Geld bekommen und wird gelöscht.`
+      : z.gespart > 0
+        ? `„${z.name}“ wird gelöscht. Das bisher zugeteilte Geld (${betragText(z.gespart)}) geht zu „Frei verfügbar“ – von dort kannst du es einem anderen Ziel geben.`
+        : `„${z.name}“ wird gelöscht.`;
   return { titel: 'Sparziel löschen?', text, ja: 'Löschen', knopf: 'Löschen' };
+}
+
+/**
+ * Rückfrage-Text für „Verschiebung rückgängig“ (Kennung `id`) am Tag `heute`: die TATSÄCHLICHE Wirkung aus einer Probe-Rechnung (vorher /
+ * nachher mit der Domäne) – wie viel „Frei“ dadurch steigt und wie viel das Ziel danach weniger hat (eine ältere Verschiebung wirkt
+ * weniger als ihr Nennbetrag: ohne sie bekam das Ziel in den Monaten danach mehr aus der Ersparnis). Nicht möglich → null.
+ */
+export function verschiebungFrage(state, heute, id) {
+  const daten = state.ziele?.daten ?? { v: 1, z: [], m: [] };
+  const v = (daten.m ?? []).find((x) => x.id === id);
+  if (!v) return null;
+  let ohne;
+  try {
+    ohne = verschiebungLoeschen(daten, id, { heute });
+  } catch {
+    return null;
+  }
+  const vorher = sparVerlauf(daten, state.konto, heute);
+  const nachher = sparVerlauf(ohne, state.konto, heute);
+  const gespart = (verlauf, zielId) => verlauf.ziele.find((z) => z.id === zielId)?.gespart ?? 0;
+  const frei = nachher.frei - vorher.frei;
+  const ziel = vorher.ziele.find((z) => z.id === v.ziel);
+  const weniger = gespart(vorher, v.ziel) - gespart(nachher, v.ziel);
+  const andere = vorher.ziele.filter((z) => z.id !== v.ziel && !z.abgeschlossen).reduce((n, z) => n + gespart(nachher, z.id) - z.gespart, 0);
+  if (frei === 0 && weniger === 0 && andere === 0) return 'An „Frei verfügbar“ und den Zielen ändert sich dadurch nichts.';
+  const name = ziel ? ziel.name : 'Unbekanntes Ziel'; // ohne Symbol: „„🚗“ bricht sonst nach dem Anführungszeichen um
+  const teile = [`„Frei verfügbar“ ${frei >= 0 ? 'steigt' : 'sinkt'} dadurch um ${betragText(Math.abs(frei))}`];
+  if (weniger !== 0) teile.push(`„${name}“ hat danach ${betragText(Math.abs(weniger))} ${weniger > 0 ? 'weniger' : 'mehr'}`);
+  if (andere !== 0) teile.push(`die anderen Ziele zusammen ${deltaText(andere)}`);
+  return `${teile.join('; ')}.`;
 }
 
 // ---------------------------------------------------------------- Formular

@@ -3,7 +3,7 @@
 // Alle erwarteten Zahlen kommen aus der Domäne (sparVerlauf) oder aus kleinen, hier erfundenen Beispielen – nie aus der Machette.
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { bedarfVorschau, entwurfZuZiel, monatText, sparzieleModel, zielEntwurf, zielBisText, zielLoeschFrage, zieleSperre, zielSymbole, SYMBOL_NAMEN } from '../../src/app/views/sparziele-model.js';
+import { bedarfVorschau, entwurfZuZiel, monatText, sparzieleModel, zielEntwurf, zielBisText, verschiebungFrage, zielLoeschFrage, zieleSperre, zielSymbole, SYMBOL_NAMEN } from '../../src/app/views/sparziele-model.js';
 import { KONTO_ANSICHTEN, kontoAnsichtLesen, kontoAnsichtSpeichern } from '../../src/app/views/fixkosten-model.js';
 import { nurHintergrundGeaendert } from '../../src/app/hintergrund.js';
 import { TEXT_ZIELE_GESPERRT, TEXT_ZIELE_NICHT_GELADEN, ZIEL_EMOJIS, sparVerlauf } from '../../src/domain/sparziele.js';
@@ -341,14 +341,14 @@ describe('1.1.1: Löschen-Rückfrage und „Rückgängig“ für Verschiebungen'
   const k = konto({ '2026-09': 800_000, '2026-10': 900_000 }); // Oktober +1.000 €
   const heute = '2026-11-05';
 
-  test('zielLoeschFrage: laufend mit Geld → sagt, wohin das Geld geht (Betrag aus der Domäne); laufend ohne Geld; abgeschlossen ohne Geld; sonst null', () => {
+  test('zielLoeschFrage: laufend mit Geld → sagt, dass das Geld zu Frei geht (Betrag aus der Domäne); laufend ohne Geld; abgeschlossen ohne Geld; sonst null', () => {
     const d = { v: 1, z: [ziel('aaaa0001'), ziel('bbbb0001', { erstellt: '2026-12' }), ziel('cccc0001', { datum: '2026-09', erstellt: '2026-09' })], m: [] };
     const s = zustand({ konto: k, ziele: zieleZustand(d) });
     const gespart = sparVerlauf(d, k, heute).ziele[0].gespart;
     assert.ok(gespart > 0);
     assert.deepEqual(zielLoeschFrage(s, heute, 'aaaa0001'), {
       titel: 'Sparziel löschen?',
-      text: `„Ziel aaaa0001“ wird gelöscht. Das bisher zugeteilte Geld (${betragText(gespart)}) wird auf die anderen Ziele und „Frei“ verteilt.`,
+      text: `„Ziel aaaa0001“ wird gelöscht. Das bisher zugeteilte Geld (${betragText(gespart)}) geht zu „Frei verfügbar“ – von dort kannst du es einem anderen Ziel geben.`,
       ja: 'Löschen',
       knopf: 'Löschen',
     });
@@ -360,7 +360,7 @@ describe('1.1.1: Löschen-Rückfrage und „Rückgängig“ für Verschiebungen'
     assert.equal(zielLoeschFrage(s, heute, 'gibtsnix'), null);
   });
 
-  test('Verlauf: jede Verschiebung trägt Kennung und – nur zu einem laufenden Ziel, nicht gesperrt – „Rückgängig“ mit Rückfrage-Text', () => {
+  test('Verlauf: jede Verschiebung trägt Kennung und – nur zu einem laufenden Ziel, nicht gesperrt – „Rückgängig“', () => {
     const d = {
       v: 1,
       z: [ziel('aaaa0001'), ziel('bbbb0001', { beendet: { monat: '2026-11', art: 'frei' } })],
@@ -374,10 +374,48 @@ describe('1.1.1: Löschen-Rückfrage und „Rückgängig“ für Verschiebungen'
     const [a, b] = okt.verschoben;
     assert.equal(a.id, 'v0000001');
     assert.equal(a.rueckgaengig, true);
-    assert.equal(a.frage, `${betragText(5000)} gehen von „🎯 Ziel aaaa0001“ zurück zu „Frei verfügbar“.`);
     assert.equal(b.id, 'v0000002');
     assert.equal(b.rueckgaengig, false, 'Ziel abgeschlossen');
     const gesperrt = sparzieleModel(zustand({ konto: k, ziele: zieleZustand(d, { status: 'fehler' }) }), heute);
     assert.equal(gesperrt.verlauf.find((x) => x.monat === '2026-10').verschoben[0].rueckgaengig, false, 'gesperrt');
+  });
+
+  test('verschiebungFrage (I2): nennt die tatsächliche Wirkung aus einer Probe-Rechnung, nicht den Nennbetrag', () => {
+    // 12.000 € bis Dezember 2026, je +2.000 € ab Januar; 500 € im Januar aus Frei verschoben, Rückgängig am 20.04.
+    const k2 = konto({ '2025-12': 1_000_000, '2026-01': 1_200_000, '2026-02': 1_400_000, '2026-03': 1_600_000 });
+    const d = { v: 1, z: [ziel('aaaa0001', { zielCents: 1_200_000, datum: '2026-12', erstellt: '2026-01' })], m: [{ id: 'v0000001', monat: '2026-01', ziel: 'aaaa0001', cents: 50_000 }] };
+    const h = '2026-04-20';
+    const s = zustand({ konto: k2, ziele: zieleZustand(d) });
+    const vorher = sparVerlauf(d, k2, h);
+    const nachher = sparVerlauf({ ...d, m: [] }, k2, h);
+    const frei = nachher.frei - vorher.frei;
+    const zielWeniger = vorher.ziele[0].gespart - nachher.ziele[0].gespart;
+    assert.ok(frei > 0 && frei < 50_000, `Frei steigt um weniger als 500 € (${frei})`);
+    assert.equal(frei, zielWeniger);
+    const text = verschiebungFrage(s, h, 'v0000001');
+    assert.equal(text, `„Frei verfügbar“ steigt dadurch um ${betragText(frei)}; „Ziel aaaa0001“ hat danach ${betragText(zielWeniger)} weniger.`);
+    assert.doesNotMatch(text, /500 €/);
+    // im laufenden Monat (noch kein Kontostand) wirkt sie genau mit ihrem Betrag
+    const jetzt = { ...d, m: [{ id: 'v0000002', monat: '2026-04', ziel: 'aaaa0001', cents: 10_000 }] };
+    assert.equal(verschiebungFrage(zustand({ konto: k2, ziele: zieleZustand(jetzt) }), h, 'v0000002'), `„Frei verfügbar“ steigt dadurch um ${betragText(10_000)}; „Ziel aaaa0001“ hat danach ${betragText(10_000)} weniger.`);
+    assert.equal(verschiebungFrage(s, h, 'gibtsnix'), null);
+  });
+
+  test('ein „gelöscht“ abgeschlossenes Ziel: keine Karte, nicht unter „Abgeschlossene“, nicht mitgezählt; im Monat eine Zeile „🗑️ … gelöscht“', () => {
+    const d = { v: 1, z: [ziel('aaaa0001'), ziel('bbbb0001', { beendet: { monat: '2026-11', art: 'frei' }, geloescht: true, aus: undefined })], m: [] };
+    const v = sparVerlauf(d, k, heute);
+    const gespart = v.ziele[1].gespart;
+    assert.ok(gespart > 0);
+    for (const zeigen of [false, true]) {
+      const m = sparzieleModel(zustand({ konto: k, ziele: zieleZustand(d) }), heute, { ausgeblendeteZeigen: zeigen });
+      assert.deepEqual(m.ziele.map((z) => z.id), ['aaaa0001']);
+      assert.deepEqual(m.abgeschlossen, []);
+      assert.equal(m.ausgeblendet, 0);
+      const nov = m.verlauf.find((x) => x.monat === '2026-11');
+      assert.deepEqual(nov.abschluesse, [{ text: `🗑️ Ziel bbbb0001 gelöscht – ${betragText(gespart)} zurück zu „Frei“`, cents: gespart, betrag: `+${betragText(gespart)} → Frei` }]);
+    }
+    // nur noch „gelöschte“ Ziele: die Seite gilt als leer (Hinweis „Noch keine Sparziele“)
+    const nurGeloescht = { ...d, z: [d.z[1]] };
+    assert.equal(sparzieleModel(zustand({ konto: k, ziele: zieleZustand(nurGeloescht) }), heute).leer, true);
   });
 });

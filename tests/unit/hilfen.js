@@ -57,6 +57,14 @@ export function apiAttrappe() {
       log.push(`PUT ${body.id}`);
       von(k).set(body.id, { status: 'confirmed', ...structuredClone(body) });
     },
+    /** Wie Google: das Ereignis bleibt mit Status „cancelled“ (samt Inhalt) erhalten; fehlt es oder ist es schon gelöscht → { geloescht: false }. */
+    async loeschen(k, id) {
+      const e = von(k).get(id);
+      if (!e || e.status === 'cancelled') return { geloescht: false };
+      log.push(`DELETE ${id}`);
+      von(k).set(id, { ...e, status: 'cancelled' });
+      return { geloescht: true };
+    },
     async aendere(k, id, aenderung) {
       const patch = aenderung(await ereignisse.holen(k, id));
       if (patch) {

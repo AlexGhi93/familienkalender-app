@@ -439,6 +439,18 @@ export function postenLoeschen(shard, id) {
   return teil(liste.filter((x) => x.id !== id), shard);
 }
 
+/**
+ * „Rückgängig“ nach postenLoeschen: derselbe Posten wieder an seiner alten Stelle `stelle` – geprüft wie postenSetzen (Eingabe, Anzahl,
+ * Platz mit Reserve). Gibt es ihn schon → derselbe Teil.
+ */
+export function postenWiederanlegen(shard, posten, stelle) {
+  if ((shard.posten ?? []).some((p) => p.id === posten?.id)) return shard;
+  const mit = postenSetzen(shard, posten);
+  const liste = mit.posten.slice(0, -1);
+  const i = Math.min(Math.max(0, Number.isInteger(stelle) ? stelle : liste.length), liste.length);
+  return teil([...liste.slice(0, i), mit.posten.at(-1), ...liste.slice(i)], shard);
+}
+
 // ---------------------------------------------------------------- Berechnungen
 
 /** Aktiv = nicht archiviert, oder das Archivdatum liegt erst nach `heute`. */

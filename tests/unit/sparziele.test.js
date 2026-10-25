@@ -28,6 +28,7 @@ import {
   zielAusblenden,
   zielBeenden,
   zieleBeginn,
+  zielLoeschArt,
   zielLoeschbar,
   zielLoeschen,
   zielPruefen,
@@ -388,6 +389,9 @@ describe('zielSetzen, zielBeenden, zielLoeschen, freiVerschieben', () => {
       assert.ok(n < 200);
     }
     assert.ok(d.z.filter((z) => !z.beendet).length >= 5, 'einige laufen noch');
+    // ein gefördertes laufendes Ziel „löschen“ (Abschluss + Kennzeichen) passt immer – es nutzt die Reserve für Beenden und Ausblenden
+    assert.equal(zielLoeschArt(d, k, heute, 'lang0001'), 'beenden');
+    assert.ok(zieleText(zielLoeschen(d, 'lang0001', { heute, konto: k })).length <= MAX_ZIELE_ZEICHEN);
     // alle beenden und ausblenden geht, ohne die Grenze zu überschreiten
     for (const z of d.z) d = zielBeenden(d, z.id, { monat: '2026-12', art: 'ausgegeben' });
     for (const z of d.z) d = zielAusblenden(d, z.id, true, { heute: '2026-12-05' });
@@ -868,9 +872,9 @@ describe('Eigenschaft: Σ Zuteilung + ΔFrei = Ersparnis (auf den Cent), nichts 
     let gepruefteMonate = 0;
     let minusMonate = 0;
     let ungedeckteMonate = 0;
-    let geloeschte = 0;
-    let laufendGeloescht = 0;
-    let gefoerdertGeloescht = 0;
+    let weg = 0;
+    let beendet = 0;
+    let gefoerdertBeendet = 0;
     let rueckgaengige = 0;
     let offeneAusgleiche = 0;
     for (let fall = 0; fall < 200; fall += 1) {
@@ -933,32 +937,52 @@ describe('Eigenschaft: Σ Zuteilung + ΔFrei = Ersparnis (auf den Cent), nichts 
         }
       }
       for (const z of v.ziele) assert.ok(z.gespart >= 0 && z.gespart <= z.zielCents && z.offen >= 0 && z.noetigProMonat >= 0, `Fall ${fall} ${z.id}: nie unter 0, nie über dem Ziel`);
-      // Löschen: ein laufendes Ziel immer (sein Geld wird neu verteilt – nichts geht verloren, auf den Cent), ein abgeschlossenes nur
-      // ohne Geld (dann bleiben Frei und alle anderen Ziele gleich)
+      // Löschen – die Vergangenheit ändert sich nie: ein Ziel ohne jede Spur in der Rechnung wird wirklich gelöscht (Frei und alle
+      // anderen Ziele bleiben gleich); ein laufendes Ziel mit Spur wird im laufenden Monat „gelöscht“ abgeschlossen (sein Gespartes geht
+      // zu Frei; frühere Monate, abgeschlossene Ziele und der wartende Ausgleich bleiben genau gleich); ein abgeschlossenes mit Geld nie.
+      const heuteMonat = heute.slice(0, 7);
+      const kontoHeute = sparMonate(k).some((s) => s.monat === heuteMonat);
       for (const z of ziele) {
-        const laufend = zielSchluss(z).monat > heute.slice(0, 7);
-        if (!zielLoeschbar(d, k, heute, z.id)) {
+        const laufend = zielSchluss(z).monat > heuteMonat;
+        const art = zielLoeschArt(d, k, heute, z.id);
+        assert.equal(zielLoeschbar(d, k, heute, z.id), art !== null);
+        if (art === null) {
           assert.equal(laufend, false, `Fall ${fall}: ein laufendes Ziel ist immer löschbar`);
           continue;
         }
+        if (art === 'beenden') assert.equal(laufend, true, `Fall ${fall}: nur laufende Ziele werden „gelöscht“ abgeschlossen`);
         const neu = zielLoeschen(d, z.id, { heute, konto: k });
         assert.equal(zieleBeginn(neu), zieleBeginn(d), `Fall ${fall}: beginn rückt nicht`);
-        assert.ok(neu.m.every((x) => x.ziel !== z.id), `Fall ${fall}: seine Verschiebungen sind weg`);
         const ohne = sparVerlauf(neu, k, heute);
         const e = pruefeVerlauf(ohne, `Fall ${fall} ohne ${z.id}`);
-        assert.equal(ohne.frei + ohne.summeZiele + ohne.ausgleichOffen, v.frei + v.summeZiele + v.ausgleichOffen, `Fall ${fall}: Löschen erhält jeden Cent`);
         assert.equal(e.ungedeckt, verfallen, `Fall ${fall}: Löschen ändert nichts am Verfallenen`);
-        if (v.ausgleichOffen === ohne.ausgleichOffen) assert.equal(ohne.frei + ohne.summeZiele, v.frei + v.summeZiele, `Fall ${fall}: zurückgelegt + Frei bleibt`);
-        if (laufend) {
-          laufendGeloescht += 1;
-          if (v.ziele.find((x) => x.id === z.id).gespart > 0) gefoerdertGeloescht += 1;
-        } else {
-          geloeschte += 1;
+        assert.equal(ohne.ausgleichOffen, v.ausgleichOffen, `Fall ${fall}: der wartende Ausgleich bleibt`);
+        assert.equal(ohne.frei + ohne.summeZiele, v.frei + v.summeZiele, `Fall ${fall}: zurückgelegt + Frei bleibt auf den Cent`);
+        const fertig = (verlauf) => verlauf.ziele.filter((x) => x.id !== z.id && x.abgeschlossen);
+        assert.deepEqual(fertig(ohne), fertig(v), `Fall ${fall}: abgeschlossene Ziele bleiben genau gleich`);
+        if (art === 'weg') {
+          weg += 1;
+          assert.ok(neu.m.every((x) => x.ziel !== z.id), `Fall ${fall}: seine Verschiebungen sind weg`);
           assert.equal(ohne.frei, v.frei, `Fall ${fall}: Löschen ändert Frei nicht`);
           assert.deepEqual(ohne.ziele, v.ziele.filter((x) => x.id !== z.id), `Fall ${fall}: Löschen ändert die anderen Ziele nicht`);
+        } else {
+          beendet += 1;
+          const vorher = (verlauf) => verlauf.monate.filter((m) => m.monat < heuteMonat);
+          assert.deepEqual(vorher(ohne), vorher(v), `Fall ${fall}: frühere Monate bleiben genau gleich`);
+          const gelZiel = ohne.ziele.find((x) => x.id === z.id);
+          assert.equal(gelZiel.geloescht, true);
+          assert.deepEqual(gelZiel.abgeschlossen, { monat: heuteMonat, art: 'frei', automatisch: false });
+          const gespart = v.ziele.find((x) => x.id === z.id).gespart;
+          if (gespart > 0) gefoerdertBeendet += 1;
+          // ohne Kontostand in diesem Monat: Frei wächst um genau das Gesparte – außer eine Verschiebung dieses Monats zu einem anderen
+          // Ziel, die bisher an leerem „Frei“ scheiterte, holt sich jetzt etwas davon (sie war schon so gewünscht)
+          const zuAnderen = (verlauf) => summe((monatVon(verlauf, heuteMonat)?.verschoben ?? []).filter((x) => x.ziel !== z.id).map((x) => x.cents));
+          if (!kontoHeute) assert.equal(ohne.frei, v.frei + gespart - (zuAnderen(ohne) - zuAnderen(v)), `Fall ${fall}: Frei wächst um genau das Gesparte`);
         }
-        // Rückgängig: genau die Daten von vorher
-        assert.deepEqual(zielWiederherstellen(neu, zielSpur(d, z.id), { heute }), { v: 1, beginn: zieleBeginn(d), z: d.z, m: d.m }, `Fall ${fall}: zurückgeholt wie vorher`);
+        // Rückgängig: genau die Daten und genau die Rechnung von vorher
+        const zurueck = zielWiederherstellen(neu, zielSpur(d, z.id), { heute });
+        assert.deepEqual(zurueck, { v: 1, beginn: zieleBeginn(d), z: d.z, m: d.m }, `Fall ${fall}: zurückgeholt wie vorher`);
+        assert.deepEqual(sparVerlauf(zurueck, k, heute), v, `Fall ${fall}: Rechnung wie vorher`);
       }
       // jede Verschiebung zu einem laufenden Ziel lässt sich rückgängig machen: nichts geht verloren
       for (const x of verschiebungen) {
@@ -980,8 +1004,8 @@ describe('Eigenschaft: Σ Zuteilung + ΔFrei = Ersparnis (auf den Cent), nichts 
       if (v.ausgleichOffen > 0) offeneAusgleiche += 1;
     }
     assert.ok(offeneAusgleiche > 5, `genug Fälle mit wartendem Ausgleich (${offeneAusgleiche})`);
-    assert.ok(geloeschte > 20, `genug löschbare abgeschlossene Ziele (${geloeschte})`);
-    assert.ok(laufendGeloescht > 100 && gefoerdertGeloescht > 50, `genug gelöschte laufende Ziele (${laufendGeloescht}, gefördert ${gefoerdertGeloescht})`);
+    assert.ok(weg > 30, `genug wirklich gelöschte Ziele (${weg})`);
+    assert.ok(beendet > 100 && gefoerdertBeendet > 50, `genug „gelöscht“ abgeschlossene laufende Ziele (${beendet}, mit Geld ${gefoerdertBeendet})`);
     assert.ok(rueckgaengige > 50, `genug rückgängig gemachte Verschiebungen (${rueckgaengige})`);
     assert.ok(gepruefteMonate > 1000 && minusMonate > 300 && ungedeckteMonate > 100, `genug verschiedene Fälle (${gepruefteMonate}/${minusMonate}/${ungedeckteMonate})`);
   });
@@ -1175,56 +1199,101 @@ describe('automatisch abgeschlossenes Ziel korrigieren', () => {
 
 // ---------------------------------------------------------------- 1.1.1: laufende Ziele löschen, Verschiebungen rückgängig, Rückgängig
 
-describe('1.1.1: ein laufendes Ziel lässt sich immer löschen – sein Geld wird neu verteilt', () => {
+describe('1.1.1: ein laufendes Ziel lässt sich immer löschen – die Vergangenheit ändert sich nie', () => {
   const k = kontoAus(BEISPIEL);
   const heute = '2027-02-05';
+  const geloeschtAb = (z, monat) => ({ ...z, beendet: { monat, art: 'frei' }, geloescht: true });
 
-  test('gefördertes laufendes Ziel: löschbar; gerechnet, als hätte es nie existiert; zurückgelegt + Frei bleibt auf den Cent', () => {
+  test('gefördertes laufendes Ziel: „gelöscht“ im laufenden Monat abgeschlossen (art „frei“); sein Gespartes geht zu Frei, frühere Monate bleiben', () => {
     const d = tiefFrieren(daten([auto(), urlaub()]));
     const vorher = sparVerlauf(d, k, heute);
-    assert.ok(zielVon(vorher, 'url00001').gespart > 0, 'der Urlaub hat Geld bekommen');
+    const gespart = zielVon(vorher, 'url00001').gespart;
+    assert.ok(gespart > 0, 'der Urlaub hat Geld bekommen');
     assert.equal(zielLoeschbar(d, k, heute, 'url00001'), true);
+    assert.equal(zielLoeschArt(d, k, heute, 'url00001'), 'beenden');
+    const neu = zielLoeschen(d, 'url00001', { heute, konto: k });
+    assert.deepEqual(neu, { v: 1, beginn: '2026-10', z: [auto(), geloeschtAb(urlaub(), '2027-02')], m: [] });
+    const nachher = sparVerlauf(neu, k, heute);
+    assert.deepEqual(nachher.monate.filter((m) => m.monat < '2027-02'), vorher.monate, 'alle früheren Monate genau gleich');
+    assert.equal(nachher.frei, vorher.frei + gespart, 'Frei wächst um genau das Gesparte');
+    assert.equal(nachher.frei + nachher.summeZiele, vorher.frei + vorher.summeZiele);
+    assert.deepEqual(zielVon(nachher, 'auto0001'), zielVon(vorher, 'auto0001'), 'das Auto bleibt genau gleich');
+    const feb = monatVon(nachher, '2027-02');
+    assert.deepEqual(feb.abschluss, [{ ziel: 'url00001', art: 'frei', cents: gespart }]);
+    assert.equal(zielVon(nachher, 'url00001').geloescht, true);
+    pruefeVerlauf(nachher, 'Urlaub gelöscht');
+    // gespeichert als g:1 (mit Abschluss), gelesen zurück
+    assert.equal(JSON.parse(zieleText(neu)).z[1].g, 1);
+    assert.deepEqual(zieleLesen(zieleText(neu)).daten, neu);
+  });
+
+  test('ein laufendes Ziel ohne jede Spur in der Rechnung wird wirklich gelöscht; beginn rückt nicht nach hinten', () => {
+    const d = daten([auto(), urlaub({ erstellt: '2027-03' })]); // beginnt erst nächsten Monat
+    assert.equal(zielLoeschArt(d, k, heute, 'url00001'), 'weg');
     const neu = zielLoeschen(d, 'url00001', { heute, konto: k });
     assert.deepEqual(neu, { v: 1, beginn: '2026-10', z: [auto()], m: [] });
-    const nachher = sparVerlauf(neu, k, heute);
-    assert.deepEqual(nachher, sparVerlauf(daten([auto()]), k, heute), 'wie ohne das Ziel');
-    assert.equal(nachher.frei + nachher.summeZiele, vorher.frei + vorher.summeZiele);
-    assert.equal(nachher.frei + nachher.summeZiele, 250000, 'die Ersparnis seit Beginn');
-    assert.ok(zielVon(nachher, 'auto0001').gespart + nachher.frei > zielVon(vorher, 'auto0001').gespart + vorher.frei, 'sein Anteil ging an das Auto und „Frei“');
-    pruefeVerlauf(nachher, 'ohne Urlaub');
+    const alt = { v: 1, z: [urlaub({ id: 'neu00001', erstellt: '2026-09', datum: '2026-09', zielCents: 100 }), auto()], m: [] };
+    assert.equal(zielLoeschen(alt, 'neu00001', { heute, konto: k }).beginn, '2026-09');
   });
 
-  test('das älteste Ziel löschen: beginn rückt nicht nach hinten (auch ohne gespeichertes beginn)', () => {
-    const d = daten([urlaub({ erstellt: '2026-09' }), auto()]);
-    const neu = zielLoeschen(d, 'url00001', { heute, konto: k });
-    assert.equal(neu.beginn, '2026-09');
-    assert.equal(zieleBeginn(neu), '2026-09');
-  });
-
-  test('seine Verschiebungen aus „Frei“ fallen mit weg; ihr Geld kommt über die Rechnung zurück zu „Frei“', () => {
+  test('seine Verschiebungen bleiben (die Vergangenheit); was sie gebracht haben, geht mit dem Gesparten zu Frei', () => {
     const k2 = kontoAus({ '2026-09': 800000, '2026-10': 1000000 }); // Oktober +2.000 €
     const ctx = { konto: k2, heute: '2026-11-05' };
     const d = freiVerschieben(daten([auto(), urlaub({ zielCents: 50000 })]), { id: 'v0000001', monat: '2026-11', ziel: 'url00001', cents: 20000 }, ctx);
     const vorher = sparVerlauf(d, k2, ctx.heute);
     assert.equal(zielVon(vorher, 'url00001').gespart, 25000);
     const neu = zielLoeschen(d, 'url00001', ctx);
-    assert.deepEqual(neu.m, []);
+    assert.deepEqual(neu.m, d.m);
     const nachher = sparVerlauf(neu, k2, ctx.heute);
     assert.equal(nachher.frei, vorher.frei + 25000);
     assert.equal(zielVon(nachher, 'auto0001').gespart, zielVon(vorher, 'auto0001').gespart);
   });
 
+  test('wartender Ausgleich (ein Ziel ist eben bezahlt, der Kontostand des Monats fehlt): nichts verschwindet, das bezahlte Ziel bleibt gleich', () => {
+    const k3 = kontoAus({ '2025-12': 1_000_000, '2026-01': 1_100_000, '2026-02': 1_200_000, '2026-03': 1_300_000 }); // je +1.000 €
+    const wasch = urlaub({ id: 'wasch001', name: 'Waschmaschine', zielCents: 300_000, datum: '2026-03', vorlaeufig: false, erstellt: '2026-01' });
+    const reise = urlaub({ zielCents: 600_000, datum: '2026-09', erstellt: '2026-01' });
+    const d = daten([wasch, reise]);
+    const h = '2026-04-20';
+    const vorher = sparVerlauf(d, k3, h);
+    assert.ok(vorher.ausgleichOffen > 0, 'der Ausgleich wartet auf den April-Kontostand');
+    const neu = zielLoeschen(d, 'url00001', { heute: h, konto: k3 });
+    const nachher = sparVerlauf(neu, k3, h);
+    assert.deepEqual(zielVon(nachher, 'wasch001'), zielVon(vorher, 'wasch001'), 'Abschlussbetrag des bezahlten Ziels unverändert');
+    assert.equal(nachher.ausgleichOffen, vorher.ausgleichOffen);
+    assert.equal(nachher.frei, vorher.frei + zielVon(vorher, 'url00001').gespart);
+    assert.equal(nachher.frei + nachher.summeZiele, vorher.frei + vorher.summeZiele, 'zurückgelegt + Frei bleibt');
+  });
+
   test('ein abgeschlossenes Ziel mit Geld bleibt unlöschbar (die Zahlung steckt im Kontostand); vor dem Abschluss löschbar', () => {
     const d = daten([auto(), urlaub({ beendet: { monat: '2027-01', art: 'ausgegeben' } })]);
     assert.equal(zielLoeschbar(d, k, heute, 'url00001'), false);
+    assert.equal(zielLoeschArt(d, k, heute, 'url00001'), null);
     assert.throws(() => zielLoeschen(d, 'url00001', { heute, konto: k }), { message: TEXT_NICHT_LOESCHBAR });
     const frei = daten([auto(), urlaub({ beendet: { monat: '2027-01', art: 'frei' } })]);
     assert.equal(zielLoeschbar(frei, k, heute, 'url00001'), false, 'auch „zurück zu Frei“: es hat Geld bekommen');
-    // von Hand beendet erst ab März: heute noch laufend → löschbar
-    assert.equal(zielLoeschbar(daten([auto(), urlaub({ beendet: { monat: '2027-03', art: 'ausgegeben' } })]), k, heute, 'url00001'), true);
+    // von Hand beendet erst ab März: heute noch laufend → löschbar (der Abschluss rückt auf diesen Monat, „frei“)
+    const spaeter = daten([auto(), urlaub({ beendet: { monat: '2027-03', art: 'ausgegeben' } })]);
+    assert.equal(zielLoeschbar(spaeter, k, heute, 'url00001'), true);
+    assert.deepEqual(zielLoeschen(spaeter, 'url00001', { heute, konto: k }).z[1].beendet, { monat: '2027-02', art: 'frei' });
+    // ein „gelöschtes“ Ziel lässt sich nicht noch einmal löschen, nicht ändern, nichts dorthin verschieben
+    const weg = zielLoeschen(daten([auto(), urlaub()]), 'url00001', { heute, konto: k });
+    assert.equal(zielLoeschbar(weg, k, heute, 'url00001'), false);
+    assert.throws(() => zielSetzen(weg, urlaub({ name: 'Neu' }), { heute }), /abgeschlossenes Ziel/);
   });
 
-  test('zielSpur und zielWiederherstellen: Rückgängig bringt genau das Gelöschte zurück (Ziel und Verschiebungen an ihrer Stelle)', () => {
+  test('ein „gelöschtes“ Ziel zählt nicht als laufend (20er-Grenze), aber für den Platz wie ein abgeschlossenes', () => {
+    const zwanzig = daten(Array.from({ length: 20 }, (_, i) => auto({ id: `ab${String(i).padStart(4, '0')}` })));
+    assert.match(zielPruefen(auto({ id: 'neu00001' }), { heute, daten: zwanzig }), /Höchstens 20/);
+    const neunzehn = zielLoeschen(zwanzig, 'ab0000', { heute, konto: k });
+    assert.equal(neunzehn.z.length, 20, 'bleibt gespeichert');
+    assert.equal(zielPruefen(auto({ id: 'neu00001' }), { heute, daten: neunzehn }), null, 'wieder Platz für ein laufendes');
+    // Rückgängig, wenn inzwischen wieder 20 laufen: klare Meldung
+    const voll = zielSetzen(neunzehn, auto({ id: 'neu00001' }), { heute });
+    assert.throws(() => zielWiederherstellen(voll, zielSpur(zwanzig, 'ab0000'), { heute }), /Höchstens 20 laufende Sparziele/);
+  });
+
+  test('zielSpur und zielWiederherstellen: Rückgängig bringt genau das Gelöschte zurück (Abschluss und Kennzeichen weg)', () => {
     const v1 = { id: 'v0000001', monat: '2026-12', ziel: 'auto0001', cents: 100 };
     const v2 = { id: 'v0000002', monat: '2026-12', ziel: 'url00001', cents: 200 };
     const v3 = { id: 'v0000003', monat: '2027-01', ziel: 'auto0001', cents: 300 };
@@ -1233,17 +1302,24 @@ describe('1.1.1: ein laufendes Ziel lässt sich immer löschen – sein Geld wir
     assert.deepEqual(spur, { ziel: urlaub(), stelle: 0, verschiebungen: [{ verschiebung: v2, stelle: 1 }] });
     assert.equal(zielSpur(d, 'gibtsnicht'), null);
     const neu = zielLoeschen(d, 'url00001', { heute, konto: k });
-    assert.deepEqual(neu.m, [v1, v3]);
+    assert.deepEqual(neu.m, [v1, v2, v3]);
     const zurueck = zielWiederherstellen(neu, spur, { heute });
     assert.deepEqual(zurueck, d);
+    assert.deepEqual(sparVerlauf(zurueck, k, heute), sparVerlauf(d, k, heute));
     assert.equal(zielWiederherstellen(zurueck, spur, { heute }), zurueck, 'zweimal = einmal');
     assert.throws(() => zielWiederherstellen(neu, spur, {}), /Ungültiges Datum/);
-    // inzwischen 20 laufende Ziele: nicht mehr zurückholbar (klare Meldung)
-    const zwanzig = { v: 1, z: Array.from({ length: 20 }, (_, i) => auto({ id: `ab${String(i).padStart(4, '0')}` })), m: [] };
-    assert.throws(() => zielWiederherstellen(zwanzig, spur, { heute }), /Höchstens 20 laufende Sparziele/);
-    // die Kennung gehört inzwischen einem Eintrag einer neueren Version: nichts überschreiben
-    const fremd = { ...neu, fremd: { z: [{ i: 'url00001', n: 'Neu', zz: 1 }], m: [] } };
-    assert.throws(() => zielWiederherstellen(fremd, spur, { heute }), /neueren App-Version/);
+    // wirklich gelöscht: die Kennung gehört inzwischen einem Eintrag einer neueren Version → nichts überschreiben
+    const frisch = daten([auto(), urlaub({ erstellt: '2027-03' })]);
+    const weg = zielLoeschen(frisch, 'url00001', { heute, konto: k });
+    const fremd = { ...weg, fremd: { z: [{ i: 'url00001', n: 'Neu', zz: 1 }], m: [] } };
+    assert.throws(() => zielWiederherstellen(fremd, zielSpur(frisch, 'url00001'), { heute }), /neueren App-Version/);
+  });
+
+  test('Speicherformat: g:1 nur mit Abschluss; sonst bleibt der Eintrag als „fremd“ erhalten', () => {
+    const roh = { v: 1, z: [{ i: 'url00001', n: 'Urlaub', e: '🏖️', c: 300000, d: '2027-07', s: '2026-10', g: 1 }], m: [] };
+    const { daten: d } = zieleLesen(JSON.stringify(roh));
+    assert.deepEqual(d.z, []);
+    assert.equal(d.fremd.z.length, 1);
   });
 });
 
@@ -1282,8 +1358,10 @@ describe('1.1.1: Verschiebung aus „Frei“ rückgängig machen', () => {
     const zurueck = verschiebungWiederherstellen(neu, spur, { heute });
     assert.deepEqual(zurueck, d);
     assert.equal(verschiebungWiederherstellen(zurueck, spur, { heute }), zurueck);
-    const ohneZiel = zielLoeschen(neu, 'url00001', { heute, konto: k });
+    const ohneZiel = { ...neu, z: neu.z.filter((z) => z.id !== 'url00001') };
     assert.throws(() => verschiebungWiederherstellen(ohneZiel, spur, { heute }), /Dieses Sparziel gibt es nicht mehr/);
+    const geloescht = zielLoeschen(neu, 'url00001', { heute, konto: k });
+    assert.throws(() => verschiebungWiederherstellen(geloescht, spur, { heute }), /schon abgeschlossen/);
     const beendet = zielBeenden(neu, 'url00001', { monat: '2026-11', art: 'frei' });
     assert.throws(() => verschiebungWiederherstellen(beendet, spur, { heute }), /schon abgeschlossen/);
   });

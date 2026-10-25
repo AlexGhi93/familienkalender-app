@@ -150,7 +150,7 @@ test.describe('Sparziele im Konto-Tab (Demo)', () => {
     await expect(oktober.locator('.sz-verschoben').getByRole('button', { name: 'Rückgängig' })).toBeVisible();
   });
 
-  test('Verschiebung „Rückgängig“: erst die Rückfrage, dann geht das Geld zurück zu Frei; „Gelöscht ✓ · Rückgängig“ holt sie wieder', async ({ page }) => {
+  test('Verschiebung „Rückgängig“: Rückfrage mit der tatsächlichen Wirkung, dann geht das Geld zurück zu Frei; die Meldung mit „Rückgängig“ holt sie wieder', async ({ page }) => {
     await oeffneSparziele(page);
     await page.getByRole('button', { name: 'Zu Ziel verschieben' }).click();
     const d = dialog(page, 'Zu Ziel verschieben');
@@ -161,20 +161,21 @@ test.describe('Sparziele im Konto-Tab (Demo)', () => {
     const zeileV = page.locator('.sz-monat[data-monat="2026-10"] .sz-verschoben');
     await zeileV.getByRole('button', { name: 'Rückgängig' }).click();
     const frage = dialog(page, 'Verschiebung rückgängig machen?');
-    await expect(frage).toContainText(`100 € gehen von „${URLAUB.emoji} Sommerurlaub“ zurück zu „Frei verfügbar“.`);
+    // eine Verschiebung dieses Monats (noch ohne Kontostand) wirkt genau mit ihrem Betrag
+    await expect(frage).toContainText(`„Frei verfügbar“ steigt dadurch um 100 €; „Sommerurlaub“ hat danach 100 € weniger.`);
     await frage.getByRole('button', { name: 'Abbrechen' }).click();
     await expect(frei(page)).toHaveText(betragText(v.frei - 10_000));
     const toasts = await fehlerToastsZaehlen(page);
     await zeileV.getByRole('button', { name: 'Rückgängig' }).click();
     await dialog(page, 'Verschiebung rückgängig machen?').getByRole('button', { name: 'Rückgängig machen' }).click();
-    const meldung = page.locator('.toast').filter({ hasText: 'Gelöscht ✓' });
+    const meldung = page.locator('.toast').filter({ hasText: 'Verschiebung rückgängig gemacht ✓' });
     await expect(meldung).toBeVisible();
     await expect(frei(page)).toHaveText(betragText(v.frei));
     await expect(zeileV).toHaveCount(0);
     await expect(karte(page, 'Sommerurlaub').locator('.sz-stand-text')).toContainText(`${betragText(URLAUB.gespart)} von`);
     // „Rückgängig“ in der Meldung: die Verschiebung ist wieder da
     await meldung.getByRole('button', { name: 'Rückgängig' }).click();
-    await erwarteToast(page, 'Wiederhergestellt ✓');
+    await erwarteToast(page, 'Verschiebung wieder da ✓');
     await expect(frei(page)).toHaveText(betragText(v.frei - 10_000));
     await expect(zeileV).toHaveCount(1);
     expect(await toasts.anzahl()).toBe(0);
@@ -182,14 +183,21 @@ test.describe('Sparziele im Konto-Tab (Demo)', () => {
     await expect(frei(page)).toHaveText(betragText(v.frei - 10_000));
   });
 
-  test('gefördertes laufendes Ziel löschen: die Rückfrage sagt, wohin das Geld geht; zurückgelegt + Frei bleibt; „Rückgängig“ holt es zurück', async ({ page }) => {
+  test('gefördertes laufendes Ziel löschen: sein Geld geht zu Frei, die Vergangenheit bleibt; Zeile „🗑️ … gelöscht“; „Rückgängig“ holt es zurück', async ({ page }) => {
     await oeffneSparziele(page);
     const ohne = sparVerlauf(zielLoeschen(demo.ziele, 'demo0002', { heute: WERKTAG_DATUM, konto: demo.konto }), demo.konto, WERKTAG_DATUM);
+    expect(ohne.frei).toBe(v.frei + URLAUB.gespart);
     expect(ohne.frei + ohne.summeZiele).toBe(v.frei + v.summeZiele);
+    // eine noch stehende Fehlermeldung (frühere Aktion) verschluckt die Meldung mit „Rückgängig“ nicht (M4)
+    await page.getByRole('button', { name: 'Zu Ziel verschieben' }).click();
+    await dialog(page, 'Zu Ziel verschieben').getByLabel('Betrag in Euro').fill(String((v.frei + 100) / 100).replace('.', ','));
+    await dialog(page, 'Zu Ziel verschieben').getByRole('button', { name: 'Verschieben' }).click();
+    await expect(page.locator('.toast.fehler')).toContainText('mehr ist nicht frei');
+    await dialog(page, 'Zu Ziel verschieben').getByRole('button', { name: 'Abbrechen' }).click();
     await karte(page, 'Sommerurlaub').getByRole('button', { name: 'Sommerurlaub ändern' }).click();
     await dialog(page, 'Sparziel ändern').getByRole('button', { name: 'Löschen', exact: true }).click();
     const frage = dialog(page, 'Sparziel löschen?');
-    await expect(frage).toContainText(`„Sommerurlaub“ wird gelöscht. Das bisher zugeteilte Geld (${betragText(URLAUB.gespart)}) wird auf die anderen Ziele und „Frei“ verteilt.`);
+    await expect(frage).toContainText(`„Sommerurlaub“ wird gelöscht. Das bisher zugeteilte Geld (${betragText(URLAUB.gespart)}) geht zu „Frei verfügbar“ – von dort kannst du es einem anderen Ziel geben.`);
     const toasts = await fehlerToastsZaehlen(page);
     await frage.getByRole('button', { name: 'Löschen', exact: true }).click();
     const meldung = page.locator('.toast').filter({ hasText: 'Gelöscht ✓' });
@@ -198,6 +206,8 @@ test.describe('Sparziele im Konto-Tab (Demo)', () => {
     await expect(karte(page, 'Sommerurlaub')).toHaveCount(0);
     await expect(frei(page)).toHaveText(betragText(ohne.frei));
     await expect(kopf(page).locator('.fk-gross')).toHaveText(betragText(ohne.summeZiele));
+    await expect(page.locator('.sz-monat[data-monat="2026-10"] .sz-abschluss')).toHaveText(`🗑️ Sommerurlaub gelöscht – ${betragText(URLAUB.gespart)} zurück zu „Frei“+${betragText(URLAUB.gespart)} → Frei`);
+    await expect(page.locator('.sz-fertig[data-id="demo0002"]')).toHaveCount(0); // nicht unter „Abgeschlossene Ziele“
     await meldung.getByRole('button', { name: 'Rückgängig' }).click();
     await erwarteToast(page, 'Wiederhergestellt ✓');
     await expect(karte(page, 'Sommerurlaub')).toHaveCount(1);

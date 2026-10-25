@@ -60,6 +60,20 @@ export function createGoogleAdapter({ api, kalender, jetzt = () => new Date(), a
   }
 
   /**
+   * „Rückgängig“ nach dem Löschen eines Termins oder Urlaubs: ist das Ereignis inzwischen wieder da (nicht „cancelled“, z. B. vom
+   * anderen Telefon neu eingetragen), bleibt es unverändert → { schonDa: true }. Ist es gelöscht, aber noch mit Inhalt vorhanden, wird
+   * es nur wieder bestätigt – genau das, was gelöscht wurde, auch wenn das andere Telefon es vorher noch geändert hatte. Fehlt es ganz,
+   * wird `body` (der Stand dieses Telefons) geschrieben.
+   */
+  async function wiederherstellen(kalenderId, body) {
+    const e = await api.ereignisse.holen(kalenderId, body.id);
+    if (e && e.status !== 'cancelled') return { schonDa: true };
+    if (e && e.start && e.summary) await api.ereignisse.aendere(kalenderId, body.id, () => ({ status: 'confirmed' }));
+    else await api.ereignisse.schreibe(kalenderId, body);
+    return { schonDa: false };
+  }
+
+  /**
    * Gemeinsames Muster für versteckte Ereignisse (Geräte, Einkauf): gibt es das Ereignis noch nicht, wird es angelegt (bei gleichzeitigem Anlegen
    * gewinnt eines per 409, das andere liest und ergänzt); sonst Lesen–Ändern–Schreiben mit If-Match, bei 412 einmal wiederholt.
    * `aenderung(alt | null)` muss rein sein (sie kann zweimal laufen) und gibt den neuen Wert zurück, oder null = nichts tun.
@@ -167,6 +181,32 @@ export function createGoogleAdapter({ api, kalender, jetzt = () => new Date(), a
 
     async loescheTermin(id) {
       await api.ereignisse.loeschen(kalender.termine, id);
+    },
+
+    /** „Rückgängig“ nach loescheTermin (siehe wiederherstellen): → { schonDa }. */
+    async stelleTerminWieder(termin) {
+      const r = terminZuEreignis(termin, settings);
+      return wiederherstellen(kalender[r.kalender], r.body);
+    },
+
+    /** „Rückgängig“ nach loescheUrlaub (siehe wiederherstellen): → { schonDa }. */
+    async stelleUrlaubWieder(urlaub) {
+      const r = urlaubZuEreignis(urlaub, settings);
+      return wiederherstellen(kalender[r.kalender], r.body);
+    },
+
+    /**
+     * „Rückgängig“ nach loescheTag: steht an dem Tag inzwischen wieder etwas (in einem der beiden Tageskalender, z. B. vom anderen
+     * Telefon), bleibt es – { schonDa: true }; sonst wird der Typ gesetzt.
+     */
+    async stelleTagWieder(date, typ) {
+      const r = tagZuEreignis(typ, date, settings);
+      for (const k of ['anwesenheit', 'abwesenheit']) {
+        const e = await api.ereignisse.holen(kalender[k], r.id);
+        if (e && e.status !== 'cancelled') return { schonDa: true };
+      }
+      await this.setzeTag(date, typ);
+      return { schonDa: false };
     },
 
     /** Register der Push-Telefone (verstecktes Ereignis „fkgeraete“): { register | null }. */
