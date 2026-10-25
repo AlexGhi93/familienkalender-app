@@ -6,11 +6,11 @@ import { entfernen as artikelEntfernen, erledigteEntfernen, hinzufuegen as artik
 import { urlaubCheckEventId } from '../domain/ids.js';
 import { normalisiereTermin } from './termin.js';
 import { urlaubChecksAbgleich, urlaubChecksWunsch } from './urlaub-check.js';
-import { entferneExtra, entferneStand, fuegeExtraHinzu, leeresKonto, monatVor, normalisiereKonto, setzeStand } from '../domain/konto.js';
-import { artAendern, artArchivieren, artHinzufuegen, artVerschieben, katalogErgaenzen, leererMonat, normalisiereKatalog, normalisiereMonat, schaltePinsel, schichtAm, setzeNotiz, setzeSchicht, standardKatalog, tageImMonat, vorladeMonate, zusatzEntfernen, zusatzHinzufuegen } from '../domain/schicht.js';
+import { entferneExtra, entferneStand, extraWiederherstellen, fuegeExtraHinzu, leeresKonto, monatVor, normalisiereKonto, setzeStand, standWiederherstellen } from '../domain/konto.js';
+import { artAendern, artArchivieren, artHinzufuegen, artVerschieben, katalogErgaenzen, leererMonat, normalisiereKatalog, normalisiereMonat, schaltePinsel, schichtAm, setzeNotiz, setzeSchicht, standardKatalog, tageImMonat, vorladeMonate, zusatzEntfernen, zusatzHinzufuegen, zusatzWiederherstellen } from '../domain/schicht.js';
 import { FIX_SHARDS, TEXT_FIX_UNLESBAR, TEXT_FIX_VOLL, TEXT_TEIL_GESPERRT, leererShard, neueFixId, normalisiereShard, postenAnzahlPruefen, postenArchivieren, postenLoeschen, postenPruefen, postenSetzen, postenWiederherstellen, shardFuer } from '../domain/fixkosten.js';
 import { MAX_SERIEN_WOCHEN, naechsterWochentag, wochenSerie } from './serie.js';
-import { TEXT_ZIELE_GESPERRT, TEXT_ZIELE_NICHT_GELADEN, freiVerschieben as zielFreiVerschieben, leereZiele, neueZielId, startMonat, zielAusblenden as zielAusblendenRein, zielBeenden as zielBeendenRein, zielLoeschen as zielLoeschenRein, zielSchluss, zielSetzen, zieleWarnungen } from '../domain/sparziele.js';
+import { TEXT_ZIELE_GESPERRT, TEXT_ZIELE_NICHT_GELADEN, freiVerschieben as zielFreiVerschieben, leereZiele, neueZielId, startMonat, verschiebungLoeschen as verschiebungLoeschenRein, verschiebungWiederherstellen as verschiebungWiederherstellenRein, zielAusblenden as zielAusblendenRein, zielBeenden as zielBeendenRein, zielLoeschen as zielLoeschenRein, zielSchluss, zielSetzen, zielSpur, zielWiederherstellen as zielWiederherstellenRein, zieleWarnungen } from '../domain/sparziele.js';
 
 const KITA_TYPEN = ['kita_essen', 'kita_ohne'];
 const MIN_ABSTAND_MS = 60_000; // höchstens einmal pro Minute neu laden
@@ -33,6 +33,17 @@ const TEXT_ZIEL_GELOESCHT = 'Dieses Sparziel gibt es nicht mehr – es wurde woh
 const TEXT_ZIEL_NEUER = 'Dieses Sparziel hat das andere Telefon mit einer neueren App-Version geändert. Bitte die App aktualisieren.';
 const TEXT_ZIEL_ABGESCHLOSSEN = 'Dieses Sparziel ist schon abgeschlossen.';
 const TEXT_NICHT_AUTOMATISCH = 'Nur ein nach dem Zieldatum automatisch abgeschlossenes Ziel lässt sich so zurück zu Frei geben.';
+const TEXT_VERSCHIEBUNG_WEG = 'Diese Verschiebung gibt es nicht mehr – sie wurde wohl auf dem anderen Telefon rückgängig gemacht.';
+const TEXT_VERSCHIEBUNG_NEUER = 'Diese Verschiebung hat das andere Telefon mit einer neueren App-Version geändert. Bitte die App aktualisieren.';
+
+/**
+ * Lässt sich ein gelöschter Termin (oder Urlaub) genau so wieder anlegen? Nicht, wenn er ein Termin einer in Google Kalender
+ * wiederkehrenden Serie ist (Kennung „<Serie>_<Zeitpunkt>“): neu geschrieben würde daraus ein anderes, einzelnes Ereignis.
+ */
+const einzelnWiederherstellbar = (id) => typeof id === 'string' && id !== '' && !id.includes('_');
+
+/** Ergebnis mit `rueckgaengig` – nur bei Erfolg und nur, wenn es ein Rückgängig gibt. */
+const mitRueckgaengig = (r, rueckgaengig) => (r.ok && rueckgaengig ? { ...r, rueckgaengig } : r);
 
 /** Zufällige ID aus den Zeichen 0-9 und a-v: so darf sie auch als Google-Ereignis-ID dienen. */
 const zufaelligeId = () => `u${Array.from({ length: 11 }, () => Math.floor(Math.random() * 32).toString(32)).join('')}`;
@@ -249,12 +260,29 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     }
   }
 
+  /** Sofort sichtbar, dann geschrieben (siehe `ausfuehren`); → 'ok' | 'auth' | 'fehler'. */
   async function aendere(neu, schreibe) {
     const alt = state;
     state = { ...state, ...neu, fehler: null };
     melden();
-    await ausfuehren(schreibe, alt);
+    return ausfuehren(schreibe, alt);
   }
+
+  /**
+   * Ergebnis von `aendere` für die Oberfläche: { ok: true } | { ok: false, wartet: true, fehler } (nach dem Anmelden gespeichert) |
+   * { ok: false, fehler, gemeldet: true } (zurückgenommen; die Meldung steht schon in state.fehler, die Shell zeigt sie – genau einmal).
+   */
+  const ergebnisVon = (e) => (e === 'ok' ? { ok: true } : e === 'auth' ? { ok: false, wartet: true, fehler: TEXT_ANMELDEN } : { ok: false, fehler: state.fehler ?? TEXT_FEHLER, gemeldet: true });
+
+  /** `fn`, deren Ablehnung auf der neuesten Fassung als fachliche Meldung zählt (deren Text gezeigt wird, nicht „Speichern hat nicht geklappt“). */
+  const fachlich = (fn) => (wert) => {
+    try {
+      return fn(wert);
+    } catch (e) {
+      if (e instanceof Error) FACHLICH.add(e);
+      throw e;
+    }
+  };
 
   const pruefeWochen = (wochen) => {
     if (!Number.isInteger(wochen) || wochen < 1 || wochen > MAX_SERIEN_WOCHEN) throw new Error(`Wochen: bitte 1 bis ${MAX_SERIEN_WOCHEN} wählen.`);
@@ -302,17 +330,26 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
 
   /**
    * Ändert die Kontostände und Sonderbeträge: `fn(konto)` → neues Konto. Sofort sichtbar; bei Google wird `fn` auf die NEUESTE Fassung angewendet
-   * (zwei Telefone überschreiben sich nicht). Wirft sofort (ohne etwas zu ändern), wenn `fn` die Eingabe ablehnt.
+   * (zwei Telefone überschreiben sich nicht). Wirft sofort (ohne etwas zu ändern), wenn `fn` die Eingabe ablehnt. → wie `aendere`.
    */
   async function kontoAendern(fn) {
     const neu = fn(state.konto);
-    await aendere({ konto: neu }, async () => {
+    return aendere({ konto: neu }, async () => {
       const gespeichert = await adapter.aendereKonto(fn);
       if (gespeichert) {
         state = { ...state, konto: gespeichert };
         melden();
       }
     });
+  }
+
+  /** Kontostand ändern für „Rückgängig“; wirft nie: → wie `ergebnisVon`, eine Ablehnung schon am angezeigten Stand → { ok: false, fehler }. */
+  async function kontoZurueck(fn) {
+    try {
+      return ergebnisVon(await kontoAendern(fn));
+    } catch (e) {
+      return { ok: false, fehler: e?.message || TEXT_FEHLER };
+    }
   }
 
   // Änderungen, die noch nicht gespeichert sind, je Teil – Schichtplan ('katalog' oder 'JJJJ-MM') und Fixkosten (Teil 0 … 3):
@@ -694,16 +731,22 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     return { daten: g.daten, unlesbar: g.unlesbar === true, text: g.text ?? null };
   }
 
-  /** Ändert einen Monat des Schichtplans (siehe `schichtAendern`). */
-  async function schichtMonatAendern(jm, fn) {
-    const { neu } = await schichtAendern(jm, fn, {
+  /** Ändert einen Monat des Schichtplans (siehe `schichtAendern`): → { neu, ergebnis, fehler }. */
+  const schichtMonatSchreiben = (jm, fn) =>
+    schichtAendern(jm, fn, {
       leer: () => leererMonat(jm),
       speichern: (f) => adapter.aendereSchichtMonat(jm, f),
       lesen: async () => (await adapter.leseSchichtMonat(jm)).monat ?? null,
       normalisiere: (m) => normalisiereMonat(m, jm).monat,
     });
-    return neu;
+
+  /** Ändert einen Monat des Schichtplans (siehe `schichtAendern`); → der sofort angezeigte Monat. */
+  async function schichtMonatAendern(jm, fn) {
+    return (await schichtMonatSchreiben(jm, fn)).neu;
   }
+
+  /** Ergebnis eines Teil-Schreibens ({ ergebnis, fehler } aus `teilAendern`) für die Oberfläche, wie `ergebnisVon`. */
+  const teilErgebnis = ({ ergebnis, fehler }) => (ergebnis === 'ok' ? { ok: true } : ergebnis === 'auth' ? { ok: false, wartet: true, fehler } : { ok: false, fehler, gemeldet: true });
 
   /**
    * Ändert die Schichtarten (siehe `schichtAendern`); gibt es noch keine, wird von den Standardarten ausgegangen. Ergebnis:
@@ -799,14 +842,14 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     return { katalog: katalog ? normalisiereKatalog(katalog).katalog : null, monate };
   }
 
-  /** Stellt Tage auf einen früheren Stand zurück: `vorher` = [[Datum, Typ oder null], …]. */
+  /** Stellt Tage auf einen früheren Stand zurück: `vorher` = [[Datum, Typ oder null], …]. → 'ok' | 'auth' | 'fehler' (wie `aendere`). */
   async function stelleTageWieder(vorher, zusatz = {}) {
     const tage = { ...state.tage };
     for (const [d, t] of vorher) {
       if (t === null) delete tage[d];
       else tage[d] = { typ: t };
     }
-    await aendere({ tage, ...zusatz.zustand }, async (bericht) => {
+    return aendere({ tage, ...zusatz.zustand }, async (bericht) => {
       if (zusatz.vorher) await zusatz.vorher();
       let i = 0;
       for (const [d, t] of vorher) {
@@ -1007,11 +1050,17 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       return { rueckgaengig: () => stelleTageWieder(vorher) };
     },
 
+    /**
+     * Löscht den Eintrag eines Tages. → { ok, fehler?, gemeldet?, wartet?, rueckgaengig? } (siehe `ergebnisVon`); `rueckgaengig()` setzt
+     * den Typ wieder – nicht bei einem Tag mit Konflikt (zwei Einträge: der verdrängte käme nicht zurück). Nichts da → { ok: true }.
+     */
     async loescheTag(date) {
-      if (!state.tage[date]) return;
+      const vorher = state.tage[date];
+      if (!vorher) return { ok: true };
       const tage = { ...state.tage };
       delete tage[date];
-      await aendere({ tage }, () => adapter.loescheTag(date));
+      const r = ergebnisVon(await aendere({ tage }, () => adapter.loescheTag(date)));
+      return mitRueckgaengig(r, vorher.konflikt ? null : async () => ergebnisVon(await stelleTageWieder([[date, vorher.typ]])));
     },
 
     /** Legt einen Urlaub an; Betreuungstage darin werden umgewandelt (gelöscht). Gibt { id, umgewandelt, rueckgaengig } zurück. */
@@ -1044,8 +1093,15 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       };
     },
 
+    /**
+     * Löscht einen Urlaub. → wie `loescheTag`; `rueckgaengig()` schreibt denselben Zeitraum mit derselben Kennung wieder (nicht bei
+     * einem Ereignis einer wiederkehrenden Google-Serie, siehe einzelnWiederherstellbar).
+     */
     async urlaubLoeschen(id) {
-      await aendere({ urlaub: state.urlaub.filter((u) => u.id !== id) }, () => adapter.loescheUrlaub(id));
+      const u = state.urlaub.find((x) => x.id === id);
+      const r = ergebnisVon(await aendere({ urlaub: state.urlaub.filter((x) => x.id !== id) }, () => adapter.loescheUrlaub(id)));
+      const zurueck = async () => ergebnisVon(await aendere({ urlaub: [...state.urlaub.filter((x) => x.id !== id), u] }, () => adapter.speichereUrlaub(u)));
+      return mitRueckgaengig(r, u && einzelnWiederherstellbar(id) ? zurueck : null);
     },
 
     /** Legt einen Termin an oder ändert ihn (mit `id`). Wirft bei ungültigen Eingaben einen Error mit deutscher Meldung. */
@@ -1056,8 +1112,15 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       return termin.id;
     },
 
+    /**
+     * Löscht einen Termin (oder eine einzelne Sache, auch aus einer Serie). → wie `loescheTag`; `rueckgaengig()` schreibt ihn unverändert
+     * mit derselben Kennung wieder (wie „Erledigt“ → „Rückgängig“) – nicht bei einem Termin einer wiederkehrenden Google-Serie.
+     */
     async terminLoeschen(id) {
-      await aendere({ termine: state.termine.filter((t) => t.id !== id) }, () => adapter.loescheTermin(id));
+      const t = state.termine.find((x) => x.id === id);
+      const r = ergebnisVon(await aendere({ termine: state.termine.filter((x) => x.id !== id) }, () => adapter.loescheTermin(id)));
+      const zurueck = async () => ergebnisVon(await aendere({ termine: [...state.termine.filter((x) => x.id !== id), t] }, () => adapter.speichereTermin(t)));
+      return mitRueckgaengig(r, t && einzelnWiederherstellbar(id) ? zurueck : null);
     },
 
     /**
@@ -1120,9 +1183,22 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       await kontoAendern((konto) => setzeStand(konto, eintrag, { heute, nachtrag: true }));
     },
 
-    /** Löscht den Kontostand einer Person für einen Monat (jederzeit; er lässt sich danach über „Nachtragen“ wieder eintragen). */
+    /**
+     * Löscht den Kontostand einer Person für einen Monat (jederzeit; er lässt sich danach über „Nachtragen“ wieder eintragen). Wirft
+     * sofort bei einer ungültigen Eingabe. → wie `loescheTag`; `rueckgaengig()` setzt genau den gelöschten Betrag wieder (auch an einem
+     * gewöhnlichen Tag) – hat inzwischen jemand einen anderen Stand eingetragen, bleibt der (Meldung).
+     */
     async kontoLoeschen(eintrag) {
-      await kontoAendern((konto) => entferneStand(konto, eintrag));
+      let geloescht;
+      const r = ergebnisVon(
+        await kontoAendern((konto) => {
+          const neu = entferneStand(konto, eintrag);
+          geloescht = neu === konto ? undefined : konto.p[eintrag.person][eintrag.monat]; // auf der neuesten Fassung: das wirklich Gelöschte
+          return neu;
+        }),
+      );
+      const zurueck = () => kontoZurueck(fachlich((konto) => standWiederherstellen(konto, { person: eintrag.person, monat: eintrag.monat, cents: geloescht })));
+      return mitRueckgaengig(r, geloescht === undefined ? null : zurueck);
     },
 
     /** Sonderbetrag (Einnahme > 0, Ausgabe < 0) für einen Monat, jederzeit. Die Kennung macht eine wiederholte Speicherung unschädlich. */
@@ -1155,9 +1231,21 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       }
     },
 
-    /** Löscht genau einen Sonderbetrag. */
+    /** Löscht genau einen Sonderbetrag. → wie `loescheTag`; `rueckgaengig()` bringt denselben Sonderbetrag an seine Stelle zurück. */
     async extraEntfernen(id) {
-      await kontoAendern((konto) => entferneExtra(konto, id));
+      let spur = null;
+      const r = ergebnisVon(
+        await kontoAendern((konto) => {
+          const stelle = (konto.x ?? []).findIndex((e) => e.i === id);
+          spur = stelle < 0 ? null : { extra: konto.x[stelle], stelle };
+          return entferneExtra(konto, id);
+        }),
+      );
+      const zurueck = () => {
+        const heute = todayVienna(jetzt());
+        return kontoZurueck(fachlich((konto) => extraWiederherstellen(konto, spur.extra, spur.stelle, { heute })));
+      };
+      return mitRueckgaengig(r, spur ? zurueck : null);
     },
 
     /**
@@ -1213,13 +1301,56 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     },
 
     /**
-     * Ziel endgültig löschen – nur, wenn es nie Geld bekommen hat (sonst TEXT_NICHT_LOESCHBAR: nur ausblenden). Geprüft mit dem frisch
-     * gelesenen Kontostand (das andere Telefon könnte den Monat eben vervollständigt haben). Ergebnis wie `zielBeenden`.
+     * Ziel endgültig löschen: ein laufendes immer (auch mit Geld – die Rechnung verteilt es neu, als hätte es das Ziel nie gegeben), ein
+     * abgeschlossenes nur, wenn es nie Geld bekommen hat (sonst TEXT_NICHT_LOESCHBAR: nur ausblenden). Geprüft mit dem frisch gelesenen
+     * Kontostand (das andere Telefon könnte den Monat eben vervollständigt haben). Ergebnis wie `zielBeenden`, bei Erfolg mit
+     * `rueckgaengig()`: holt genau das Gelöschte (Ziel und seine Verschiebungen, wie sie im Kalender standen) zurück.
      */
     async zielLoeschen(id) {
       const heute = todayVienna(jetzt());
       const konto = await kontoFrisch();
-      return zieleAendern((d) => (zielVorhanden(d, id), zielLoeschenRein(d, id, { heute, konto })));
+      let spur = null;
+      const r = await zieleAendern((d) => {
+        zielVorhanden(d, id);
+        const s = zielSpur(d, id);
+        const neu = zielLoeschenRein(d, id, { heute, konto });
+        spur = s; // auf der neuesten Fassung: das wirklich Gelöschte
+        return neu;
+      });
+      return mitRueckgaengig(r, spur ? () => store.zielWiederherstellen(spur) : null);
+    },
+
+    /**
+     * „Rückgängig“ nach zielLoeschen: `spur` (siehe domain zielSpur) zurück – über den normalen Speicherweg mit allen Sperren und
+     * Prüfungen (höchstens 20 laufende, Platz, Einträge einer neueren Version). Ergebnis wie `zielBeenden`.
+     */
+    zielWiederherstellen(spur) {
+      const heute = todayVienna(jetzt());
+      return zieleAendern((d) => zielWiederherstellenRein(d, spur, { heute }));
+    },
+
+    /**
+     * Eine Verschiebung aus „Frei“ rückgängig machen (nur zu einem noch laufenden Ziel): ihr Geld geht über die Rechnung zurück zu „Frei“.
+     * Gleiche Sperren wie jede Änderung der Sparziele (unlesbar, nicht geladen). → { ok: true, rueckgaengig } | sonst wie `zielBeenden`;
+     * `rueckgaengig()` bringt die Verschiebung unverändert an ihre Stelle zurück.
+     */
+    async verschiebungLoeschen(id) {
+      const heute = todayVienna(jetzt());
+      let spur = null;
+      const r = await zieleAendern((d) => {
+        const stelle = (d.m ?? []).findIndex((v) => v.id === id);
+        if (stelle < 0) throw new Error((d.fremd?.m ?? []).some((k) => k?.i === id) ? TEXT_VERSCHIEBUNG_NEUER : TEXT_VERSCHIEBUNG_WEG);
+        const neu = verschiebungLoeschenRein(d, id, { heute });
+        spur = { verschiebung: d.m[stelle], stelle };
+        return neu;
+      });
+      return mitRueckgaengig(r, spur ? () => store.verschiebungWiederherstellen(spur) : null);
+    },
+
+    /** „Rückgängig“ nach verschiebungLoeschen (`spur` = { verschiebung, stelle }); Ergebnis wie `zielBeenden`. */
+    verschiebungWiederherstellen(spur) {
+      const heute = todayVienna(jetzt());
+      return zieleAendern((d) => verschiebungWiederherstellenRein(d, spur, { heute }));
     },
 
     /** Abgeschlossenes Ziel im Verlauf ausblenden (`an` = true) oder wieder einblenden (false); nur Anzeige. Ergebnis wie `zielBeenden`. */
@@ -1408,6 +1539,28 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     schichtZusatzEntfernen: (jm, tag, person, { k, von, bis }) => schichtMonatAendern(jm, (m) => zusatzEntfernen(m, { person, tag, k, von, bis })),
 
     /**
+     * Zusatz im Tagesblatt löschen (✕): wie `schichtZusatzEntfernen`, aber → { ok, fehler?, gemeldet?, wartet?, rueckgaengig? };
+     * `rueckgaengig()` bringt genau diesen Zusatz an seine Stelle zurück. Wirft, wenn die Eingabe schon am angezeigten Stand abgelehnt wird.
+     */
+    async schichtZusatzLoeschen(jm, tag, person, { k, von, bis }) {
+      let stelle = -1;
+      const r = teilErgebnis(
+        await schichtMonatSchreiben(jm, (m) => {
+          stelle = (m.z?.[person]?.[tag] ?? []).findIndex((x) => x.k === k && x.von === von && x.bis === bis); // auf der neuesten Fassung
+          return zusatzEntfernen(m, { person, tag, k, von, bis });
+        }),
+      );
+      const zurueck = async () => {
+        try {
+          return teilErgebnis(await schichtMonatSchreiben(jm, (m) => zusatzWiederherstellen(m, { person, tag, k, von, bis }, stelle)));
+        } catch (e) {
+          return { ok: false, fehler: e?.message || TEXT_FEHLER };
+        }
+      };
+      return mitRueckgaengig(r, stelle >= 0 ? zurueck : null);
+    },
+
+    /**
      * Schichtart anlegen (ohne `k`) oder ändern (mit `k`): { ok: true, k } nach dem Speichern im Kalender, sonst { ok: false, fehler }
      * (siehe `schichtKatalogAendern`). Eine neue Art wird nach dem Speichern an ihrem Kürzel im gespeicherten Katalog wiedergefunden
      * (hat das andere Telefon gleichzeitig eine angelegt, kann ihr Schlüssel ein anderer sein). Wirft bei einer ungültigen Eingabe.
@@ -1515,8 +1668,48 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     fixPostenArchivieren: (id, datum = todayVienna(jetzt())) => fixPostenAendern(id, (shard) => postenArchivieren(shard, id, datum)),
     /** Posten aus dem Archiv zurückholen. */
     fixPostenWiederherstellen: (id) => fixPostenAendern(id, (shard) => postenWiederherstellen(shard, id)),
-    /** Posten endgültig löschen – nur aus dem Archiv (sonst { ok: false, fehler }). */
-    fixPostenLoeschen: (id) => fixPostenAendern(id, (shard) => postenLoeschen(shard, id)),
+    /**
+     * Posten endgültig löschen – aktiv (z. B. doppelt eingetragen) oder aus dem Archiv. Ergebnis wie `fixPostenArchivieren`, bei Erfolg
+     * mit `rueckgaengig()`: legt genau den gelöschten Posten (wie er im Kalender stand) wieder an, siehe `fixPostenWiederanlegen`.
+     */
+    async fixPostenLoeschen(id) {
+      let weg = null;
+      const r = await fixPostenAendern(id, (shard) => {
+        weg = shard.posten.find((p) => p.id === id) ?? null; // auf der neuesten Fassung: das wirklich Gelöschte
+        return postenLoeschen(shard, id);
+      });
+      return mitRueckgaengig(r, weg ? () => store.fixPostenWiederanlegen(weg) : null);
+    },
+
+    /**
+     * „Rückgängig“ nach dem Löschen: speichert genau diesen Posten (mit seiner Kennung, auch archiviert) wieder – über denselben Weg wie
+     * einen neuen (Prüfung, vorher gelesen, höchstens 100 Posten, gesperrter Teil, Platz im Teil, auf der neuesten Fassung). Gibt es ihn
+     * schon wieder, bleibt alles, wie es ist; ein Eintrag einer neueren Version mit derselben Kennung wird nie überschrieben.
+     * → { ok: true, id } | { ok: false, fehler, gemeldet? } | { ok: false, wartet: true, fehler }. Wirft nie.
+     */
+    async fixPostenWiederanlegen(posten) {
+      if (!istObjekt(posten) || typeof posten.id !== 'string' || posten.id === '') return { ok: false, fehler: 'Ungültige Kennung.' };
+      const ungueltig = postenPruefen(posten);
+      if (ungueltig) return { ok: false, fehler: ungueltig };
+      const nichtBereit = await fixBereit();
+      if (nichtBereit) return { ok: false, fehler: nichtBereit };
+      const nr = shardFuer(posten.id);
+      if (fixGesperrt(nr)) return { ok: false, fehler: TEXT_TEIL_GESPERRT };
+      const schonDa = (state.fixkosten.shards ?? []).some((s) => s?.posten.some((p) => p.id === posten.id));
+      const zuViele = schonDa ? null : postenAnzahlPruefen(state.fixkosten.shards, posten.id);
+      if (zuViele) return { ok: false, fehler: zuViele };
+      const fn = (shard) => {
+        if (shard.posten.some((p) => p.id === posten.id)) return shard;
+        if ((shard.fremd ?? []).some((k) => k?.i === posten.id)) throw new Error(TEXT_FIX_NEUER);
+        return postenSetzen(shard, posten);
+      };
+      try {
+        const r = await fixTeilAendern(nr, fn);
+        return r.ok ? { ok: true, id: posten.id } : r;
+      } catch (e) {
+        return { ok: false, fehler: e?.message || TEXT_FEHLER }; // schon auf dem angezeigten Stand abgelehnt (z. B. Teil zu voll): nichts geändert
+      }
+    },
 
     async einstellungen(teil) {
       const settings = normalizeSettings({ ...state.settings, ...teil });

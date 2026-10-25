@@ -128,6 +128,42 @@ test.describe('Kontostand', () => {
     await expect(text).toBeHidden();
   });
 
+  test('Kontostand eines Monats löschen: „Gelöscht ✓ · Rückgängig“ bringt genau den Betrag zurück (an einem gewöhnlichen Tag)', async ({ page }) => {
+    await starteDemo(page, { route: '#/konto' });
+    const kacheln = page.locator('.konto-kachel-wert');
+    await expect(kacheln).toHaveText(['+4.213,50 €', '+1.053,38 €', '3 von 4']);
+    const vorher = await page.evaluate(() => JSON.parse(localStorage.getItem('fk.demo.v1')).konto.p.mama['2026-09']);
+    await page.getByRole('button', { name: 'September 2026 korrigieren oder löschen' }).click();
+    const blatt = page.getByRole('dialog', { name: 'September 2026: korrigieren oder löschen' });
+    await blatt.locator('.konto-person').filter({ hasText: 'Mama' }).getByRole('button', { name: 'Löschen' }).click();
+    await page.getByRole('dialog', { name: 'Kontostand löschen?' }).getByRole('button', { name: 'Löschen' }).click();
+    const meldung = page.locator('.toast').filter({ hasText: 'Gelöscht ✓' });
+    await expect(meldung.getByRole('button', { name: 'Rückgängig' })).toBeVisible();
+    await expect(blatt).toBeHidden();
+    await expect(kacheln).not.toHaveText(['+4.213,50 €', '+1.053,38 €', '3 von 4']);
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem('fk.demo.v1')).konto.p.mama['2026-09'] ?? null)).toBeNull();
+    await meldung.getByRole('button', { name: 'Rückgängig' }).click();
+    await erwarteToast(page, 'Wiederhergestellt ✓');
+    await expect(kacheln).toHaveText(['+4.213,50 €', '+1.053,38 €', '3 von 4']);
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem('fk.demo.v1')).konto.p.mama['2026-09'])).toBe(vorher);
+  });
+
+  test('Sonderbetrag löschen: „Gelöscht ✓ · Rückgängig“ bringt ihn zurück', async ({ page }) => {
+    await starteDemo(page, { route: '#/konto' });
+    const sonder = page.locator('section.abschnitt').filter({ has: page.getByRole('heading', { name: 'Sonderbeträge' }) });
+    const balken = page.locator('section.abschnitt').filter({ has: page.getByRole('heading', { name: 'Veränderung pro Monat (zusammen)' }) });
+    await expect(balken.locator('.diag-legende')).toContainText('Ø +1.015,88 € ohne Extra');
+    await sonder.getByRole('button', { name: 'Autoreparatur löschen' }).click();
+    await page.getByRole('dialog', { name: 'Sonderbetrag löschen?' }).getByRole('button', { name: 'Löschen' }).click();
+    const meldung = page.locator('.toast').filter({ hasText: 'Gelöscht ✓' });
+    await expect(meldung.getByRole('button', { name: 'Rückgängig' })).toBeVisible();
+    await expect(sonder.getByText('Autoreparatur')).toHaveCount(0);
+    await meldung.getByRole('button', { name: 'Rückgängig' }).click();
+    await erwarteToast(page, 'Wiederhergestellt ✓');
+    await expect(sonder.getByText('Autoreparatur')).toBeVisible();
+    await expect(balken.locator('.diag-legende')).toContainText('Ø +1.015,88 € ohne Extra');
+  });
+
   test('unlesbarer Betrag wird gemeldet', async ({ page }) => {
     await starteDemo(page, { route: '#/konto' });
     const mama = page.locator('.konto-person').filter({ hasText: 'Mama' });

@@ -1,5 +1,6 @@
 import { h } from './dom.js';
-import { bestaetigen, farbe, toast, urlaubRing } from './components.js';
+import { bestaetigen, farbe, urlaubRing } from './components.js';
+import { geloeschtMelden, sicherLoeschen } from './fortschritt.js';
 import { urlaubModel } from '../app/views/urlaub-model.js';
 import { urlaubstageImZeitraum } from '../app/views/neu-model.js';
 import { datumKurz } from '../app/format-de.js';
@@ -25,10 +26,7 @@ function zeitraumZeile(u, heute, store) {
             text: `${datumKurz(u.start)} bis ${datumKurz(u.end)} wird entfernt.`,
             ja: 'Urlaub löschen',
             gefahr: true,
-            beiJa: async () => {
-              await store.urlaubLoeschen(u.id);
-              toast('Urlaub gelöscht');
-            },
+            beiJa: async () => geloeschtMelden(await sicherLoeschen(store.urlaubLoeschen(u.id))),
           }),
       },
       'Löschen',

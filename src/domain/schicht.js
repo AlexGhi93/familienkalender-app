@@ -548,6 +548,19 @@ export function zusatzHinzufuegen(monat, { person, tag, k, von, bis }) {
 }
 
 /**
+ * „Rückgängig“ nach zusatzEntfernen: derselbe Zusatz wieder an seiner Stelle `stelle` (geprüft wie beim Hinzufügen, höchstens
+ * MAX_ZUSAETZE). Schon da → derselbe Monat.
+ */
+export function zusatzWiederherstellen(monat, { person, tag, k, von, bis }, stelle) {
+  const mit = zusatzHinzufuegen(monat, { person, tag, k, von, bis });
+  if (mit === monat) return monat;
+  const liste = mit.z[person][tag];
+  const ohne = liste.slice(0, -1);
+  const i = Math.min(Math.max(0, Number.isInteger(stelle) ? stelle : ohne.length), ohne.length);
+  return mitTagEintrag(monat, 'z', person, tag, [...ohne.slice(0, i), liste.at(-1), ...ohne.slice(i)]);
+}
+
+/**
  * Entfernt Zusätze nach Inhalt, nicht nach Position – daher wiederholbar. Mit `bis` genau den einen (Schlüssel, Von und Bis; zwei mit
  * gleichem Von und anderem Bis sind verschiedene Zusätze), ohne `bis` alle mit diesem Schlüssel und Von.
  */

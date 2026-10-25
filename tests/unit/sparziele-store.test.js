@@ -178,16 +178,24 @@ describe('Sparziele beenden, löschen, ausblenden, aus „Frei“ verschieben', 
     assert.equal(zielMit(store, 'demo0001').beendet.art, 'ausgegeben');
   });
 
-  test('löschen: nur ein Ziel, das nie Geld bekommen hat; ein gefördertes → Meldung, nichts geschrieben', async () => {
+  test('löschen: laufende Ziele immer (auch gefördert); ein abgeschlossenes gefördertes → Meldung, nichts geschrieben', async () => {
     const { store, speicher, log } = aufbau({ ids: ['neu00001'] });
     await store.laden();
     await store.zielSpeichern(entwurf());
     log.length = 0;
-    assert.deepEqual(await store.zielLoeschen('demo0001'), { ok: false, fehler: TEXT_NICHT_LOESCHBAR });
+    assert.deepEqual(await store.zielLoeschen('demo0003'), { ok: false, fehler: TEXT_NICHT_LOESCHBAR }, 'abgeschlossen und gefördert');
     assert.deepEqual(log, []);
-    assert.deepEqual(await store.zielLoeschen('neu00001'), { ok: true });
+    const s = store.getState();
+    const vorher = sparVerlauf(s.ziele.daten, s.konto, HEUTE);
+    assert.ok(vorher.ziele.find((z) => z.id === 'demo0001').gespart > 0);
+    const r = await store.zielLoeschen('demo0001');
+    assert.equal(r.ok, true);
+    assert.equal(typeof r.rueckgaengig, 'function');
+    const nachher = sparVerlauf(store.getState().ziele.daten, store.getState().konto, HEUTE);
+    assert.equal(nachher.frei + nachher.summeZiele, vorher.frei + vorher.summeZiele, 'zurückgelegt + Frei bleibt');
+    assert.equal((await store.zielLoeschen('neu00001')).ok, true);
     assert.equal(zielMit(store, 'neu00001'), undefined);
-    assert.deepEqual(gespeicherteZiele(speicher).z.map((k) => k.i), ['demo0001', 'demo0002', 'demo0003']);
+    assert.deepEqual(gespeicherteZiele(speicher).z.map((k) => k.i), ['demo0002', 'demo0003']);
     assert.deepEqual(await store.zielLoeschen('neu00001'), { ok: false, fehler: TEXT_GELOESCHT });
   });
 
@@ -290,18 +298,19 @@ describe('Startmonat und Löschprüfung mit frisch gelesenem Kontostand', () => 
     assert.equal(zielMit(store, 'neu00001').erstellt, '2026-10');
   });
 
-  test('Löschen prüft mit dem frischen Kontostand: hat das Ziel inzwischen Geld bekommen → abgelehnt', async () => {
-    // Ziel ab Oktober; angezeigt nur September (nichts gefördert), frisch auch Oktober (+1.000 €): das Ziel hat Geld bekommen
-    const alt = { v: 1, p: { papa: { '2026-09': 100000 }, mama: { '2026-09': 50000 } }, x: [] };
-    const frisch = { v: 1, p: { papa: { '2026-09': 100000, '2026-10': 200000 }, mama: { '2026-09': 50000, '2026-10': 50000 } }, x: [] };
+  test('Löschen prüft mit dem frischen Kontostand: hat ein abgeschlossenes Ziel inzwischen Geld bekommen → abgelehnt', async () => {
+    // Ziel nur für September (seit Oktober abgeschlossen); angezeigt nur August (nichts gefördert), frisch auch September
+    // (+1.000 €): das Ziel hat Geld bekommen
+    const alt = { v: 1, p: { papa: { '2026-08': 100000 }, mama: { '2026-08': 50000 } }, x: [] };
+    const frisch = { v: 1, p: { papa: { '2026-08': 100000, '2026-09': 200000 }, mama: { '2026-08': 50000, '2026-09': 50000 } }, x: [] };
+    const ziel = { id: 'alt00001', name: 'Kurz', emoji: '🎯', zielCents: 80000, datum: '2026-09', vorlaeufig: false, erstellt: '2026-09' };
     let liefern = alt;
-    const { store } = aufbau({ speicher: leererSpeicher({ konto: alt }), ids: ['neu00001'], aendern: (a) => ({ ...a, leseKonto: async () => ({ konto: liefern }) }) });
+    const { store } = aufbau({ speicher: leererSpeicher({ konto: alt, ziele: zieleText({ v: 1, z: [ziel], m: [] }) }), aendern: (a) => ({ ...a, leseKonto: async () => ({ konto: liefern }) }) });
     await store.laden();
-    await store.zielSpeichern(entwurf());
     liefern = frisch;
-    assert.deepEqual(await store.zielLoeschen('neu00001'), { ok: false, fehler: TEXT_NICHT_LOESCHBAR });
+    assert.deepEqual(await store.zielLoeschen('alt00001'), { ok: false, fehler: TEXT_NICHT_LOESCHBAR });
     liefern = alt;
-    assert.deepEqual(await store.zielLoeschen('neu00001'), { ok: true });
+    assert.equal((await store.zielLoeschen('alt00001')).ok, true);
   });
 });
 
@@ -424,6 +433,7 @@ describe('Unlesbare Sparziele werden nie überschrieben, fremde Einträge bleibe
         await t.store.zielLoeschen('auto0001'),
         await t.store.zielAusblenden('auto0001'),
         await t.store.freiVerschieben('auto0001', 100),
+        await t.store.verschiebungLoeschen('ver00001'),
       ]) assert.deepEqual(r, { ok: false, fehler: TEXT_ZIELE_GESPERRT });
       assert.equal(t.store.getState(), vorher);
       assert.equal(t.text(), kaputt);
@@ -634,6 +644,7 @@ describe('Fix-Runde 1: Sparziele nicht lesbar (Netz) – die App lädt trotzdem,
       await t.store.zielLoeschen('auto0001'),
       await t.store.zielAusblenden('auto0001'),
       await t.store.freiVerschieben('auto0001', 100),
+      await t.store.verschiebungLoeschen('ver00001'),
     ]) assert.deepEqual(r, { ok: false, fehler: TEXT_ZIELE_NICHT_GELADEN });
     assert.equal(t.geschrieben().length, vorher, 'nichts geschrieben');
     // nur die Sparziele neu lesen: scheitert weiter → false; gelingt → wieder beschreibbar

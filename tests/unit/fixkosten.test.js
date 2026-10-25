@@ -444,7 +444,7 @@ describe('Änderungen: rein und wiederholbar', () => {
     assert.throws(() => postenSetzen(leer, posten({ id: undefined })), /Ungültige Kennung/);
   });
 
-  test('Archivieren, Wiederherstellen, Löschen (nur aus dem Archiv); unbekannte Kennung ändert nichts', () => {
+  test('Archivieren, Wiederherstellen, Löschen (aktiv oder aus dem Archiv); unbekannte Kennung ändert nichts', () => {
     const s = postenSetzen(leererShard(), posten({ id: 'aaaa1' }));
     const arch = postenArchivieren(s, 'aaaa1', '2026-11-01');
     assert.equal(arch.posten[0].archiv, '2026-11-01');
@@ -455,7 +455,7 @@ describe('Änderungen: rein und wiederholbar', () => {
     const zurueck = postenWiederherstellen(arch, 'aaaa1');
     assert.equal('archiv' in zurueck.posten[0], false);
     assert.equal(postenWiederherstellen(zurueck, 'aaaa1'), zurueck);
-    assert.throws(() => postenLoeschen(s, 'aaaa1'), /Nur archivierte Posten lassen sich endgültig löschen\./);
+    assert.deepEqual(postenLoeschen(s, 'aaaa1').posten, [], 'auch ein aktiver Posten (z. B. doppelt eingetragen)');
     const weg = postenLoeschen(arch, 'aaaa1');
     assert.deepEqual(weg.posten, []);
     assert.equal(postenLoeschen(weg, 'aaaa1'), weg);

@@ -248,6 +248,54 @@ test.describe('Fixkosten im Konto-Tab', () => {
     await expect(karte(page, 'Archiv')).toHaveCount(0);
   });
 
+  test('aktiver Posten (z. B. doppelt eingetragen): „Löschen“ im Formular mit Rückfrage; „Gelöscht ✓ · Rückgängig“ holt ihn zurück; nach etwa 6 s weg', async ({ page }) => {
+    await oeffneFixkosten(page);
+    await expect(gross(page)).toHaveText('1.459,39 €');
+    await zeile(page, 'Freizeit & Abos', 'Streaming').click();
+    const d = dialog(page, 'Fixkosten ändern');
+    await expect(d.getByRole('button', { name: '🗄️ Archivieren' })).toBeVisible(); // Archivieren bleibt
+    await d.getByRole('button', { name: 'Löschen', exact: true }).click();
+    const frage = dialog(page, '„Streaming“ löschen?');
+    await expect(frage).toContainText('Er verschwindet ganz (auch aus früheren Monaten). Wenn er nur nicht mehr läuft, lieber „Archivieren“.');
+    await frage.getByRole('button', { name: 'Abbrechen' }).click();
+    await expect(d).toBeVisible();
+    await expect(zeile(page, 'Freizeit & Abos', 'Streaming')).toHaveCount(1);
+
+    const toasts = await fehlerToastsZaehlen(page);
+    await d.getByRole('button', { name: 'Löschen', exact: true }).click();
+    await dialog(page, '„Streaming“ löschen?').getByRole('button', { name: 'Löschen', exact: true }).click();
+    const meldung = page.locator('.toast').filter({ hasText: 'Gelöscht ✓' });
+    await expect(meldung.getByRole('button', { name: 'Rückgängig' })).toBeVisible();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(zeile(page, 'Freizeit & Abos', 'Streaming')).toHaveCount(0);
+    await expect(gross(page)).toHaveText('1.445,40 €');
+    await expect(karte(page, 'Archiv').locator('.fk-n > b')).toHaveText(['Babyschwimmen'], { timeout: 1000 }); // nicht ins Archiv: ganz weg
+
+    // „Rückgängig“: derselbe Posten (gleiche Kennung) ist wieder da, auch nach dem Neuladen
+    const kennung = () => page.evaluate(() => JSON.parse(localStorage.getItem('fk.demo.v1')).fixkosten.shards.flatMap((s) => s?.p ?? s?.posten ?? []).filter((p) => (p.n ?? p.name) === 'Streaming').map((p) => p.i ?? p.id));
+    await meldung.getByRole('button', { name: 'Rückgängig' }).click();
+    await erwarteToast(page, 'Wiederhergestellt ✓');
+    await expect(zeile(page, 'Freizeit & Abos', 'Streaming')).toHaveCount(1);
+    await expect(gross(page)).toHaveText('1.459,39 €');
+    expect(await kennung()).toHaveLength(1);
+    expect(await toasts.anzahl()).toBe(0);
+    await page.reload();
+    await expect(zeile(page, 'Freizeit & Abos', 'Streaming')).toHaveCount(1);
+
+    // noch einmal löschen und die Meldung stehen lassen: nach etwa 6 Sekunden verschwindet sie, gelöscht bleibt gelöscht
+    await zeile(page, 'Freizeit & Abos', 'Streaming').click();
+    await dialog(page, 'Fixkosten ändern').getByRole('button', { name: 'Löschen', exact: true }).click();
+    await dialog(page, '„Streaming“ löschen?').getByRole('button', { name: 'Löschen', exact: true }).click();
+    await expect(meldung).toBeVisible();
+    await page.waitForTimeout(4000);
+    await expect(meldung).toBeVisible(); // nach 4 s noch da
+    await expect(meldung).toBeHidden({ timeout: 4000 });
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Fixkosten 💶' })).toBeVisible();
+    await expect(zeile(page, 'Freizeit & Abos', 'Streaming')).toHaveCount(0);
+    expect(await kennung()).toHaveLength(0);
+  });
+
   test('Ziel der Erinnerungen: #/konto/fixkosten öffnet die Fixkosten, #/konto/kontostand den Kontostand (Adresse wird #/konto)', async ({ page }) => {
     await starteDemo(page, { route: '#/konto/fixkosten' });
     await expect(page.getByRole('heading', { name: 'Fixkosten 💶' })).toBeVisible();
@@ -334,6 +382,24 @@ test.describe('Fixkosten: Rückfrage mit Animation (Doppeltipp)', () => {
     await page.waitForTimeout(600);
     expect(await toasts.anzahl()).toBe(0);
     await expect(page.getByRole('dialog')).toHaveCount(0);
+  });
+
+  test('Doppeltipp auf „Löschen“ (aktiver Posten) löscht genau einmal; ein Tipp auf „Rückgängig“ holt ihn genau einmal zurück', async ({ page }) => {
+    await oeffneFixkosten(page);
+    const toasts = await fehlerToastsZaehlen(page);
+    await zeile(page, 'Freizeit & Abos', 'Streaming').click();
+    await dialog(page, 'Fixkosten ändern').getByRole('button', { name: 'Löschen', exact: true }).click();
+    await dialog(page, '„Streaming“ löschen?').getByRole('button', { name: 'Löschen', exact: true }).dblclick();
+    const meldung = page.locator('.toast').filter({ hasText: 'Gelöscht ✓' });
+    await expect(meldung).toBeVisible();
+    await expect(zeile(page, 'Freizeit & Abos', 'Streaming')).toHaveCount(0);
+    await page.waitForTimeout(600);
+    expect(await toasts.anzahl()).toBe(0);
+    await meldung.getByRole('button', { name: 'Rückgängig' }).click();
+    await erwarteToast(page, 'Wiederhergestellt ✓');
+    await expect(zeile(page, 'Freizeit & Abos', 'Streaming')).toHaveCount(1);
+    await page.waitForTimeout(600);
+    expect(await toasts.anzahl()).toBe(0);
   });
 });
 

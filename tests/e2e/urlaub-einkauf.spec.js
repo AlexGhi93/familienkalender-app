@@ -44,8 +44,23 @@ test.describe('Urlaub', () => {
     const zeile = page.locator('.liste .zeile').filter({ hasText: '21. Dez.' });
     await zeile.getByRole('button', { name: 'Löschen' }).click();
     await page.getByRole('dialog', { name: 'Urlaub löschen?' }).getByRole('button', { name: 'Urlaub löschen' }).click();
-    await erwarteToast(page, 'Urlaub gelöscht');
+    await erwarteToast(page, 'Gelöscht ✓');
     await expect(page.locator('.liste .zeile')).toHaveCount(2);
+  });
+
+  test('Urlaub löschen: „Gelöscht ✓ · Rückgängig“ bringt den Zeitraum zurück (bleibt nach dem Neuladen)', async ({ page }) => {
+    await starteDemo(page, { route: '#/urlaub' });
+    const zeile = page.locator('.liste .zeile').filter({ hasText: '2. Nov.' });
+    await zeile.getByRole('button', { name: 'Löschen' }).click();
+    await page.getByRole('dialog', { name: 'Urlaub löschen?' }).getByRole('button', { name: 'Urlaub löschen' }).click();
+    const meldung = page.locator('.toast').filter({ hasText: 'Gelöscht ✓' });
+    await expect(meldung.getByRole('button', { name: 'Rückgängig' })).toBeVisible();
+    await expect(page.locator('.liste .zeile')).toHaveCount(1);
+    await meldung.getByRole('button', { name: 'Rückgängig' }).click();
+    await erwarteToast(page, 'Wiederhergestellt ✓');
+    await expect(page.locator('.liste .zeile b')).toHaveText(['Mo 21. Sep. – Fr 25. Sep.', 'Mo 2. Nov. – Fr 13. Nov.']);
+    await page.reload();
+    await expect(page.locator('.liste .zeile b')).toHaveText(['Mo 21. Sep. – Fr 25. Sep.', 'Mo 2. Nov. – Fr 13. Nov.']);
   });
 
   test('„Bis“ vor „Von“ wird abgefangen', async ({ page }) => {

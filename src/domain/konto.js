@@ -181,6 +181,36 @@ export function fuegeExtraHinzu(konto, { person, monat, cents, text, id }, { heu
   return neu;
 }
 
+/**
+ * „Rückgängig“ nach entferneStand: setzt genau den gelöschten Betrag wieder (ohne Tagesregel – er stand schon so da). Steht dort
+ * inzwischen ein ANDERER Stand (z. B. vom anderen Telefon nachgetragen), bleibt er: Meldung statt Überschreiben. Gleicher Betrag →
+ * dasselbe Konto (wiederholbar).
+ */
+export function standWiederherstellen(konto, { person, monat, cents }) {
+  if (!PERSONEN.includes(person)) throw new Error('Ungültige Person (Papa oder Mama).');
+  if (!MONAT.test(String(monat))) throw new Error('Ungültiger Monat.');
+  if (!istBetrag(cents)) throw new Error('Der Betrag ist ungültig.');
+  const jetzt = konto.p[person][monat];
+  if (jetzt === cents) return konto;
+  if (jetzt !== undefined) throw new Error('Für diesen Monat wurde inzwischen ein anderer Stand eingetragen – er bleibt.');
+  if (Object.keys(konto.p[person]).length >= MAX_MONATE) throw new Error(`Höchstens ${MAX_MONATE} Monate pro Person. Bitte vorher eine Sicherung speichern.`);
+  const neu = { v: 1, p: { ...konto.p, [person]: { ...konto.p[person], [monat]: cents } }, x: konto.x ?? [] };
+  kontoText(neu); // wirft, wenn der Platz im Kalender nicht reicht
+  return neu;
+}
+
+/**
+ * „Rückgängig“ nach entferneExtra: derselbe Sonderbetrag `extra` ({ i, p, m, c, t }) an seiner alten Stelle `stelle`, geprüft wie beim
+ * Eintragen (fuegeExtraHinzu mit `heute`). Schon da → dasselbe Konto.
+ */
+export function extraWiederherstellen(konto, extra, stelle, { heute }) {
+  const mitExtra = fuegeExtraHinzu(konto, { person: extra?.p, monat: extra?.m, cents: extra?.c, text: extra?.t, id: extra?.i }, { heute });
+  if (mitExtra === konto) return konto;
+  const ohne = mitExtra.x.slice(0, -1);
+  const i = Math.min(Math.max(0, Number.isInteger(stelle) ? stelle : ohne.length), ohne.length);
+  return { ...mitExtra, x: [...ohne.slice(0, i), mitExtra.x.at(-1), ...ohne.slice(i)] };
+}
+
 /** Löscht genau einen Sonderbetrag; eine unbekannte Kennung ändert nichts. */
 export function entferneExtra(konto, id) {
   const bisher = konto.x ?? [];

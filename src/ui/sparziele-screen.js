@@ -1,11 +1,11 @@
 // Ansicht „Sparziele“ im Konto-Tab (Umschalter „Kontostand · Fixkosten · Sparziele“ oben): Kopf (für Ziele zurückgelegt, nötig pro Monat,
 // frei, Stand), eine Karte je laufendem Ziel (Balken, gespart/Ziel/%, noch offen, Monate, € pro Monat, Status), „💜 Frei verfügbar“ mit
-// „Zu Ziel verschieben“, „＋ Neues Sparziel“ und „Verlauf pro Monat“ (Ersparnis und Aufteilung je Monat, abgeschlossene Ziele mit
-// Ausblenden / Endgültig löschen). Alle Zahlen kommen aus sparziele-model.js (Domäne), alle Texte als Text in die Seite (nie als HTML).
+// „Zu Ziel verschieben“, „＋ Neues Sparziel“ und „Verlauf pro Monat“ (Ersparnis und Aufteilung je Monat, Verschiebungen aus „Frei“ zu
+// laufenden Zielen mit „Rückgängig“, abgeschlossene Ziele mit Ausblenden / Endgültig löschen). Alle Zahlen kommen aus sparziele-model.js (Domäne), alle Texte als Text in die Seite (nie als HTML).
 import { h } from './dom.js';
 import { abschnitt } from './components.js';
 import { sparzieleModel } from '../app/views/sparziele-model.js';
-import { erledigt, oeffneVerschieben, oeffneZielFormular, sicher, zielLoeschenFragen, zurueckZuFreiFragen } from './sparziele-formular.js';
+import { erledigt, oeffneVerschieben, oeffneZielFormular, sicher, verschiebungRueckgaengigFragen, zielLoeschenFragen, zurueckZuFreiFragen } from './sparziele-formular.js';
 
 const MONATE_SICHTBAR = 4; // „Verlauf pro Monat“ zeigt zuerst nur die neuesten Monate
 let ausgeblendeteZeigen = false; // abgeschlossene, ausgeblendete Ziele im Verlauf zeigen
@@ -87,7 +87,14 @@ function freiKarte(m, ctx) {
 
 const zeile = (z, klasse) => h('div', { class: `sz-zeile ${klasse}`, 'data-cents': String(z.cents) }, h('span', {}, z.text), h('b', {}, z.betrag));
 
-function monatKarte(x) {
+/** Eine Verschiebung aus „Frei“ im Verlauf; zu einem laufenden Ziel mit „Rückgängig“ (Rückfrage, danach „Gelöscht ✓ · Rückgängig“). */
+function verschiebungZeile(z, ctx) {
+  if (!z.rueckgaengig) return zeile(z, 'sz-verschoben');
+  const knopf = h('button', { class: 'knopf klein sz-rueckgaengig', type: 'button', 'aria-label': `Verschiebung rückgängig: ${z.text}`, onClick: () => verschiebungRueckgaengigFragen(ctx, z, [knopf]) }, 'Rückgängig');
+  return h('div', { class: 'sz-zeile sz-verschoben', 'data-cents': String(z.cents), 'data-id': z.id }, h('span', {}, z.text), h('b', {}, z.betrag), h('div', { class: 'sz-zeile-aktion' }, knopf));
+}
+
+function monatKarte(x, ctx) {
   return h(
     'article',
     { class: 'karte sz-monat', 'data-monat': x.monat, ...(x.gespartCents === null ? {} : { 'data-gespart': String(x.gespartCents) }) },
@@ -98,7 +105,7 @@ function monatKarte(x) {
     x.keineVeraenderung ? h('p', { class: 'leise sz-hinweis' }, 'Keine Veränderung – nichts verteilt.') : null,
     x.ausgleich ? h('p', { class: 'leise sz-hinweis sz-ausgleich' }, x.ausgleich) : null,
     x.hinweis ? h('p', { class: 'leise sz-hinweis' }, x.hinweis) : null,
-    x.verschoben.map((z) => zeile(z, 'sz-verschoben')),
+    x.verschoben.map((z) => verschiebungZeile(z, ctx)),
     h('p', { class: 'leise sz-hinweis sz-frei-danach' }, x.freiDanach),
   );
 }
@@ -143,7 +150,7 @@ function abgeschlossenZeile(a, { store, ui }, gesperrt) {
 
 function verlaufAbschnitt(m, ctx) {
   const { ui } = ctx;
-  const karten = m.verlauf.map(monatKarte);
+  const karten = m.verlauf.map((x) => monatKarte(x, ctx));
   const aeltere = karten.slice(MONATE_SICHTBAR);
   const zeigen = () => {
     for (const k of aeltere) k.hidden = !aeltereOffen;

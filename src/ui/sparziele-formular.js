@@ -1,12 +1,14 @@
 // Blätter der Sparziele: Formular „Neues Sparziel“ / „Sparziel ändern“ (Name, Symbol, Datum fest oder vorläufig, Zielbetrag, Bis wann →
-// sofort „Ab <Monat> → N Monate → X € pro Monat“), „Ziel beenden“ (Geld wurde ausgegeben / Geld zurück zu Frei), „Endgültig löschen“
-// (nur für Ziele, die nie Geld bekommen haben, mit Rückfrage) und „Zu Ziel verschieben“ (aus „Frei verfügbar“). Ergebnisse des Stores
+// sofort „Ab <Monat> → N Monate → X € pro Monat“), „Ziel beenden“ (Geld wurde ausgegeben / Geld zurück zu Frei), „Löschen“ (laufende
+// Ziele immer – ihr Geld wird neu verteilt; abgeschlossene nur ohne Geld: „Endgültig löschen“; mit Rückfrage, danach „Gelöscht ✓ ·
+// Rückgängig“), „Zu Ziel verschieben“ (aus „Frei verfügbar“) und „Rückgängig“ einer Verschiebung. Ergebnisse des Stores
 // ({ ok, fehler?, wartet? }) erscheinen als Meldung; ein Blatt bleibt bei einem Fehler mit der Eingabe offen und seine Knöpfe werden
 // wieder benutzbar. Alle Zahlen kommen aus sparziele-model.js (Domäne), alle Texte als Text in die Seite.
 import { fuelle, h } from './dom.js';
 import { bestaetigen, blatt, toast } from './components.js';
-import { bedarfVorschau, entwurfZuZiel, sparzieleModel, zielEntwurf, zieleSperre, zielSymbole } from '../app/views/sparziele-model.js';
-import { MAX_ZIEL_NAME, zielLoeschbar, zielSchluss } from '../domain/sparziele.js';
+import { bedarfVorschau, entwurfZuZiel, sparzieleModel, zielEntwurf, zielLoeschFrage, zieleSperre, zielSymbole } from '../app/views/sparziele-model.js';
+import { MAX_ZIEL_NAME, TEXT_NICHT_LOESCHBAR, zielSchluss } from '../domain/sparziele.js';
+import { geloeschtMelden } from './fortschritt.js';
 import { betragText, centsAusText } from '../domain/konto.js';
 import { MONATE } from '../app/format-de.js';
 
@@ -64,7 +66,8 @@ export function oeffneZielFormular({ store }, id) {
   const gesperrt = zieleSperre(state.ziele);
   const symbolListe = zielSymbole(state.settings);
   const e = zielEntwurf(original, heute);
-  const loeschbar = original ? zielLoeschbar(state.ziele.daten, state.konto, heute, original.id) : false;
+  // laufend: immer löschbar (sein Geld wird neu verteilt); abgeschlossen nur ohne Geld – Knopf und Rückfrage aus zielLoeschFrage
+  const loeschFrage = original ? zielLoeschFrage(state, heute, original.id) : null;
   // nach dem Zieldatum automatisch abgeschlossen: mit einem neuen Datum ab jetzt wieder öffnen (kein „Ziel beenden“ mehr)
   const abgeschlossen = original ? zielSchluss(original).monat <= heute.slice(0, 7) : false;
   let speichert = false;
@@ -182,19 +185,17 @@ export function oeffneZielFormular({ store }, id) {
       h('p', { class: 'leise fk-tipp' }, '„Datum vorläufig“: z. B. „ca. Juli 2027“ – damit wird schon gerechnet; das genaue Datum tragt ihr ein, sobald es fix ist.'),
       h('p', { class: 'leise fk-tipp' }, 'Ist das Datum vorbei, wird das Ziel automatisch abgeschlossen: das Gesparte gilt als ausgegeben, das Ziel verschwindet aus der Liste und steht nur noch im Verlauf. Hat sich das Datum verschoben, lässt es sich dort mit ✎ und einem neuen Datum wieder öffnen.'),
     );
+    const beendenKnopf = original && !abgeschlossen ? h('button', { class: 'knopf klein', type: 'button', disabled: aus, onClick: () => oeffneZielBeenden({ store }, original, () => b.schliessen()) }, 'Ziel beenden') : null;
+    // „Löschen“ in einer eigenen Zeile links unter den anderen Knöpfen (abgesetzt; während des Löschens sind alle Knöpfe aus)
+    const loeschenKnopf = loeschFrage
+      ? h('button', { class: 'knopf klein gefahr sz-loeschen', type: 'button', disabled: aus, onClick: () => zielLoeschenFragen({ store }, original, () => b.schliessen(), [loeschenKnopf, beendenKnopf, speichernKnopf]) }, loeschFrage.knopf)
+      : null;
     return [
       gesperrt ? gesperrtHinweis(gesperrt) : null,
       abgeschlossen ? h('p', { class: 'blatt-text sz-wieder' }, 'Nach dem Zieldatum abgeschlossen. Mit einem neuen Datum ab dem laufenden Monat läuft es weiter – das Gesparte bleibt beim Ziel.') : null,
       felder,
-      h(
-        'div',
-        { class: 'knopfzeile' },
-        original && loeschbar
-          ? h('button', { class: 'knopf klein gefahr', type: 'button', disabled: aus, onClick: () => zielLoeschenFragen({ store }, original, () => b.schliessen()) }, 'Endgültig löschen')
-          : null,
-        original && !abgeschlossen ? h('button', { class: 'knopf klein', type: 'button', disabled: aus, onClick: () => oeffneZielBeenden({ store }, original, () => b.schliessen()) }, 'Ziel beenden') : null,
-        speichernKnopf,
-      ),
+      h('div', { class: 'knopfzeile' }, beendenKnopf, speichernKnopf),
+      loeschenKnopf ? h('div', { class: 'knopfzeile loeschen-zeile' }, loeschenKnopf) : null,
     ];
   }
 
@@ -239,17 +240,41 @@ export function zurueckZuFreiFragen({ store }, ziel, knoepfe = []) {
   });
 }
 
-/** Rückfrage „Endgültig löschen?“ (nur für Ziele, die nie Geld bekommen haben); `knoepfe` werden während des Löschens gesperrt. */
+/**
+ * Rückfrage vor dem Löschen (Text aus zielLoeschFrage: ein laufendes Ziel mit Geld sagt, wohin das Geld geht); danach „Gelöscht ✓ ·
+ * Rückgängig“. `knoepfe` werden während des Löschens gesperrt (bei einem Fehler wieder frei).
+ */
 export function zielLoeschenFragen({ store }, ziel, danach = () => {}, knoepfe = []) {
+  const frage = zielLoeschFrage(store.getState(), store.heute(), ziel.id);
+  if (!frage) {
+    toast(TEXT_NICHT_LOESCHBAR, { art: 'fehler' });
+    return null;
+  }
   return bestaetigen({
-    titel: 'Endgültig löschen?',
-    text: `„${ziel.name}“ hat nie Geld bekommen und wird endgültig gelöscht. Das lässt sich nicht rückgängig machen.`,
-    ja: 'Endgültig löschen',
+    titel: frage.titel,
+    text: frage.text,
+    ja: frage.ja,
     gefahr: true,
     beiJa: async () => {
       sperren(knoepfe, true);
-      if (erledigt(await sicher(store.zielLoeschen(ziel.id)), 'Gelöscht ✓')) danach();
+      if (geloeschtMelden(await sicher(store.zielLoeschen(ziel.id)))) danach();
       else sperren(knoepfe, false); // nochmal versuchen
+    },
+  });
+}
+
+/**
+ * „Rückgängig“ einer Verschiebung aus „Frei“ (im Verlauf): erst die Rückfrage, dann „Gelöscht ✓ · Rückgängig“ (das holt sie zurück).
+ * `knoepfe` werden währenddessen gesperrt.
+ */
+export function verschiebungRueckgaengigFragen({ store }, verschiebung, knoepfe = []) {
+  return bestaetigen({
+    titel: 'Verschiebung rückgängig machen?',
+    text: verschiebung.frage,
+    ja: 'Rückgängig machen',
+    beiJa: async () => {
+      sperren(knoepfe, true);
+      if (!geloeschtMelden(await sicher(store.verschiebungLoeschen(verschiebung.id)))) sperren(knoepfe, false); // nochmal versuchen
     },
   });
 }

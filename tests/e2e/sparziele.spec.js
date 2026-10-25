@@ -5,7 +5,7 @@
 // oder aus hier erfundenen Beispielen; die Demo-Ziele (src/app/seed.js) sind erfunden.
 import { test, expect, starteDemo, starteGoogleVerbunden, erwarteToast, fehlerToastsZaehlen, NETZFEHLER, WERKTAG_DATUM } from './hilfen.js';
 import { seedDemo } from '../../src/app/seed.js';
-import { TEXT_ZIELE_GESPERRT, TEXT_ZIELE_NICHT_GELADEN, sparVerlauf, zielBeenden, zielSchluss } from '../../src/domain/sparziele.js';
+import { TEXT_ZIELE_GESPERRT, TEXT_ZIELE_NICHT_GELADEN, sparVerlauf, zielBeenden, zielLoeschen, zielSchluss } from '../../src/domain/sparziele.js';
 import { betragText, deltaText } from '../../src/domain/konto.js';
 import { kontoZuEreignis, zieleZuEreignis } from '../../src/calendar/mapping.js';
 
@@ -145,7 +145,67 @@ test.describe('Sparziele im Konto-Tab (Demo)', () => {
     await expect(karte(page, 'Sommerurlaub').locator('.sz-stand-text')).toContainText(`${betragText(URLAUB.gespart + 10_000)} von`);
     await expect(kopf(page).locator('.fk-gross')).toHaveText(betragText(v.summeZiele + 10_000));
     const oktober = page.locator('.sz-monat[data-monat="2026-10"]');
-    await expect(oktober.locator('.sz-verschoben')).toHaveText(`💜 → ${URLAUB.emoji} Sommerurlaub (aus Frei verschoben)+100 €`);
+    await expect(oktober.locator('.sz-verschoben > span')).toHaveText(`💜 → ${URLAUB.emoji} Sommerurlaub (aus Frei verschoben)`);
+    await expect(oktober.locator('.sz-verschoben > b')).toHaveText('+100 €');
+    await expect(oktober.locator('.sz-verschoben').getByRole('button', { name: 'Rückgängig' })).toBeVisible();
+  });
+
+  test('Verschiebung „Rückgängig“: erst die Rückfrage, dann geht das Geld zurück zu Frei; „Gelöscht ✓ · Rückgängig“ holt sie wieder', async ({ page }) => {
+    await oeffneSparziele(page);
+    await page.getByRole('button', { name: 'Zu Ziel verschieben' }).click();
+    const d = dialog(page, 'Zu Ziel verschieben');
+    await d.getByLabel('Zu welchem Ziel?').selectOption({ label: `${URLAUB.emoji} Sommerurlaub (offen ${betragText(URLAUB.offen)})` });
+    await d.getByLabel('Betrag in Euro').fill('100');
+    await d.getByRole('button', { name: 'Verschieben' }).click();
+    await expect(frei(page)).toHaveText(betragText(v.frei - 10_000));
+    const zeileV = page.locator('.sz-monat[data-monat="2026-10"] .sz-verschoben');
+    await zeileV.getByRole('button', { name: 'Rückgängig' }).click();
+    const frage = dialog(page, 'Verschiebung rückgängig machen?');
+    await expect(frage).toContainText(`100 € gehen von „${URLAUB.emoji} Sommerurlaub“ zurück zu „Frei verfügbar“.`);
+    await frage.getByRole('button', { name: 'Abbrechen' }).click();
+    await expect(frei(page)).toHaveText(betragText(v.frei - 10_000));
+    const toasts = await fehlerToastsZaehlen(page);
+    await zeileV.getByRole('button', { name: 'Rückgängig' }).click();
+    await dialog(page, 'Verschiebung rückgängig machen?').getByRole('button', { name: 'Rückgängig machen' }).click();
+    const meldung = page.locator('.toast').filter({ hasText: 'Gelöscht ✓' });
+    await expect(meldung).toBeVisible();
+    await expect(frei(page)).toHaveText(betragText(v.frei));
+    await expect(zeileV).toHaveCount(0);
+    await expect(karte(page, 'Sommerurlaub').locator('.sz-stand-text')).toContainText(`${betragText(URLAUB.gespart)} von`);
+    // „Rückgängig“ in der Meldung: die Verschiebung ist wieder da
+    await meldung.getByRole('button', { name: 'Rückgängig' }).click();
+    await erwarteToast(page, 'Wiederhergestellt ✓');
+    await expect(frei(page)).toHaveText(betragText(v.frei - 10_000));
+    await expect(zeileV).toHaveCount(1);
+    expect(await toasts.anzahl()).toBe(0);
+    await page.reload();
+    await expect(frei(page)).toHaveText(betragText(v.frei - 10_000));
+  });
+
+  test('gefördertes laufendes Ziel löschen: die Rückfrage sagt, wohin das Geld geht; zurückgelegt + Frei bleibt; „Rückgängig“ holt es zurück', async ({ page }) => {
+    await oeffneSparziele(page);
+    const ohne = sparVerlauf(zielLoeschen(demo.ziele, 'demo0002', { heute: WERKTAG_DATUM, konto: demo.konto }), demo.konto, WERKTAG_DATUM);
+    expect(ohne.frei + ohne.summeZiele).toBe(v.frei + v.summeZiele);
+    await karte(page, 'Sommerurlaub').getByRole('button', { name: 'Sommerurlaub ändern' }).click();
+    await dialog(page, 'Sparziel ändern').getByRole('button', { name: 'Löschen', exact: true }).click();
+    const frage = dialog(page, 'Sparziel löschen?');
+    await expect(frage).toContainText(`„Sommerurlaub“ wird gelöscht. Das bisher zugeteilte Geld (${betragText(URLAUB.gespart)}) wird auf die anderen Ziele und „Frei“ verteilt.`);
+    const toasts = await fehlerToastsZaehlen(page);
+    await frage.getByRole('button', { name: 'Löschen', exact: true }).click();
+    const meldung = page.locator('.toast').filter({ hasText: 'Gelöscht ✓' });
+    await expect(meldung.getByRole('button', { name: 'Rückgängig' })).toBeVisible();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(karte(page, 'Sommerurlaub')).toHaveCount(0);
+    await expect(frei(page)).toHaveText(betragText(ohne.frei));
+    await expect(kopf(page).locator('.fk-gross')).toHaveText(betragText(ohne.summeZiele));
+    await meldung.getByRole('button', { name: 'Rückgängig' }).click();
+    await erwarteToast(page, 'Wiederhergestellt ✓');
+    await expect(karte(page, 'Sommerurlaub')).toHaveCount(1);
+    await expect(frei(page)).toHaveText(betragText(v.frei));
+    await expect(kopf(page).locator('.fk-gross')).toHaveText(betragText(v.summeZiele));
+    expect(await toasts.anzahl()).toBe(0);
+    await page.reload();
+    await expect(karte(page, 'Sommerurlaub').locator('.sz-stand-text')).toContainText(`${betragText(URLAUB.gespart)} von`);
   });
 
   test('Ziel beenden → „Geld zurück zu Frei“: Frei wächst um das Gesparte, das Ziel steht im Verlauf', async ({ page }) => {
@@ -233,7 +293,7 @@ test.describe('Sparziele im Konto-Tab (Demo)', () => {
     }
   });
 
-  test('abgeschlossenes Ziel mit Geld: nur Ausblenden / Einblenden; Ziel ohne Geld: „Endgültig löschen“ mit Rückfrage', async ({ page }) => {
+  test('abgeschlossenes Ziel mit Geld: nur Ausblenden / Einblenden; laufendes Ziel: „Löschen“ mit Rückfrage', async ({ page }) => {
     await oeffneSparziele(page);
     const sofa = page.locator('.sz-fertig[data-id="demo0003"]');
     await expect(sofa.getByRole('button', { name: 'Endgültig löschen' })).toHaveCount(0);
@@ -245,7 +305,7 @@ test.describe('Sparziele im Konto-Tab (Demo)', () => {
     await erwarteToast(page, 'Eingeblendet ✓');
     await expect(page.locator('.sz-fertig[data-id="demo0003"]').getByRole('button', { name: 'Ausblenden' })).toBeVisible();
 
-    // ein versehentlich angelegtes Ziel (nie Geld bekommen) lässt sich endgültig löschen – erst nach der Rückfrage
+    // ein versehentlich angelegtes Ziel (noch kein Geld) lässt sich löschen – erst nach der Rückfrage
     await page.getByRole('button', { name: '＋ Neues Sparziel' }).click();
     const neu = dialog(page, 'Neues Sparziel');
     await neu.getByLabel('Name', { exact: true }).fill('Versehen');
@@ -254,16 +314,18 @@ test.describe('Sparziele im Konto-Tab (Demo)', () => {
     await expect(neu).toBeHidden();
     await expect(karte(page, 'Auto').getByRole('button', { name: 'Auto ändern' })).toBeVisible();
     await karte(page, 'Auto').getByRole('button', { name: 'Auto ändern' }).click();
-    await expect(dialog(page, 'Sparziel ändern').getByRole('button', { name: 'Endgültig löschen' })).toHaveCount(0); // hat Geld bekommen
+    // laufend und gefördert: seit 1.1.1 ebenfalls löschbar (das Geld wird neu verteilt)
+    await expect(dialog(page, 'Sparziel ändern').getByRole('button', { name: 'Löschen', exact: true })).toBeVisible();
+    await expect(dialog(page, 'Sparziel ändern').getByRole('button', { name: 'Endgültig löschen' })).toHaveCount(0);
     await page.keyboard.press('Escape');
     await karte(page, 'Versehen').getByRole('button', { name: 'Versehen ändern' }).click();
-    await dialog(page, 'Sparziel ändern').getByRole('button', { name: 'Endgültig löschen' }).click();
-    const frage = dialog(page, 'Endgültig löschen?');
-    await expect(frage).toContainText('„Versehen“ hat nie Geld bekommen');
+    await dialog(page, 'Sparziel ändern').getByRole('button', { name: 'Löschen', exact: true }).click();
+    const frage = dialog(page, 'Sparziel löschen?');
+    await expect(frage).toContainText('„Versehen“ hat noch kein Geld bekommen und wird gelöscht.');
     await frage.getByRole('button', { name: 'Abbrechen' }).click();
     await expect(karte(page, 'Versehen')).toHaveCount(1);
-    await dialog(page, 'Sparziel ändern').getByRole('button', { name: 'Endgültig löschen' }).click();
-    await dialog(page, 'Endgültig löschen?').getByRole('button', { name: 'Endgültig löschen' }).click();
+    await dialog(page, 'Sparziel ändern').getByRole('button', { name: 'Löschen', exact: true }).click();
+    await dialog(page, 'Sparziel löschen?').getByRole('button', { name: 'Löschen', exact: true }).click();
     await erwarteToast(page, 'Gelöscht ✓');
     await expect(karte(page, 'Versehen')).toHaveCount(0);
     await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -301,7 +363,7 @@ test.describe('Sparziele im Konto-Tab (Demo)', () => {
 test.describe('Sparziele: Rückfrage mit Animation (Doppeltipp) und Grenzen beim Verschieben', () => {
   test.use({ contextOptions: { reducedMotion: 'no-preference' } }); // das Blatt gleitet hinaus: ein zweiter Tipp träfe sonst noch den Knopf
 
-  test('„Zu Ziel verschieben“ über dem offenen Betrag → klare Meldung (m-4); Doppeltipp auf „Endgültig löschen“ löscht genau einmal (m-2)', async ({ page }) => {
+  test('„Zu Ziel verschieben“ über dem offenen Betrag → klare Meldung (m-4); Doppeltipp auf „Löschen“ löscht genau einmal (m-2)', async ({ page }) => {
     await oeffneSparziele(page);
     await page.getByRole('button', { name: '＋ Neues Sparziel' }).click();
     const neu = dialog(page, 'Neues Sparziel');
@@ -324,8 +386,8 @@ test.describe('Sparziele: Rückfrage mit Animation (Doppeltipp) und Grenzen beim
 
     const toasts = await fehlerToastsZaehlen(page);
     await karte(page, 'Kleinigkeit').getByRole('button', { name: 'Kleinigkeit ändern' }).click();
-    await dialog(page, 'Sparziel ändern').getByRole('button', { name: 'Endgültig löschen' }).click();
-    await dialog(page, 'Endgültig löschen?').getByRole('button', { name: 'Endgültig löschen' }).dblclick();
+    await dialog(page, 'Sparziel ändern').getByRole('button', { name: 'Löschen', exact: true }).click();
+    await dialog(page, 'Sparziel löschen?').getByRole('button', { name: 'Löschen', exact: true }).dblclick();
     await erwarteToast(page, 'Gelöscht ✓');
     await expect(karte(page, 'Kleinigkeit')).toHaveCount(0);
     await page.waitForTimeout(600); // ein zweites Löschen hätte jetzt „gibt es nicht mehr“ gemeldet

@@ -243,7 +243,7 @@ test('nach „Abwesend“ öffnet „Benachrichtigen“ mit „Familiäre Gründ
   // derselbe Tag noch einmal, diesmal „Anwesend“: die Meldung kommt ohne „Benachrichtigen“
   await page.getByRole('button', { name: 'Ändern' }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Eintrag löschen' }).click();
-  await erwarteToast(page, 'Eintrag gelöscht');
+  await erwarteToast(page, 'Gelöscht ✓');
   await page.keyboard.press('Escape');
   await page.locator('.aktionen button', { hasText: /Anwesend\s*mit Mittagessen/ }).click();
   await erwarteToast(page, 'Eingetragen ✓');

@@ -62,7 +62,7 @@ test('Tag antippen: Tagesblatt mit Einträgen und „Eintragen“; Typ setzen, i
 
   await tag.click();
   await page.getByRole('dialog').getByRole('button', { name: 'Eintrag löschen' }).click();
-  await erwarteToast(page, 'Eintrag gelöscht');
+  await erwarteToast(page, 'Gelöscht ✓');
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(tag.locator('i')).toHaveCount(0);
@@ -80,6 +80,70 @@ test('Tagesblatt im Urlaub: Urlaub hat Vorrang, Löschen fragt nach', async ({ p
   await frage.getByRole('button', { name: 'Abbrechen' }).click();
   await expect(frage).toHaveCount(0);
   await expect(blatt.locator('.zeile').filter({ hasText: 'Urlaub' })).toBeVisible();
+});
+
+test.describe('Löschen im Tagesblatt mit „Rückgängig“ (1.1.1)', () => {
+  const meldung = (page) => page.locator('.toast').filter({ hasText: 'Gelöscht ✓' });
+
+  test('Termin: nach der Rückfrage gelöscht; „Rückgängig“ bringt ihn zurück (bleibt nach dem Neuladen)', async ({ page }) => {
+    await starteDemo(page, { route: '#/monat' });
+    await zelle(page, 'Donnerstag, 15. Oktober').click();
+    const blatt = page.getByRole('dialog', { name: 'Donnerstag, 15. Oktober' });
+    const termin = blatt.locator('.zeile').filter({ hasText: 'Kinderarzt' });
+    await termin.getByRole('button', { name: 'Löschen' }).click();
+    await page.getByRole('dialog', { name: 'Termin löschen?' }).getByRole('button', { name: 'Termin löschen' }).click();
+    await expect(meldung(page).getByRole('button', { name: 'Rückgängig' })).toBeVisible();
+    await expect(termin).toHaveCount(0);
+    await meldung(page).getByRole('button', { name: 'Rückgängig' }).click();
+    await erwarteToast(page, 'Wiederhergestellt ✓');
+    await expect(termin).toHaveCount(1);
+    await page.reload();
+    await zelle(page, 'Donnerstag, 15. Oktober').click();
+    await expect(page.getByRole('dialog', { name: 'Donnerstag, 15. Oktober' }).locator('.zeile').filter({ hasText: 'Kinderarzt' })).toHaveCount(1);
+  });
+
+  test('Sache (keine Serie): gelöscht und mit „Rückgängig“ wieder da', async ({ page }) => {
+    await starteDemo(page, { route: '#/monat' });
+    await zelle(page, 'Montag, 19. Oktober').click();
+    const blatt = page.getByRole('dialog', { name: 'Montag, 19. Oktober' });
+    const sache = blatt.locator('.zeile').filter({ has: page.getByRole('button', { name: 'Erledigt ✓' }) });
+    await expect(sache).toHaveCount(1);
+    await sache.getByRole('button', { name: 'Löschen' }).click();
+    await page.getByRole('dialog', { name: 'Sache löschen?' }).getByRole('button', { name: 'Löschen' }).click();
+    await expect(meldung(page).getByRole('button', { name: 'Rückgängig' })).toBeVisible();
+    await expect(sache).toHaveCount(0);
+    await meldung(page).getByRole('button', { name: 'Rückgängig' }).click();
+    await erwarteToast(page, 'Wiederhergestellt ✓');
+    await expect(sache).toHaveCount(1);
+  });
+
+  test('Urlaub und Tageseintrag: gelöscht und mit „Rückgängig“ wieder da', async ({ page }) => {
+    await starteDemo(page, { route: '#/monat' });
+    // Tageseintrag
+    const tag = zelle(page, 'Donnerstag, 22. Oktober');
+    await tag.click();
+    await eintragenChips(page.getByRole('dialog')).filter({ hasText: 'Krank' }).click();
+    await erwarteToast(page, 'Gespeichert ✓');
+    await page.getByRole('dialog').getByRole('button', { name: 'Eintrag löschen' }).click();
+    await expect(meldung(page).getByRole('button', { name: 'Rückgängig' })).toBeVisible();
+    await expect(tag.locator('i')).toHaveCount(0);
+    await meldung(page).getByRole('button', { name: 'Rückgängig' }).click();
+    await erwarteToast(page, 'Wiederhergestellt ✓');
+    await expect(tag.locator('i')).toHaveText('🤒');
+    await page.keyboard.press('Escape');
+
+    // Urlaub (der ganze Zeitraum)
+    await page.getByRole('button', { name: 'Nächster Monat' }).click();
+    await zelle(page, 'Mittwoch, 4. November').click();
+    const blatt = page.getByRole('dialog', { name: 'Mittwoch, 4. November' });
+    await blatt.locator('.zeile').filter({ hasText: 'Urlaub' }).getByRole('button', { name: 'Löschen' }).click();
+    await page.getByRole('dialog', { name: 'Urlaub löschen?' }).getByRole('button', { name: 'Urlaub löschen' }).click();
+    await expect(meldung(page).getByRole('button', { name: 'Rückgängig' })).toBeVisible();
+    await expect(blatt.locator('.zeile').filter({ hasText: 'Urlaub' })).toHaveCount(0);
+    await meldung(page).getByRole('button', { name: 'Rückgängig' }).click();
+    await erwarteToast(page, 'Wiederhergestellt ✓');
+    await expect(blatt.locator('.zeile').filter({ hasText: 'Urlaub' })).toHaveCount(1);
+  });
 });
 
 test('Termin im Tagesblatt ändern führt ins Formular', async ({ page }) => {

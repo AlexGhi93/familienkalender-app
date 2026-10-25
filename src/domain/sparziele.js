@@ -26,7 +26,10 @@
 // in einzelnen Zielen oder Verschiebungen sind dagegen sicher: solche Einträge bleiben als `fremd` unverändert erhalten.
 // Jede Änderung ist eine reine Funktion Daten → Daten, die (nach HTTP 412) auf die NEUESTE Fassung angewendet wird: das Argument wird
 // nie verändert, zweimal angewendet = einmal angewendet. Unlesbare Daten (kaputtes JSON, andere Version) werden nie überschrieben.
-// Endgültig gelöscht werden darf nur ein Ziel, das nie Geld bekommen hat (zielLoeschbar); alle anderen lassen sich nur ausblenden.
+// Löschen (zielLoeschbar): ein LAUFENDES Ziel immer – auch mit Geld; die Rechnung verteilt dann, als hätte es nie existiert (sein Anteil
+// geht an die anderen Ziele und „Frei“). Ein ABGESCHLOSSENES Ziel nur, wenn es nie Geld bekommen hat: sonst steckt seine Zahlung im
+// Kontostand, und ohne das Ziel müssten die anderen sie tragen – es lässt sich nur ausblenden. Verschiebungen aus „Frei“ zu einem
+// laufenden Ziel lassen sich rückgängig machen (verschiebungLoeschen). Für „Rückgängig“ nach dem Löschen: zielSpur → zielWiederherstellen.
 // Alles, was ein Datum „heute“ braucht, wirft sofort bei einem ungültigen (kein Text 'JJJJ-MM-TT'), siehe heutePruefen.
 
 import { isValidDate } from './dates.js';
@@ -47,9 +50,13 @@ export const ZIEL_EMOJIS = Object.freeze(['🚗', '🏖️', '🏠', '🎁', '�
 /** Arten, ein Ziel von Hand zu beenden. */
 export const ZIEL_ENDE_ARTEN = Object.freeze(['ausgegeben', 'frei']);
 
-export const TEXT_ZIELE_VOLL = 'Die Sparziele sind voll: im Kalender ist kein Platz für ein weiteres Ziel. Ziele, die nie Geld bekommen haben, lassen sich löschen.';
+export const TEXT_ZIELE_VOLL = 'Die Sparziele sind voll: im Kalender ist kein Platz für ein weiteres Ziel. Laufende Ziele und Ziele, die nie Geld bekommen haben, lassen sich löschen.';
 export const TEXT_VERSCHIEBUNGEN_VOLL = 'Kein Platz mehr für weitere Verschiebungen aus „Frei“ – der Speicher der Sparziele im Kalender ist voll.';
-export const TEXT_NICHT_LOESCHBAR = 'Dieses Ziel hat schon Geld bekommen – es kann nur ausgeblendet werden.';
+export const TEXT_NICHT_LOESCHBAR = 'Dieses Ziel ist abgeschlossen und hat Geld bekommen – es kann nur ausgeblendet werden.';
+export const TEXT_VERSCHIEBUNG_ABGESCHLOSSEN = 'Dieses Sparziel ist schon abgeschlossen – die Verschiebung gehört zu seinem Abschluss und lässt sich nicht mehr rückgängig machen.';
+const TEXT_ZIEL_WEG = 'Dieses Sparziel gibt es nicht mehr.';
+const TEXT_KENNUNG_NEUER = 'Das lässt sich nicht zurückholen: das andere Telefon hat inzwischen mit einer neueren App-Version etwas unter derselben Kennung gespeichert.';
+const TEXT_ZIEL_NEUERE_VERSION = 'Dieses Sparziel hat das andere Telefon mit einer neueren App-Version geändert. Bitte die App aktualisieren.';
 export const TEXT_NUR_MIT_NEUEM_DATUM = 'Ein nach dem Zieldatum abgeschlossenes Ziel lässt sich nur mit einem neuen Datum ab dem laufenden Monat wieder öffnen.';
 export const TEXT_NUR_ABGESCHLOSSENE = 'Nur abgeschlossene Sparziele lassen sich ausblenden.';
 
@@ -354,13 +361,17 @@ function spurenlos(verlauf, id) {
 const ohneZiel = (daten, id) => baue(daten, (daten.z ?? []).filter((z) => z.id !== id), (daten.m ?? []).filter((v) => v.ziel !== id));
 
 /**
- * Darf das Ziel `id` endgültig gelöscht werden? Nur, wenn es in der ganzen Geschichte nie Geld bekommen hat (jede Zuteilung und jede
- * Verschiebung zu ihm ist 0 – z. B. versehentlich angelegt) UND die Rechnung ohne es in jedem Monat genau gleich bleibt (auch keine
- * Rundung verschiebt sich). Laufend oder abgeschlossen ist egal. Unbekannte Kennung → false. Rein; `heute` wie bei sparVerlauf.
+ * Darf das Ziel `id` endgültig gelöscht werden? Ein am Tag `heute` LAUFENDES Ziel immer (auch mit Geld: die Rechnung verteilt danach, als
+ * hätte es nie existiert – zurückgelegt + Frei bleibt gleich). Ein ABGESCHLOSSENES (automatisch oder von Hand) nur, wenn es in der ganzen
+ * Geschichte nie Geld bekommen hat (jede Zuteilung und jede Verschiebung zu ihm ist 0 – z. B. versehentlich angelegt) UND die Rechnung
+ * ohne es in jedem Monat genau gleich bleibt (auch keine Rundung verschiebt sich). Unbekannte Kennung → false. Rein; `heute` wie bei
+ * sparVerlauf.
  */
 export function zielLoeschbar(daten, konto, heute, id) {
   heutePruefen(heute);
-  if (!(daten?.z ?? []).some((z) => z.id === id)) return false;
+  const ziel = (daten?.z ?? []).find((z) => z.id === id);
+  if (!ziel) return false;
+  if (!abgeschlossenAm(ziel, heute)) return true;
   const mitZiel = sparVerlauf(daten, konto, heute);
   const bekommen = mitZiel.monate.some((m) => m.zuteilung.some((t) => t.ziel === id && t.cents !== 0) || m.verschoben.some((v) => v.ziel === id && v.cents !== 0));
   if (bekommen) return false;
@@ -376,6 +387,102 @@ export function zielLoeschen(daten, id, { heute, konto } = {}) {
   if (!(daten.z ?? []).some((z) => z.id === id)) return daten;
   if (!zielLoeschbar(daten, konto, heute, id)) throw new Error(TEXT_NICHT_LOESCHBAR);
   return ohneZiel(daten, id);
+}
+
+/**
+ * Was zielLoeschen von Ziel `id` entfernen würde – für „Rückgängig“: { ziel, stelle, verschiebungen: [{ verschiebung, stelle }] }
+ * (`stelle` = Platz in der Liste); unbekannte Kennung → null.
+ */
+export function zielSpur(daten, id) {
+  const stelle = (daten?.z ?? []).findIndex((z) => z.id === id);
+  if (stelle < 0) return null;
+  const verschiebungen = [];
+  (daten.m ?? []).forEach((v, i) => {
+    if (v.ziel === id) verschiebungen.push({ verschiebung: v, stelle: i });
+  });
+  return { ziel: daten.z[stelle], stelle, verschiebungen };
+}
+
+/** Gehört die Kennung `id` einem Eintrag, den nur eine neuere Version versteht (`art` 'z' = Ziele, 'm' = Verschiebungen)? */
+const fremdeKennung = (daten, id, art) => (daten?.fremd?.[art] ?? []).some((k) => k?.i === id);
+
+/** `liste` mit `eintrag` an der Stelle `stelle` (begrenzt auf 0 … Länge). */
+const eingefuegt = (liste, eintrag, stelle) => {
+  const i = Math.min(Math.max(0, Number.isInteger(stelle) ? stelle : liste.length), liste.length);
+  return [...liste.slice(0, i), eintrag, ...liste.slice(i)];
+};
+
+/**
+ * „Rückgängig“ nach zielLoeschen: holt das Ziel aus `spur` (siehe zielSpur) an seine Stelle zurück, dazu seine Verschiebungen an ihren
+ * Stellen – unverändert (Startmonat, Abschluss, Beträge). Gibt es das Ziel schon wieder → dieselben Daten (wiederholbar). Wirft mit
+ * klarer Meldung, wenn die Kennung inzwischen einem Eintrag einer neueren Version gehört, wenn schon MAX_ZIELE_AKTIV Ziele laufen oder
+ * wenn der Platz im Kalender nicht reicht. `beginn` bleibt, wie es war (es ist beim Löschen nie nach hinten gerückt).
+ */
+export function zielWiederherstellen(daten, spur, { heute } = {}) {
+  heutePruefen(heute);
+  const ziel = normalisiereZiel(spur?.ziel);
+  if (!ziel) throw new Error('Ungültiges Sparziel.');
+  const liste = daten.z ?? [];
+  if (liste.some((z) => z.id === ziel.id)) return daten;
+  if (fremdeKennung(daten, ziel.id, 'z')) throw new Error(TEXT_KENNUNG_NEUER);
+  if (!abgeschlossenAm(ziel, heute)) {
+    const laufend = liste.filter((z) => !abgeschlossenAm(z, heute)).length + (daten.fremd?.z?.length ?? 0);
+    if (laufend >= MAX_ZIELE_AKTIV) throw new Error(`Höchstens ${MAX_ZIELE_AKTIV} laufende Sparziele.`);
+  }
+  let m = daten.m ?? [];
+  for (const { verschiebung, stelle } of spur.verschiebungen ?? []) {
+    const v = normalisiereVerschiebung(verschiebung);
+    if (!v || v.ziel !== ziel.id || m.some((x) => x.id === v.id)) continue;
+    if (fremdeKennung(daten, v.id, 'm')) throw new Error(TEXT_KENNUNG_NEUER);
+    m = eingefuegt(m, v, stelle);
+  }
+  if (m.length + (daten.fremd?.m?.length ?? 0) > MAX_VERSCHIEBUNGEN) throw new Error(TEXT_VERSCHIEBUNGEN_VOLL);
+  return mit(daten, eingefuegt(liste, ziel, spur.stelle), m, true);
+}
+
+/**
+ * Das Ziel einer Verschiebung für Rückgängig/Zurückholen: es muss am Tag `heute` noch laufen (sonst TEXT_VERSCHIEBUNG_ABGESCHLOSSEN);
+ * ein Ziel einer neueren Version → klare Meldung. Gibt es das Ziel gar nicht: mit `fehltWirft` eine Meldung, sonst null.
+ */
+function laufendesZielFuer(daten, zielId, heute, { fehltWirft }) {
+  const z = (daten.z ?? []).find((x) => x.id === zielId);
+  if (!z) {
+    if (fremdeKennung(daten, zielId, 'z')) throw new Error(TEXT_ZIEL_NEUERE_VERSION);
+    if (fehltWirft) throw new Error(TEXT_ZIEL_WEG);
+    return null;
+  }
+  if (abgeschlossenAm(z, heute)) throw new Error(TEXT_VERSCHIEBUNG_ABGESCHLOSSEN);
+  return z;
+}
+
+/**
+ * Macht die Verschiebung `id` aus „Frei“ rückgängig: sie fällt weg, die Rechnung gibt ihr Geld zurück an „Frei“ (zurückgelegt + Frei
+ * bleibt gleich). Nur für ein Ziel, das am Tag `heute` noch läuft (sonst TEXT_VERSCHIEBUNG_ABGESCHLOSSEN – das Geld gehört dann zu seinem
+ * Abschluss), nicht für ein Ziel einer neueren Version. Unbekannte Kennung → dieselben Daten (wiederholbar). Rein.
+ */
+export function verschiebungLoeschen(daten, id, { heute } = {}) {
+  heutePruefen(heute);
+  const m = daten.m ?? [];
+  const v = m.find((x) => x.id === id);
+  if (!v) return daten;
+  laufendesZielFuer(daten, v.ziel, heute, { fehltWirft: false });
+  return mit(daten, daten.z ?? [], m.filter((x) => x.id !== id), false);
+}
+
+/**
+ * „Rückgängig“ nach verschiebungLoeschen: `verschiebung` kommt unverändert an ihre Stelle `stelle` zurück (die Rechnung deckelt sie wie
+ * immer auf das verfügbare „Frei“). Schon da → dieselben Daten. Das Ziel muss es noch geben und es muss laufen; Platz wie beim Verschieben.
+ */
+export function verschiebungWiederherstellen(daten, { verschiebung, stelle } = {}, { heute } = {}) {
+  heutePruefen(heute);
+  const v = normalisiereVerschiebung(verschiebung);
+  if (!v) throw new Error('Ungültige Verschiebung.');
+  const m = daten.m ?? [];
+  if (m.some((x) => x.id === v.id)) return daten;
+  if (fremdeKennung(daten, v.id, 'm')) throw new Error(TEXT_KENNUNG_NEUER);
+  laufendesZielFuer(daten, v.ziel, heute, { fehltWirft: true });
+  if (m.length + (daten.fremd?.m?.length ?? 0) >= MAX_VERSCHIEBUNGEN) throw new Error(`Höchstens ${MAX_VERSCHIEBUNGEN} Verschiebungen.`);
+  return mit(daten, daten.z ?? [], eingefuegt(m, v, stelle), true, TEXT_VERSCHIEBUNGEN_VOLL);
 }
 
 /**

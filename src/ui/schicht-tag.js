@@ -1,6 +1,7 @@
 // Tagesblatt des Schichtplans (ein Tipp auf einen Tag ohne Pinsel): beide Personen, gleich welcher Filter auf der Seite gilt.
 // Je Person: die eingetragene Art (mit Zeiten, ☾ bei Nacht), Knöpfe der aktiven Dienst-Arten und „Frei“ (ein Tipp speichert sofort),
-// eine Notiz (eine Zeile, gespeichert beim Verlassen des Feldes oder mit Enter) und die Zusätze des Tages mit ✕; je Zusatz-Art ein
+// eine Notiz (eine Zeile, gespeichert beim Verlassen des Feldes oder mit Enter) und die Zusätze des Tages mit ✕ (danach „Gelöscht ✓ ·
+// Rückgängig“); je Zusatz-Art ein
 // Knopf „＋ <Name>“ (z. B. „＋ Dienstbesprechung“), der gleich Von/Bis öffnet, darunter der Hinweis auf die Erinnerung – oder eine
 // Warnung, wenn laut Geräte-Register (ui.push) kein Telefon der Person gehört bzw. dieses Telefon das nicht sehen kann.
 import { h } from './dom.js';
@@ -9,6 +10,7 @@ import { zeitFeld } from './eingabefelder.js';
 import { erinnerungHinweis, schichtTagModel } from '../app/views/schicht-model.js';
 import { MAX_NOTIZ } from '../domain/schicht.js';
 import { musterKlassen } from './schicht-pinsel.js';
+import { geloeschtMelden, sicherLoeschen } from './fortschritt.js';
 
 const ALLGEMEINER_FEHLER = 'Das hat nicht geklappt. Bitte noch einmal versuchen.';
 const gleicheNotiz = (a, b) => a.replace(/\s+/g, ' ').trim() === b;
@@ -134,7 +136,16 @@ export function oeffneSchichtTag({ store, ui = null }, datum) {
           ' ',
           h(
             'button',
-            { class: 'sp-tag-weg', type: 'button', 'aria-label': `${z.text} entfernen`, onClick: () => aendern(store.schichtZusatzEntfernen(jm, tag, p.person, { k: z.k, von: z.von, bis: z.bis })) },
+            {
+              class: 'sp-tag-weg',
+              type: 'button',
+              'aria-label': `${z.text} entfernen`,
+              onClick: async (ev) => {
+                const knopf = ev.currentTarget; // nach dem `await` ist currentTarget schon null
+                knopf.disabled = true; // genau einmal (das Neuzeichnen ersetzt den Knopf)
+                if (!geloeschtMelden(await sicherLoeschen(store.schichtZusatzLoeschen(jm, tag, p.person, { k: z.k, von: z.von, bis: z.bis })))) knopf.disabled = false;
+              },
+            },
             '✕',
           ),
         ),

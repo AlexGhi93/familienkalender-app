@@ -3,6 +3,7 @@ import { bestaetigen, blatt, chip, farbe, toast } from './components.js';
 import { tagModel } from '../app/views/tag-model.js';
 import { datumLang } from '../app/format-de.js';
 import { sacheErledigt, sacheLoeschen } from './sachen-aktionen.js';
+import { geloeschtMelden, sicherLoeschen } from './fortschritt.js';
 import { dienstImBlatt } from './bringen-holen.js';
 
 function eintragZeile(e, { store, ui }, schliessen) {
@@ -60,10 +61,7 @@ function eintragZeile(e, { store, ui }, schliessen) {
                   text: `${e.label}${e.time ? ` um ${e.time}` : ''} wird entfernt.`,
                   ja: 'Termin löschen',
                   gefahr: true,
-                  beiJa: async () => {
-                    await store.terminLoeschen(e.id);
-                    toast('Termin gelöscht');
-                  },
+                  beiJa: async () => geloeschtMelden(await sicherLoeschen(store.terminLoeschen(e.id))),
                 }),
             },
             'Löschen',
@@ -82,10 +80,7 @@ function eintragZeile(e, { store, ui }, schliessen) {
                 text: 'Der ganze Urlaubszeitraum wird entfernt, nicht nur dieser Tag.',
                 ja: 'Urlaub löschen',
                 gefahr: true,
-                beiJa: async () => {
-                  await store.urlaubLoeschen(e.id);
-                  toast('Urlaub gelöscht');
-                },
+                beiJa: async () => geloeschtMelden(await sicherLoeschen(store.urlaubLoeschen(e.id))),
               }),
           },
           'Löschen',
@@ -128,9 +123,10 @@ export function oeffneTagesblatt(ctx, date) {
                 {
                   class: 'knopf klein',
                   type: 'button',
-                  onClick: async () => {
-                    await store.loescheTag(date);
-                    toast('Eintrag gelöscht');
+                  onClick: async (ev) => {
+                    const knopf = ev.currentTarget; // nach dem `await` ist currentTarget schon null
+                    knopf.disabled = true;
+                    if (!geloeschtMelden(await sicherLoeschen(store.loescheTag(date)))) knopf.disabled = false;
                   },
                 },
                 'Eintrag löschen',

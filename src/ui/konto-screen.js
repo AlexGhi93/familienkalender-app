@@ -10,6 +10,7 @@ import { balkenDiagramm, bereichLeiste, kacheln, verlaufDiagramm } from './konto
 import { MAX_EXTRA_TEXT, betragText, centsAusText } from '../domain/konto.js';
 import { fixkostenInhalt, kontoUmschalter } from './fixkosten-screen.js';
 import { sparzieleInhalt } from './sparziele-screen.js';
+import { geloeschtMelden, sicherLoeschen } from './fortschritt.js';
 
 const GRUEN = '#2F9E5B';
 const HINWEIS_EINGABE = 'Bitte einen Betrag eingeben, z. B. 20.711 oder 1.234,56.';
@@ -248,13 +249,7 @@ function oeffneKorrektur(z, { store }) {
             ja: 'Löschen',
             gefahr: true,
             beiJa: async () => {
-              try {
-                await store.kontoLoeschen({ person: p.person, monat: z.monat });
-                schliessen();
-                toast('Gelöscht ✓');
-              } catch (fehler) {
-                toast(fehler.message);
-              }
+              if (geloeschtMelden(await sicherLoeschen(store.kontoLoeschen({ person: p.person, monat: z.monat })))) schliessen();
             },
           });
         return h(
@@ -383,14 +378,7 @@ function extraListe(m, { store }) {
                   text: `${x.text} (${x.betrag}, ${x.label}, ${g.monatText}) wird gelöscht. Die Ersparnis ohne Extra wird neu berechnet.`,
                   ja: 'Löschen',
                   gefahr: true,
-                  beiJa: async () => {
-                    try {
-                      await store.extraEntfernen(x.id);
-                      toast('Gelöscht ✓');
-                    } catch (fehler) {
-                      toast(fehler.message);
-                    }
-                  },
+                  beiJa: async () => geloeschtMelden(await sicherLoeschen(store.extraEntfernen(x.id))),
                 }),
             },
             '✕',

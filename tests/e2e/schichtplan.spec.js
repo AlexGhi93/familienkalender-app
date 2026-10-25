@@ -1,6 +1,6 @@
 // Schichtplan (Demo): Registerkarte „Schicht“, Monatsraster mit zwei Streifen je Tag (oben Papa, unten Mama), Monatswechsel,
 // Filter (gemerkt auf diesem Telefon), Zählung und Legende; auf 375 px ragt nichts hinaus.
-import { test, expect, starteDemo, starteGoogleAusSnapshot, starteGoogleVerbunden, tab, NETZFEHLER } from './hilfen.js';
+import { test, expect, starteDemo, starteGoogleAusSnapshot, starteGoogleVerbunden, tab, erwarteToast, NETZFEHLER } from './hilfen.js';
 import { standardKatalog } from '../../src/domain/schicht.js';
 
 const zelle = (page, datum) => page.locator(`.sp-zelle[data-datum="${datum}"]`);
@@ -592,6 +592,26 @@ test.describe('Tagesblatt (ein Tag)', () => {
     await expect(zusaetze).toHaveText(['DB Dienstbesprechung 18:00–19:30 ✕']);
     await expect.poll(async () => (await demo(page)).z.mama['21']).toEqual([{ k: expect.any(String), von: '18:00', bis: '19:30' }]);
     await expect(zelle(page, '2026-10-21').locator('.sp-zusatz')).toHaveText('DB');
+  });
+
+  test('✕ → „Gelöscht ✓ · Rückgängig“: der Zusatz kommt an seine Stelle zurück (auch im Speicher)', async ({ page }) => {
+    await starteDemo(page, { route: '#/schicht' });
+    await zelle(page, '2026-10-21').click(); // Beispiel: Mama DB 18:00–19:30
+    const zusaetze = karte(page, 'mama').locator('.sp-tag-zusatz');
+    const form = karte(page, 'mama').locator('.sp-tag-zusatz-form');
+    await karte(page, 'mama').getByRole('button', { name: '＋ Dienstbesprechung' }).click();
+    await form.getByRole('textbox', { name: 'Von', exact: true }).fill('20:00');
+    await form.getByRole('textbox', { name: 'Bis', exact: true }).fill('21:00');
+    await form.getByRole('button', { name: 'Hinzufügen' }).click();
+    await expect(zusaetze).toHaveText(['DB Dienstbesprechung 18:00–19:30 ✕', 'DB Dienstbesprechung 20:00–21:00 ✕']);
+    await karte(page, 'mama').getByRole('button', { name: 'Dienstbesprechung 18:00–19:30 entfernen' }).click();
+    const meldung = page.locator('.toast').filter({ hasText: 'Gelöscht ✓' });
+    await expect(meldung.getByRole('button', { name: 'Rückgängig' })).toBeVisible();
+    await expect(zusaetze).toHaveText(['DB Dienstbesprechung 20:00–21:00 ✕']);
+    await meldung.getByRole('button', { name: 'Rückgängig' }).click();
+    await erwarteToast(page, 'Wiederhergestellt ✓');
+    await expect(zusaetze).toHaveText(['DB Dienstbesprechung 18:00–19:30 ✕', 'DB Dienstbesprechung 20:00–21:00 ✕']);
+    await expect.poll(async () => (await demo(page)).z.mama['21'].map((z) => `${z.von}–${z.bis}`)).toEqual(['18:00–19:30', '20:00–21:00']);
   });
 
   test('„＋ Dienstbesprechung“ öffnet direkt Von/Bis (vorbelegt): 19:00–20:30 → Marke DB und Zeile; Hinweis auf die Erinnerung', async ({ page }) => {

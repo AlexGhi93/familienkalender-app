@@ -1,10 +1,12 @@
 // Blätter der Fixkosten: Formular „Neue Fixkosten“ / „Fixkosten ändern“ (Vorlage, Name, Betrag, Wie oft?, Fällig am, nächste Zahlung,
-// Kategorie, Gehört zu, „~ Betrag schwankt“, optional Vertrag mit Kündigungsfrist samt berechnetem „Kündbar bis“, Notiz), „Archivieren“
-// mit Datum und für archivierte Posten „Zurückholen“ / „Endgültig löschen“ (mit Rückfrage). Kein offen/bezahlt. Ergebnisse des Stores
+// Kategorie, Gehört zu, „~ Betrag schwankt“, optional Vertrag mit Kündigungsfrist samt berechnetem „Kündbar bis“, Notiz), „Löschen“
+// (aktiver Posten, z. B. doppelt eingetragen; mit Rückfrage), „Archivieren“ mit Datum und für archivierte Posten „Zurückholen“ /
+// „Endgültig löschen“ (mit Rückfrage); nach jedem Löschen „Gelöscht ✓ · Rückgängig“. Kein offen/bezahlt. Ergebnisse des Stores
 // ({ ok, fehler?, wartet? }) erscheinen wie beim Schichtplan als Meldung; das Formular bleibt bei einem Fehler mit der Eingabe offen.
 import { h, fuelle } from './dom.js';
 import { bestaetigen, blatt, toast } from './components.js';
 import { datumFeld } from './eingabefelder.js';
+import { geloeschtMelden } from './fortschritt.js';
 import { entwurfZuPosten, fixEntwurf, startMonate, vertragVorschau, vorlageAnwenden } from '../app/views/fixkosten-model.js';
 import { FIX_FRISTEN, FIX_INTERVALLE, FIX_KATEGORIEN, FIX_PERSONEN, FIX_VERLAENGERUNG, FIX_VORLAGEN, MAX_FIX_NAME, MAX_FIX_NOTIZ, TEXT_TEIL_GESPERRT, istAktiv } from '../domain/fixkosten.js';
 import { betragText } from '../domain/konto.js';
@@ -193,6 +195,10 @@ export function oeffneFixFormular({ store }, id) {
     const ungefaehr = h('input', { type: 'checkbox', onChange: (ev) => (e.ungefaehr = ev.target.checked) });
     ungefaehr.checked = e.ungefaehr;
     const speichernKnopf = h('button', { class: 'knopf klein primaer fk-speichern', type: 'button', disabled: gesperrt, onClick: (ev) => speichern(ev.currentTarget) }, 'Speichern');
+    const archivKnopf = original ? h('button', { class: 'knopf klein', type: 'button', disabled: gesperrt, onClick: () => oeffneArchivieren({ store }, original, () => b.schliessen()) }, '🗄️ Archivieren') : null;
+    const loeschenKnopf = original
+      ? h('button', { class: 'knopf klein gefahr fk-loeschen', type: 'button', disabled: gesperrt, onClick: () => fixLoeschenFragen({ store }, original, () => b.schliessen(), [loeschenKnopf, archivKnopf, speichernKnopf], gesperrt) }, 'Löschen')
+      : null;
     felder = h(
         'fieldset',
         { class: 'fk-felder', disabled: gesperrt },
@@ -243,14 +249,34 @@ export function oeffneFixFormular({ store }, id) {
       h(
         'div',
         { class: 'knopfzeile' },
-        original ? h('button', { class: 'knopf klein', type: 'button', disabled: gesperrt, onClick: () => oeffneArchivieren({ store }, original, () => b.schliessen()) }, '🗄️ Archivieren') : null,
+        archivKnopf,
         speichernKnopf,
       ),
+      // „Löschen“ in einer eigenen Zeile links darunter: abgesetzt von Archivieren und Speichern
+      loeschenKnopf ? h('div', { class: 'knopfzeile loeschen-zeile' }, loeschenKnopf) : null,
     ];
   }
 
   b = blatt({ titel: original ? 'Fixkosten ändern' : 'Neue Fixkosten', render });
   return b;
+}
+
+/**
+ * Rückfrage „Löschen“ für einen aktiven Posten (z. B. doppelt eingetragen): er verschwindet ganz. Während gelöscht wird, sind `knoepfe`
+ * aus (vor dem `await` festgehalten); danach „Gelöscht ✓ · Rückgängig“, bei einem Fehler eine Meldung und die Knöpfe wieder an.
+ */
+function fixLoeschenFragen({ store }, posten, danach, knoepfe, gesperrt) {
+  return bestaetigen({
+    titel: `„${posten.name}“ löschen?`,
+    text: 'Er verschwindet ganz (auch aus früheren Monaten). Wenn er nur nicht mehr läuft, lieber „Archivieren“.',
+    ja: 'Löschen',
+    gefahr: true,
+    beiJa: async () => {
+      knoepfe.forEach((k) => k && (k.disabled = true));
+      if (geloeschtMelden(await sicher(store.fixPostenLoeschen(posten.id)))) danach();
+      else knoepfe.forEach((k) => k && (k.disabled = gesperrt)); // nochmal versuchen
+    },
+  });
 }
 
 /** Rückfrage „Archivieren“ mit Datum (Standard heute): ab diesem Tag zählt der Posten nicht mehr; nichts wird gelöscht. */
@@ -316,12 +342,12 @@ export function oeffneFixArchiviert({ store }, id) {
             onClick: () =>
               bestaetigen({
                 titel: 'Endgültig löschen?',
-                text: `„${posten.name}“ wird endgültig gelöscht – auch aus den früheren Monaten. Das lässt sich nicht rückgängig machen.`,
+                text: `„${posten.name}“ wird endgültig gelöscht – auch aus den früheren Monaten.`,
                 ja: 'Endgültig löschen',
                 gefahr: true,
                 beiJa: async () => {
                   sperren(true);
-                  if (erledigt(await sicher(store.fixPostenLoeschen(posten.id)), 'Gelöscht ✓')) schliessen();
+                  if (geloeschtMelden(await sicher(store.fixPostenLoeschen(posten.id)))) schliessen();
                   else sperren(false); // nochmal versuchen
                 },
               }),

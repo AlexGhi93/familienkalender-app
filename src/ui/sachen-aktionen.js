@@ -1,5 +1,6 @@
 import { h } from './dom.js';
 import { bestaetigen, blatt, toast } from './components.js';
+import { geloeschtMelden, sicherLoeschen } from './fortschritt.js';
 
 /** „Erledigt“: die Sache verschwindet (und damit die Erinnerung); 10 Sekunden lang gibt es „Rückgängig“. */
 export async function sacheErledigt(store, id) {
@@ -15,7 +16,10 @@ export async function sacheErledigt(store, id) {
   });
 }
 
-/** Löschen mit Rückfrage; bei Serien zusätzlich die Wahl „Nur diese“ oder „Diese und alle folgenden“. */
+/**
+ * Löschen mit Rückfrage; bei Serien zusätzlich die Wahl „Nur diese“ oder „Diese und alle folgenden“. Danach „Gelöscht ✓ · Rückgängig“ –
+ * außer für „Diese und alle folgenden“ (eine ganze Serie: dort bleibt es bei der Rückfrage).
+ */
 export function sacheLoeschen(store, e) {
   const bezeichnung = `${e.label}${e.time ? ` um ${e.time}` : ''}`;
   if (!e.serie) {
@@ -24,12 +28,10 @@ export function sacheLoeschen(store, e) {
       text: `${bezeichnung} wird entfernt.`,
       ja: 'Löschen',
       gefahr: true,
-      beiJa: async () => {
-        await store.terminLoeschen(e.id);
-        toast('Gelöscht');
-      },
+      beiJa: async () => geloeschtMelden(await sicherLoeschen(store.terminLoeschen(e.id))),
     });
   }
+  let gewaehlt = false; // „Nur diese“ / „Diese und alle folgenden“ wirkt genau einmal (Doppeltipp, während das Blatt hinausgleitet)
   return blatt({
     titel: 'Sache löschen?',
     render: ({ schliessen }) => [
@@ -42,10 +44,12 @@ export function sacheLoeschen(store, e) {
           {
             class: 'knopf klein',
             type: 'button',
-            onClick: async () => {
+            onClick: async (ev) => {
+              if (gewaehlt) return;
+              gewaehlt = true;
+              ev.currentTarget.disabled = true;
               schliessen();
-              await store.terminLoeschen(e.id);
-              toast('Gelöscht');
+              geloeschtMelden(await sicherLoeschen(store.terminLoeschen(e.id)));
             },
           },
           'Nur diese',
@@ -55,7 +59,10 @@ export function sacheLoeschen(store, e) {
           {
             class: 'knopf klein gefahr',
             type: 'button',
-            onClick: async () => {
+            onClick: async (ev) => {
+              if (gewaehlt) return;
+              gewaehlt = true;
+              ev.currentTarget.disabled = true;
               schliessen();
               const n = await store.terminLoeschenAbHier(e.id);
               toast(`${n} ${n === 1 ? 'Sache' : 'Sachen'} gelöscht`);

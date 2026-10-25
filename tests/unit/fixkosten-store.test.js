@@ -288,11 +288,14 @@ describe('Fixkosten ändern', () => {
     assert.deepEqual(log.filter((x) => x.startsWith('schreibe')), [`schreibe ${shardFuer(id)}`, `schreibe ${shardFuer(id)}`]);
   });
 
-  test('archivieren (mit Datum, sonst heute), zurückholen, endgültig löschen (nur aus dem Archiv)', async () => {
+  test('archivieren (mit Datum, sonst heute), zurückholen, endgültig löschen (aus dem Archiv und – seit 1.1.1 – auch aktiv)', async () => {
     const { store } = aufbau();
     await store.laden();
+    const { id: doppelt } = await store.fixPostenSpeichern(entwurf());
+    const aktiv = await store.fixPostenLoeschen(doppelt);
+    assert.equal(aktiv.ok, true, 'ein aktiver (z. B. doppelt eingetragener) Posten lässt sich löschen');
+    assert.equal(postenMit(store, doppelt), undefined);
     const { id } = await store.fixPostenSpeichern(entwurf());
-    assert.deepEqual(await store.fixPostenLoeschen(id), { ok: false, fehler: 'Nur archivierte Posten lassen sich endgültig löschen.' });
     assert.ok(postenMit(store, id));
     assert.deepEqual(await store.fixPostenArchivieren(id, '2026-11-01'), { ok: true });
     assert.equal(postenMit(store, id).archiv, '2026-11-01');
@@ -301,7 +304,7 @@ describe('Fixkosten ändern', () => {
     assert.deepEqual(await store.fixPostenArchivieren(id), { ok: true });
     assert.equal(postenMit(store, id).archiv, '2026-10-22');
     assert.deepEqual(await store.fixPostenArchivieren(id, '2026-02-30'), { ok: false, fehler: 'Ungültiges Archivdatum.' });
-    assert.deepEqual(await store.fixPostenLoeschen(id), { ok: true });
+    assert.equal((await store.fixPostenLoeschen(id)).ok, true);
     assert.equal(postenMit(store, id), undefined);
     assert.equal(allePosten(store).length, 0);
   });

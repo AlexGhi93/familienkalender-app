@@ -429,12 +429,13 @@ export function postenWiederherstellen(shard, id) {
   return ersetze(shard, id, ({ archiv: _weg, ...rest }) => rest);
 }
 
-/** Löscht einen Posten endgültig – nur aus dem Archiv; eine unbekannte Kennung ändert nichts. */
+/**
+ * Löscht einen Posten endgültig – aktiv (z. B. versehentlich doppelt eingetragen) oder aus dem Archiv; er verschwindet ganz, auch aus
+ * früheren Monaten. Eine unbekannte Kennung ändert nichts.
+ */
 export function postenLoeschen(shard, id) {
   const liste = shard.posten ?? [];
-  const p = liste.find((x) => x.id === id);
-  if (!p) return shard;
-  if (!p.archiv) throw new Error('Nur archivierte Posten lassen sich endgültig löschen.');
+  if (!liste.some((x) => x.id === id)) return shard;
   return teil(liste.filter((x) => x.id !== id), shard);
 }
 

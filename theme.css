@@ -410,6 +410,12 @@ button.chip {
   justify-content: flex-end;
 }
 
+/* „Löschen“ in Formularen: eine eigene Zeile links, abgesetzt von Speichern und Co. */
+.knopfzeile.loeschen-zeile {
+  justify-content: flex-start;
+  margin-top: 14px;
+}
+
 .aktionen {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -4292,6 +4298,17 @@ html:has(.screen.einkauf) {
 .sz-abschluss,
 .sz-verschoben {
   color: var(--ink-2);
+}
+
+/* Verschiebung aus „Frei“ mit „Rückgängig“: der Knopf rechts unter der Zeile */
+.sz-zeile.sz-verschoben {
+  flex-wrap: wrap;
+}
+
+.sz-zeile-aktion {
+  flex: 1 0 100%;
+  display: flex;
+  justify-content: flex-end;
 }
 
 .sz-hinweis {

@@ -3,7 +3,7 @@
 // Alle erwarteten Zahlen kommen aus der Domäne (sparVerlauf) oder aus kleinen, hier erfundenen Beispielen – nie aus der Machette.
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { bedarfVorschau, entwurfZuZiel, monatText, sparzieleModel, zielEntwurf, zielBisText, zieleSperre, zielSymbole, SYMBOL_NAMEN } from '../../src/app/views/sparziele-model.js';
+import { bedarfVorschau, entwurfZuZiel, monatText, sparzieleModel, zielEntwurf, zielBisText, zielLoeschFrage, zieleSperre, zielSymbole, SYMBOL_NAMEN } from '../../src/app/views/sparziele-model.js';
 import { KONTO_ANSICHTEN, kontoAnsichtLesen, kontoAnsichtSpeichern } from '../../src/app/views/fixkosten-model.js';
 import { nurHintergrundGeaendert } from '../../src/app/hintergrund.js';
 import { TEXT_ZIELE_GESPERRT, TEXT_ZIELE_NICHT_GELADEN, ZIEL_EMOJIS, sparVerlauf } from '../../src/domain/sparziele.js';
@@ -334,5 +334,50 @@ describe('sparzieleModel: Ausgleich, wieder öffnen, vorläufiges Datum', () => 
     const juli = sparzieleModel(zustand({ konto: k, ziele: zieleZustand(daten) }), '2027-07-15');
     assert.equal(juli.ziele[1].hinweis, 'schließt am 1. August 2027 – Datum verschoben? ✎ ändern');
     assert.equal(juli.ziele[0].hinweis, null);
+  });
+});
+
+describe('1.1.1: Löschen-Rückfrage und „Rückgängig“ für Verschiebungen', () => {
+  const k = konto({ '2026-09': 800_000, '2026-10': 900_000 }); // Oktober +1.000 €
+  const heute = '2026-11-05';
+
+  test('zielLoeschFrage: laufend mit Geld → sagt, wohin das Geld geht (Betrag aus der Domäne); laufend ohne Geld; abgeschlossen ohne Geld; sonst null', () => {
+    const d = { v: 1, z: [ziel('aaaa0001'), ziel('bbbb0001', { erstellt: '2026-12' }), ziel('cccc0001', { datum: '2026-09', erstellt: '2026-09' })], m: [] };
+    const s = zustand({ konto: k, ziele: zieleZustand(d) });
+    const gespart = sparVerlauf(d, k, heute).ziele[0].gespart;
+    assert.ok(gespart > 0);
+    assert.deepEqual(zielLoeschFrage(s, heute, 'aaaa0001'), {
+      titel: 'Sparziel löschen?',
+      text: `„Ziel aaaa0001“ wird gelöscht. Das bisher zugeteilte Geld (${betragText(gespart)}) wird auf die anderen Ziele und „Frei“ verteilt.`,
+      ja: 'Löschen',
+      knopf: 'Löschen',
+    });
+    assert.deepEqual(zielLoeschFrage(s, heute, 'bbbb0001'), { titel: 'Sparziel löschen?', text: '„Ziel bbbb0001“ hat noch kein Geld bekommen und wird gelöscht.', ja: 'Löschen', knopf: 'Löschen' });
+    assert.deepEqual(zielLoeschFrage(s, heute, 'cccc0001'), { titel: 'Endgültig löschen?', text: '„Ziel cccc0001“ hat nie Geld bekommen und wird endgültig gelöscht.', ja: 'Endgültig löschen', knopf: 'Endgültig löschen' });
+    // abgeschlossen mit Geld → nicht löschbar
+    const fertig = { v: 1, z: [ziel('aaaa0001', { beendet: { monat: '2026-11', art: 'ausgegeben' } })], m: [] };
+    assert.equal(zielLoeschFrage(zustand({ konto: k, ziele: zieleZustand(fertig) }), heute, 'aaaa0001'), null);
+    assert.equal(zielLoeschFrage(s, heute, 'gibtsnix'), null);
+  });
+
+  test('Verlauf: jede Verschiebung trägt Kennung und – nur zu einem laufenden Ziel, nicht gesperrt – „Rückgängig“ mit Rückfrage-Text', () => {
+    const d = {
+      v: 1,
+      z: [ziel('aaaa0001'), ziel('bbbb0001', { beendet: { monat: '2026-11', art: 'frei' } })],
+      m: [
+        { id: 'v0000001', monat: '2026-10', ziel: 'aaaa0001', cents: 5000 },
+        { id: 'v0000002', monat: '2026-10', ziel: 'bbbb0001', cents: 3000 },
+      ],
+    };
+    const m = sparzieleModel(zustand({ konto: k, ziele: zieleZustand(d) }), heute);
+    const okt = m.verlauf.find((x) => x.monat === '2026-10');
+    const [a, b] = okt.verschoben;
+    assert.equal(a.id, 'v0000001');
+    assert.equal(a.rueckgaengig, true);
+    assert.equal(a.frage, `${betragText(5000)} gehen von „🎯 Ziel aaaa0001“ zurück zu „Frei verfügbar“.`);
+    assert.equal(b.id, 'v0000002');
+    assert.equal(b.rueckgaengig, false, 'Ziel abgeschlossen');
+    const gesperrt = sparzieleModel(zustand({ konto: k, ziele: zieleZustand(d, { status: 'fehler' }) }), heute);
+    assert.equal(gesperrt.verlauf.find((x) => x.monat === '2026-10').verschoben[0].rueckgaengig, false, 'gesperrt');
   });
 });
