@@ -20,6 +20,7 @@ import {
   neueZielId,
   normalisiereZiele,
   TEXT_VERSCHIEBUNG_ABGESCHLOSSEN,
+  TEXT_VERSCHIEBUNG_ALT,
   sparMonate,
   sparVerlauf,
   startMonat,
@@ -876,6 +877,7 @@ describe('Eigenschaft: Σ Zuteilung + ΔFrei = Ersparnis (auf den Cent), nichts 
     let beendet = 0;
     let gefoerdertBeendet = 0;
     let rueckgaengige = 0;
+    let alteAbgelehnt = 0;
     let offeneAusgleiche = 0;
     for (let fall = 0; fall < 200; fall += 1) {
       const anzahl = ganz(2, 30);
@@ -984,14 +986,25 @@ describe('Eigenschaft: Σ Zuteilung + ΔFrei = Ersparnis (auf den Cent), nichts 
         assert.deepEqual(zurueck, { v: 1, beginn: zieleBeginn(d), z: d.z, m: d.m }, `Fall ${fall}: zurückgeholt wie vorher`);
         assert.deepEqual(sparVerlauf(zurueck, k, heute), v, `Fall ${fall}: Rechnung wie vorher`);
       }
-      // jede Verschiebung zu einem laufenden Ziel lässt sich rückgängig machen: nichts geht verloren
+      // Verschiebung rückgängig: nur aus dem laufenden Monat (und später) zu einem laufenden Ziel; frühere Monate, abgeschlossene Ziele und
+      // der wartende Ausgleich bleiben genau gleich, nichts geht verloren. Eine ältere wird abgelehnt (die Vergangenheit bleibt fest).
       for (const x of verschiebungen) {
         const ziel = ziele.find((y) => y.id === x.ziel);
-        if (!ziel || zielSchluss(ziel).monat <= heute.slice(0, 7)) continue;
+        if (!ziel || zielSchluss(ziel).monat <= heuteMonat) continue;
         if (d.m.find((y) => y.id === x.id) !== x) continue; // doppelte Kennung: nur die erste zählt
+        if (x.monat < heuteMonat) {
+          assert.throws(() => verschiebungLoeschen(d, x.id, { heute }), { message: TEXT_VERSCHIEBUNG_ALT }, `Fall ${fall}: alte Verschiebung bleibt fest`);
+          alteAbgelehnt += 1;
+          continue;
+        }
         const ohne = sparVerlauf(verschiebungLoeschen(d, x.id, { heute }), k, heute);
         pruefeVerlauf(ohne, `Fall ${fall} ohne Verschiebung ${x.id}`);
         assert.equal(ohne.frei + ohne.summeZiele + ohne.ausgleichOffen, v.frei + v.summeZiele + v.ausgleichOffen, `Fall ${fall}: Rückgängig erhält jeden Cent`);
+        assert.equal(ohne.ausgleichOffen, v.ausgleichOffen, `Fall ${fall}: der wartende Ausgleich bleibt`);
+        const frueher = (verlauf) => verlauf.monate.filter((m) => m.monat < heuteMonat);
+        assert.deepEqual(frueher(ohne), frueher(v), `Fall ${fall}: frühere Monate bleiben genau gleich`);
+        const fertig = (verlauf) => verlauf.ziele.filter((y) => y.abgeschlossen);
+        assert.deepEqual(fertig(ohne), fertig(v), `Fall ${fall}: abgeschlossene Ziele bleiben genau gleich`);
         rueckgaengige += 1;
       }
       const offen = v.ziele.filter((z) => !z.abgeschlossen);
@@ -1006,7 +1019,7 @@ describe('Eigenschaft: Σ Zuteilung + ΔFrei = Ersparnis (auf den Cent), nichts 
     assert.ok(offeneAusgleiche > 5, `genug Fälle mit wartendem Ausgleich (${offeneAusgleiche})`);
     assert.ok(weg > 30, `genug wirklich gelöschte Ziele (${weg})`);
     assert.ok(beendet > 100 && gefoerdertBeendet > 50, `genug „gelöscht“ abgeschlossene laufende Ziele (${beendet}, mit Geld ${gefoerdertBeendet})`);
-    assert.ok(rueckgaengige > 50, `genug rückgängig gemachte Verschiebungen (${rueckgaengige})`);
+    assert.ok(rueckgaengige > 15 && alteAbgelehnt > 50, `genug Verschiebungen: rückgängig ${rueckgaengige}, alte abgelehnt ${alteAbgelehnt}`);
     assert.ok(gepruefteMonate > 1000 && minusMonate > 300 && ungedeckteMonate > 100, `genug verschiedene Fälle (${gepruefteMonate}/${minusMonate}/${ungedeckteMonate})`);
   });
 });
@@ -1344,11 +1357,24 @@ describe('1.1.1: Verschiebung aus „Frei“ rückgängig machen', () => {
   });
 
   test('zu einem abgeschlossenen Ziel: abgelehnt (das Geld gehört zu seinem Abschluss); zu einem Ziel einer neueren Version: abgelehnt', () => {
-    const d = { v: 1, z: [auto(), urlaub({ beendet: { monat: '2026-11', art: 'ausgegeben' } })], m: [{ ...v1, monat: '2026-10' }] };
+    const d = { v: 1, z: [auto(), urlaub({ beendet: { monat: '2026-11', art: 'ausgegeben' } })], m: [v1] };
     assert.throws(() => verschiebungLoeschen(d, 'v0000001', { heute }), { message: TEXT_VERSCHIEBUNG_ABGESCHLOSSEN });
     assert.match(TEXT_VERSCHIEBUNG_ABGESCHLOSSEN, /abgeschlossen/);
     const fremd = { v: 1, z: [auto()], m: [{ ...v1, ziel: 'neu00001' }], fremd: { z: [{ i: 'neu00001', n: 'Neu', zz: 1 }], m: [] } };
     assert.throws(() => verschiebungLoeschen(fremd, 'v0000001', { heute }), /neueren App-Version/);
+  });
+
+  test('nur Verschiebungen des laufenden Monats: eine ältere wird abgelehnt (auch beim Zurückholen) – die Vergangenheit bleibt fest', () => {
+    const alt = { ...v1, monat: '2026-10' };
+    const d = tiefFrieren({ v: 1, beginn: '2026-10', z: [auto(), urlaub({ zielCents: 50000 })], m: [alt, v2] });
+    assert.throws(() => verschiebungLoeschen(d, 'v0000001', { heute }), { message: TEXT_VERSCHIEBUNG_ALT });
+    assert.equal(TEXT_VERSCHIEBUNG_ALT, 'Nur Verschiebungen aus diesem Monat lassen sich rückgängig machen – frühere Monate bleiben, wie sie sind.');
+    const ohne = { ...d, m: [v2] };
+    assert.throws(() => verschiebungWiederherstellen(ohne, { verschiebung: alt, stelle: 0 }, { heute }), { message: TEXT_VERSCHIEBUNG_ALT });
+    // dieselbe Verschiebung im laufenden Monat: frühere Monate und abgeschlossene Ziele bleiben genau gleich
+    const vorher = sparVerlauf(d, k, heute);
+    const nachher = sparVerlauf(verschiebungLoeschen(d, 'v0000002', { heute }), k, heute);
+    assert.deepEqual(nachher.monate.filter((m) => m.monat < '2026-11'), vorher.monate.filter((m) => m.monat < '2026-11'));
   });
 
   test('verschiebungWiederherstellen: an ihrer Stelle, unverändert; zweimal = einmal; Ziel weg oder abgeschlossen → Meldung', () => {

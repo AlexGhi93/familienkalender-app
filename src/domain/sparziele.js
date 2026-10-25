@@ -32,8 +32,8 @@
 // Löschen (zielLoeschArt) – die Vergangenheit ändert sich nie: ein Ziel ohne jede Spur in der Rechnung wird wirklich entfernt; ein
 // LAUFENDES Ziel mit Spur (es hat Geld bekommen) wird im laufenden Monat „gelöscht“ abgeschlossen (beendet 'frei' + geloescht): sein
 // Gespartes geht zu „Frei“, frühere Monate und abgeschlossene Ziele bleiben genau gleich. Ein ABGESCHLOSSENES Ziel mit Geld lässt sich
-// nur ausblenden (seine Zahlung steckt im Kontostand). Verschiebungen aus „Frei“ zu einem laufenden Ziel lassen sich rückgängig machen
-// (verschiebungLoeschen). Für „Rückgängig“ nach dem Löschen: zielSpur → zielWiederherstellen.
+// nur ausblenden (seine Zahlung steckt im Kontostand). Verschiebungen aus „Frei“ des LAUFENDEN Monats zu einem laufenden Ziel lassen
+// sich rückgängig machen (verschiebungLoeschen); ältere bleiben fest. Für „Rückgängig“ nach dem Löschen: zielSpur → zielWiederherstellen.
 // Alles, was ein Datum „heute“ braucht, wirft sofort bei einem ungültigen (kein Text 'JJJJ-MM-TT'), siehe heutePruefen.
 
 import { isValidDate } from './dates.js';
@@ -57,6 +57,7 @@ export const ZIEL_ENDE_ARTEN = Object.freeze(['ausgegeben', 'frei']);
 export const TEXT_ZIELE_VOLL = 'Die Sparziele sind voll: im Kalender ist kein Platz für ein weiteres Ziel. Laufende Ziele und Ziele, die nie Geld bekommen haben, lassen sich löschen.';
 export const TEXT_VERSCHIEBUNGEN_VOLL = 'Kein Platz mehr für weitere Verschiebungen aus „Frei“ – der Speicher der Sparziele im Kalender ist voll.';
 export const TEXT_NICHT_LOESCHBAR = 'Dieses Ziel ist abgeschlossen und hat Geld bekommen – es kann nur ausgeblendet werden.';
+export const TEXT_VERSCHIEBUNG_ALT = 'Nur Verschiebungen aus diesem Monat lassen sich rückgängig machen – frühere Monate bleiben, wie sie sind.';
 export const TEXT_VERSCHIEBUNG_ABGESCHLOSSEN = 'Dieses Sparziel ist schon abgeschlossen – die Verschiebung gehört zu seinem Abschluss und lässt sich nicht mehr rückgängig machen.';
 const TEXT_ZIEL_WEG = 'Dieses Sparziel gibt es nicht mehr.';
 const TEXT_KENNUNG_NEUER = 'Das lässt sich nicht zurückholen: das andere Telefon hat inzwischen mit einer neueren App-Version etwas unter derselben Kennung gespeichert.';
@@ -479,7 +480,8 @@ function laufendesZielFuer(daten, zielId, heute, { fehltWirft }) {
 }
 
 /**
- * Macht die Verschiebung `id` aus „Frei“ rückgängig: sie fällt weg, die Rechnung gibt ihr Geld zurück an „Frei“ (zurückgelegt + Frei
+ * Macht die Verschiebung `id` aus „Frei“ rückgängig – nur eine aus dem laufenden Monat (sonst TEXT_VERSCHIEBUNG_ALT: frühere Monate und
+ * abgeschlossene Ziele ändern sich nie): sie fällt weg, die Rechnung gibt ihr Geld zurück an „Frei“ (zurückgelegt + Frei
  * bleibt gleich). Nur für ein Ziel, das am Tag `heute` noch läuft (sonst TEXT_VERSCHIEBUNG_ABGESCHLOSSEN – das Geld gehört dann zu seinem
  * Abschluss), nicht für ein Ziel einer neueren Version. Unbekannte Kennung → dieselben Daten (wiederholbar). Rein.
  */
@@ -488,6 +490,7 @@ export function verschiebungLoeschen(daten, id, { heute } = {}) {
   const m = daten.m ?? [];
   const v = m.find((x) => x.id === id);
   if (!v) return daten;
+  if (v.monat < heute.slice(0, 7)) throw new Error(TEXT_VERSCHIEBUNG_ALT); // die Vergangenheit bleibt fest
   laufendesZielFuer(daten, v.ziel, heute, { fehltWirft: false });
   return mit(daten, daten.z ?? [], m.filter((x) => x.id !== id), false);
 }
@@ -503,6 +506,7 @@ export function verschiebungWiederherstellen(daten, { verschiebung, stelle } = {
   const m = daten.m ?? [];
   if (m.some((x) => x.id === v.id)) return daten;
   if (fremdeKennung(daten, v.id, 'm')) throw new Error(TEXT_KENNUNG_NEUER);
+  if (v.monat < heute.slice(0, 7)) throw new Error(TEXT_VERSCHIEBUNG_ALT);
   laufendesZielFuer(daten, v.ziel, heute, { fehltWirft: true });
   if (m.length + (daten.fremd?.m?.length ?? 0) >= MAX_VERSCHIEBUNGEN) throw new Error(`Höchstens ${MAX_VERSCHIEBUNGEN} Verschiebungen.`);
   return mit(daten, daten.z ?? [], eingefuegt(m, v, stelle), true, TEXT_VERSCHIEBUNGEN_VOLL);

@@ -1320,7 +1320,8 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     },
 
     /**
-     * Ziel endgültig löschen: ein laufendes immer (auch mit Geld – die Rechnung verteilt es neu, als hätte es das Ziel nie gegeben), ein
+     * Ziel löschen (domain zielLoeschArt): ein laufendes immer – mit Geld wird es im laufenden Monat „gelöscht“ abgeschlossen (sein Gespartes
+     * geht zu Frei, die Vergangenheit bleibt), ohne jede Spur wirklich entfernt; ein
      * abgeschlossenes nur, wenn es nie Geld bekommen hat (sonst TEXT_NICHT_LOESCHBAR: nur ausblenden). Geprüft mit dem frisch gelesenen
      * Kontostand (das andere Telefon könnte den Monat eben vervollständigt haben). Ergebnis wie `zielBeenden`, bei Erfolg mit
      * `rueckgaengig()`: holt genau das Gelöschte (Ziel und seine Verschiebungen, wie sie im Kalender standen) zurück.

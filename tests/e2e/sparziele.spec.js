@@ -355,6 +355,29 @@ test.describe('Sparziele im Konto-Tab (Demo)', () => {
     await expect(page.locator('.sz-ziel')).toHaveCount(0);
   });
 
+  test('„Rückgängig“ nur für Verschiebungen des laufenden Monats: eine aus dem September bleibt fest (kein Knopf)', async ({ page }) => {
+    await starteDemo(page, { route: '#/konto', speicher: { 'fk.konto.ansicht.v1': 'sparziele' } });
+    // eine Verschiebung aus dem September in den gespeicherten Sparzielen der Demo (kurze Schlüssel wie im Kalender)
+    await page.evaluate(() => {
+      const daten = JSON.parse(localStorage.getItem('fk.demo.v1'));
+      const ziele = JSON.parse(daten.ziele);
+      ziele.m = [{ i: 'alt00001', m: '2026-09', z: 'demo0001', c: 5000 }];
+      daten.ziele = JSON.stringify(ziele);
+      localStorage.setItem('fk.demo.v1', JSON.stringify(daten));
+    });
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Sparziele 💶' })).toBeVisible();
+    const sept = page.locator('.sz-monat[data-monat="2026-09"] .sz-verschoben');
+    await expect(sept).toHaveCount(1);
+    await expect(sept.getByRole('button', { name: 'Rückgängig' })).toHaveCount(0);
+    // eine neue Verschiebung im Oktober hat den Knopf
+    await page.getByRole('button', { name: 'Zu Ziel verschieben' }).click();
+    await dialog(page, 'Zu Ziel verschieben').getByLabel('Betrag in Euro').fill('100');
+    await dialog(page, 'Zu Ziel verschieben').getByRole('button', { name: 'Verschieben' }).click();
+    await expect(page.locator('.sz-monat[data-monat="2026-10"] .sz-verschoben').getByRole('button', { name: 'Rückgängig' })).toBeVisible();
+    await expect(sept.getByRole('button', { name: 'Rückgängig' })).toHaveCount(0);
+  });
+
   test('unlesbare Sparziele: klare Meldung, nichts änderbar', async ({ page }) => {
     await starteDemo(page, { route: '#/konto', speicher: { 'fk.konto.ansicht.v1': 'sparziele' } });
     await page.evaluate(() => {

@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { bedarfVorschau, entwurfZuZiel, monatText, sparzieleModel, zielEntwurf, zielBisText, verschiebungFrage, zielLoeschFrage, zieleSperre, zielSymbole, SYMBOL_NAMEN } from '../../src/app/views/sparziele-model.js';
 import { KONTO_ANSICHTEN, kontoAnsichtLesen, kontoAnsichtSpeichern } from '../../src/app/views/fixkosten-model.js';
 import { nurHintergrundGeaendert } from '../../src/app/hintergrund.js';
-import { TEXT_ZIELE_GESPERRT, TEXT_ZIELE_NICHT_GELADEN, ZIEL_EMOJIS, sparVerlauf } from '../../src/domain/sparziele.js';
+import { TEXT_ZIELE_GESPERRT, TEXT_ZIELE_NICHT_GELADEN, ZIEL_EMOJIS, sparVerlauf, zielLoeschen } from '../../src/domain/sparziele.js';
 import { betragText, deltaText } from '../../src/domain/konto.js';
 import { seedDemo } from '../../src/app/seed.js';
 import { speicherAttrappe, zustand } from './hilfen.js';
@@ -360,45 +360,64 @@ describe('1.1.1: Löschen-Rückfrage und „Rückgängig“ für Verschiebungen'
     assert.equal(zielLoeschFrage(s, heute, 'gibtsnix'), null);
   });
 
-  test('Verlauf: jede Verschiebung trägt Kennung und – nur zu einem laufenden Ziel, nicht gesperrt – „Rückgängig“', () => {
+  test('Verlauf: jede Verschiebung trägt Kennung und – nur zu einem laufenden Ziel, nicht gesperrt – „Rückgängig“ (nur laufender Monat)', () => {
     const d = {
       v: 1,
       z: [ziel('aaaa0001'), ziel('bbbb0001', { beendet: { monat: '2026-11', art: 'frei' } })],
       m: [
-        { id: 'v0000001', monat: '2026-10', ziel: 'aaaa0001', cents: 5000 },
-        { id: 'v0000002', monat: '2026-10', ziel: 'bbbb0001', cents: 3000 },
+        { id: 'v0000001', monat: '2026-11', ziel: 'aaaa0001', cents: 5000 },
+        { id: 'v0000002', monat: '2026-11', ziel: 'bbbb0001', cents: 3000 },
+        { id: 'v0000003', monat: '2026-10', ziel: 'aaaa0001', cents: 2000 },
       ],
     };
     const m = sparzieleModel(zustand({ konto: k, ziele: zieleZustand(d) }), heute);
-    const okt = m.verlauf.find((x) => x.monat === '2026-10');
-    const [a, b] = okt.verschoben;
+    const [a, b] = m.verlauf.find((x) => x.monat === '2026-11').verschoben;
     assert.equal(a.id, 'v0000001');
     assert.equal(a.rueckgaengig, true);
     assert.equal(b.id, 'v0000002');
     assert.equal(b.rueckgaengig, false, 'Ziel abgeschlossen');
+    const [alt] = m.verlauf.find((x) => x.monat === '2026-10').verschoben;
+    assert.equal(alt.id, 'v0000003');
+    assert.equal(alt.rueckgaengig, false, 'aus einem früheren Monat: bleibt fest');
     const gesperrt = sparzieleModel(zustand({ konto: k, ziele: zieleZustand(d, { status: 'fehler' }) }), heute);
-    assert.equal(gesperrt.verlauf.find((x) => x.monat === '2026-10').verschoben[0].rueckgaengig, false, 'gesperrt');
+    assert.equal(gesperrt.verlauf.find((x) => x.monat === '2026-11').verschoben[0].rueckgaengig, false, 'gesperrt');
   });
 
-  test('verschiebungFrage (I2): nennt die tatsächliche Wirkung aus einer Probe-Rechnung, nicht den Nennbetrag', () => {
+  test('verschiebungFrage (I2, N1): Wirkung aus einer Probe-Rechnung – nur für Verschiebungen des laufenden Monats', () => {
     // 12.000 € bis Dezember 2026, je +2.000 € ab Januar; 500 € im Januar aus Frei verschoben, Rückgängig am 20.04.
     const k2 = konto({ '2025-12': 1_000_000, '2026-01': 1_200_000, '2026-02': 1_400_000, '2026-03': 1_600_000 });
     const d = { v: 1, z: [ziel('aaaa0001', { zielCents: 1_200_000, datum: '2026-12', erstellt: '2026-01' })], m: [{ id: 'v0000001', monat: '2026-01', ziel: 'aaaa0001', cents: 50_000 }] };
     const h = '2026-04-20';
     const s = zustand({ konto: k2, ziele: zieleZustand(d) });
-    const vorher = sparVerlauf(d, k2, h);
-    const nachher = sparVerlauf({ ...d, m: [] }, k2, h);
-    const frei = nachher.frei - vorher.frei;
-    const zielWeniger = vorher.ziele[0].gespart - nachher.ziele[0].gespart;
-    assert.ok(frei > 0 && frei < 50_000, `Frei steigt um weniger als 500 € (${frei})`);
-    assert.equal(frei, zielWeniger);
-    const text = verschiebungFrage(s, h, 'v0000001');
-    assert.equal(text, `„Frei verfügbar“ steigt dadurch um ${betragText(frei)}; „Ziel aaaa0001“ hat danach ${betragText(zielWeniger)} weniger.`);
-    assert.doesNotMatch(text, /500 €/);
+    assert.equal(verschiebungFrage(s, h, 'v0000001'), null, 'eine Verschiebung aus dem Januar bleibt fest');
     // im laufenden Monat (noch kein Kontostand) wirkt sie genau mit ihrem Betrag
     const jetzt = { ...d, m: [{ id: 'v0000002', monat: '2026-04', ziel: 'aaaa0001', cents: 10_000 }] };
     assert.equal(verschiebungFrage(zustand({ konto: k2, ziele: zieleZustand(jetzt) }), h, 'v0000002'), `„Frei verfügbar“ steigt dadurch um ${betragText(10_000)}; „Ziel aaaa0001“ hat danach ${betragText(10_000)} weniger.`);
     assert.equal(verschiebungFrage(s, h, 'gibtsnix'), null);
+    // am Monatsletzten mit schon eingetragenem Kontostand: die Probe-Rechnung stimmt ebenso (Frei und Ziel genau um den Betrag)
+    const k3 = konto({ '2025-12': 1_000_000, '2026-01': 1_200_000, '2026-02': 1_400_000, '2026-03': 1_600_000, '2026-04': 1_800_000 });
+    const s3 = zustand({ konto: k3, ziele: zieleZustand(jetzt) });
+    const vorher = sparVerlauf(jetzt, k3, '2026-04-30');
+    const nachher = sparVerlauf({ ...jetzt, m: [] }, k3, '2026-04-30');
+    assert.equal(nachher.frei - vorher.frei, 10_000);
+    assert.equal(verschiebungFrage(s3, '2026-04-30', 'v0000002'), `„Frei verfügbar“ steigt dadurch um ${betragText(10_000)}; „Ziel aaaa0001“ hat danach ${betragText(10_000)} weniger.`);
+  });
+
+  test('zielLoeschFrage (N2): am Monatsletzten mit eingetragenem Kontostand nennt sie die tatsächliche Wirkung aus einer Probe-Rechnung', () => {
+    // A und B je 3.000 € bis Dezember, ab September; September +1.000 €, Oktober +500 € (anteilig); gelöscht wird A am 31.10.
+    const k4 = konto({ '2026-08': 800_000, '2026-09': 900_000, '2026-10': 950_000 });
+    const d = { v: 1, z: [ziel('aaaa0001', { zielCents: 300_000, datum: '2026-12', erstellt: '2026-09' }), ziel('bbbb0001', { zielCents: 300_000, datum: '2026-12', erstellt: '2026-09' })], m: [] };
+    const h = '2026-10-31';
+    const vorher = sparVerlauf(d, k4, h);
+    const nachher = sparVerlauf(zielLoeschen(d, 'aaaa0001', { heute: h, konto: k4 }), k4, h);
+    const frei = nachher.frei - vorher.frei;
+    const andere = nachher.ziele[1].gespart - vorher.ziele[1].gespart;
+    const gespart = vorher.ziele[0].gespart;
+    assert.ok(frei !== gespart && andere > 0, `der Oktober-Anteil wird neu verteilt (gespart ${gespart}, Frei +${frei}, B +${andere})`);
+    assert.equal(frei + andere, gespart, 'nichts verloren');
+    const f = zielLoeschFrage(zustand({ konto: k4, ziele: zieleZustand(d) }), h, 'aaaa0001');
+    assert.equal(f.text, `„Ziel aaaa0001“ wird gelöscht. „Frei verfügbar“ steigt dadurch um ${betragText(frei)}, die anderen Ziele bekommen zusammen ${betragText(andere)} (der Anteil dieses Monats wird neu verteilt) – von „Frei“ kannst du es einem anderen Ziel geben.`);
+    assert.ok(!f.text.includes(`(${betragText(gespart)})`), 'nicht den Nennbetrag');
   });
 
   test('ein „gelöscht“ abgeschlossenes Ziel: keine Karte, nicht unter „Abgeschlossene“, nicht mitgezählt; im Monat eine Zeile „🗑️ … gelöscht“', () => {
