@@ -1,6 +1,7 @@
 // „Monat“: blättern, Tag antippen → Tagesblatt mit „Eintragen“, Tagestyp setzen und im Raster sehen; „Neu an diesem Tag“
 // (das Formular beginnt mit dem Tag) und „Bringen & Abholen“ für künftige Betreuungstage (gilt nur für diesen Tag).
-import { test, expect, starteDemo, tab, erwarteToast } from './hilfen.js';
+import { test, expect, starteDemo, tab, erwarteToast, WERKTAG_DATUM } from './hilfen.js';
+import { seedDemo } from '../../src/app/seed.js';
 
 const zelle = (page, name) => page.locator('.raster').getByRole('button', { name, exact: false });
 /** Die Chips unter der Überschrift „Eintragen“ bzw. „Neu an diesem Tag“ im Tagesblatt. */
@@ -278,5 +279,58 @@ test.describe('Bringen & Abholen im Tagesblatt', () => {
     await zelle(page, 'Mittwoch, 4. November').click();
     await expect(page.getByRole('dialog', { name: 'Mittwoch, 4. November' }).getByRole('heading', { name: 'Neu an diesem Tag' })).toBeVisible();
     await expect(dienstBlatt(page.getByRole('dialog'))).toHaveCount(0);
+  });
+});
+
+// Glas und Bento (themes/monat.css): die Haken .monat-seite und .tb-* tragen das Aussehen; heute, Konflikt und Tage außerhalb des
+// Monats bleiben unterscheidbar und lesbar, Zellen und „Eintragen“ bleiben ≥ 44 px groß.
+test.describe('Monat und Tagesblatt in Glas und Bento', () => {
+  test.beforeEach(({ aussehen }) => test.skip(!aussehen, 'nur in den Projekten telefon-glas und telefon-bento'));
+
+  test('Raster: heute mit Ring, Konflikt gestrichelt mit Abzeichen, Tage außerhalb ohne Abblenden, Zellen ≥ 44 px', async ({ page, aussehen }) => {
+    const demo = seedDemo(WERKTAG_DATUM);
+    demo.tage = { ...demo.tage, '2026-10-20': { typ: 'krank', konflikt: true, andere: ['kita_essen'] } };
+    await starteDemo(page, { route: '#/monat', speicher: { 'fk.demo.v1': demo } });
+    await expect(page.locator('.screen.monat-seite .raster')).toBeVisible();
+
+    const heute = page.locator('.raster .zelle.heute');
+    await expect(heute).toHaveCSS('outline-style', 'none');
+    expect(await heute.evaluate((z) => getComputedStyle(z).boxShadow)).not.toBe('none');
+
+    const konflikt = page.locator('.raster .zelle.konflikt');
+    await expect(konflikt).toHaveCSS('outline-style', 'dashed');
+    await expect(konflikt.locator('.konflikt-marke')).toBeVisible();
+
+    const aussen = page.locator('.raster .zelle.ausserhalb').first();
+    await expect(aussen).toHaveCSS('opacity', '1');
+    await expect(aussen).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+
+    for (const box of await page.locator('.raster .zelle').evaluateAll((zs) => zs.map((z) => z.getBoundingClientRect().toJSON()))) {
+      expect(box.width).toBeGreaterThanOrEqual(44);
+      expect(box.height).toBeGreaterThanOrEqual(44);
+    }
+
+    if (aussehen === 'glas') {
+      // Wochentage und Raster sind eine Glaskarte: keine Lücke dazwischen
+      const [oben, unten] = await Promise.all(['.wochentage', '.raster'].map((s) => page.locator(`.monat-seite > ${s}`).evaluate((e) => e.getBoundingClientRect().toJSON())));
+      expect(Math.abs(unten.top - oben.bottom)).toBeLessThan(1);
+    } else {
+      // Bento: die Zahl von heute ist eine Pille in der Akzentfarbe
+      expect(await heute.locator('.nr').evaluate((n) => getComputedStyle(n).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)');
+    }
+  });
+
+  test('Tagesblatt: „Eintragen“ als Zweierraster mit gleich breitem Rand (aktiv und nicht aktiv), Felder ≥ 44 px', async ({ page }) => {
+    await starteDemo(page, { route: '#/monat' });
+    await zelle(page, 'Dienstag, 13. Oktober').click();
+    const blatt = page.getByRole('dialog', { name: 'Dienstag, 13. Oktober' });
+    await expect(blatt.locator('.tb-eintraege .zeile')).toHaveCount(1);
+    await expect(blatt.locator('.tb-neu .chip').first()).toBeVisible();
+    await expect(blatt.locator('.tb-eintragen')).toHaveCSS('display', 'grid');
+    const chips = blatt.locator('.tb-eintragen .chip');
+    await expect(blatt.locator('.tb-eintragen .chip.aktiv')).toHaveCount(1);
+    const raender = await chips.evaluateAll((cs) => cs.map((c) => getComputedStyle(c).borderTopWidth));
+    expect(new Set(raender).size).toBe(1);
+    for (const box of await chips.evaluateAll((cs) => cs.map((c) => c.getBoundingClientRect().toJSON()))) expect(box.height).toBeGreaterThanOrEqual(44);
   });
 });

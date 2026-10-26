@@ -42,7 +42,7 @@ export function monatScreen({ store, ui }) {
     h('button', { class: 'rund', type: 'button', 'aria-label': beschriftung, onClick: () => ui.setzeMonat(ziel) }, zeichen);
   return h(
     'section',
-    { class: 'screen' },
+    { class: 'screen monat-seite' },
     h('div', { class: 'monat-kopf' }, rund('‹', 'Vorheriger Monat', m.vorher), h('h1', {}, m.titel), rund('›', 'Nächster Monat', m.nachher)),
     h('div', { class: 'wochentage', 'aria-hidden': 'true' }, WOCHENTAGE_KURZ.map((t) => h('span', {}, t))),
     h('div', { class: 'raster' }, m.wochen.flat().map((z) => zelle(z, ui))),
