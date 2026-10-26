@@ -3,54 +3,72 @@
    DESIGN-TOKENS (1.2.0) – alles, was ein Aussehen ändern darf. Die Werte hier sind Klassisch (= Stand 1.1.2, Pixel für Pixel,
    geprüft mit npm run test:visuell). Glas und Bento überschreiben sie in themes/glas.css bzw. themes/bento.css unter
    :root[data-aussehen="…"] (je Hell und Dunkel) und ergänzen dort, wo nötig, eigene Regeln.
+   Wichtig: abgeleitete Tokens (--karte-2, --feld-bg, --karte-rand, --feld-rand, --chip-grund, --tint-grund, --tabs-bg,
+   --tabs-rand, --blatt-bg, --pinsel-bg, --toast-bg, --toast-ink, --tooltip-bg, --tooltip-ink, --fab-bg, --fab-ink, --fab-schatten,
+   --font-titel, --font-zahl, --font-feld) werden am :root berechnet. Wer --karte, --bg, --ink, --akzent oder --font-text
+   nur in einem Teilbaum (z. B. im Blatt) ändert, muss die abgeleiteten Tokens dort ebenfalls setzen.
 
-   Flächen      --bg            Hintergrund der Seite
+   Flächen      --bg            Hintergrund der Seite (auch Schriftfarbe auf --ink: nie ein Verlauf)
+                --seite-bild    Bild/Verlauf über --bg auf body (Klassisch: none), z. B. die Aurora in Glas
                 --karte         Karten
-                --karte-2       Flächen in und neben Karten: Zeilen, Eingabefelder, Knöpfe, runde Knöpfe (Klassisch = --karte)
+                --karte-2       Flächen in und neben Karten: Zeilen, Knöpfe, runde Knöpfe (Klassisch = --karte)
+                --feld-bg       Eingabefelder (Klassisch = --karte-2)
                 --linie         Rahmenfarbe
-                --rand          Rahmenbreite von Karten, Zeilen, Feldern und Knöpfen
+                --rand          Rahmenbreite von Zeilen und Knöpfen
+                --karte-rand    ganzer Rahmen der Karten und Diagramme (Breite, Stil, Farbe)
+                --feld-rand     ganzer Rahmen der Eingabefelder
+                --chip-grund    Grund, in den Chips ihre Farbe mischen;  --chip-anteil / --chip-aktiv-anteil: Anteil der Farbe
+                --tint-grund    Grund getönter Karten und Zeilen (.tint);  --tint-anteil: Anteil der Farbe
    Text         --ink           Schrift
                 --ink-2         leise Schrift (Untertitel, Hinweise)
    Akzent       --akzent        Akzentfarbe (aktive Knöpfe, Fokus, „Neu“)
                 --akzent-ink    Schrift auf --akzent
+                --fokus-ring    Umriss bei Tastaturfokus;  --fokus-abstand: Abstand des Umrisses
    Radien       --r-karte       Karten, Kacheln, Diagramme
                 --r-knopf       Knöpfe
                 --r-zeile       Zeilen und Kästen in Listen und Karten
                 --r-feld        Eingabefelder
                 --r-chip        Chips, Marken, Umschalter, Meldung (Pille)
                 --r-blatt       obere Ecken des Blatts (Dialog von unten)
+                --r-pinsel      obere Ecken der Pinsel-Leiste
                 --r-zelle       Tage im Monatsraster
    Schatten     --schatten-karte      Karten und Kacheln (Dunkel: eigener Wert)
                 --schatten-schwebend  Blatt
                 --schatten-leiste     Pinsel-Leiste des Schichtplans
+                --schatten-knopf      Knöpfe (.knopf; Klassisch: none)
    Schrift      --font-text     Grundschrift (body)
-                --font-titel    Titel (Seitentitel, Blatt-Titel, Abschnitte, Kartentitel)
-                --font-zahl     Beträge, Uhrzeiten und Tabellenzahlen (tabular-nums)
+                --font-titel    Titel (Seiten, Blatt, Abschnitte, Karten, Monate, Kacheln, Menü)
+                --font-zahl     Beträge, Uhrzeiten und Tabellenzahlen (mit tabular-nums). Braucht gleich breite Ziffern:
+                                FK Onest (tnum) oder FK Nunito (Ziffern schon gleich breit) – nie FK Fredoka (proportional, kein tnum)
+                --font-feld     Auswahllisten (select). Wirkt nur in Glas/Bento (:root[data-aussehen] select); in Klassisch
+                                behält select die Schrift des Browsers wie bisher
                 --gewicht-titel Gewicht der Titel
                 --titel-gross   Seitentitel (h1.gruss)
                 --titel-seite   Monatstitel (Monat)
+                --titel-schicht Seitentitel im Schichtplan (neben „Eintragen“)
                 --titel-blatt   Titel im Blatt
                 --titel-karte   Titel in Karten (h3)
                 --titel-abschnitt Abschnittstitel (Großbuchstaben)
    Tableiste    --tabs-hoehe    Höhe (ohne sicheren Bereich unten)
                 --tabs-bg       Fläche
                 --tabs-blur     backdrop-filter der Leiste
-                --tabs-rand     Rand oben
+                --tabs-rahmen   ganzer Rahmen (schwebend; Klassisch: none)
+                --tabs-rand     Rand oben (steht nach --tabs-rahmen)
                 --tabs-radius   Ecken (schwebend: rund)
                 --tabs-abstand  schwebend: Abstand zu Rand und Boden (0px = angedockt, Klassisch)
                 --tabs-schatten Schatten (schwebend)
+                --tab-aktiv     Schrift der aktiven Karte;  --tab-aktiv-bg: ihre Fläche (Klassisch: transparent)
+                --fab-bg        runder Knopf „Neu“;  --fab-ink: sein Zeichen;  --fab-schatten: sein Schatten
    Blatt        --blatt-bg      Fläche
                 --blatt-blur    backdrop-filter des Blatts (Klassisch: none)
                 --blatt-schleier Abdunkeln dahinter
+   Pinsel       --pinsel-bg     Fläche der Pinsel-Leiste;  --pinsel-blur: ihr backdrop-filter (Klassisch: none)
+   Meldung      --toast-bg      Fläche der Meldung unten;  --toast-ink: ihre Schrift
+                --tooltip-bg    Fläche des Diagramm-Tooltips;  --tooltip-ink: seine Schrift
    Bewegung     --dauer-kurz    kurze Übergänge (Schleier, Meldung)
                 --dauer-mittel  Blatt auf/zu
                 --kurve-feder   Kurve des Blatts (mit Feder)
                 --kurve-sanft   sanfte Kurve (Schleier, Meldung)
-                --dauer-tab     Tabwechsel (View Transition bzw. Fallback; ≤ 260 ms)
-                --dauer-einblenden  eine Karte beim ersten Zeichnen eines Bildschirms (.bw-einblenden)
-                --staffel       Abstand zwischen zwei Karten beim Einblenden (höchstens 8 gestaffelt)
-                --dauer-fortschritt Füllen eines Balkens (.bw-fortschritt)
-                Klassen und Keyframes der Bewegung (nur Glas/Bento): Abschnitt „Bewegung“ am Ende dieser Datei.
    Die Schriften der Aussehen (FK Onest, FK Fredoka, FK Nunito) sind weiter unten nur deklariert; Klassisch nutzt sie nicht. */
 
 :root {
@@ -111,6 +129,15 @@
   /* Design-Tokens (Liste und Zweck: Kopf dieser Datei); die Werte sind Klassisch */
   --karte-2: var(--karte);
   --rand: 1.5px;
+  --karte-rand: var(--rand) solid var(--linie);
+  --feld-rand: var(--rand) solid var(--linie);
+  --feld-bg: var(--karte-2);
+  --chip-grund: var(--karte);
+  --chip-anteil: 12%;
+  --chip-aktiv-anteil: 38%;
+  --tint-grund: var(--karte);
+  --tint-anteil: 16%;
+  --seite-bild: none;
   --r-karte: 20px;
   --r-knopf: 14px;
   --r-zeile: 14px;
@@ -118,18 +145,24 @@
   --r-chip: 999px;
   --r-blatt: 26px;
   --r-zelle: 12px;
+  --r-pinsel: 22px;
   --schatten-karte: 0 1px 0 rgba(45, 42, 62, 0.04), 0 8px 22px rgba(45, 42, 62, 0.07);
   --schatten-schwebend: 0 -10px 40px rgba(20, 16, 36, 0.25);
   --schatten-leiste: 0 -10px 24px rgba(20, 16, 36, 0.14);
+  --schatten-knopf: none;
+  --fokus-ring: 3px solid var(--akzent);
+  --fokus-abstand: 2px;
   --font-text: ui-rounded, 'SF Pro Rounded', 'Nunito', 'Segoe UI Variable Text', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-titel: var(--font-text);
   --font-zahl: var(--font-text);
+  --font-feld: var(--font-text);
   --gewicht-titel: 800;
   --titel-gross: 1.9rem;
   --titel-seite: 1.5rem;
   --titel-blatt: 1.2rem;
   --titel-karte: 1.05rem;
   --titel-abschnitt: 0.8rem;
+  --titel-schicht: 1.55rem;
   --tabs-hoehe: 68px;
   --tabs-bg: color-mix(in srgb, var(--karte) 92%, transparent);
   --tabs-blur: blur(14px);
@@ -137,6 +170,18 @@
   --tabs-radius: 0;
   --tabs-abstand: 0px;
   --tabs-schatten: none;
+  --tabs-rahmen: none;
+  --tab-aktiv: var(--akzent);
+  --tab-aktiv-bg: transparent;
+  --fab-bg: var(--akzent);
+  --fab-ink: var(--akzent-ink);
+  --fab-schatten: 0 6px 16px color-mix(in srgb, var(--akzent) 45%, transparent);
+  --pinsel-bg: var(--karte);
+  --pinsel-blur: none;
+  --toast-bg: var(--ink);
+  --toast-ink: var(--bg);
+  --tooltip-bg: var(--ink);
+  --tooltip-ink: var(--bg);
   --blatt-bg: var(--bg);
   --blatt-blur: none;
   --blatt-schleier: rgba(20, 16, 36, 0.45);
@@ -258,14 +303,16 @@
 /* Schriften der Aussehen (lokal, OFL, siehe fonts/LIZENZ.md): Glas = Onest, Bento = Fredoka (Titel) und Nunito (Text).
    Nur deklariert: Klassisch nennt sie in keiner Schriftliste und lädt sie deshalb nie. Das Präfix „FK“ ist Absicht – „Nunito“
    steht schon in --font-text (als installierte Systemschrift); hieße diese Datei so, nähme Klassisch sie auf Telefonen ohne
-   ui-rounded. unicode-range = die Teilmenge der Dateien (Latein mit Ä Ö Ü ß, €, Satzzeichen der App). */
+   ui-rounded. unicode-range = genau die Zeichen, die jede Datei hat (Latein mit Ä Ö Ü ß, €, Satzzeichen der App; Fredoka ohne
+   Pfeile und ≈ ≠ ≤ ≥, Nunito ohne Pfeile), damit der Browser eine Schrift nie für ein Zeichen lädt, das sie nicht hat. Die
+   Namen in den Dateien (z. B. „Fredoka Light“) stammen aus der variablen Vorlage und spielen keine Rolle. */
 @font-face {
   font-family: 'FK Onest';
   src: url('fonts/onest.woff2') format('woff2');
   font-weight: 400 900;
   font-style: normal;
   font-display: swap;
-  unicode-range: U+0020-007E, U+00A0-00FF, U+0131, U+0152-0153, U+2013-2014, U+2018-201A, U+201C-201E, U+2022, U+2026, U+2039-203A, U+20AC, U+2190-2193, U+2212, U+2248, U+2260, U+2264-2265;
+  unicode-range: U+0020-007E, U+00A0-00A3, U+00A5, U+00A7-00AB, U+00AE-00B4, U+00B6-00FF, U+0131, U+0152-0153, U+2013-2014, U+2018-201A, U+201C-201E, U+2022, U+2026, U+2039-203A, U+20AC, U+2190-2193, U+2212, U+2248, U+2260, U+2264-2265;
 }
 
 @font-face {
@@ -274,7 +321,7 @@
   font-weight: 400 700;
   font-style: normal;
   font-display: swap;
-  unicode-range: U+0020-007E, U+00A0-00FF, U+0131, U+0152-0153, U+2013-2014, U+2018-201A, U+201C-201E, U+2022, U+2026, U+2039-203A, U+20AC, U+2190-2193, U+2212, U+2248, U+2260, U+2264-2265;
+  unicode-range: U+0020-007E, U+00A0-00AC, U+00AE-00FF, U+0131, U+0152-0153, U+2013-2014, U+2018-201A, U+201C-201E, U+2022, U+2026, U+2039-203A, U+20AC, U+2212;
 }
 
 @font-face {
@@ -283,7 +330,7 @@
   font-weight: 400 900;
   font-style: normal;
   font-display: swap;
-  unicode-range: U+0020-007E, U+00A0-00FF, U+0131, U+0152-0153, U+2013-2014, U+2018-201A, U+201C-201E, U+2022, U+2026, U+2039-203A, U+20AC, U+2190-2193, U+2212, U+2248, U+2260, U+2264-2265;
+  unicode-range: U+0020-007E, U+00A0-00FF, U+0131, U+0152-0153, U+2013-2014, U+2018-201A, U+201C-201E, U+2022, U+2026, U+2039-203A, U+20AC, U+2212, U+2248, U+2260, U+2264-2265;
 }
 
 
@@ -303,6 +350,7 @@ html {
 body {
   margin: 0;
   background: var(--bg);
+  background-image: var(--seite-bild);
   color: var(--ink);
   font-family: var(--font-text);
   font-size: 16px;
@@ -337,9 +385,14 @@ button {
   cursor: pointer;
 }
 
+/* Auswahllisten erben die Schrift in Klassisch nicht (Browser-Schrift, wie bisher); Glas und Bento geben ihnen --font-feld. */
+:root[data-aussehen] select {
+  font-family: var(--font-feld);
+}
+
 :focus-visible {
-  outline: 3px solid var(--akzent);
-  outline-offset: 2px;
+  outline: var(--fokus-ring);
+  outline-offset: var(--fokus-abstand);
 }
 
 /* ---------- Grundgerüst ---------- */
@@ -412,7 +465,7 @@ button {
 
 .karte {
   background: var(--karte);
-  border: var(--rand) solid var(--linie);
+  border: var(--karte-rand);
   border-radius: var(--r-karte);
   padding: 14px;
   box-shadow: var(--schatten-karte);
@@ -428,7 +481,7 @@ button {
 
 .tint {
   --c: var(--grau);
-  background: color-mix(in srgb, var(--c) 16%, var(--karte));
+  background: color-mix(in srgb, var(--c) var(--tint-anteil), var(--tint-grund));
   border-color: color-mix(in srgb, var(--c) 45%, transparent);
 }
 
@@ -474,7 +527,7 @@ button {
   display: inline-flex;
   align-items: center;
   border: 1.5px solid color-mix(in srgb, var(--c, var(--ink-2)) 40%, transparent);
-  background: color-mix(in srgb, var(--c, var(--ink-2)) 12%, var(--karte));
+  background: color-mix(in srgb, var(--c, var(--ink-2)) var(--chip-anteil), var(--chip-grund));
   border-radius: var(--r-chip);
   padding: 6px 12px;
   font-size: 0.9rem;
@@ -487,12 +540,13 @@ button.chip {
 
 .chip.aktiv {
   border: 2px solid var(--c, var(--akzent));
-  background: color-mix(in srgb, var(--c, var(--akzent)) 38%, var(--karte));
+  background: color-mix(in srgb, var(--c, var(--akzent)) var(--chip-aktiv-anteil), var(--chip-grund));
   font-weight: 800;
 }
 
 /* Konto & App → Darstellung: Zwischentitel und die kleine Vorschau jedes Aussehens (drei Farbtupfen im Chip) */
 .darstellung-titel {
+  font-family: var(--font-titel);
   margin: 0;
   font-size: 0.95rem;
 }
@@ -529,6 +583,7 @@ button.chip {
   border-radius: var(--r-knopf);
   padding: 10px 14px;
   font-weight: 700;
+  box-shadow: var(--schatten-knopf);
 }
 
 .knopf:active {
@@ -795,6 +850,7 @@ button.chip {
 }
 
 .kachel b {
+  font-family: var(--font-titel);
   line-height: 1.2;
 }
 
@@ -814,8 +870,8 @@ button.chip {
   min-height: 46px;
   padding: 8px 12px;
   border-radius: var(--r-feld);
-  border: var(--rand) solid var(--linie);
-  background: var(--karte-2);
+  border: var(--feld-rand);
+  background: var(--feld-bg);
 }
 
 .formular .info {
@@ -843,8 +899,8 @@ button.chip {
   min-height: 74px;
   padding: 10px 12px;
   border-radius: var(--r-feld);
-  border: var(--rand) solid var(--linie);
-  background: var(--karte-2);
+  border: var(--feld-rand);
+  background: var(--feld-bg);
   font: inherit;
   resize: vertical;
 }
@@ -879,8 +935,8 @@ small.notiz {
   min-height: 46px;
   padding: 8px 12px;
   border-radius: var(--r-feld);
-  border: var(--rand) solid var(--linie);
-  background: var(--karte-2);
+  border: var(--feld-rand);
+  background: var(--feld-bg);
 }
 
 .chip.entfernbar .x {
@@ -932,7 +988,7 @@ small.notiz {
 }
 
 .zeile.tint {
-  background: color-mix(in srgb, var(--c) 16%, var(--karte));
+  background: color-mix(in srgb, var(--c) var(--tint-anteil), var(--tint-grund));
   border-color: color-mix(in srgb, var(--c) 45%, transparent);
 }
 
@@ -1057,6 +1113,7 @@ html:has(.blatt-huelle > .blatt[role='dialog']) body {
 }
 
 .blatt-inhalt h3 {
+  font-family: var(--font-titel);
   font-size: 0.85rem;
   font-weight: 800;
   letter-spacing: 0.06em;
@@ -1075,8 +1132,8 @@ html:has(.blatt-huelle > .blatt[role='dialog']) body {
   max-width: min(92vw, 420px);
   padding: 12px 18px;
   border-radius: var(--r-chip);
-  background: var(--ink);
-  color: var(--bg);
+  background: var(--toast-bg);
+  color: var(--toast-ink);
   font-weight: 700;
   opacity: 0;
   transition: opacity var(--dauer-kurz) var(--kurve-sanft), transform var(--dauer-kurz) var(--kurve-sanft);
@@ -1105,6 +1162,7 @@ html:has(.blatt-huelle > .blatt[role='dialog']) body {
   background: var(--tabs-bg);
   -webkit-backdrop-filter: var(--tabs-blur);
   backdrop-filter: var(--tabs-blur);
+  border: var(--tabs-rahmen);
   border-top: var(--tabs-rand);
   border-radius: var(--tabs-radius);
   box-shadow: var(--tabs-schatten);
@@ -1138,7 +1196,8 @@ html:has(.blatt-huelle > .blatt[role='dialog']) body {
 }
 
 .tab.aktiv {
-  color: var(--akzent);
+  color: var(--tab-aktiv);
+  background: var(--tab-aktiv-bg);
 }
 
 .tab.aktiv .tab-symbol {
@@ -1152,10 +1211,10 @@ html:has(.blatt-huelle > .blatt[role='dialog']) body {
   height: 48px;
   margin-top: -20px;
   border-radius: 50%;
-  background: var(--akzent);
-  color: var(--akzent-ink);
+  background: var(--fab-bg);
+  color: var(--fab-ink);
   font-size: 1.9rem;
-  box-shadow: 0 6px 16px color-mix(in srgb, var(--akzent) 45%, transparent);
+  box-shadow: var(--fab-schatten);
 }
 
 .tab.fab .tab-text {
@@ -1446,8 +1505,8 @@ html:has(.blatt-huelle > .blatt[role='dialog']) body {
   width: 100%;
   padding: 10px 12px;
   border-radius: var(--r-feld);
-  border: var(--rand) solid var(--linie);
-  background: var(--karte-2);
+  border: var(--feld-rand);
+  background: var(--feld-bg);
   min-height: 46px;
 }
 
@@ -1564,14 +1623,13 @@ html:has(.blatt-huelle > .blatt[role='dialog']) body {
 }
 
 .eingabe-zeile > input[type='text'] {
-  font-family: var(--font-zahl);
   flex: 1;
   min-width: 0;
   min-height: 46px;
   padding: 8px 10px;
   border-radius: var(--r-feld);
-  border: var(--rand) solid var(--linie);
-  background: var(--karte-2);
+  border: var(--feld-rand);
+  background: var(--feld-bg);
   font: inherit;
   font-size: 1rem;
   font-variant-numeric: tabular-nums;
@@ -1741,8 +1799,8 @@ html:has(.blatt-huelle > .blatt[role='dialog']) body {
   min-height: 48px;
   padding: 8px 12px;
   border-radius: var(--r-feld);
-  border: var(--rand) solid var(--linie);
-  background: var(--karte-2);
+  border: var(--feld-rand);
+  background: var(--feld-bg);
   color: var(--ink);
   font-size: 1rem;
 }
@@ -1890,8 +1948,8 @@ html:has(.blatt-huelle > .blatt[role='dialog']) body {
   min-height: 48px;
   padding: 8px 12px;
   border-radius: var(--r-feld);
-  border: var(--rand) solid var(--linie);
-  background: var(--karte-2);
+  border: var(--feld-rand);
+  background: var(--feld-bg);
   color: var(--ink);
   font-size: 1rem;
 }
@@ -1952,8 +2010,8 @@ html:has(.blatt-huelle > .blatt[role='dialog']) body {
   min-height: 48px;
   padding: 8px 12px;
   border-radius: var(--r-feld);
-  border: var(--rand) solid var(--linie);
-  background: var(--karte-2);
+  border: var(--feld-rand);
+  background: var(--feld-bg);
   color: var(--ink);
   font-size: 1.1rem;
   font-variant-numeric: tabular-nums;
@@ -1967,6 +2025,7 @@ html:has(.blatt-huelle > .blatt[role='dialog']) body {
 }
 
 .konto-monat-titel {
+  font-family: var(--font-titel);
   font-size: 1rem;
 }
 
@@ -2161,6 +2220,7 @@ html:has(.blatt-huelle > .blatt[role='dialog']) body {
 }
 
 .konto-kachel-titel {
+  font-family: var(--font-titel);
   color: var(--ink-2);
   font-size: 0.75rem;
   font-weight: 700;
@@ -2187,10 +2247,10 @@ figure.diagramm {
   margin: 0;
   padding: 12px 10px 10px;
   border-radius: var(--r-karte);
-  border: var(--rand) solid var(--linie);
+  border: var(--karte-rand);
   background: var(--karte);
   box-shadow: var(--schatten-karte);
-  outline-offset: 2px;
+  outline-offset: var(--fokus-abstand);
 }
 
 .diagramm .konto-diagramm {
@@ -2348,8 +2408,8 @@ figure.diagramm {
   max-width: calc(100% - 8px);
   padding: 8px 10px;
   border-radius: var(--r-zeile);
-  background: var(--ink);
-  color: var(--bg);
+  background: var(--tooltip-bg);
+  color: var(--tooltip-ink);
   box-shadow: var(--schatten-karte);
   font-size: 0.85rem;
   pointer-events: none;
@@ -2401,11 +2461,14 @@ figure.diagramm {
 
 .diag-tabelle th,
 .diag-tabelle td {
-  font-family: var(--font-zahl);
   padding: 4px 6px;
   border-top: 1px solid var(--linie);
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+.diag-tabelle td:not(:first-child) {
+  font-family: var(--font-zahl); /* nur die Zahlen, nicht Kopf und Monatsname */
 }
 
 .diag-tabelle th:first-child,
@@ -2526,6 +2589,7 @@ figure.diagramm {
 }
 
 .menue-text b {
+  font-family: var(--font-titel);
   font-size: 1.02rem;
 }
 
@@ -2934,6 +2998,7 @@ html:has(.screen.einkauf) {
 }
 
 .nachricht-gruppe-titel {
+  font-family: var(--font-titel);
   font-size: 0.85rem;
   font-weight: 800;
   color: var(--ink-2);
@@ -3237,7 +3302,7 @@ html:has(.screen.einkauf) {
 }
 
 .sp-kopf .gruss {
-  font-size: 1.55rem;
+  font-size: var(--titel-schicht);
 }
 
 @media (max-width: 359px) {
@@ -3253,12 +3318,13 @@ html:has(.screen.einkauf) {
 
 .sp-monat {
   background: var(--karte);
-  border: var(--rand) solid var(--linie);
+  border: var(--karte-rand);
   border-radius: var(--r-karte);
   padding: 6px 8px;
 }
 
 .sp-monat h2 {
+  font-family: var(--font-titel);
   font-size: 1.1rem;
   font-weight: 800;
 }
@@ -3490,9 +3556,11 @@ html:has(.screen.einkauf) {
   flex-direction: column;
   gap: 6px;
   padding: 8px 12px 10px;
-  background: var(--karte);
+  background: var(--pinsel-bg);
+  -webkit-backdrop-filter: var(--pinsel-blur);
+  backdrop-filter: var(--pinsel-blur);
   border-top: 2px solid var(--akzent);
-  border-radius: 22px 22px 0 0;
+  border-radius: var(--r-pinsel) var(--r-pinsel) 0 0;
   box-shadow: var(--schatten-leiste);
   z-index: 39; /* unter den Registerkarten (40) und der Meldung (60) */
 }
@@ -4156,7 +4224,6 @@ html:has(.screen.einkauf) {
 }
 
 .fk-legende {
-  font-family: var(--font-zahl);
   display: flex;
   flex-wrap: wrap;
   gap: 2px 12px;
@@ -4361,7 +4428,6 @@ html:has(.screen.einkauf) {
 }
 
 .sz-raster {
-  font-family: var(--font-zahl);
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 2px 10px;
@@ -4370,6 +4436,7 @@ html:has(.screen.einkauf) {
 }
 
 .sz-raster b {
+  font-family: var(--font-zahl);
   text-align: right;
 }
 
@@ -4421,6 +4488,7 @@ html:has(.screen.einkauf) {
 }
 
 .sz-monat-titel {
+  font-family: var(--font-titel);
   display: flex;
   justify-content: space-between;
   align-items: baseline;

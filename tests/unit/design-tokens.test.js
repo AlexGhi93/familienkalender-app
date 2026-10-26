@@ -26,6 +26,13 @@ const DUNKEL_ATTR = variablen(block(":root[data-theme='dark'] {"));
 const KOPF = css.slice(0, css.indexOf('*/') + 2);
 const OHNE_KOMMENTARE = css.replace(/\/\*[\s\S]*?\*\//g, '');
 
+/** Inhalt der Regel, deren Selektor genau `selektor` ist (am Zeilenanfang, erste Fundstelle). */
+function regelVon(selektor) {
+  const i = OHNE_KOMMENTARE.indexOf(`\n${selektor} {`);
+  assert.notEqual(i, -1, `Regel fehlt: ${selektor}`);
+  return OHNE_KOMMENTARE.slice(i, OHNE_KOMMENTARE.indexOf('}', i));
+}
+
 /** Tokens, auf die sich die Aufgaben 4–9 verlassen, mit dem Wert von Klassisch (= Stand 1.1.2). */
 const KLASSISCH = {
   // Flächen, Text, Akzent
@@ -34,6 +41,15 @@ const KLASSISCH = {
   '--karte-2': 'var(--karte)',
   '--linie': '#eadfcb',
   '--rand': '1.5px',
+  '--karte-rand': 'var(--rand) solid var(--linie)',
+  '--feld-rand': 'var(--rand) solid var(--linie)',
+  '--feld-bg': 'var(--karte-2)',
+  '--chip-grund': 'var(--karte)',
+  '--chip-anteil': '12%',
+  '--chip-aktiv-anteil': '38%',
+  '--tint-grund': 'var(--karte)',
+  '--tint-anteil': '16%',
+  '--seite-bild': 'none',
   '--ink': '#2d2a3e',
   '--ink-2': '#6b6680',
   '--akzent': '#7a5ce0',
@@ -46,20 +62,27 @@ const KLASSISCH = {
   '--r-chip': '999px',
   '--r-blatt': '26px',
   '--r-zelle': '12px',
+  '--r-pinsel': '22px',
   // Schatten
   '--schatten-karte': '0 1px 0 rgba(45, 42, 62, 0.04), 0 8px 22px rgba(45, 42, 62, 0.07)',
   '--schatten-schwebend': '0 -10px 40px rgba(20, 16, 36, 0.25)',
   '--schatten-leiste': '0 -10px 24px rgba(20, 16, 36, 0.14)',
+  '--schatten-knopf': 'none',
+  // Fokus
+  '--fokus-ring': '3px solid var(--akzent)',
+  '--fokus-abstand': '2px',
   // Schrift
   '--font-text': "ui-rounded, 'SF Pro Rounded', 'Nunito', 'Segoe UI Variable Text', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
   '--font-titel': 'var(--font-text)',
   '--font-zahl': 'var(--font-text)',
+  '--font-feld': 'var(--font-text)',
   '--gewicht-titel': '800',
   '--titel-gross': '1.9rem',
   '--titel-seite': '1.5rem',
   '--titel-blatt': '1.2rem',
   '--titel-karte': '1.05rem',
   '--titel-abschnitt': '0.8rem',
+  '--titel-schicht': '1.55rem',
   // Tableiste
   '--tabs-hoehe': '68px',
   '--tabs-bg': 'color-mix(in srgb, var(--karte) 92%, transparent)',
@@ -68,6 +91,19 @@ const KLASSISCH = {
   '--tabs-radius': '0',
   '--tabs-abstand': '0px',
   '--tabs-schatten': 'none',
+  '--tabs-rahmen': 'none',
+  '--tab-aktiv': 'var(--akzent)',
+  '--tab-aktiv-bg': 'transparent',
+  '--fab-bg': 'var(--akzent)',
+  '--fab-ink': 'var(--akzent-ink)',
+  '--fab-schatten': '0 6px 16px color-mix(in srgb, var(--akzent) 45%, transparent)',
+  // Pinsel-Leiste, Meldung, Tooltip
+  '--pinsel-bg': 'var(--karte)',
+  '--pinsel-blur': 'none',
+  '--toast-bg': 'var(--ink)',
+  '--toast-ink': 'var(--bg)',
+  '--tooltip-bg': 'var(--ink)',
+  '--tooltip-ink': 'var(--bg)',
   // Blatt
   '--blatt-bg': 'var(--bg)',
   '--blatt-blur': 'none',
@@ -125,6 +161,54 @@ describe('Design-Tokens in theme.css', () => {
     assert.match(regel('.gruss'), /font-family: var\(--font-titel\)/);
     assert.match(regel('body'), /font-family: var\(--font-text\)/);
   });
+
+  test('Lücken aus dem Review: Rahmen, Felder, Chips, Tableiste, Pinsel, Meldung, Fokus, Knopf, Seite', () => {
+    const regel = regelVon;
+    assert.match(regel('.karte'), /border: var\(--karte-rand\)/);
+    for (const feld of ['.feld input', '.feld textarea', '.zeile-eingabe input', '.verlauf-suche', '.konto-eingabe']) {
+      assert.match(regel(feld), /border: var\(--feld-rand\)/, feld);
+      assert.match(regel(feld), /background: var\(--feld-bg\)/, feld);
+    }
+    assert.match(regel('.chip'), /background: color-mix\(in srgb, var\(--c, var\(--ink-2\)\) var\(--chip-anteil\), var\(--chip-grund\)\)/);
+    assert.match(regel('.chip.aktiv'), /var\(--chip-aktiv-anteil\), var\(--chip-grund\)\)/);
+    assert.match(regel('.tint'), /background: color-mix\(in srgb, var\(--c\) var\(--tint-anteil\), var\(--tint-grund\)\)/);
+    assert.match(regel('.tabs'), /border: var\(--tabs-rahmen\);\s*border-top: var\(--tabs-rand\)/);
+    assert.match(regel('.tab.aktiv'), /color: var\(--tab-aktiv\)/);
+    assert.match(regel('.tab.aktiv'), /background: var\(--tab-aktiv-bg\)/);
+    assert.match(regel('.tab.fab .tab-symbol'), /background: var\(--fab-bg\)/);
+    assert.match(regel('.tab.fab .tab-symbol'), /box-shadow: var\(--fab-schatten\)/);
+    assert.match(regel('.sp-pinsel'), /background: var\(--pinsel-bg\)/);
+    assert.match(regel('.sp-pinsel'), /backdrop-filter: var\(--pinsel-blur\)/);
+    assert.match(regel('.sp-pinsel'), /border-radius: var\(--r-pinsel\) var\(--r-pinsel\) 0 0/);
+    assert.match(regel('.toast'), /background: var\(--toast-bg\);\s*color: var\(--toast-ink\)/);
+    assert.match(regel('.diag-tip'), /background: var\(--tooltip-bg\);\s*color: var\(--tooltip-ink\)/);
+    assert.match(regel(':focus-visible'), /outline: var\(--fokus-ring\);\s*outline-offset: var\(--fokus-abstand\)/);
+    assert.match(regel('.knopf'), /box-shadow: var\(--schatten-knopf\)/);
+    assert.match(regel('body'), /background-image: var\(--seite-bild\)/);
+    assert.match(regel('.sp-kopf .gruss'), /font-size: var\(--titel-schicht\)/);
+    for (const titel of ['.blatt-inhalt h3', '.darstellung-titel', '.kachel b']) assert.match(regel(titel), /font-family: var\(--font-titel\)/, titel);
+  });
+
+  test('Auswahllisten: --font-feld wirkt nur in Glas/Bento (Klassisch lässt select die Schrift des Browsers)', () => {
+    assert.match(OHNE_KOMMENTARE, /:root\[data-aussehen\] select \{\s*font-family: var\(--font-feld\);\s*\}/);
+    // sonst keine Regel für select in der Basis: das würde Klassisch ändern
+    assert.doesNotMatch(OHNE_KOMMENTARE.replace(/:root\[data-aussehen\] select \{[^}]*\}/, ''), /(^|\n)select[^{]*\{/);
+  });
+
+  test('--font-zahl nur auf Zahlen, nicht auf Behältern mit Beschriftungen', () => {
+    const regelMit = regelVon;
+    for (const behaelter of ['.sz-raster', '.fk-legende']) assert.doesNotMatch(regelMit(behaelter), /--font-zahl/, behaelter);
+    assert.match(regelMit('.sz-raster b'), /font-family: var\(--font-zahl\)/);
+    // im selben Block nach font: inherit wäre es wirkungslos
+    assert.doesNotMatch(OHNE_KOMMENTARE, /font-family: var\(--font-zahl\);[^}]*font: inherit/);
+  });
+
+  test('kein Aussehen setzt --font-zahl auf Fredoka (proportionale Ziffern, kein tnum)', () => {
+    for (const datei of ['themes/glas.css', 'themes/bento.css']) {
+      const text = readFileSync(new URL(datei, wurzel), 'utf8');
+      assert.doesNotMatch(text, /--font-zahl\s*:[^;]*Fredoka/, datei);
+    }
+  });
 });
 
 describe('Schriften (lokal, OFL)', () => {
@@ -146,6 +230,14 @@ describe('Schriften (lokal, OFL)', () => {
     // „Nunito“, würde Klassisch sie auf Telefonen ohne ui-rounded plötzlich laden – deshalb das Präfix „FK“.
     const listen = [...OHNE_KOMMENTARE.matchAll(/(?:font-family|--font-[\w-]+)\s*:\s*([^;]+);/g)].map((m) => m[1]).filter((l) => !/^'FK /.test(l.trim()));
     for (const name of faces.map(familie)) for (const l of listen) assert.ok(!l.includes(name), `${name} in „${l}“`);
+  });
+
+  test('jede Schrift hat ihre eigene unicode-range (Fredoka ohne Pfeile und ≤ ≥, Nunito ohne Pfeile)', () => {
+    const bereich = (name) => /unicode-range:\s*([^;]+);/.exec(faces.find((f) => familie(f) === name))?.[1] ?? '';
+    assert.match(bereich('FK Onest'), /U\+2190-2193/);
+    assert.doesNotMatch(bereich('FK Fredoka'), /U\+2190|U\+2264/);
+    assert.doesNotMatch(bereich('FK Nunito'), /U\+2190/);
+    for (const name of ['FK Onest', 'FK Fredoka', 'FK Nunito']) assert.match(bereich(name), /U\+0020-007E, U\+00A0-.*U\+20AC/, name);
   });
 
   test('zusammen höchstens 250 KB, Lizenztexte in fonts/LIZENZ.md', () => {
