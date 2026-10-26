@@ -42,12 +42,20 @@ class El {
     this.children = [];
     this.parent = null;
     this.stil = {};
+    this._text = '';
     this.style = {
       setProperty: (k, v) => (this.stil[k] = String(v)),
       removeProperty: (k) => delete this.stil[k],
       getPropertyValue: (k) => this.stil[k] ?? '',
     };
-    this.textContent = '';
+  }
+  get textContent() {
+    return this.children.length > 0 ? this.children.map((k) => k.textContent).join('') : this._text;
+  }
+  set textContent(wert) {
+    for (const k of this.children) k.parent = null;
+    this.children = [];
+    this._text = String(wert);
   }
   getAttribute(n) {
     return n in this.attr ? this.attr[n] : null;
@@ -251,15 +259,17 @@ describe('einblenden', () => {
 
 describe('hochzaehlen', () => {
   const euro = (c) => `${(c / 100).toFixed(2)} €`;
+  /** Was man sieht: während des Zählens die versteckte Anzeige (aria-hidden), danach der Text selbst. */
+  const sichtbar = (el) => (el.children.length > 0 ? el.children[0].textContent : el.textContent);
 
   test('zählt von `von` bis zum Ziel; der letzte Text ist genau das Ziel', () => {
     const t = neuesDokument({ aussehen: 'glas' });
     const el = t.el('b');
     hochzaehlen(el, 123456, euro, { von: 0 });
-    assert.equal(el.textContent, euro(0));
+    assert.equal(sichtbar(el), euro(0));
     t.bild(1000);
     t.bild(1200);
-    const zwischen = el.textContent;
+    const zwischen = sichtbar(el);
     assert.notEqual(zwischen, euro(0));
     assert.notEqual(zwischen, euro(123456));
     for (let ms = 1300; ms <= 3000; ms += 100) t.bild(ms);
@@ -271,11 +281,11 @@ describe('hochzaehlen', () => {
     const t = neuesDokument({ aussehen: 'bento' });
     const el = t.el('b');
     hochzaehlen(el, 500, euro);
-    assert.equal(el.textContent, euro(0));
+    assert.equal(sichtbar(el), euro(0));
     for (let ms = 0; ms <= 2000; ms += 100) t.bild(ms);
     assert.equal(el.textContent, euro(500));
     hochzaehlen(el, 900, euro);
-    assert.equal(el.textContent, euro(500));
+    assert.equal(sichtbar(el), euro(500));
     for (let ms = 0; ms <= 2000; ms += 100) t.bild(ms);
     assert.equal(el.textContent, euro(900));
   });
@@ -299,7 +309,23 @@ describe('hochzaehlen', () => {
     const danach = t.el('b');
     danach.setAttribute('data-bw-schluessel', 'konto-seit-beginn');
     hochzaehlen(danach, 8000, euro);
-    assert.equal(danach.textContent, euro(7000));
+    assert.equal(sichtbar(danach), euro(7000));
+  });
+
+  test('Bildschirmleser hören nie einen Zwischenwert: gezählt wird in einer versteckten Anzeige, daneben steht (unsichtbar) der Endwert', () => {
+    const t = neuesDokument({ aussehen: 'bento' });
+    const el = t.el('b');
+    hochzaehlen(el, 25000, euro, { von: 0 });
+    t.bild(0);
+    t.bild(200);
+    const [anzeige, vorlesen] = el.children;
+    assert.equal(anzeige.getAttribute('aria-hidden'), 'true');
+    assert.notEqual(anzeige.textContent, euro(25000));
+    assert.ok(vorlesen.classList.contains('bw-nur-vorlesen'));
+    assert.equal(vorlesen.textContent, euro(25000));
+    for (let ms = 300; ms <= 2000; ms += 100) t.bild(ms);
+    assert.equal(el.children.length, 0, 'am Ende wieder nur der Text');
+    assert.equal(el.textContent, euro(25000));
   });
 
   test('ein zweiter Aufruf mitten im Zählen ersetzt den ersten (nur ein Bildwechsel geplant)', () => {
@@ -341,7 +367,16 @@ describe('fortschritt', () => {
     assert.equal(balken.stil.transform, 'scaleX(1)');
   });
 
-  test('Klassisch oder reduziert: gleich der Endstand; ungültige Werte → 0', () => {
+  test('Klassisch: rührt den Balken nicht an (dort bleibt die Breite wie bisher)', () => {
+    const t = neuesDokument();
+    const balken = t.el('span');
+    fortschritt(balken, 0.4);
+    assert.equal(balken.classList.contains('bw-fortschritt'), false);
+    assert.equal(balken.stil.transform, undefined);
+    assert.equal(t.bilder.size, 0);
+  });
+
+  test('Glas/Bento reduziert: gleich der Endstand; ungültige Werte → 0', () => {
     const t = neuesDokument({ aussehen: 'glas', bewegung: 'reduziert' });
     const balken = t.el('span');
     fortschritt(balken, 0.25);
@@ -384,6 +419,16 @@ describe('konfetti', () => {
     assert.deepEqual(t.dok.body.children, [anker]);
   });
 
+  test('zweimal schnell hintereinander: die erste Wolke geht, es bleibt bei höchstens 80 Teilchen', () => {
+    const t = neuesDokument({ aussehen: 'bento' });
+    const anker = t.el();
+    konfetti(anker, { anzahl: 80 });
+    const zweite = konfetti(anker, { anzahl: 80 });
+    assert.deepEqual(t.dok.body.children, [anker, zweite]);
+    t.zeitAblaufen();
+    assert.deepEqual(t.dok.body.children, [anker]);
+  });
+
   test('Standard-Anzahl ist klein; ohne Anker nichts', () => {
     const t = neuesDokument({ aussehen: 'bento' });
     assert.ok(konfetti(t.el()).children.length <= MAX_KONFETTI);
@@ -392,7 +437,7 @@ describe('konfetti', () => {
 });
 
 describe('tabWechsel', () => {
-  test('Klassisch und reduziert: sofort, ohne View Transition und ohne Klasse', () => {
+  test('Klassisch und reduziert: sofort zeichnen, ohne Klasse und ohne View Transition', () => {
     for (const optionen of [{ viewTransition: true }, { aussehen: 'glas', bewegung: 'reduziert', viewTransition: true }, { aussehen: 'bento', reduziert: true }]) {
       const t = neuesDokument(optionen);
       let gezeichnet = 0;
@@ -400,122 +445,59 @@ describe('tabWechsel', () => {
       assert.equal(gezeichnet, 1);
       assert.equal(t.wechsel.length, 0);
       assert.equal(t.dok.documentElement.classList.contains('bw-tabwechsel'), false);
-      assert.equal(t.dok.documentElement.classList.contains('bw-wechselt'), false);
+      assert.equal(t.zeitgeber.size, 0);
     }
   });
 
-  test('Glas mit View Transitions: zeichnet im Übergang; ein zweiter Wechsel überspringt den laufenden sofort', async () => {
-    const t = neuesDokument({ aussehen: 'glas', viewTransition: true });
-    const seiten = [];
-    tabWechsel(() => seiten.push('monat'), { dokument: t.dok });
-    assert.equal(t.wechsel.length, 1);
-    assert.ok(t.dok.documentElement.classList.contains('bw-wechselt'));
-    tabWechsel(() => seiten.push('einkauf'), { dokument: t.dok });
-    assert.equal(t.wechsel.length, 2);
-    assert.equal(t.wechsel[0].uebersprungen, true);
-    await t.wechsel[1].updateCallbackDone;
-    assert.deepEqual(seiten, ['monat', 'einkauf']);
-    t.wechsel[1].beenden();
-    await t.wechsel[1].finished;
-    await Promise.resolve();
-    assert.equal(t.dok.documentElement.classList.contains('bw-wechselt'), false);
+  test('Glas/Bento: immer sofort (synchron) zeichnen – nie über View Transitions, auch wenn der Browser sie kann –, dann die CSS-Klasse', () => {
+    for (const aussehen of ['glas', 'bento']) {
+      const t = neuesDokument({ aussehen, viewTransition: true });
+      const reihenfolge = [];
+      tabWechsel(() => reihenfolge.push(t.dok.documentElement.classList.contains('bw-tabwechsel') ? 'mit Klasse' : 'gezeichnet'), { dokument: t.dok });
+      reihenfolge.push('zurück');
+      assert.deepEqual(reihenfolge, ['gezeichnet', 'zurück'], 'gezeichnet, bevor tabWechsel zurückkehrt');
+      assert.equal(t.wechsel.length, 0, 'keine View Transition');
+      assert.ok(t.dok.documentElement.classList.contains('bw-tabwechsel'));
+    }
   });
 
-  test('ein Tipp mitten im Übergang (der Browser schickt ihn an <html>): Übergang sofort vorbei, der Tipp landet am Ziel darunter', () => {
-    const t = neuesDokument({ aussehen: 'bento', viewTransition: true });
-    const ziel = t.el('a');
-    let geklickt = 0;
-    ziel.click = () => (geklickt += 1);
-    t.dok.elementFromPoint = (x, y) => (x === 50 && y === 800 ? ziel : null);
-    tabWechsel(() => {}, { dokument: t.dok });
-    const wurzel = t.dok.documentElement;
-    t.melde('pointerdown', { target: wurzel, clientX: 50, clientY: 800, isTrusted: true });
-    assert.equal(t.wechsel[0].uebersprungen, true, 'sofort übersprungen');
-    let gestoppt = false;
-    t.melde('click', { target: wurzel, isTrusted: true, stopPropagation: () => (gestoppt = true), preventDefault() {} });
-    assert.equal(geklickt, 1, 'der Tipp kommt am Element an der Stelle an');
-    assert.equal(gestoppt, true);
-    // ohne laufenden Übergang: nichts wird nachgeholt
-    t.melde('pointerdown', { target: wurzel, clientX: 50, clientY: 800, isTrusted: true });
-    t.melde('click', { target: wurzel, isTrusted: true, stopPropagation() {}, preventDefault() {} });
-    assert.equal(geklickt, 1);
-  });
-
-  test('Tipp mitten im Übergang auf ein Eingabefeld: es bekommt den Fokus', () => {
-    const t = neuesDokument({ aussehen: 'glas', viewTransition: true });
-    const feld = t.el('input');
-    let fokus = 0;
-    feld.focus = () => (fokus += 1);
-    feld.click = () => {};
-    feld.matches = (sel) => sel.includes('input');
-    t.dok.elementFromPoint = () => feld;
-    tabWechsel(() => {}, { dokument: t.dok });
-    t.melde('pointerdown', { target: t.dok.documentElement, clientX: 1, clientY: 1, isTrusted: true });
-    t.melde('click', { target: t.dok.documentElement, isTrusted: true, stopPropagation() {}, preventDefault() {} });
-    assert.equal(fokus, 1);
-  });
-
-  test('kommt der Übergang nicht zum Zeichnen (kein Bild, z. B. beschäftigtes Telefon): nach kurzer Zeit trotzdem zeichnen, nur einmal', async () => {
-    const t = neuesDokument({ aussehen: 'glas' });
-    let gezeichnet = 0;
-    const wechsel = [];
-    t.dok.startViewTransition = (f) => {
-      const w = { f, uebersprungen: false, finished: new Promise(() => {}), ready: Promise.resolve(), updateCallbackDone: new Promise(() => {}), skipTransition: () => (w.uebersprungen = true) };
-      wechsel.push(w);
-      return w;
-    };
-    tabWechsel(() => (gezeichnet += 1), { dokument: t.dok });
-    assert.equal(gezeichnet, 0, 'erst im Übergang');
-    const notfall = [...t.zeitgeber.values()];
-    assert.equal(notfall.length, 1);
-    assert.ok(notfall[0].ms <= 200);
-    t.zeitAblaufen();
-    assert.equal(gezeichnet, 1, 'gezeichnet, ohne auf den Übergang zu warten');
-    assert.equal(wechsel[0].uebersprungen, true);
-    wechsel[0].f(); // der Browser ruft später doch noch auf
-    assert.equal(gezeichnet, 1, 'nicht doppelt');
-  });
-
-  test('Fehler beim Zeichnen im Übergang geht nicht verloren (wird später geworfen)', async () => {
-    const t = neuesDokument({ aussehen: 'bento', viewTransition: true });
-    t.dok.startViewTransition = (f) => {
-      const done = Promise.resolve().then(f);
-      return { updateCallbackDone: done, ready: done, finished: done, skipTransition() {} };
-    };
-    tabWechsel(
-      () => {
-        throw new Error('kaputt');
-      },
-      { dokument: t.dok },
-    );
-    await new Promise((r) => setTimeout(r, 0));
-    const geplant = [...t.zeitgeber.values()];
-    assert.equal(geplant.length, 1);
-    assert.throws(() => geplant[0].fn(), /kaputt/);
-  });
-
-  test('ohne View Transitions: sofort zeichnen, dann kurz die Klasse bw-tabwechsel (für die CSS-Bewegung)', () => {
-    const t = neuesDokument({ aussehen: 'bento' });
+  test('die Klasse bleibt so lange wie --dauer-tab (plus Reserve); ein zweiter Wechsel zeichnet sofort und plant nur einen Zeitgeber', () => {
+    const t = neuesDokument({ aussehen: 'bento', css: { '--dauer-tab': '0.22s' } });
     let gezeichnet = 0;
     tabWechsel(() => (gezeichnet += 1), { dokument: t.dok });
-    assert.equal(gezeichnet, 1);
-    assert.ok(t.dok.documentElement.classList.contains('bw-tabwechsel'));
-    const zeiten = [...t.zeitgeber.values()].map((z) => z.ms);
-    assert.equal(zeiten.length, 1);
-    assert.ok(zeiten[0] <= 400);
-    tabWechsel(() => (gezeichnet += 1), { dokument: t.dok }); // zweiter Tipp: sofort, nur ein Zeitgeber
+    const [zeit] = [...t.zeitgeber.values()].map((z) => z.ms);
+    assert.ok(zeit >= 220 && zeit <= 400, `Zeitgeber ${zeit} ms`);
+    tabWechsel(() => (gezeichnet += 1), { dokument: t.dok });
     assert.equal(gezeichnet, 2);
     assert.equal(t.zeitgeber.size, 1);
+    assert.ok(t.dok.documentElement.classList.contains('bw-tabwechsel'));
     t.zeitAblaufen();
     assert.equal(t.dok.documentElement.classList.contains('bw-tabwechsel'), false);
+    const lang = neuesDokument({ aussehen: 'glas', css: { '--dauer-tab': '2s' } });
+    tabWechsel(() => {}, { dokument: lang.dok });
+    assert.ok([...lang.zeitgeber.values()][0].ms >= 2000, 'längere Dauer (z. B. im Test): Klasse bleibt bis zum Ende');
+  });
+
+  test('ein Fehler beim Zeichnen kommt sofort beim Aufrufer an', () => {
+    const t = neuesDokument({ aussehen: 'glas' });
+    assert.throws(
+      () =>
+        tabWechsel(
+          () => {
+            throw new Error('kaputt');
+          },
+          { dokument: t.dok },
+        ),
+      /kaputt/,
+    );
   });
 });
 
 describe('blattSchliessenMs', () => {
-  test('Klassisch wie bisher: 180 ms, bei prefers-reduced-motion 0 (data-bewegung ändert Klassisch nicht)', () => {
+  test('Klassisch wie bisher 180 ms; ohne Bewegung (prefers-reduced-motion oder „Reduziert“, gilt in allen Aussehen) 0', () => {
     assert.equal(blattSchliessenMs(neuesDokument().dok), 180);
     assert.equal(blattSchliessenMs(neuesDokument({ reduziert: true }).dok), 0);
-    assert.equal(blattSchliessenMs(neuesDokument({ bewegung: 'reduziert' }).dok), 180);
+    assert.equal(blattSchliessenMs(neuesDokument({ bewegung: 'reduziert' }).dok), 0);
   });
 
   test('Glas/Bento: Dauer aus --dauer-mittel (s oder ms), reduziert 0, unlesbar 180', () => {

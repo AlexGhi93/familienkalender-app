@@ -354,8 +354,8 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
     }
   }
 
-  // Seitenwechsel (Tab-Leiste, Links, Zurück): in Glas/Bento als kurzer Übergang, sonst sofort (ui/bewegung.js). Neuzeichnen aus dem
-  // Store (Speichern, Vorladen, anderes Telefon) geht nie durch den Übergang.
+  // Seitenwechsel (Tab-Leiste, Links, Zurück): immer sofort gezeichnet; in Glas/Bento blendet #inhalt danach kurz ein (ui/bewegung.js).
+  // Neuzeichnen aus dem Store (Speichern, Vorladen, anderes Telefon) blendet nie ein.
   fenster.addEventListener('hashchange', () => tabWechsel(() => ui.rendern(), { dokument: fenster.document ?? document }));
 
   let letzterFehler = null;

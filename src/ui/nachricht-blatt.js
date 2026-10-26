@@ -1,6 +1,7 @@
 // Nachricht an die Krabbelstube bzw. den Kindergarten: Situation antippen (krank, später, früher abholen …), ein paar Angaben,
 // der fertige Text steht zum Nachlesen und Ändern da, dann per WhatsApp, SMS, E-Mail, Teilen oder Kopieren senden.
 // Die Texte kommen aus src/app/nachrichten.js; Kontakt, Grußformel und Unterschrift stehen in „Mehr“ → „Nachrichten“.
+import { bewegungAn } from './bewegung.js';
 import { h } from './dom.js';
 import { blatt, chip, toast } from './components.js';
 import { datumFeld, zeitFeld } from './eingabefelder.js';
@@ -48,7 +49,7 @@ async function kopieren(textfeld) {
   }
 }
 
-const ruhig = () => globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
+const ruhig = () => !bewegungAn(); // prefers-reduced-motion oder „Bewegung: Reduziert“ (ui/bewegung.js)
 
 /**
  * Öffnet das Blatt „Nachricht an die Krabbelstube“ bzw. „… an den Kindergarten“.

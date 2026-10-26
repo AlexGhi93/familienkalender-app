@@ -1,5 +1,6 @@
 // Menü-Karte für „Mehr“: Zeilen mit eigenem, kurz animiertem Symbol. Eine Zeile klappt ihre Einstellungen darunter auf
 // (immer nur eine offen) oder führt auf eine andere Seite (›). Die Animationen stehen in theme.css (`anim-…`).
+import { bewegungAn } from './bewegung.js';
 import { h } from './dom.js';
 import { farbe } from './components.js';
 
@@ -13,7 +14,7 @@ export function oeffneMenueZeile(id) {
 const SCHRITT_MS = 110; // Abstand zwischen den Symbolen beim Betreten der Seite
 const START_MS = 150;
 
-const ruhig = () => globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
+const ruhig = () => !bewegungAn(); // prefers-reduced-motion oder „Bewegung: Reduziert“ (ui/bewegung.js)
 
 /** Spielt die Animation eines Symbols (erneut) ab. */
 function spiele(symbol, verzoegerungMs = 0) {

@@ -1,7 +1,8 @@
 // Gemeinsame Bewegung der Aussehen „Glas & Licht“ und „Bento bunt“ (1.2.0): Tabwechsel, Einblenden, Hochzählen, Fortschritt, Konfetti.
-// Klassisch bekommt davon nichts (kein Attribut data-aussehen → keine Klasse, kein Übergang, Zahlen und Balken gleich am Ziel).
-// Alles ist aus bei „Bewegung: Reduziert“ (data-bewegung="reduziert") oder prefers-reduced-motion. Keine Animation hält eine Aktion
-// auf: Tipps wirken sofort (ein zweiter Tabwechsel überspringt den laufenden), Neuzeichnen im Hintergrund spielt nichts erneut ab.
+// Klassisch bekommt davon nichts (kein Attribut data-aussehen → keine Klasse, kein Übergang, Zahlen gleich am Ziel, Balken unberührt).
+// Alles ist aus bei „Bewegung: Reduziert“ (data-bewegung="reduziert", gilt in ALLEN Aussehen) oder prefers-reduced-motion.
+// Keine Animation hält eine Aktion auf: gezeichnet wird immer sofort, die Bewegung läuft danach nur über transform/opacity auf dem
+// echten DOM (keine View Transitions: die fangen Tipps ab und verzögern das Zeichnen); Neuzeichnen im Hintergrund spielt nichts erneut ab.
 // Die Klassen und Keyframes stehen in theme.css (Abschnitt „Bewegung“); Glas und Bento würzen sie in themes/glas.css bzw. bento.css.
 
 /** Aussehen, in denen die Effekte laufen. */
@@ -15,13 +16,9 @@ export const MAX_GESTAFFELT = 8;
 const EINBLENDEN_AUFRAEUMEN_MS = 1400;
 /** Dauer des Hochzählens (rAF, ease-out). */
 const ZAEHLEN_MS = 700;
-/** Fallback ohne View Transitions: so lange steht `bw-tabwechsel` an <html>. */
-const TAB_FALLBACK_MS = 260;
-/**
- * Spätestens dann wird gezeichnet, auch wenn der Übergang noch nicht dazu kam (er wartet auf ein Bild, um den alten Stand
- * festzuhalten; ein beschäftigtes Telefon oder ein Browser ohne Bild ließe die Seite sonst bis zu 4 s stehen).
- */
-const TAB_NOTFALL_MS = 200;
+/** Tabwechsel: `bw-tabwechsel` bleibt so lange wie --dauer-tab (Standard 220 ms) plus diese Reserve an <html>. */
+const TAB_STANDARD_MS = 220;
+const TAB_RESERVE_MS = 60;
 /** Konfetti: höchstens so viele Teilchen; nach KONFETTI_MS ist alles aus dem DOM. */
 export const MAX_KONFETTI = 80;
 export const KONFETTI_MS = 1500;
@@ -58,121 +55,46 @@ export function effekteAn(dokument = globalThis.document) {
 
 // ---------- Tabwechsel ----------
 
-let laufenderWechsel = null; // laufende View Transition (nur eine zugleich)
-let fallbackZeitgeber = null;
-const angebunden = new WeakSet(); // Dokumente, an denen die Hörer für „Tipp durch den Übergang“ hängen
-let nachholen = null; // { x, y }: ein Tipp, der mitten im Übergang an <html> ging
+let tabZeitgeber = null;
 
-/** Übergang sofort beenden (der neue Stand steht dann gleich da). */
-function wechselUeberspringen() {
-  const alt = laufenderWechsel;
-  laufenderWechsel = null;
-  if (!alt) return;
+/** Dauer eines CSS-Tokens in ms (`0.22s`, `220ms`), sonst null. */
+function dauerMs(text) {
+  const t = String(text ?? '').trim();
+  const m = /^(\d+(?:\.\d+)?|\.\d+)(ms|s)$/.exec(t);
+  if (!m) return null;
+  return Math.round(Number(m[1]) * (m[2] === 's' ? 1000 : 1));
+}
+
+function tokenMs(dokument, name) {
   try {
-    alt.skipTransition();
+    return dauerMs(fensterVon(dokument).getComputedStyle?.(dokument.documentElement)?.getPropertyValue(name));
   } catch {
-    // schon fertig
+    return null;
   }
 }
 
-const EINGABE = 'input, textarea, select, [contenteditable=""], [contenteditable="true"]';
-
 /**
- * Während einer View Transition schickt der Browser jeden Tipp an <html> (das Bild des Übergangs liegt über der Seite; Chrome
- * beachtet `pointer-events: none` darauf nicht). Darum: beim Aufsetzen den Übergang sofort beenden und den Klick, der dann an <html>
- * ankommt, an das Element an derselben Stelle weitergeben – der Tipp wirkt also sofort (Tab, Knopf, Feld).
- */
-function tippDurchUebergang(dokument) {
-  if (angebunden.has(dokument) || typeof dokument.addEventListener !== 'function') return;
-  angebunden.add(dokument);
-  dokument.addEventListener(
-    'pointerdown',
-    (e) => {
-      if (!laufenderWechsel) return;
-      wechselUeberspringen();
-      nachholen = e.target === dokument.documentElement ? { x: e.clientX, y: e.clientY } : null;
-    },
-    true,
-  );
-  dokument.addEventListener(
-    'click',
-    (e) => {
-      const n = nachholen;
-      nachholen = null;
-      if (!n || !e.isTrusted || e.target !== dokument.documentElement) return;
-      const ziel = dokument.elementFromPoint?.(n.x, n.y);
-      if (!ziel || ziel === dokument.documentElement || ziel === dokument.body) return;
-      e.stopPropagation();
-      e.preventDefault();
-      if (ziel.matches?.(EINGABE)) ziel.focus?.();
-      ziel.click?.();
-    },
-    true,
-  );
-}
-
-/**
- * Wechselt die Seite (`aktualisieren` zeichnet sie). Mit Effekten und View Transitions (iOS 18+, Chrome 111+) als kurzer Übergang
- * (≤ 260 ms, Klasse `bw-wechselt` an <html> solange er läuft); ohne API sofort zeichnen und kurz `bw-tabwechsel` setzen (CSS-Bewegung).
- * Ein zweiter Wechsel überspringt den laufenden sofort; ein Tipp mitten im Übergang beendet ihn und wirkt gleich (tippDurchUebergang).
- * Klassisch und reduziert: einfach `aktualisieren()`.
+ * Wechselt die Seite: `aktualisieren()` zeichnet sie IMMER sofort (synchron) – ein Tipp gleich danach trifft schon die neue Seite.
+ * In Glas/Bento mit Bewegung blendet #inhalt danach kurz ein (Klasse `bw-tabwechsel` an <html>, nur opacity, --dauer-tab ≤ 260 ms);
+ * ein zweiter Wechsel startet die Bewegung neu. Klassisch und reduziert: nur `aktualisieren()`.
+ * Bewusst ohne View Transitions (Ruling Task 3): sie zeichnen erst ein Bild später und schicken Tipps währenddessen an <html>.
  */
 export function tabWechsel(aktualisieren, { dokument = globalThis.document } = {}) {
-  wechselUeberspringen();
-  if (!effekteAn(dokument)) {
-    aktualisieren();
-    return;
-  }
+  aktualisieren();
+  if (!effekteAn(dokument)) return;
   const wurzel = dokument.documentElement;
   const fenster = fensterVon(dokument);
-  if (typeof dokument.startViewTransition === 'function') {
-    tippDurchUebergang(dokument);
-    wurzel.classList.add('bw-wechselt');
-    let gezeichnet = false;
-    let notfall = null;
-    const zeichne = () => {
-      fenster.clearTimeout(notfall);
-      if (gezeichnet) return;
-      gezeichnet = true;
-      aktualisieren();
-    };
-    let wechsel;
-    try {
-      wechsel = dokument.startViewTransition(zeichne);
-      notfall = fenster.setTimeout(() => {
-        if (gezeichnet) return;
-        zeichne();
-        if (laufenderWechsel === wechsel) wechselUeberspringen();
-      }, TAB_NOTFALL_MS);
-    } catch {
-      wurzel.classList.remove('bw-wechselt');
-      aktualisieren();
-      return;
-    }
-    laufenderWechsel = wechsel;
-    const fertig = () => {
-      if (laufenderWechsel === wechsel) laufenderWechsel = null;
-      if (!laufenderWechsel) wurzel.classList.remove('bw-wechselt');
-    };
-    Promise.resolve(wechsel.finished).then(fertig, fertig);
-    Promise.resolve(wechsel.ready).catch(() => {}); // übersprungen: kein Fehler
-    // ein Fehler beim Zeichnen darf nicht im Übergang verschwinden (die Fehlerwache der Tests und die Konsole sollen ihn sehen)
-    Promise.resolve(wechsel.updateCallbackDone).catch((fehler) =>
-      fenster.setTimeout(() => {
-        throw fehler;
-      }, 0),
-    );
-    return;
-  }
-  aktualisieren();
   wurzel.classList.remove('bw-tabwechsel');
-  void wurzel.offsetWidth; // Animation neu starten, falls sie noch lief
+  void wurzel.offsetWidth; // die Animation neu starten, falls sie vom letzten Wechsel noch lief
   wurzel.classList.add('bw-tabwechsel');
-  fenster.clearTimeout(fallbackZeitgeber);
-  fallbackZeitgeber = fenster.setTimeout(() => {
-    fallbackZeitgeber = null;
-    wurzel.classList.remove('bw-tabwechsel');
-  }, TAB_FALLBACK_MS);
+  fenster.clearTimeout(tabZeitgeber);
+  tabZeitgeber = fenster.setTimeout(
+    () => {
+      tabZeitgeber = null;
+      wurzel.classList.remove('bw-tabwechsel');
+    },
+    (tokenMs(dokument, '--dauer-tab') ?? TAB_STANDARD_MS) + TAB_RESERVE_MS,
+  );
 }
 
 // ---------- Erinnerung je Besuch ----------
@@ -229,7 +151,8 @@ function anhalten(el) {
 
 /**
  * Zählt den Text von `el` auf `format(nachCents)` hoch (rAF, ease-out, ~0,7 s; Zwischenwerte auf ganze Euro). Beginnt bei `von`, sonst
- * beim zuletzt gezeigten Wert dieses Elements bzw. – mit `data-bw-schluessel` – dieses Schlüssels im Besuch, sonst bei 0. Elemente,
+ * beim zuletzt gezeigten Wert dieses Elements bzw. – mit `data-bw-schluessel` – dieses Schlüssels im Besuch, sonst bei 0. Während
+ * des Zählens steht die Zahl in einem `aria-hidden`-Span, der Endwert unsichtbar daneben (`.bw-nur-vorlesen`). Elemente,
  * die neu gezeichnet werden, brauchen den Schlüssel, damit ein Neuzeichnen mit demselben Wert nicht noch einmal zählt.
  * Der letzte Text ist immer genau `format(nachCents)`; wird das Element mitten im Zählen ersetzt, hört es auf (kein Zeitgeber bleibt).
  * Klassisch/reduziert: sofort der Endwert.
@@ -242,18 +165,27 @@ export function hochzaehlen(el, nachCents, format, { von } = {}) {
   const schluessel = schluesselVon(el);
   const start = von ?? (angezeigteZahl.has(el) ? angezeigteZahl.get(el) : schluessel !== null && zahlen.has(schluessel) ? zahlen.get(schluessel) : 0);
   if (schluessel !== null) zahlen.set(schluessel, nachCents);
-  const zeige = (cents) => {
-    el.textContent = format(cents);
-    angezeigteZahl.set(el, cents);
-  };
   const ende = () => {
     zaehler.delete(el);
-    zeige(nachCents);
+    el.textContent = format(nachCents);
+    angezeigteZahl.set(el, nachCents);
   };
   if (!effekteAn(dokument) || !Number.isFinite(start) || !Number.isFinite(nachCents) || start === nachCents || typeof fenster.requestAnimationFrame !== 'function') {
     ende();
     return;
   }
+  // gezählt wird in einer Anzeige, die Bildschirmleser überspringen; daneben steht unsichtbar der genaue Endwert
+  const anzeige = dokument.createElement('span');
+  anzeige.setAttribute('aria-hidden', 'true');
+  const vorlesen = dokument.createElement('span');
+  vorlesen.classList.add('bw-nur-vorlesen');
+  vorlesen.textContent = format(nachCents);
+  el.textContent = '';
+  el.append(anzeige, vorlesen);
+  const zeige = (cents) => {
+    anzeige.textContent = format(cents);
+    angezeigteZahl.set(el, cents);
+  };
   zeige(start);
   const ganzeEuro = Math.abs(nachCents - start) >= 100;
   let t0 = null;
@@ -279,11 +211,11 @@ export function hochzaehlen(el, nachCents, format, { von } = {}) {
 
 /**
  * Füllt einen Balken über `transform: scaleX(anteil)` (0…1, begrenzt; Klasse `bw-fortschritt` setzt transform-origin links). Das
- * Element ist die volle Breite der Füllung (nicht `width`). Mit Effekten gleitet es vom zuletzt gezeigten Anteil (Element bzw.
- * `data-bw-schluessel`, sonst `von` oder 0) zum neuen; Klassisch/reduziert gleich am Ziel.
+ * Element ist die volle Breite der Füllung (nicht `width`). Mit Bewegung gleitet es vom zuletzt gezeigten Anteil (Element bzw.
+ * `data-bw-schluessel`, sonst `von` oder 0) zum neuen; reduziert gleich am Ziel. Klassisch: tut nichts (dort bleibt `width`).
  */
 export function fortschritt(el, anteil, { von } = {}) {
-  if (!el) return;
+  if (!el || !MIT_EFFEKTEN.has(aussehenVon(dokumentVon(el)))) return;
   const zahl = Number(anteil);
   const ziel = Number.isFinite(zahl) ? Math.min(1, Math.max(0, zahl)) : 0;
   const dokument = dokumentVon(el);
@@ -304,6 +236,8 @@ export function fortschritt(el, anteil, { von } = {}) {
 }
 
 // ---------- Konfetti ----------
+
+let letzteWolke = null; // die zuletzt gestartete Konfetti-Hülle (eine neue ersetzt sie)
 
 /**
  * Konfetti aus `anker` (z. B. „Sparziel erreicht“): nur Bento mit Bewegung. Höchstens 80 Teilchen (Standard 46), nur transform/opacity,
@@ -335,31 +269,24 @@ export function konfetti(anker, { anzahl = KONFETTI_STANDARD } = {}) {
     teil.style.setProperty('--bw-farbe', KONFETTI_FARBEN[i % KONFETTI_FARBEN.length]);
     huelle.append(teil);
   }
+  letzteWolke?.remove(); // zweimal schnell: höchstens eine Wolke (≤ 80 Teilchen) zugleich
+  letzteWolke = huelle;
   dokument.body.append(huelle);
-  fensterVon(dokument).setTimeout(() => huelle.remove(), KONFETTI_MS);
+  fensterVon(dokument).setTimeout(() => {
+    huelle.remove();
+    if (letzteWolke === huelle) letzteWolke = null;
+  }, KONFETTI_MS);
   return huelle;
 }
 
 // ---------- Blatt ----------
 
-function dauerMs(text) {
-  const t = String(text ?? '').trim();
-  const m = /^(\d+(?:\.\d+)?|\.\d+)(ms|s)$/.exec(t);
-  if (!m) return null;
-  return Math.round(Number(m[1]) * (m[2] === 's' ? 1000 : 1));
-}
-
 /**
- * Wie lange ein schließendes Blatt noch im DOM bleibt (es gleitet hinaus). Klassisch wie bis 1.1.2: 180 ms, bei prefers-reduced-motion 0.
- * Glas/Bento: die Dauer aus `--dauer-mittel` (ihr Blatt-Übergang), ohne Bewegung 0 (dann gibt es nichts hinauszugleiten).
+ * Wie lange ein schließendes Blatt noch im DOM bleibt (es gleitet hinaus). Ohne Bewegung (prefers-reduced-motion oder „Reduziert“,
+ * in jedem Aussehen) 0 – dann gibt es nichts hinauszugleiten. Klassisch wie bis 1.1.2: 180 ms; Glas/Bento: `--dauer-mittel`.
  */
 export function blattSchliessenMs(dokument = globalThis.document) {
-  if (!MIT_EFFEKTEN.has(aussehenVon(dokument))) return systemWillRuhe(dokument) ? 0 : BLATT_KLASSISCH_MS;
   if (!bewegungAn(dokument)) return 0;
-  try {
-    const wert = fensterVon(dokument).getComputedStyle?.(dokument.documentElement)?.getPropertyValue('--dauer-mittel');
-    return dauerMs(wert) ?? BLATT_KLASSISCH_MS;
-  } catch {
-    return BLATT_KLASSISCH_MS;
-  }
+  if (!MIT_EFFEKTEN.has(aussehenVon(dokument))) return BLATT_KLASSISCH_MS;
+  return tokenMs(dokument, '--dauer-mittel') ?? BLATT_KLASSISCH_MS;
 }

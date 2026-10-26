@@ -1,17 +1,19 @@
 // Gemeinsame Bewegung (src/ui/bewegung.js) MIT Bewegung (sonst laufen alle Tests mit reducedMotion: 'reduce'):
-// Glas und Bento – ein zweiter Tab mitten im Übergang wirkt sofort, ein Blatt lässt sich gleich wieder schließen, Schreiben im
-// Tagesblatt des Schichtplans übersteht das Vorladen im Hintergrund (Fokus und Text bleiben, die Karten kommen nicht noch einmal herein),
-// die Ersparnis zählt hoch und endet beim genauen Betrag. Klassisch: keine Klasse der Bewegung, kein Übergang.
+// Glas und Bento – ein Tab wechselt sofort, Tipps gleich danach (während #inhalt noch einblendet) treffen die neue Seite, ein Blatt
+// lässt sich gleich wieder schließen, Schreiben im Tagesblatt des Schichtplans übersteht das Vorladen im Hintergrund (Fokus und Text
+// bleiben, die Karten kommen nicht noch einmal herein), die Ersparnis zählt hoch und endet beim genauen Betrag.
+// Klassisch: keine Klasse der Bewegung; mit „Bewegung: Reduziert“ sind auch die alten Animationen (Mehr, Einkauf, Blatt) sofort.
 import { test, expect, starteDemo, googleAttrappe, tab, KONFIG_GOOGLE, WERKTAG, NETZFEHLER } from './hilfen.js';
 
 test.use({ contextOptions: { reducedMotion: 'no-preference' } });
 
 /**
  * Läuft vor den Skripten der Seite: merkt sich jede Klasse „bw-…“, die irgendwo auftaucht, wie oft `bw-einblenden` gesetzt wurde,
- * jeden Text eines Elements mit data-bw-schluessel (Hochzählen) und jede View Transition.
+ * jeden sichtbaren Text eines Elements mit data-bw-schluessel (Hochzählen), jede View Transition (es darf keine geben) und für jeden
+ * Tipp (pointerdown/touchstart), ob #inhalt da gerade noch einblendete und welches Element ihn bekam.
  */
 function bewegungBeobachten() {
-  const bw = { klassen: [], eingeblendet: 0, zahlen: [], uebergaenge: 0 };
+  const bw = { klassen: [], eingeblendet: 0, zahlen: [], uebergaenge: 0, tipps: [] };
   Object.defineProperty(window, '__bw', { value: bw });
   const merke = (el) => {
     for (const k of el.classList ?? []) if (k.startsWith('bw-') && !bw.klassen.includes(k)) bw.klassen.push(k);
@@ -24,9 +26,15 @@ function bewegungBeobachten() {
       }
       for (const n of m.addedNodes) if (n.nodeType === 1) merke(n);
       const zahl = (m.target.nodeType === 1 ? m.target : m.target.parentElement)?.closest?.('[data-bw-schluessel]');
-      if (zahl && m.type !== 'attributes') bw.zahlen.push(zahl.textContent);
+      if (zahl && m.type !== 'attributes') bw.zahlen.push((zahl.querySelector('[aria-hidden="true"]') ?? zahl).textContent);
     }
   }).observe(document, { subtree: true, attributes: true, attributeFilter: ['class'], attributeOldValue: true, childList: true, characterData: true });
+  const tipp = (e) => {
+    const laeuft = (document.getElementById('inhalt')?.getAnimations() ?? []).some((a) => a.animationName === 'bw-seite-rein' && a.playState === 'running');
+    bw.tipps.push({ art: e.type, laeuft, ziel: e.target?.closest?.('a, button, input')?.getAttribute('aria-label') ?? e.target?.closest?.('a')?.querySelector('.tab-text')?.textContent ?? e.target?.tagName });
+  };
+  addEventListener('pointerdown', tipp, true);
+  addEventListener('touchstart', tipp, { capture: true, passive: true });
   const start = Document.prototype.startViewTransition;
   if (start) {
     Document.prototype.startViewTransition = function (...a) {
@@ -52,34 +60,40 @@ test.describe('Glas und Bento mit Bewegung', () => {
     await page.addInitScript(bewegungBeobachten);
   });
 
-  test('erstes Zeichnen blendet ein; ein zweiter Tab mitten im Übergang wirkt sofort und die neue Seite ist gleich bedienbar', async ({ page }) => {
+  test('erstes Zeichnen blendet ein; Tab-Wechsel zeichnen sofort, Tipps gleich danach (noch im Einblenden) treffen die neue Seite', async ({ page }) => {
     await starteDemo(page);
     await expect.poll(async () => (await bw(page)).eingeblendet, 'Heute kommt beim ersten Zeichnen herein').toBe(1);
-    // langer Übergang (2 s statt ≤ 0,26 s), damit der zweite Tipp sicher mitten hinein fällt (Token; Inline-<style> verbietet die CSP)
-    await page.evaluate(() => document.documentElement.style.setProperty('--dauer-tab', '2s'));
+    // langes Einblenden (5 s statt ≤ 0,26 s), damit jeder Tipp unten sicher hinein fällt (Token; Inline-<style> verbietet die CSP)
+    await page.evaluate(() => document.documentElement.style.setProperty('--dauer-tab', '5s'));
 
     await tab(page, 'Monat');
-    await expect(html(page)).toHaveClass(/bw-wechselt/);
-    // Tipp an die Stelle des Tabs, ohne auf das Ende des Übergangs zu warten (kein Warten auf „bedienbar“ wie bei locator.click)
+    await expect(page.locator('.screen .raster')).toHaveCount(1); // schon gezeichnet
+    await expect(html(page)).toHaveClass(/bw-tabwechsel/);
+    // Tipp an die Stelle des nächsten Tabs, ohne zu warten (kein Warten auf „bedienbar“ wie bei locator.click)
     const einkauf = await mitte(page.locator('nav.tabs').getByRole('link', { name: 'Einkauf' }));
     await page.mouse.click(einkauf.x, einkauf.y);
     await expect(page).toHaveURL(/#\/einkauf$/, { timeout: 1000 });
     await expect(page.locator('.screen.einkauf')).toHaveCount(1, { timeout: 1000 });
 
-    // gleich danach (meist noch im zweiten Übergang): Artikel eintippen und mit ＋ hinzufügen – Tipps gehen durch das Bild des Übergangs hindurch
+    // gleich danach: ins Feld tippen (Maus), schreiben, ＋ mit dem Finger (Touch)
     const feld = await mitte(page.getByRole('textbox', { name: 'Artikel' }));
     await page.mouse.click(feld.x, feld.y);
     await expect(page.getByRole('textbox', { name: 'Artikel' })).toBeFocused();
     await page.keyboard.type('Brot');
     const plus = await mitte(page.getByRole('button', { name: 'Zur Liste hinzufügen' }));
-    await page.mouse.click(plus.x, plus.y);
+    await page.touchscreen.tap(plus.x, plus.y);
     await expect(page.getByRole('heading', { name: 'Zu kaufen · 4' })).toBeVisible();
     await expect(page.getByRole('textbox', { name: 'Artikel' })).toHaveValue('');
 
-    const stand = await bw(page);
-    expect(stand.uebergaenge, 'beide Wechsel als View Transition').toBeGreaterThanOrEqual(2);
-    await expect(html(page)).not.toHaveClass(/bw-wechselt/, { timeout: 4000 });
-    await expect(page.locator('.screen.einkauf')).toBeVisible();
+    // nicht leer bestanden: jeder dieser Tipps fiel mitten in das Einblenden der Seite und kam am gemeinten Element an
+    const { tipps, uebergaenge, klassen } = await bw(page);
+    const waehrend = tipps.filter((t) => t.laeuft);
+    expect(waehrend.map((t) => t.ziel)).toEqual(expect.arrayContaining(['Einkauf', 'Artikel', 'Zur Liste hinzufügen']));
+    expect(waehrend.some((t) => t.art === 'touchstart'), 'auch ein Finger-Tipp').toBe(true);
+    expect(tipps.filter((t) => t.ziel === 'Einkauf' || t.ziel === 'Artikel' || t.ziel === 'Zur Liste hinzufügen').every((t) => t.laeuft)).toBe(true);
+    expect(uebergaenge, 'keine View Transitions').toBe(0);
+    expect(klassen).toContain('bw-tabwechsel');
+    await expect(html(page)).not.toHaveClass(/bw-tabwechsel/, { timeout: 8000 });
   });
 
   test('Blatt öffnen und gleich mit ✕ schließen: zu, ohne Fehler, die Seite bleibt bedienbar', async ({ page }) => {
@@ -181,5 +195,66 @@ test.describe('Klassisch mit Bewegung', () => {
     expect(stand.eingeblendet).toBe(0);
     expect(stand.uebergaenge).toBe(0);
     expect(stand.zahlen.every((t) => t === '+4.213,50 €'), 'kein Hochzählen').toBe(true);
+  });
+
+  test('ohne Wahl (Standard) gleitet ein geschlossenes Blatt wie bisher noch kurz hinaus', async ({ page }) => {
+    await starteDemo(page, { route: '#/monat' });
+    await expect(html(page)).not.toHaveAttribute('data-bewegung');
+    await page.locator('.raster').getByRole('button', { name: 'Donnerstag, 22. Oktober', exact: false }).click();
+    const gleichDanach = await page.evaluate(() => {
+      document.querySelector('.blatt-zu').click();
+      return document.querySelectorAll('.blatt-huelle').length;
+    });
+    expect(gleichDanach).toBe(1);
+    await expect(page.locator('.blatt-huelle')).toHaveCount(0);
+  });
+});
+
+test.describe('Klassisch mit „Bewegung: Reduziert“ (System ohne Wunsch)', () => {
+  test.beforeEach(({ aussehen }) => test.skip(Boolean(aussehen), 'nur im Projekt telefon-chromium (Klassisch)'));
+
+  const reduziert = { 'fk.bewegung.v1': 'reduziert' };
+
+  test('Mehr: die Symbole spielen keine Animation', async ({ page }) => {
+    await starteDemo(page, { speicher: reduziert });
+    await expect(html(page)).toHaveAttribute('data-bewegung', 'reduziert');
+    await expect(html(page)).not.toHaveAttribute('data-aussehen');
+    await tab(page, 'Mehr');
+    await expect(page.locator('.menue-symbol')).toHaveCount(11);
+    expect(await page.locator('.menue-symbol').evaluateAll((els) => els.map((el) => getComputedStyle(el).animationName))).toEqual(Array(11).fill('none'));
+    expect(await page.evaluate(() => document.getAnimations().length), 'keine laufende Animation auf der Seite').toBe(0);
+  });
+
+  test('Einkauf: Herunterziehen folgt dem Finger nicht gedämpft (feste Höhe), ohne Übergang', async ({ page }) => {
+    await starteDemo(page, { route: '#/einkauf', speicher: reduziert });
+    const anzeige = page.locator('.ek-ziehen');
+    expect(await anzeige.evaluate((el) => getComputedStyle(el).transitionDuration)).toBe('0s');
+    const cdp = await page.context().newCDPSession(page);
+    const box = await page.getByRole('heading', { name: 'Einkaufsliste 🛒' }).boundingBox();
+    const x = Math.round(box.x + box.width / 2);
+    const y = Math.round(box.y + box.height / 2);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+    for (let i = 1; i <= 5; i += 1) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: y + i * 10 }] });
+    await expect(anzeige).toHaveAttribute('data-phase', 'ziehen');
+    expect(await anzeige.evaluate((el) => el.style.getPropertyValue('--zug'))).toBe('44px'); // mit Bewegung wären es 30px (60 % von 50)
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await cdp.detach();
+    await expect(anzeige).toHaveAttribute('data-phase', 'ruhe');
+  });
+
+  test('Blatt: ✕ nimmt es sofort weg (nichts gleitet), Escape ebenso', async ({ page }) => {
+    await starteDemo(page, { route: '#/monat', speicher: reduziert });
+    const tag = page.locator('.raster').getByRole('button', { name: 'Donnerstag, 22. Oktober', exact: false });
+    await tag.click();
+    await expect(page.getByRole('dialog')).toBeVisible();
+    expect(await page.locator('.blatt').evaluate((el) => getComputedStyle(el).transitionDuration)).toBe('0s');
+    const gleichDanach = await page.evaluate(() => {
+      document.querySelector('.blatt-zu').click();
+      return document.querySelectorAll('.blatt-huelle').length;
+    });
+    expect(gleichDanach).toBe(0);
+    await tag.click();
+    await page.keyboard.press('Escape');
+    expect(await page.evaluate(() => document.querySelectorAll('.blatt-huelle').length)).toBe(0);
   });
 });

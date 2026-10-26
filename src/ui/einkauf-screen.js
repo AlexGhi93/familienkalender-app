@@ -1,5 +1,6 @@
 // Einkaufsliste: eintragen, abhaken („im Wagen“), löschen, „Gekaufte entfernen“ mit Rückgängig. Beide Eltern sehen dieselbe Liste;
 // mit Google bleibt sie aktuell (alle 30 Sekunden, siehe app/einkauf-abgleich.js) und lässt sich ganz oben durch Herunterziehen aktualisieren.
+import { bewegungAn } from './bewegung.js';
 import { h } from './dom.js';
 import { abschnitt, chip, farbe, toast } from './components.js';
 import { aktualisiertText, einkaufModel, EINKAUF_FARBE } from '../app/views/einkauf-model.js';
@@ -70,7 +71,7 @@ const ZIEH_MELDUNG = {
 const zug = { phase: 'ruhe', ziel: null, start: 0, weite: 0, meldung: '', zeitgeber: null }; // phase: ruhe | ziehen | bereit | laedt | fertig
 
 const ganzOben = () => (globalThis.scrollY ?? 0) <= 0;
-const wenigBewegung = () => globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+const wenigBewegung = () => !bewegungAn(); // prefers-reduced-motion oder „Bewegung: Reduziert“ (ui/bewegung.js)
 
 function zeichneStand() {
   const { store, ui } = aktuell;
