@@ -10,7 +10,7 @@ import { zeigeRueckgaengig } from './fortschritt.js';
 function auswahlAnsicht({ ui }, kacheln) {
   return h(
     'section',
-    { class: 'screen' },
+    { class: 'screen neu-seite' },
     h('h1', { class: 'gruss' }, 'Was ist los? 🎈'),
     h('p', { class: 'datum' }, 'Tippe auf eine Kachel.'),
     h(
@@ -124,7 +124,7 @@ function formularAnsicht({ store, ui }, kachel) {
   aktualisieren();
   return h(
     'section',
-    { class: 'screen' },
+    { class: 'screen neu-formular' },
     h('button', { class: 'zurueck', type: 'button', onClick: () => ui.neuZuruecksetzen(true) }, '‹ Zurück'),
     h('div', { class: 'karte tint formular', style: farbe(kachel.farbe) }, h('div', { class: 'karte-zeile' }, h('span', { class: 'emoji gross' }, kachel.emoji), h('div', { class: 'karte-text' }, h('b', {}, kachel.titel))), von.knoten, bisFeld.knoten, info),
     h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein', type: 'button', onClick: () => ui.neuZuruecksetzen(true) }, 'Abbrechen'), h('button', { class: 'knopf klein primaer', type: 'button', onClick: speichern }, 'Speichern')),

@@ -170,7 +170,7 @@ export function sachenFormular({ store, ui }, kachel) {
       h('span', {}, 'Wiederholen'),
       h(
         'div',
-        { class: 'chip-reihe' },
+        { class: 'chip-reihe serie-wahl' },
         chip('Einmalig', {
           art: einmalig ? 'aktiv' : '',
           onClick: () => {
@@ -263,7 +263,7 @@ export function sachenFormular({ store, ui }, kachel) {
   const abbrechen = () => ui.neuZuruecksetzen(true);
   return h(
     'section',
-    { class: 'screen' },
+    { class: 'screen neu-formular' },
     h('button', { class: 'zurueck', type: 'button', onClick: abbrechen }, '‹ Zurück'),
     schnellstart,
     pyjamasBox,

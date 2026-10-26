@@ -43,7 +43,7 @@ export function terminFormular({ store, ui }, kachel) {
       fuerBox,
       ...fuerAuswahl(settings).map((f) =>
         chip(`${f.emoji} ${f.label}`, {
-          art: n.fuer === f.id ? 'aktiv' : '',
+          art: `fuer-chip ${f.id}${n.fuer === f.id ? ' aktiv' : ''}`, // fuer-chip + Person: Haken für Bento (Personenfarbe), in Klassisch ohne Wirkung
           farbeHex: istArzt ? TYPES.arzt.farbe : TYPES.familie.farbe,
           onClick: () => {
             n.fuer = f.id;
@@ -229,7 +229,7 @@ export function terminFormular({ store, ui }, kachel) {
   const abbrechen = () => ui.neuZuruecksetzen(true);
   return h(
     'section',
-    { class: 'screen' },
+    { class: 'screen neu-formular' },
     h('button', { class: 'zurueck', type: 'button', onClick: abbrechen }, '‹ Zurück'),
     h(
       'div',
