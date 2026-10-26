@@ -63,7 +63,8 @@
   --r-zelle: 14px;
   --r-pinsel: 24px;
   --schatten-karte: var(--lippe);
-  --schatten-schwebend: 0 -10px 40px rgb(14 8 36 / 0.25);
+  --schatten-schwebend: inset 0 3px 0 rgb(255 255 255 / 0.75), 0 -10px 40px rgb(14 8 36 / 0.25); /* Blatt: Bonbon-Kante oben */
+  --platzhalter: #6e6888; /* Platzhalter in Feldern: ≥ 4,5:1 auf --feld-bg */
   --schatten-leiste: 0 -2px 0 var(--linie), 0 18px 40px rgb(20 10 60 / 0.22);
   --schatten-knopf: var(--lippe);
   --fokus-ring: 3px solid var(--akzent);
@@ -144,6 +145,8 @@
     --tint-anteil: 26%;
     --tabs-schatten: 0 -1px 0 var(--linie), 0 14px 34px rgb(0 0 0 / 0.45);
     --blatt-schleier: rgb(0 0 0 / 0.55);
+    --schatten-schwebend: inset 0 3px 0 rgb(255 255 255 / 0.08), 0 -10px 40px rgb(0 0 0 / 0.45);
+    --platzhalter: #9e97b8;
     color-scheme: dark;
   }
 }
@@ -181,7 +184,17 @@
   --tint-anteil: 26%;
   --tabs-schatten: 0 -1px 0 var(--linie), 0 14px 34px rgb(0 0 0 / 0.45);
   --blatt-schleier: rgb(0 0 0 / 0.55);
+  --schatten-schwebend: inset 0 3px 0 rgb(255 255 255 / 0.08), 0 -10px 40px rgb(0 0 0 / 0.45);
+  --platzhalter: #9e97b8;
   color-scheme: dark;
+}
+
+/* Telefone unter 390 px: die Leiste rückt näher an den Rand, damit jede Karte ≥ 44 px breit bleibt (375 px: 44,4 px). Unter
+   ≈ 370 px reicht der Platz für acht Karten nicht mehr (320 px: 36,6 px) – siehe Bericht. */
+@media (max-width: 389px) {
+  :root[data-aussehen='bento'] {
+    --tabs-abstand: 4px;
+  }
 }
 
 /* ---------- 2. Grundbausteine ---------- */
@@ -281,10 +294,11 @@
   background: var(--knopf-auf-tint);
 }
 
+/* aktiv: gleiche Randbreite und Schrift (nichts springt beim Umschalten); der kräftige Ring kommt als innerer Schatten dazu */
 :root[data-aussehen='bento'] .chip.aktiv {
-  border-width: 2.5px;
   border-color: var(--c, var(--akzent));
-  font-weight: 900;
+  box-shadow: inset 0 0 0 1px var(--c, var(--akzent));
+  font-weight: 800;
 }
 
 /* Personen-Chips (Hook .fuer-chip + Person): Tönung und Tinte der Person, immer mit Emoji und Name */
@@ -313,8 +327,15 @@
   font-weight: 700;
 }
 
+:root[data-aussehen='bento'] ::placeholder {
+  color: var(--platzhalter);
+  opacity: 1;
+}
+
 /* Tableiste: weiße schwebende Leiste; der Blob (::before) springt zur aktiven Karte, dehnt sich unterwegs und trägt die Farbe des
-   Bereichs (Heute lila, Monat mint, Einkauf koralle, Schicht blau, Urlaub meer, Konto gelb, Mehr grau). Spalten wie in theme.css. */
+   Bereichs (Heute lila, Monat mint, Einkauf koralle, Schicht blau, Urlaub meer, Konto gelb, Mehr grau). Stelle nach href, Spalten
+   wie in theme.css. Ohne aktive Karte („Neu“, Verlauf, Konto & App …) gibt es ihn nicht (content: none): er verschwindet sofort, ohne
+   Weg zum Rand, und entsteht bei der Rückkehr neu an seiner Karte – ein neues Pseudo-Element hat keinen Übergang, fegt also nicht herein. */
 :root[data-aussehen='bento'] .tabs {
   bottom: calc(var(--tabs-abstand) + env(safe-area-inset-bottom, 0px));
   height: var(--tabs-hoehe);
@@ -322,7 +343,7 @@
 }
 
 :root[data-aussehen='bento'] .tabs::before {
-  content: '';
+  content: none;
   position: absolute;
   top: 7px;
   bottom: 7px;
@@ -331,17 +352,20 @@
   border-radius: 18px;
   background: var(--blob-farbe, var(--flaeche-2));
   pointer-events: none;
-  opacity: var(--blob-sicht, 0);
   transform: translateX(var(--blob-x, 0px));
 }
 
-:root[data-aussehen='bento'] .tabs:has(> .tab.aktiv:nth-child(1)) { --blob-x: 0px; --blob-sicht: 1; --blob-farbe: color-mix(in srgb, var(--akzent) 22%, var(--karte)); --blob-anim: bento-blob-1; }
-:root[data-aussehen='bento'] .tabs:has(> .tab.aktiv:nth-child(2)) { --blob-x: calc(100% + 4px); --blob-sicht: 1; --blob-farbe: var(--person-gemeinsam-tint); --blob-anim: bento-blob-2; }
-:root[data-aussehen='bento'] .tabs:has(> .tab.aktiv:nth-child(3)) { --blob-x: calc(200% + 8px); --blob-sicht: 1; --blob-farbe: var(--person-mama-tint); --blob-anim: bento-blob-3; }
-:root[data-aussehen='bento'] .tabs:has(> .tab.aktiv:nth-child(5)) { --blob-x: calc(300% + 12px + 52px); --blob-sicht: 1; --blob-farbe: var(--person-papa-tint); --blob-anim: bento-blob-5; }
-:root[data-aussehen='bento'] .tabs:has(> .tab.aktiv:nth-child(6)) { --blob-x: calc(400% + 16px + 52px); --blob-sicht: 1; --blob-farbe: var(--meer-tint); --blob-anim: bento-blob-6; }
-:root[data-aussehen='bento'] .tabs:has(> .tab.aktiv:nth-child(7)) { --blob-x: calc(500% + 20px + 52px); --blob-sicht: 1; --blob-farbe: var(--person-kind-tint); --blob-anim: bento-blob-7; }
-:root[data-aussehen='bento'] .tabs:has(> .tab.aktiv:nth-child(8)) { --blob-x: calc(600% + 24px + 52px); --blob-sicht: 1; --blob-farbe: var(--flaeche-2); --blob-anim: bento-blob-8; }
+:root[data-aussehen='bento'] .tabs:has(> .tab.aktiv:not(.fab))::before {
+  content: '';
+}
+
+:root[data-aussehen='bento'] .tabs:has(> .tab.aktiv[href='#/heute']) { --blob-x: 0px; --blob-farbe: color-mix(in srgb, var(--akzent) 22%, var(--karte)); --blob-anim: bento-blob-1; }
+:root[data-aussehen='bento'] .tabs:has(> .tab.aktiv[href='#/monat']) { --blob-x: calc(100% + 4px); --blob-farbe: var(--person-gemeinsam-tint); --blob-anim: bento-blob-2; }
+:root[data-aussehen='bento'] .tabs:has(> .tab.aktiv[href='#/einkauf']) { --blob-x: calc(200% + 8px); --blob-farbe: var(--person-mama-tint); --blob-anim: bento-blob-3; }
+:root[data-aussehen='bento'] .tabs:has(> .tab.aktiv[href='#/schicht']) { --blob-x: calc(300% + 12px + 52px); --blob-farbe: var(--person-papa-tint); --blob-anim: bento-blob-5; }
+:root[data-aussehen='bento'] .tabs:has(> .tab.aktiv[href='#/urlaub']) { --blob-x: calc(400% + 16px + 52px); --blob-farbe: var(--meer-tint); --blob-anim: bento-blob-6; }
+:root[data-aussehen='bento'] .tabs:has(> .tab.aktiv[href='#/konto']) { --blob-x: calc(500% + 20px + 52px); --blob-farbe: var(--person-kind-tint); --blob-anim: bento-blob-7; }
+:root[data-aussehen='bento'] .tabs:has(> .tab.aktiv[href='#/mehr']) { --blob-x: calc(600% + 24px + 52px); --blob-farbe: var(--flaeche-2); --blob-anim: bento-blob-8; }
 
 :root[data-aussehen='bento'] .tab {
   position: relative;
@@ -422,18 +446,22 @@
 
 /* ---------- 3. Heute ---------- */
 
-/* Hero-Kachel: Gruß und Datum zusammen auf Traubenlila (zwei Elemente, eine Fläche), mit dem hellen Kreis der Demo oben rechts */
+/* Hero-Kachel wie in der Demo: Gruß und Datum zusammen auf Traubenlila (zwei Elemente, eine Fläche), darin der Wochentag, die riesige
+   Tageszahl und der Monat untereinander (Spans .datum-wt/-tag/-monat; Komma und Punkt sind hier ausgeblendet), heller Kreis oben rechts */
 :root[data-aussehen='bento'] .heute-seite > .gruss {
   position: relative;
   z-index: 1; /* der große Kreis darf über die Datumsfläche reichen (gleiche Farbe), oben und rechts wird er abgeschnitten */
   clip-path: inset(0 0 -120px 0 round 30px 30px 0 0);
   overflow-x: clip; /* clip-path schneidet nur das Bild: ohne dies ragte der Kreis rechts aus der Seite (seitliches Scrollen) */
   margin-top: 4px;
-  padding: 20px 18px 2px;
+  padding: 18px 18px 2px;
   border-radius: 30px 30px 0 0;
   background: var(--akzent);
   color: var(--akzent-ink);
-  font-size: 1.25rem;
+  font-family: var(--font-text);
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0;
 }
 
 :root[data-aussehen='bento'] .heute-seite > .gruss::after {
@@ -449,16 +477,54 @@
 
 :root[data-aussehen='bento'] .heute-seite > .datum {
   margin-top: -14px;
-  padding: 0 18px 20px;
+  padding: 6px 18px 20px;
   border-radius: 0 0 30px 30px;
   background: var(--akzent);
   color: var(--akzent-ink);
   box-shadow: inset 0 -3px 0 rgb(0 0 0 / 0.16);
   font-family: var(--font-titel);
-  font-size: 2.25rem;
+  font-size: 1.375rem;
   font-weight: 600;
-  line-height: 1.05;
-  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+:root[data-aussehen='bento'] .heute-seite > .datum {
+  position: relative;
+}
+
+/* zweiter, kleiner Kreis der Demo rechts neben der Zahl (die Zeilen links sind kurz: keine Überdeckung) */
+:root[data-aussehen='bento'] .heute-seite > .datum::after {
+  content: '';
+  position: absolute;
+  right: 34px;
+  top: 34%;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 0.2);
+}
+
+:root[data-aussehen='bento'] .heute-seite > .datum .datum-wt,
+:root[data-aussehen='bento'] .heute-seite > .datum .datum-tag,
+:root[data-aussehen='bento'] .heute-seite > .datum .datum-monat {
+  display: block;
+}
+
+:root[data-aussehen='bento'] .heute-seite > .datum .datum-trenner {
+  display: none;
+}
+
+:root[data-aussehen='bento'] .heute-seite > .datum .datum-wt {
+  font-family: var(--font-text);
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+:root[data-aussehen='bento'] .heute-seite > .datum .datum-tag {
+  margin: 4px 0 4px -4px;
+  font-size: 6rem;
+  line-height: 0.82;
+  letter-spacing: -0.04em;
 }
 
 /* Termin heute/morgen: weiße Kachel, die Uhrzeit als große Pille in der Farbe der Person (Kind gelb, Papa blau, Mama koralle,
@@ -557,9 +623,9 @@
 
 :root[data-aussehen='bento'] .dienst-knopf {
   flex-direction: column-reverse;
-  justify-content: flex-end;
+  justify-content: center;
   gap: 4px;
-  min-height: 104px;
+  min-height: 72px;
   padding: 14px 16px;
   border: 0;
   border-radius: 24px;
@@ -607,6 +673,12 @@
   outline: 2px dashed var(--linie);
   outline-offset: -5px;
   box-shadow: var(--lippe);
+}
+
+/* auf Heute große Kacheln (im Tagesblatt bleiben sie kompakt) */
+:root[data-aussehen='bento'] .dienst-karte .dienst-knopf {
+  justify-content: flex-end;
+  min-height: 104px;
 }
 
 /* „Krabbelstube benachrichtigen“: Meer-Kachel */
@@ -672,7 +744,7 @@
 @media (prefers-reduced-motion: no-preference) {
   /* Blob: springt mit Überschwingen und dehnt sich unterwegs (Squash & Stretch über scale; neuer Animationsname je Karte = Neustart) */
   :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .tabs::before {
-    transition: transform 0.56s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s ease;
+    transition: transform 0.56s cubic-bezier(0.34, 1.56, 0.64, 1);
     animation: var(--blob-anim, none) 0.56s cubic-bezier(0.3, 0.7, 0.3, 1);
   }
 

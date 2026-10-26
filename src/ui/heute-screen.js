@@ -226,6 +226,25 @@ function urlaubKarte(m) {
   );
 }
 
+/**
+ * „Mittwoch, 14. Oktober“ in Teilen für das große Datum in Glas/Bento (Bento: riesige „14“): Wochentag, Tag, Monat als Spans, Komma
+ * und Punkt als eigene Trenner – derselbe Text. Nur in Glas/Bento (data-aussehen an <html>): schon eine Span-Grenze verschiebt in
+ * Klassisch die Glyphen um Bruchteile eines Pixels, Klassisch muss aber Pixel für Pixel gleich bleiben. Wer das Aussehen wechselt,
+ * tut das in „Konto & App“; „Heute“ wird danach ohnehin neu gezeichnet. Passt das Muster nicht, bleibt der Text ganz.
+ */
+function datumTeile(text) {
+  const teile = /^(.+), (\d{1,2})\. (.+)$/.exec(text);
+  if (!teile || !globalThis.document?.documentElement?.hasAttribute('data-aussehen')) return text;
+  const [, wochentag, tag, monat] = teile;
+  return [
+    h('span', { class: 'datum-wt' }, wochentag, h('span', { class: 'datum-trenner' }, ',')),
+    ' ',
+    h('span', { class: 'datum-tag' }, tag, h('span', { class: 'datum-trenner' }, '.')),
+    ' ',
+    h('span', { class: 'datum-monat' }, monat),
+  ];
+}
+
 export function heuteScreen({ store, ui }) {
   const m = heuteModel(store.getState(), store.jetzt());
   const naechster = m.urlaub.countdown;
@@ -234,7 +253,7 @@ export function heuteScreen({ store, ui }) {
     { class: 'screen heute-seite' },
     h('header', { class: 'kopf' }, h('span', { class: 'marke' }, `🌸 ${ui.titel()}`), h('span', { class: 'pille' }, m.einrichtung)),
     h('h1', { class: 'gruss' }, `${m.gruss.text} ${m.gruss.emoji}`),
-    h('p', { class: 'datum' }, m.datumText),
+    h('p', { class: 'datum' }, datumTeile(m.datumText)),
     m.termineHeute.length > 0 ? abschnitt(`📌 Heute steht an · ${m.termineHeute.length}`, m.termineHeute.map(terminHeuteKarte)) : null,
     m.termineMorgen.length > 0 ? abschnitt(`📅 Morgen steht an · ${m.termineMorgen.length}`, m.termineMorgen.map(terminHeuteKarte)) : null,
     abschnitt('Heute', statusKarte(m, store, ui), dienstKarte({ store, zeilen: m.dienst }), nachrichtKnopf(m, store, ui), offeneTageKarte(m, store, ui)),
