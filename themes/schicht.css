@@ -1,1 +1,1393 @@
 /* Glas & Licht und Bento bunt: schicht (nur unter :root[data-aussehen="glas"] bzw. [data-aussehen="bento"]; Klassisch unberührt). */
+/* Schichtplan in „Glas & Licht“ und „Bento bunt“ (1.2.0, Aufgabe 6): Monatsraster je Person, Legende und Zählung, Monatswechsel,
+   Filter, Pinsel-Leiste, Tagesblatt (Dienst, Zusätze mit Uhrzeit, Erinnern-Hinweis, ✕) und das Blatt „Schichtarten“ samt Formular.
+   Vorlagen: .superpowers/design-2026/a-glas und b-bento (Schicht). Die Schichtfarben (--sf-*, theme.css) und ihre Bedeutung bleiben
+   unverändert; hier ändert sich nur die Form der Marken. Gestreift (Urlaub, Ersatzdienst E) kommt weiter aus theme.css: keine Regel
+   hier setzt `background` auf eine Fläche mit .sf-…-Klasse.
+   Aufbau: 1. Glas  2. Bento  3. schmale Telefone (≤ 359 px: Maße wie Klassisch, damit „DB +2 ✎“ im Feld bleibt)  4. Bewegung.
+   Pinsel: in Glas die dritte und letzte Fläche mit echtem Glas (backdrop-filter, ohne Unterstützung deckend). Die Leiste schwebt in
+   beiden Aussehen mit Abstand über der Tableiste und ist ohne transform zentriert (left/right): das Einblenden der Seite (bw-rein,
+   transform an den Kindern von .schicht-seite) verschiebt sie so nie seitwärts.
+   Haken in JS (in Klassisch ohne Stil): .sp-pinsel-name (Name im Pinsel-Knopf), .sp-pinsel-neu (erstes Zeichnen nach dem Öffnen),
+   .sp-gemalt (eben gemalter Streifen), data-person an .sp-person-zeile. */
+
+/* ---------- 1. Glas ---------- */
+
+:root[data-aussehen='glas'] {
+  --sp-zelle: color-mix(in srgb, var(--ink) 4%, transparent);
+  --sp-zelle-we: color-mix(in srgb, var(--ink) 8.5%, transparent);
+  --sp-leer: color-mix(in srgb, var(--ink) 16%, transparent);
+  --sp-rinne: color-mix(in srgb, var(--ink) 7%, transparent);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-aussehen='glas']:not([data-theme='light']) {
+    --sp-zelle: color-mix(in srgb, var(--ink) 5%, transparent);
+    --sp-zelle-we: color-mix(in srgb, var(--ink) 10%, transparent);
+    --sp-leer: color-mix(in srgb, var(--ink) 20%, transparent);
+    --sp-rinne: color-mix(in srgb, var(--ink) 9%, transparent);
+  }
+}
+
+:root[data-aussehen='glas'][data-theme='dark'] {
+  --sp-zelle: color-mix(in srgb, var(--ink) 5%, transparent);
+  --sp-zelle-we: color-mix(in srgb, var(--ink) 10%, transparent);
+  --sp-leer: color-mix(in srgb, var(--ink) 20%, transparent);
+  --sp-rinne: color-mix(in srgb, var(--ink) 9%, transparent);
+}
+
+/* Kopf: „Eintragen“ als helle Glaspille; an (Pinsel offen) leuchtend im Akzent */
+:root[data-aussehen='glas'] .sp-eintragen {
+  min-height: 48px;
+  padding: 0 18px;
+  border: 1px solid var(--glas-kante);
+  background: linear-gradient(165deg, var(--glas-hoch), var(--glas-stark));
+  box-shadow: var(--schatten-karte);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+:root[data-aussehen='glas'] .sp-eintragen.aktiv {
+  border-color: transparent;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--akzent) 86%, #ffffff), var(--akzent));
+  color: var(--akzent-ink);
+  box-shadow: 0 8px 20px -8px color-mix(in srgb, var(--akzent) 70%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+/* Monat: ohne Karte, der Titel frei auf dem Licht, runde Glasknöpfe */
+:root[data-aussehen='glas'] .sp-monat {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+:root[data-aussehen='glas'] .sp-monat h2 {
+  font-size: 1.375rem;
+  font-weight: var(--gewicht-titel);
+  letter-spacing: -0.02em;
+}
+
+:root[data-aussehen='glas'] .sp-monat .rund {
+  width: 46px;
+  height: 46px;
+  border: 1px solid var(--glas-kante);
+  background: linear-gradient(165deg, var(--glas-hoch), var(--glas-stark));
+  box-shadow: var(--schatten-karte);
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+/* Filter „Beide · Papa · Mama“: eine Rinne, die Wahl ist ein heller Glastropfen (wie der Umschalter im Konto) */
+:root[data-aussehen='glas'] .sp-filter {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: var(--sp-rinne);
+  box-shadow: inset 0 1px 2px rgba(20, 10, 60, 0.08);
+}
+
+:root[data-aussehen='glas'] .sp-filter .chip {
+  justify-content: center;
+  min-width: 0;
+  border: 1px solid transparent;
+  background: transparent;
+  font-size: 1rem;
+  font-weight: 650;
+}
+
+:root[data-aussehen='glas'] .sp-filter .chip.aktiv {
+  border: 1px solid var(--glas-kante);
+  background: var(--tropfen);
+  color: var(--ink);
+  box-shadow: 0 4px 14px -4px rgba(30, 20, 80, 0.3), inset 0 1px 0 var(--glas-kante);
+  font-weight: 750;
+}
+
+/* Raster: die Wochentage stehen über einer Glaskarte (gleicher Innenabstand → gleiche Spalten), die Tage sind zarte Flächen darin */
+:root[data-aussehen='glas'] .schicht-seite .wochentage {
+  gap: 4px;
+  margin-bottom: -8px;
+  padding: 0 7px;
+}
+
+:root[data-aussehen='glas'] .schicht-seite .wochentage span {
+  font-size: 0.875rem;
+  font-weight: 650;
+}
+
+:root[data-aussehen='glas'] .sp-raster {
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--glas-kante);
+  border-radius: var(--r-karte);
+  background: linear-gradient(165deg, var(--glas-hoch), var(--karte) 70%);
+  box-shadow: var(--schatten-karte);
+}
+
+:root[data-aussehen='glas'] .sp-zelle {
+  min-height: 64px;
+  gap: 3px;
+  padding: 4px 2px 3px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--sp-zelle);
+}
+
+:root[data-aussehen='glas'] .sp-zelle.we {
+  background: var(--sp-zelle-we);
+}
+
+:root[data-aussehen='glas'] .sp-zelle.heute {
+  border: 0;
+  background: color-mix(in srgb, var(--akzent) 10%, transparent);
+  box-shadow: 0 0 0 2px var(--akzent), 0 6px 18px -4px color-mix(in srgb, var(--akzent) 60%, transparent);
+}
+
+:root[data-aussehen='glas'] .sp-zkopf {
+  min-height: 15px;
+  padding: 0 1px;
+  line-height: 15px;
+}
+
+:root[data-aussehen='glas'] .sp-zkopf .nr {
+  font-size: 0.78rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+:root[data-aussehen='glas'] .sp-zelle.heute .nr {
+  color: var(--akzent-text);
+}
+
+:root[data-aussehen='glas'] .sp-feiertag {
+  font-size: 0.66rem;
+}
+
+:root[data-aussehen='glas'] .sp-zusatz {
+  font-size: 0.5625rem;
+  font-weight: 800;
+  line-height: 12px;
+  padding: 0 2px;
+  border-radius: 5px;
+}
+
+:root[data-aussehen='glas'] .sp-mehr,
+:root[data-aussehen='glas'] .sp-notiz {
+  font-size: 0.5625rem;
+}
+
+/* Streifen: Farbe und Kürzel der Art wie bisher, nur weicher und größer */
+:root[data-aussehen='glas'] .sp-streifen {
+  height: 21px;
+  border-radius: 7px;
+  font-size: 0.75rem;
+  font-weight: 800;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
+:root[data-aussehen='glas'] .sp-streifen.leer {
+  height: 21px;
+  margin: 0;
+  border: 1.5px solid var(--sp-leer);
+  box-shadow: none;
+}
+
+:root[data-aussehen='glas'] .sp-raster.eine-person .sp-streifen,
+:root[data-aussehen='glas'] .sp-raster.eine-person .sp-streifen.leer {
+  height: 42px;
+  border-radius: 9px;
+  font-size: 0.9375rem;
+}
+
+:root[data-aussehen='glas'] .sp-mond {
+  font-size: 0.625rem;
+  margin-left: 1px;
+}
+
+/* Zählung: zwei getönte Glaskacheln (Papa blau, Mama orange wie in den Diagrammen), immer mit Emoji und Name */
+:root[data-aussehen='glas'] .sp-zaehlung {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+
+:root[data-aussehen='glas'] .sp-zaehlung .sp-person-zeile {
+  --c: var(--akzent);
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: 4px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--c) 30%, var(--glas-kante));
+  border-radius: 20px;
+  background: linear-gradient(165deg, color-mix(in srgb, var(--c) 14%, var(--glas-hoch)), color-mix(in srgb, var(--c) 20%, var(--karte)) 70%);
+  box-shadow: var(--schatten-karte);
+  font-size: 0.9375rem;
+  font-weight: 550;
+  line-height: 1.4;
+}
+
+:root[data-aussehen='glas'] .sp-person-zeile[data-person='papa'] {
+  --c: var(--serie-papa);
+}
+
+:root[data-aussehen='glas'] .sp-person-zeile[data-person='mama'] {
+  --c: var(--serie-mama);
+}
+
+:root[data-aussehen='glas'] .sp-zaehlung .sp-person-zeile b {
+  font-size: 1.0625rem;
+  font-weight: 700;
+}
+
+/* Legende: Kürzel als kleine Farbflächen (wie die Streifen), ruhige Trennlinien zwischen den Personen */
+:root[data-aussehen='glas'] .sp-legende {
+  gap: 12px;
+}
+
+:root[data-aussehen='glas'] .sp-legende .sp-person-zeile {
+  gap: 8px;
+  font-size: 1rem;
+}
+
+:root[data-aussehen='glas'] .sp-legende .sp-person-zeile b {
+  font-size: 1.0625rem;
+  font-weight: 700;
+}
+
+:root[data-aussehen='glas'] .sp-legende > * + * {
+  padding-top: 12px;
+  border-top: 1px solid var(--linie);
+}
+
+:root[data-aussehen='glas'] .sp-lg-liste {
+  gap: 8px 14px;
+  font-size: 0.9375rem;
+  font-weight: 550;
+  color: var(--ink);
+}
+
+:root[data-aussehen='glas'] .sp-legende > .sp-lg-liste {
+  color: var(--ink-2);
+}
+
+:root[data-aussehen='glas'] .sp-lg {
+  gap: 6px;
+}
+
+:root[data-aussehen='glas'] .sp-lg-kuerzel {
+  display: inline-grid;
+  place-items: center;
+  min-width: 30px;
+  height: 24px;
+  padding: 0 5px;
+  border-radius: 7px;
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+/* Pinsel-Leiste: echtes Glas, schwebt mit Abstand über der Tableiste */
+:root[data-aussehen='glas'] .sp-pinsel {
+  --pinsel-bg: var(--glas-stark);
+  --pinsel-blur: blur(24px) saturate(180%);
+  left: max(10px, calc(50% - 260px));
+  right: max(10px, calc(50% - 260px));
+  bottom: calc(var(--tabs-hoehe) + var(--tabs-abstand) + env(safe-area-inset-bottom, 0px) + 8px);
+  width: auto;
+  transform: none;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--glas-kante);
+  border-radius: var(--r-pinsel);
+  box-shadow: inset 0 1px 0 var(--glas-kante), var(--schatten-leiste);
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root[data-aussehen='glas'] .sp-pinsel {
+    background: var(--karte-voll);
+  }
+}
+
+:root[data-aussehen='glas'] .sp-pinsel-wer {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  background: var(--sp-rinne);
+  box-shadow: inset 0 1px 2px rgba(20, 10, 60, 0.08);
+}
+
+:root[data-aussehen='glas'] .sp-pinsel-wer button {
+  min-height: 44px;
+  padding: 0 10px;
+  font-size: 1rem;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+:root[data-aussehen='glas'] .sp-pinsel-wer button[aria-pressed='true'] {
+  background: var(--tropfen);
+  color: var(--ink);
+  box-shadow: 0 4px 14px -4px rgba(30, 20, 80, 0.3), inset 0 1px 0 var(--glas-kante);
+  font-weight: 750;
+}
+
+:root[data-aussehen='glas'] .sp-pinsel-fertig {
+  min-height: 52px;
+  padding: 0 20px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--akzent) 86%, #ffffff), var(--akzent));
+  box-shadow: 0 8px 20px -8px color-mix(in srgb, var(--akzent) 70%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+/* Arten als Farbfelder mit Kürzel (wie in der Vorlage); der Name wird vorgelesen und steht im Hinweis darunter */
+:root[data-aussehen='glas'] .sp-pinsel-arten {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(46px, 1fr));
+  gap: 8px;
+  padding: 4px 2px 2px;
+}
+
+:root[data-aussehen='glas'] .sp-pinsel-art {
+  position: relative;
+  display: grid;
+  min-height: 46px;
+  padding: 0;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  box-shadow: none;
+}
+
+:root[data-aussehen='glas'] .sp-pinsel-art .sp-pinsel-kuerzel {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  height: 46px;
+  padding: 0 4px;
+  border-radius: inherit;
+  font-size: 0.9375rem;
+  font-weight: 800;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 4px 10px -6px rgba(20, 10, 60, 0.5);
+}
+
+:root[data-aussehen='glas'] .sp-pinsel-art:not(:has(> .frei)) .sp-pinsel-name {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+:root[data-aussehen='glas'] .sp-pinsel-art.aktiv {
+  border: 0;
+  background: transparent;
+  transform: translateY(-2px) scale(1.06);
+  box-shadow: 0 0 0 3px var(--karte-voll), 0 0 0 5px var(--akzent);
+}
+
+/* „Frei“: gestrichelt, doppelt so breit, mit Namen */
+:root[data-aussehen='glas'] .sp-pinsel-art:has(> .frei) {
+  grid-column: span 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1.5px dashed color-mix(in srgb, var(--ink) 35%, transparent);
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+  font-size: 1rem;
+  font-weight: 650;
+}
+
+:root[data-aussehen='glas'] .sp-pinsel-art .sp-pinsel-kuerzel.frei {
+  display: inline;
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--ink-2);
+  font-size: 1rem;
+}
+
+:root[data-aussehen='glas'] .sp-pinsel-art.aktiv:has(> .frei) {
+  border-color: var(--akzent);
+  background: color-mix(in srgb, var(--akzent) 12%, var(--karte-voll));
+  box-shadow: 0 0 0 2px var(--akzent);
+}
+
+:root[data-aussehen='glas'] .sp-pinsel-hinweis {
+  margin: 0 2px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+/* Tagesblatt: je Person eine Glaskarte; Art-Knöpfe als Glaspillen mit Kürzel */
+:root[data-aussehen='glas'] .sp-tag-karte {
+  gap: 12px;
+  padding: 16px;
+}
+
+:root[data-aussehen='glas'] .blatt-inhalt h3.sp-tag-kopf,
+:root[data-aussehen='glas'] .blatt-inhalt .sp-arten-person h3,
+:root[data-aussehen='glas'] .blatt-inhalt .sp-art-form h3 {
+  font-size: 1.0625rem;
+  font-weight: 700;
+}
+
+:root[data-aussehen='glas'] .sp-tag-kopf small {
+  font-size: 0.9375rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+:root[data-aussehen='glas'] .sp-tag-arten,
+:root[data-aussehen='glas'] .sp-tag-plus-reihe {
+  gap: 8px;
+}
+
+:root[data-aussehen='glas'] .sp-tag-art {
+  min-height: 44px;
+  gap: 6px;
+  padding: 4px 14px 4px 6px;
+  border: 1px solid var(--linie);
+  background: var(--glas-stark);
+  box-shadow: var(--schatten-knopf);
+  font-size: 0.9375rem;
+  font-weight: 650;
+}
+
+:root[data-aussehen='glas'] .sp-tag-art.aktiv {
+  border-color: var(--akzent);
+  background: color-mix(in srgb, var(--akzent) 14%, var(--glas-stark));
+  box-shadow: 0 0 0 1.5px var(--akzent), inset 0 1px 0 var(--glas-kante);
+  font-weight: 750;
+}
+
+:root[data-aussehen='glas'] .sp-tag-art.inaktiv {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--ink) 35%, transparent);
+  background: transparent;
+  box-shadow: none;
+}
+
+:root[data-aussehen='glas'] .sp-tag-kuerzel {
+  display: inline-grid;
+  place-items: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  font-size: 0.8125rem;
+  font-weight: 800;
+}
+
+:root[data-aussehen='glas'] .sp-tag-notiz input::placeholder,
+:root[data-aussehen='glas'] .sp-art-form input::placeholder,
+:root[data-aussehen='glas'] .sp-tag-zusatz-form input::placeholder {
+  color: var(--ink-2);
+  opacity: 1;
+}
+
+:root[data-aussehen='glas'] .sp-tag-zusaetze {
+  gap: 8px;
+}
+
+:root[data-aussehen='glas'] .sp-tag-zusatz {
+  gap: 8px;
+  min-height: 52px;
+  padding: 4px 4px 4px 10px;
+  border: 1px solid var(--linie);
+  background: var(--glas-stark);
+  box-shadow: var(--schatten-knopf);
+  font-size: 1rem;
+  font-weight: 650;
+}
+
+:root[data-aussehen='glas'] .sp-tag-weg {
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+  color: var(--ink);
+  font-size: 1.05rem;
+}
+
+:root[data-aussehen='glas'] .sp-tag-plus,
+:root[data-aussehen='glas'] .sp-arten-neu {
+  color: var(--akzent-text);
+}
+
+:root[data-aussehen='glas'] .sp-tag-zusatz-form {
+  gap: 12px;
+  padding: 12px;
+  border: 1.5px dashed color-mix(in srgb, var(--ink) 22%, transparent);
+  background: color-mix(in srgb, var(--akzent) 5%, transparent);
+}
+
+:root[data-aussehen='glas'] .sp-tag-zusatz-kopf {
+  gap: 8px;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+:root[data-aussehen='glas'] .sp-tag-erinnerung {
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+:root[data-aussehen='glas'] .sp-tag-erinnerung.warnung {
+  border: 1px solid color-mix(in srgb, var(--gefahr) 30%, transparent);
+  background: color-mix(in srgb, var(--gefahr) 12%, var(--glas-stark));
+}
+
+/* Schichtarten: Zeilen mit feiner Linie, runde Glasknöpfe ↑ ↓ (44 px), Farbwahl in sechs Spalten (jede Fläche ≥ 44 px) */
+:root[data-aussehen='glas'] .sp-arten-blatt {
+  gap: 14px;
+}
+
+:root[data-aussehen='glas'] .sp-arten-person,
+:root[data-aussehen='glas'] .sp-art-form {
+  gap: 12px;
+  padding: 16px;
+}
+
+:root[data-aussehen='glas'] .sp-art-zeile {
+  gap: 6px 10px;
+  padding: 10px 0;
+  border-top-color: var(--linie);
+}
+
+:root[data-aussehen='glas'] .sp-art-kuerzel {
+  display: inline-grid;
+  place-items: center;
+  min-width: 44px;
+  height: 28px;
+  font-size: 0.8125rem;
+  font-weight: 800;
+}
+
+:root[data-aussehen='glas'] .sp-art-text {
+  font-size: 1rem;
+  font-weight: 650;
+}
+
+:root[data-aussehen='glas'] .sp-art-pfeil {
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--linie);
+  background: var(--glas-stark);
+  box-shadow: var(--schatten-knopf);
+  font-size: 1.05rem;
+}
+
+:root[data-aussehen='glas'] .sp-art-aktionen .knopf.klein,
+:root[data-aussehen='glas'] .sp-art-zeile.aus > .knopf.klein {
+  min-height: 44px;
+  padding: 6px 16px;
+  font-size: 0.9375rem;
+}
+
+:root[data-aussehen='glas'] .sp-arten-aus summary {
+  min-height: 44px;
+  font-weight: 700;
+}
+
+:root[data-aussehen='glas'] .sp-arten-aus .leise,
+:root[data-aussehen='glas'] .sp-art-form .leise {
+  font-size: 0.875rem;
+}
+
+:root[data-aussehen='glas'] .sp-farben {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+}
+
+:root[data-aussehen='glas'] .sp-farbe {
+  min-height: 44px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+:root[data-aussehen='glas'] .sp-farbe.aktiv {
+  box-shadow: 0 0 0 3px var(--karte-voll), 0 0 0 5px var(--ink);
+}
+
+:root[data-aussehen='glas'] .sp-art-nacht {
+  font-weight: 700;
+}
+
+:root[data-aussehen='glas'] .sp-art-nacht input {
+  width: 24px;
+  height: 24px;
+}
+
+/* ---------- 2. Bento ---------- */
+
+:root[data-aussehen='bento'] {
+  --sp-zelle-we: color-mix(in srgb, var(--karte) 55%, var(--bg));
+  --sp-leer: color-mix(in srgb, var(--linie) 85%, transparent);
+  --sp-lippe-farbe: inset 0 -3px 0 rgb(0 0 0 / 0.14);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-aussehen='bento']:not([data-theme='light']) {
+    --sp-zelle-we: color-mix(in srgb, var(--karte) 62%, var(--bg));
+    --sp-leer: color-mix(in srgb, var(--ink) 22%, transparent);
+    --sp-lippe-farbe: inset 0 -3px 0 rgb(0 0 0 / 0.24);
+  }
+}
+
+:root[data-aussehen='bento'][data-theme='dark'] {
+  --sp-zelle-we: color-mix(in srgb, var(--karte) 62%, var(--bg));
+  --sp-leer: color-mix(in srgb, var(--ink) 22%, transparent);
+  --sp-lippe-farbe: inset 0 -3px 0 rgb(0 0 0 / 0.24);
+}
+
+/* Kopf: „Eintragen“ in Kobaltblau (Farbe des Schicht-Tabs), offen dunkel wie „Fertig“ */
+:root[data-aussehen='bento'] .sp-eintragen {
+  min-height: 48px;
+  padding: 0 18px;
+  border: 0;
+  background: var(--person-papa);
+  color: var(--person-papa-auf);
+  box-shadow: var(--sp-lippe-farbe);
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+:root[data-aussehen='bento'] .sp-eintragen.aktiv {
+  border: 0;
+  background: var(--ink);
+  color: var(--bg);
+}
+
+/* Monat: weiße Kachel mit runden lila-grauen Knöpfen */
+:root[data-aussehen='bento'] .sp-monat {
+  padding: 8px;
+  border: 0;
+  border-radius: 30px;
+  background: var(--karte);
+  box-shadow: var(--lippe);
+}
+
+:root[data-aussehen='bento'] .sp-monat h2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+:root[data-aussehen='bento'] .sp-monat .rund {
+  width: 48px;
+  height: 48px;
+  border: 0;
+  background: var(--flaeche-2);
+  font-family: var(--font-titel);
+  font-size: 1.6rem;
+  font-weight: 600;
+}
+
+/* Filter: weiße Rinne, die Wahl ist ein lila Knopf mit Bonbon-Kante */
+:root[data-aussehen='bento'] .sp-filter {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  padding: 5px;
+  border-radius: 999px;
+  background: var(--karte);
+  box-shadow: var(--lippe);
+}
+
+:root[data-aussehen='bento'] .sp-filter .chip {
+  justify-content: center;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  font-size: 1rem;
+}
+
+:root[data-aussehen='bento'] .sp-filter .chip.aktiv {
+  border: 0;
+  background: var(--akzent);
+  color: var(--akzent-ink);
+  box-shadow: inset 0 -3px 0 rgb(0 0 0 / 0.16);
+}
+
+/* Raster: jede Zelle eine kleine weiße Kachel mit Kante; Wochenende zarter; heute lila Ring und lila Zahl */
+:root[data-aussehen='bento'] .schicht-seite .wochentage {
+  gap: 5px;
+  margin-bottom: -8px;
+}
+
+:root[data-aussehen='bento'] .schicht-seite .wochentage span {
+  font-size: 0.875rem;
+  font-weight: 800;
+}
+
+:root[data-aussehen='bento'] .sp-raster {
+  gap: 5px;
+}
+
+:root[data-aussehen='bento'] .sp-zelle {
+  min-height: 68px;
+  gap: 3px;
+  padding: 3px 2px 5px;
+  border: 0;
+  border-radius: var(--r-zelle);
+  background: var(--karte);
+  box-shadow: var(--lippe);
+}
+
+:root[data-aussehen='bento'] .sp-zelle.we {
+  background: var(--sp-zelle-we);
+}
+
+:root[data-aussehen='bento'] .sp-zelle.heute {
+  border: 0;
+  box-shadow: 0 0 0 3px var(--akzent), var(--lippe);
+}
+
+:root[data-aussehen='bento'] .sp-zkopf {
+  min-height: 16px;
+  padding: 0 2px;
+  line-height: 16px;
+}
+
+:root[data-aussehen='bento'] .sp-zkopf .nr {
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+:root[data-aussehen='bento'] .sp-zelle.heute .nr {
+  margin-left: -1px;
+  padding: 0 4px;
+  border-radius: 6px;
+  background: var(--akzent);
+  color: var(--akzent-ink);
+}
+
+:root[data-aussehen='bento'] .sp-feiertag {
+  font-size: 0.66rem;
+}
+
+:root[data-aussehen='bento'] .sp-zusatz {
+  font-size: 0.5625rem;
+  font-weight: 900;
+  line-height: 13px;
+  padding: 0 2px;
+  border-radius: 6px;
+}
+
+:root[data-aussehen='bento'] .sp-mehr,
+:root[data-aussehen='bento'] .sp-notiz {
+  font-size: 0.5625rem;
+}
+
+/* Streifen: runde Bonbons in der Farbe der Art, Kürzel in Fredoka, ☾ klein oben rechts */
+:root[data-aussehen='bento'] .sp-streifen {
+  position: relative;
+  height: 23px;
+  border-radius: 8px;
+  font-family: var(--font-titel);
+  font-size: 0.84rem;
+  font-weight: 600;
+  box-shadow: inset 0 -2px 0 rgb(0 0 0 / 0.12);
+}
+
+:root[data-aussehen='bento'] .sp-streifen.leer {
+  height: 23px;
+  margin: 0;
+  border: 1.5px dashed var(--sp-leer);
+  box-shadow: none;
+}
+
+:root[data-aussehen='bento'] .sp-raster.eine-person .sp-streifen,
+:root[data-aussehen='bento'] .sp-raster.eine-person .sp-streifen.leer {
+  height: 46px;
+  border-radius: 10px;
+  font-size: 1.0625rem;
+}
+
+:root[data-aussehen='bento'] .sp-mond {
+  position: absolute;
+  top: 1px;
+  right: 2px;
+  font-family: var(--font-text);
+  font-size: 0.5625rem;
+  line-height: 1;
+}
+
+/* Zählung: zwei Kacheln in der Farbe der Person (Papa blau, Mama koralle), Name mit Emoji */
+:root[data-aussehen='bento'] .sp-zaehlung {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  gap: 10px;
+  padding: 0;
+  background: none;
+  box-shadow: none;
+}
+
+:root[data-aussehen='bento'] .sp-zaehlung .sp-person-zeile {
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: 4px;
+  padding: 16px;
+  border-radius: var(--r-karte);
+  background: var(--karte);
+  box-shadow: var(--lippe);
+  font-size: 0.9375rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+:root[data-aussehen='bento'] .sp-zaehlung .sp-person-zeile[data-person='papa'] {
+  background: var(--person-papa-tint);
+  color: var(--person-papa-ink);
+  box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--person-papa) 30%, transparent);
+}
+
+:root[data-aussehen='bento'] .sp-zaehlung .sp-person-zeile[data-person='mama'] {
+  background: var(--person-mama-tint);
+  color: var(--person-mama-ink);
+  box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--person-mama) 30%, transparent);
+}
+
+:root[data-aussehen='bento'] .sp-zaehlung .sp-person-zeile b {
+  font-family: var(--font-titel);
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+/* Legende: weiße Kachel; Personen getrennt durch eine weiche Linie; Kürzel als Bonbons */
+:root[data-aussehen='bento'] .sp-legende {
+  gap: 12px;
+}
+
+:root[data-aussehen='bento'] .sp-legende .sp-person-zeile {
+  gap: 8px;
+  font-size: 1rem;
+}
+
+:root[data-aussehen='bento'] .sp-legende .sp-person-zeile b {
+  font-family: var(--font-titel);
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+:root[data-aussehen='bento'] .sp-legende > * + * {
+  padding-top: 12px;
+  border-top: 2px solid var(--linie);
+}
+
+:root[data-aussehen='bento'] .sp-lg-liste {
+  gap: 8px 14px;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+:root[data-aussehen='bento'] .sp-legende > .sp-lg-liste {
+  color: var(--ink-2);
+}
+
+:root[data-aussehen='bento'] .sp-lg {
+  gap: 6px;
+}
+
+:root[data-aussehen='bento'] .sp-lg-kuerzel {
+  display: inline-grid;
+  place-items: center;
+  min-width: 30px;
+  height: 26px;
+  padding: 0 5px;
+  border-radius: 8px;
+  font-family: var(--font-titel);
+  font-size: 0.84rem;
+  font-weight: 600;
+  box-shadow: inset 0 -2px 0 rgb(0 0 0 / 0.12);
+}
+
+/* Pinsel-Leiste: weiße schwebende Kachel (Schatten wie die Tableiste), Bonbon-Felder je Art */
+:root[data-aussehen='bento'] .sp-pinsel {
+  left: max(8px, calc(50% - 260px));
+  right: max(8px, calc(50% - 260px));
+  bottom: calc(var(--tabs-hoehe) + var(--tabs-abstand) + env(safe-area-inset-bottom, 0px) + 8px);
+  width: auto;
+  transform: none;
+  gap: 8px;
+  padding: 10px 10px 12px;
+  border-top: 0;
+  border-radius: var(--r-pinsel);
+}
+
+:root[data-aussehen='bento'] .sp-pinsel-wer {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  background: var(--karte-2);
+}
+
+:root[data-aussehen='bento'] .sp-pinsel-wer button {
+  min-height: 44px;
+  padding: 0 10px;
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+:root[data-aussehen='bento'] .sp-pinsel-wer button[aria-pressed='true'] {
+  background: var(--akzent);
+  color: var(--akzent-ink);
+  box-shadow: inset 0 -3px 0 rgb(0 0 0 / 0.16);
+}
+
+:root[data-aussehen='bento'] .sp-pinsel-fertig {
+  min-height: 52px;
+  padding: 0 20px;
+  background: var(--ink);
+  color: var(--bg);
+  box-shadow: inset 0 -3px 0 rgb(0 0 0 / 0.2);
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+:root[data-aussehen='bento'] .sp-pinsel-arten {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(46px, 1fr));
+  gap: 8px;
+  padding: 4px 2px 2px;
+}
+
+:root[data-aussehen='bento'] .sp-pinsel-art {
+  position: relative;
+  display: grid;
+  min-height: 48px;
+  padding: 0;
+  border: 0;
+  border-radius: 15px;
+  background: transparent;
+  box-shadow: none;
+}
+
+:root[data-aussehen='bento'] .sp-pinsel-art .sp-pinsel-kuerzel {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  height: 48px;
+  padding: 0 4px;
+  border-radius: inherit;
+  font-family: var(--font-titel);
+  font-size: 1.0625rem;
+  font-weight: 600;
+  box-shadow: var(--sp-lippe-farbe);
+}
+
+:root[data-aussehen='bento'] .sp-pinsel-art:not(:has(> .frei)) .sp-pinsel-name {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+:root[data-aussehen='bento'] .sp-pinsel-art.aktiv {
+  border: 0;
+  background: transparent;
+  transform: scale(1.05);
+  box-shadow: 0 0 0 3px var(--karte), 0 0 0 5.5px var(--ink);
+}
+
+:root[data-aussehen='bento'] .sp-pinsel-art:has(> .frei) {
+  grid-column: span 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: var(--karte-2);
+  box-shadow: var(--lippe);
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+:root[data-aussehen='bento'] .sp-pinsel-art .sp-pinsel-kuerzel.frei {
+  display: inline;
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--ink-2);
+  font-family: var(--font-text);
+  font-size: 1rem;
+}
+
+:root[data-aussehen='bento'] .sp-pinsel-art.aktiv:has(> .frei) {
+  box-shadow: 0 0 0 3px var(--karte), 0 0 0 5.5px var(--ink);
+}
+
+:root[data-aussehen='bento'] .sp-pinsel-hinweis {
+  margin: 0 2px;
+  font-size: 0.875rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+/* Tagesblatt: je Person eine weiße Kachel, der Name als Pille in der Farbe der Person; Art-Knöpfe als Bonbon-Pillen */
+:root[data-aussehen='bento'] .sp-tag-karte {
+  gap: 12px;
+  padding: 16px;
+}
+
+:root[data-aussehen='bento'] .blatt-inhalt h3.sp-tag-kopf,
+:root[data-aussehen='bento'] .blatt-inhalt .sp-arten-person h3,
+:root[data-aussehen='bento'] .blatt-inhalt .sp-art-form h3 {
+  align-items: center;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+:root[data-aussehen='bento'] .sp-tag-karte[data-person] .sp-tag-kopf > span,
+:root[data-aussehen='bento'] .sp-arten-person[data-person] > h3 {
+  align-self: flex-start;
+  padding: 4px 12px;
+  border-radius: 999px;
+}
+
+:root[data-aussehen='bento'] .sp-tag-karte[data-person='papa'] .sp-tag-kopf > span,
+:root[data-aussehen='bento'] .sp-arten-person[data-person='papa'] > h3 {
+  background: var(--person-papa-tint);
+  color: var(--person-papa-ink);
+}
+
+:root[data-aussehen='bento'] .sp-tag-karte[data-person='mama'] .sp-tag-kopf > span,
+:root[data-aussehen='bento'] .sp-arten-person[data-person='mama'] > h3 {
+  background: var(--person-mama-tint);
+  color: var(--person-mama-ink);
+}
+
+:root[data-aussehen='bento'] .sp-tag-kopf small {
+  font-family: var(--font-text);
+  font-size: 0.9375rem;
+  font-weight: 800;
+}
+
+:root[data-aussehen='bento'] .sp-tag-arten,
+:root[data-aussehen='bento'] .sp-tag-plus-reihe {
+  gap: 8px;
+}
+
+:root[data-aussehen='bento'] .sp-tag-art {
+  min-height: 44px;
+  gap: 6px;
+  padding: 4px 14px 4px 6px;
+  border: 0;
+  background: var(--karte-2);
+  box-shadow: var(--lippe);
+  font-size: 0.9375rem;
+  font-weight: 800;
+}
+
+:root[data-aussehen='bento'] .sp-tag-art.aktiv {
+  border: 0;
+  background: color-mix(in srgb, var(--akzent) 16%, var(--karte));
+  box-shadow: inset 0 0 0 2.5px var(--akzent), var(--lippe);
+  font-weight: 900;
+}
+
+:root[data-aussehen='bento'] .sp-tag-art.inaktiv {
+  background: transparent;
+  box-shadow: none;
+  outline: 2px dashed var(--linie);
+  outline-offset: -2px;
+}
+
+:root[data-aussehen='bento'] .sp-tag-kuerzel {
+  display: inline-grid;
+  place-items: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  font-family: var(--font-titel);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+:root[data-aussehen='bento'] .sp-tag-kuerzel.frei {
+  font-family: var(--font-text);
+}
+
+:root[data-aussehen='bento'] .sp-tag-notiz input::placeholder,
+:root[data-aussehen='bento'] .sp-art-form input::placeholder,
+:root[data-aussehen='bento'] .sp-tag-zusatz-form input::placeholder {
+  color: var(--ink-2);
+  opacity: 1;
+}
+
+:root[data-aussehen='bento'] .sp-tag-zusaetze {
+  gap: 8px;
+}
+
+:root[data-aussehen='bento'] .sp-tag-zusatz {
+  gap: 8px;
+  min-height: 52px;
+  padding: 4px 4px 4px 10px;
+  background: var(--karte-2);
+  box-shadow: var(--lippe);
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+:root[data-aussehen='bento'] .sp-tag-weg {
+  background: var(--karte);
+  color: var(--ink);
+  font-weight: 900;
+  box-shadow: var(--lippe);
+}
+
+:root[data-aussehen='bento'] .sp-tag-zusatz-form {
+  gap: 12px;
+  padding: 12px;
+  border: 2px dashed var(--linie);
+}
+
+:root[data-aussehen='bento'] .sp-tag-zusatz-kopf {
+  gap: 8px;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+:root[data-aussehen='bento'] .sp-tag-erinnerung {
+  font-size: 0.875rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+:root[data-aussehen='bento'] .sp-tag-erinnerung.warnung {
+  background: color-mix(in srgb, var(--gefahr) 14%, var(--karte));
+  box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--gefahr) 25%, transparent);
+}
+
+/* Schichtarten: Zeilen getrennt durch eine weiche Linie, Bonbon-Knöpfe ↑ ↓ (44 px), Farbwahl in sechs Spalten (≥ 44 px) */
+:root[data-aussehen='bento'] .sp-arten-blatt {
+  gap: 14px;
+}
+
+:root[data-aussehen='bento'] .sp-arten-person,
+:root[data-aussehen='bento'] .sp-art-form {
+  gap: 12px;
+  padding: 16px;
+}
+
+:root[data-aussehen='bento'] .sp-art-zeile {
+  gap: 6px 10px;
+  padding: 10px 0;
+  border-top: 2px solid var(--linie);
+}
+
+:root[data-aussehen='bento'] .sp-art-zeile:first-child {
+  border-top: 0;
+}
+
+:root[data-aussehen='bento'] .sp-art-kuerzel {
+  display: inline-grid;
+  place-items: center;
+  min-width: 44px;
+  height: 30px;
+  font-family: var(--font-titel);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  box-shadow: inset 0 -2px 0 rgb(0 0 0 / 0.12);
+}
+
+:root[data-aussehen='bento'] .sp-art-text {
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+:root[data-aussehen='bento'] .sp-art-pfeil {
+  width: 44px;
+  height: 44px;
+  border: 0;
+  background: var(--karte-2);
+  box-shadow: var(--lippe);
+  font-size: 1.05rem;
+  font-weight: 900;
+}
+
+:root[data-aussehen='bento'] .sp-art-aktionen .knopf.klein,
+:root[data-aussehen='bento'] .sp-art-zeile.aus > .knopf.klein {
+  min-height: 44px;
+  padding: 6px 16px;
+  font-size: 0.9375rem;
+}
+
+:root[data-aussehen='bento'] .sp-arten-aus summary {
+  min-height: 44px;
+  font-weight: 800;
+}
+
+:root[data-aussehen='bento'] .sp-arten-aus .leise,
+:root[data-aussehen='bento'] .sp-art-form .leise {
+  font-size: 0.875rem;
+}
+
+:root[data-aussehen='bento'] .sp-farben {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+}
+
+:root[data-aussehen='bento'] .sp-farbe {
+  min-height: 44px;
+  box-shadow: inset 0 -3px 0 rgb(0 0 0 / 0.14);
+}
+
+:root[data-aussehen='bento'] .sp-farbe.aktiv {
+  box-shadow: 0 0 0 3px var(--karte), 0 0 0 5.5px var(--ink);
+}
+
+:root[data-aussehen='bento'] .sp-art-nacht {
+  font-weight: 800;
+}
+
+:root[data-aussehen='bento'] .sp-art-nacht input {
+  width: 24px;
+  height: 24px;
+}
+
+/* ---------- 3. Schmale Telefone (≤ 359 px): Marken im Tageskopf wie in Klassisch, damit „DB +2 ✎“ im Feld bleibt ---------- */
+
+@media (max-width: 359px) {
+  :root[data-aussehen='glas'] .sp-eintragen,
+  :root[data-aussehen='bento'] .sp-eintragen {
+    padding: 0 12px;
+    font-size: 0.9375rem;
+  }
+
+  :root[data-aussehen='glas'] .sp-zusatz,
+  :root[data-aussehen='bento'] .sp-zusatz {
+    font-size: 0.5rem;
+    padding: 0 1px;
+  }
+
+  :root[data-aussehen='glas'] .sp-mehr,
+  :root[data-aussehen='bento'] .sp-mehr {
+    font-size: 0.5rem;
+  }
+
+  :root[data-aussehen='glas'] .sp-notiz,
+  :root[data-aussehen='bento'] .sp-notiz,
+  :root[data-aussehen='glas'] .sp-feiertag,
+  :root[data-aussehen='bento'] .sp-feiertag {
+    font-size: 0.55rem;
+  }
+
+  :root[data-aussehen='glas'] .sp-zkopf .nr,
+  :root[data-aussehen='bento'] .sp-zkopf .nr {
+    font-size: 0.7rem;
+  }
+
+  :root[data-aussehen='glas'] .sp-streifen,
+  :root[data-aussehen='bento'] .sp-streifen {
+    font-size: 0.7rem;
+  }
+}
+
+/* ---------- 4. Bewegung (nur ohne „Reduziert“ und ohne prefers-reduced-motion; nie ein Aufschub für einen Tipp) ----------
+   Die Leiste federt beim Öffnen herein (.sp-pinsel-neu, nur das erste Zeichnen); ein gemalter Streifen ploppt (Glas) bzw. stempelt
+   (Bento) einmal (.sp-gemalt; --sp-gemalt-vor lässt ihn nach einem Neuzeichnen weiterlaufen statt neu zu beginnen). Beides nur
+   transform/opacity, die Knöpfe sind sofort bedienbar. */
+
+@keyframes sp-pinsel-rein-glas {
+  from {
+    opacity: 0;
+    transform: translateY(30px) scale(0.96);
+  }
+}
+
+@keyframes sp-pinsel-rein-bento {
+  0% {
+    transform: translateY(calc(100% + 40px));
+  }
+  70% {
+    transform: translateY(-5px);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+@keyframes sp-gemalt-glas {
+  0% {
+    opacity: 0.4;
+    transform: scale(0.3);
+  }
+  55% {
+    opacity: 1;
+    transform: scale(1.18);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+@keyframes sp-gemalt-bento {
+  0% {
+    opacity: 0.2;
+    transform: scale(1.5) rotate(-8deg);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(0.92) rotate(2deg);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .sp-pinsel.sp-pinsel-neu {
+    animation: sp-pinsel-rein-glas 0.55s var(--kurve-feder) both;
+  }
+
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .sp-pinsel.sp-pinsel-neu {
+    animation: sp-pinsel-rein-bento 0.5s cubic-bezier(0.25, 1, 0.5, 1) both;
+  }
+
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .sp-streifen.sp-gemalt {
+    animation: sp-gemalt-glas 0.5s cubic-bezier(0.34, 1.36, 0.64, 1) var(--sp-gemalt-vor, 0ms) both;
+  }
+
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .sp-streifen.sp-gemalt {
+    animation: sp-gemalt-bento 0.42s cubic-bezier(0.34, 1.56, 0.64, 1) var(--sp-gemalt-vor, 0ms) both;
+  }
+
+  /* federnder Tipp auf Tage und Farbfelder (wie die Knöpfe im Fundament) */
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .sp-zelle,
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .sp-pinsel-art,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .sp-zelle,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .sp-pinsel-art {
+    transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .sp-zelle:active,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .sp-zelle:active {
+    transform: scale(0.94);
+    transition-duration: 0.08s;
+  }
+
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .sp-pinsel-art:not(.aktiv):active,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .sp-pinsel-art:not(.aktiv):active {
+    transform: scale(0.9);
+    transition-duration: 0.08s;
+  }
+}

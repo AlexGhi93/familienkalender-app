@@ -16,9 +16,30 @@ const PERSONEN = [
  */
 export const musterKlassen = (muster) => (muster ? `gestreift muster-${muster}` : '');
 
+// Haken für die Bewegung in Glas/Bento (themes/schicht.css; in Klassisch ohne Stil): die Leiste trägt beim ersten Zeichnen nach dem
+// Öffnen `sp-pinsel-neu` (sie federt herein); der gerade gemalte Streifen trägt `sp-gemalt` (er stempelt), solange sein Stempel läuft.
+// Nach einem Tipp zeichnet die Seite meist zweimal (sofort und nach dem Speichern): `--sp-gemalt-vor` (negative Verzögerung) lässt den
+// Stempel im neuen Knoten an derselben Stelle weiterlaufen statt neu zu beginnen. Danach spielt nichts erneut.
+let leisteFrisch = false;
+let gemalt = null; // { datum, person, seit } des letzten Tipps mit einer Dienst-Art
+const GEMALT_MS = 600; // länger als der Stempel in Glas (0,5 s) und Bento (0,42 s)
+
+/** Der gerade gemalte Streifen ({ datum, person, vor: ms seit dem Tipp }) oder null, wenn kein Stempel mehr läuft. */
+export function gemaltJetzt() {
+  if (!gemalt) return null;
+  const vor = performance.now() - gemalt.seit;
+  if (vor >= GEMALT_MS) {
+    gemalt = null;
+    return null;
+  }
+  return { datum: gemalt.datum, person: gemalt.person, vor };
+}
+
 /** Öffnet den Pinsel (Person nach Filter, erste aktive Art) bzw. schließt ihn. */
 export function pinselUmschalten({ store, ui }) {
   ui.schicht.pinsel = ui.schicht.pinsel ? null : pinselStart(store.getState(), ui.schicht.filter);
+  leisteFrisch = ui.schicht.pinsel !== null;
+  gemalt = null;
   ui.rendern();
 }
 
@@ -30,6 +51,7 @@ export function pinselTippen({ store }, pinsel, datum) {
   const { person, k } = pinselModel(state, pinsel); // eine inzwischen archivierte Art: wie angezeigt die erste aktive
   const a = pinselAktion(state, jm, tag, { person, k });
   if (!a) return;
+  gemalt = a.aktion === 'pinsel' ? { datum, person, seit: performance.now() } : null;
   const aufrufe = {
     setzen: () => store.schichtSetzen(jm, tag, person, null),
     pinsel: () => store.schichtPinsel(jm, tag, person, a.k),
@@ -68,12 +90,14 @@ export function pinselLeiste({ store, ui }) {
       { class: `sp-pinsel-art ${gewaehlt ? 'aktiv' : ''}`.trim(), type: 'button', 'aria-pressed': gewaehlt ? 'true' : 'false', onClick: () => waehle(k) },
       h('i', { class: `sp-pinsel-kuerzel ${kuerzelKlasse}` }, kuerzel),
       ' ',
-      name,
+      h('span', { class: 'sp-pinsel-name' }, name), // Haken: Glas/Bento zeigen nur das Kürzel (der Name bleibt vorgelesen und steht im Hinweis)
     );
 
+  const neu = leisteFrisch;
+  leisteFrisch = false;
   const leiste = h(
     'section',
-    { class: 'sp-pinsel', 'aria-label': 'Pinsel: Schichten eintragen' },
+    { class: neu ? 'sp-pinsel sp-pinsel-neu' : 'sp-pinsel', 'aria-label': 'Pinsel: Schichten eintragen' },
     h(
       'div',
       { class: 'sp-pinsel-kopf' },

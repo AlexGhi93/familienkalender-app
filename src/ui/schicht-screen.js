@@ -5,7 +5,7 @@ import { h } from './dom.js';
 import { datumLang } from '../app/format-de.js';
 import { FEIERTAG_EMOJI } from '../app/views/gemeinsam.js';
 import { rasterFilter, schichtMonatModel } from '../app/views/schicht-model.js';
-import { musterKlassen, pinselLeiste, pinselTippen, pinselUmschalten } from './schicht-pinsel.js';
+import { gemaltJetzt, musterKlassen, pinselLeiste, pinselTippen, pinselUmschalten } from './schicht-pinsel.js';
 
 const PERSON = { papa: { name: 'Papa', emoji: '👨' }, mama: { name: 'Mama', emoji: '👩' } };
 const FILTER = [
@@ -15,10 +15,12 @@ const FILTER = [
 ];
 
 /** Ein Streifen: Farbe der Art und ihr Kürzel (nie nur Farbe), ☾ bei Nacht, Urlaub und Ersatzdienst zusätzlich gestreift; frei = gepunkteter Rahmen. */
-function streifenKnoten(person, s) {
+function streifenKnoten(person, s, gemalt = null) {
   if (!s) return h('span', { class: `sp-streifen ${person} leer`, 'aria-hidden': 'true' });
-  const klassen = ['sp-streifen', person, `sf-${s.farbe}`, musterKlassen(s.muster), s.unbekannt ? 'unbekannt' : ''];
-  return h('span', { class: klassen.filter(Boolean).join(' '), 'aria-hidden': 'true' }, s.kuerzel, s.nacht ? h('span', { class: 'sp-mond' }, '☾') : null);
+  const klassen = ['sp-streifen', person, `sf-${s.farbe}`, musterKlassen(s.muster), s.unbekannt ? 'unbekannt' : '', gemalt ? 'sp-gemalt' : ''];
+  const knoten = h('span', { class: klassen.filter(Boolean).join(' '), 'aria-hidden': 'true' }, s.kuerzel, s.nacht ? h('span', { class: 'sp-mond' }, '☾') : null);
+  if (gemalt) knoten.style?.setProperty('--sp-gemalt-vor', `${-Math.round(gemalt.vor)}ms`); // Haken: der Stempel läuft weiter, wo er war
+  return knoten;
 }
 
 /** Vorlesetext eines Tages: „Montag, 5. Oktober: Papa Frühdienst, Mama frei“ (+ Feiertag, Zusatz, Notiz). */
@@ -30,7 +32,7 @@ function beschriftung(z, personen) {
   return `${kopf}: ${teile.join(', ')}`;
 }
 
-function zelle(z, m, { store, ui }) {
+function zelle(z, m, { store, ui }, gemalt) {
   if (!z.imMonat) return h('span', { class: 'sp-leer-feld', 'aria-hidden': 'true' });
   const klassen = ['sp-zelle', z.wochenende ? 'we' : '', z.istHeute ? 'heute' : '', z.feiertag ? 'feiertag' : ''];
   return h(
@@ -61,7 +63,7 @@ function zelle(z, m, { store, ui }) {
           )
         : null,
     ),
-    m.personen.map((p) => streifenKnoten(p, z.streifen[p])),
+    m.personen.map((p) => streifenKnoten(p, z.streifen[p], gemalt?.datum === z.datum && gemalt.person === p ? gemalt : null)),
   );
 }
 
@@ -74,7 +76,8 @@ export function schichtScreen({ store, ui }) {
   if (ui.seiteBetreten) ui.schicht.pinsel = null; // wer die Seite verlässt und wiederkommt, malt nicht aus Versehen weiter
   const m = schichtMonatModel(store.getState(), ui.schicht.jm, { heute: store.heute(), filter: rasterFilter(ui.schicht.filter, ui.schicht.pinsel) });
   const rund = (zeichen, text, ziel) => h('button', { class: 'rund', type: 'button', 'aria-label': text, onClick: () => ui.setzeSchichtMonat(ziel) }, zeichen);
-  const personZeile = (p, inhalt) => h('div', { class: 'sp-person-zeile' }, h('b', {}, `${PERSON[p].emoji} ${PERSON[p].name}`), inhalt);
+  const personZeile = (p, inhalt) => h('div', { class: 'sp-person-zeile', 'data-person': p }, h('b', {}, `${PERSON[p].emoji} ${PERSON[p].name}`), inhalt);
+  const gemalt = gemaltJetzt(); // Haken für Glas/Bento: der eben gemalte Streifen stempelt
 
   return h(
     'section',
@@ -100,7 +103,7 @@ export function schichtScreen({ store, ui }) {
     m.geladen
       ? [
           h('div', { class: 'wochentage', 'aria-hidden': 'true' }, m.wochentage.map((t) => h('span', {}, t))),
-          h('div', { class: `sp-raster ${m.personen.length === 1 ? 'eine-person' : ''}`.trim() }, m.zellen.map((z) => zelle(z, m, { store, ui }))),
+          h('div', { class: `sp-raster ${m.personen.length === 1 ? 'eine-person' : ''}`.trim() }, m.zellen.map((z) => zelle(z, m, { store, ui }, gemalt))),
           h('article', { class: 'karte sp-zaehlung' }, m.personen.map((p) => personZeile(p, h('span', {}, m.zaehlung[p])))),
         ]
       : h('article', { class: 'karte hinweis sp-nicht-geladen' }, h('p', {}, m.laedt ? 'Schichtplan wird geladen …' : 'Noch nicht geladen – bitte verbinden.')),
