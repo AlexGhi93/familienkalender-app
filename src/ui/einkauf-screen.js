@@ -168,13 +168,31 @@ function festeKnoten() {
   return { zieh: zieh.knoten, stand };
 }
 
+// Der gerade abgehakte (oder zurückgeholte) Artikel: seine Zeile trägt kurz nach dem Tipp die Klasse `ek-frisch` (Glas/Bento spielen
+// daran die Haken-Bewegung; Klassisch hat keine Regel dafür) und in `--ek-seit` die schon vergangene Zeit als negative Verzögerung:
+// wird die Liste währenddessen neu gezeichnet (Speichern, Abgleich), läuft die Bewegung an derselben Stelle weiter statt neu zu
+// beginnen. Danach (FRISCH_MS) bekommt keine Zeile mehr die Klasse – ein Neuzeichnen aus dem Hintergrund spielt nichts erneut.
+let frisch = null; // { id, seit }
+const FRISCH_MS = 900;
+
 function zeile(store, a, gekauft) {
+  const vorbei = frisch?.id === a.i ? performance.now() - frisch.seit : Infinity;
+  const istFrisch = vorbei < FRISCH_MS;
   return h(
     'div',
-    { class: `ek-zeile ${gekauft ? 'gekauft' : 'offen'}` },
+    { class: `ek-zeile ${gekauft ? 'gekauft' : 'offen'}${istFrisch ? ' ek-frisch' : ''}`, style: istFrisch ? { '--ek-seit': `${-Math.round(vorbei)}ms` } : null },
     h(
       'button',
-      { class: 'ek-haupt', type: 'button', role: 'checkbox', 'aria-checked': gekauft ? 'true' : 'false', onClick: () => sicher(store.einkaufUmschalten(a.i)) },
+      {
+        class: 'ek-haupt',
+        type: 'button',
+        role: 'checkbox',
+        'aria-checked': gekauft ? 'true' : 'false',
+        onClick: () => {
+          frisch = { id: a.i, seit: performance.now() };
+          sicher(store.einkaufUmschalten(a.i));
+        },
+      },
       h('span', { class: 'ek-haken', 'aria-hidden': 'true' }, gekauft ? '✓' : ''),
       h('span', { class: 'karte-text' }, h('b', { class: 'ek-name' }, a.t), a.m ? h('small', {}, a.m) : null),
     ),

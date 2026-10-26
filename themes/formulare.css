@@ -1,1 +1,1147 @@
 /* Glas & Licht und Bento bunt: formulare (nur unter :root[data-aussehen="glas"] bzw. [data-aussehen="bento"]; Klassisch unberührt). */
+/* Bereich der Aufgabe 8: „Neu“ (Kacheln), Formulare Termin/Arzt/Sachen/Von–Bis, Eingabefelder (Datum/Uhrzeit mit Auswahl-Knopf),
+   Chips (Auswahl, entfernbare mit ✕, Serie), Einkaufsliste (Eingabezeile, Oft gekauft, Liste, Abhaken, Herunterziehen, „Rückgängig“-
+   Meldung), Urlaub (Jahreswahl, Liste) und die Listen-Editoren in „Mehr“ (listen-karten.js).
+   Vorlage: das Blatt „Neuer Termin“ der Demos (.superpowers/design-2026/a-glas, b-bento).
+   Aufbau: 1. Tokens (je Aussehen Hell, Dunkel System mit Wache, Dunkel gewählt)  2. Gemeinsame Maße (beide Aussehen)  3. Glas
+   4. Bento  5. Bewegung (nur ohne „Reduziert“ und ohne prefers-reduced-motion).
+   Haken in JS (neutral, in Klassisch ohne Regel): section.neu-seite (Kacheln), section.neu-formular (alle Formulare unter „Neu“),
+   .chip.fuer-chip.<person> (Für wen), .chip-reihe.serie-wahl (Einmalig/Jede Woche), .ek-zeile.ek-frisch (gerade abgehakt, einmal),
+   section.urlaub-seite und b.zeitraum > span (je Datum ein Span, nur in Glas/Bento gerendert).
+   Mindestmaße: Felder 52 px hoch und 17 px Schrift (iOS vergrößert ab < 16 px), Ziele ≥ 44 px, Text ≥ 16 px. */
+
+/* ---------- 1. Tokens ---------- */
+
+/* --ek-rand: Ring des offenen Hakens (≥ 3:1 zur Fläche); --ek-voll: Fläche des gesetzten Hakens; --ek-haken-ink: das ✓ darauf (≥ 4,5:1);
+   --ek-glanz: Lichtring beim Abhaken */
+:root[data-aussehen='glas'] {
+  --ek-rand: #b85a12;
+  --ek-voll: linear-gradient(160deg, #f7b06a, #e2812f);
+  --ek-haken-ink: #2b1400;
+  --ek-glanz: rgba(255, 255, 255, 0.9);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-aussehen='glas']:not([data-theme='light']) {
+    --ek-rand: #f0a35a;
+    --ek-voll: linear-gradient(160deg, #ffbd7a, #f0954a);
+    --ek-haken-ink: #2b1400;
+    --ek-glanz: rgba(255, 200, 150, 0.55);
+  }
+}
+
+:root[data-aussehen='glas'][data-theme='dark'] {
+  --ek-rand: #f0a35a;
+  --ek-voll: linear-gradient(160deg, #ffbd7a, #f0954a);
+  --ek-haken-ink: #2b1400;
+  --ek-glanz: rgba(255, 200, 150, 0.55);
+}
+
+:root[data-aussehen='bento'] {
+  --ek-rand: #c2600f;
+  --ek-voll: #f08a3a;
+  --ek-haken-ink: #2a0d03;
+  --ek-glanz: rgb(240 138 58 / 0.45);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-aussehen='bento']:not([data-theme='light']) {
+    --ek-rand: #ff9d5c;
+    --ek-voll: #ff9d5c;
+    --ek-haken-ink: #2a0d03;
+    --ek-glanz: rgb(255 157 92 / 0.4);
+  }
+}
+
+:root[data-aussehen='bento'][data-theme='dark'] {
+  --ek-rand: #ff9d5c;
+  --ek-voll: #ff9d5c;
+  --ek-haken-ink: #2a0d03;
+  --ek-glanz: rgb(255 157 92 / 0.4);
+}
+
+/* ---------- 2. Gemeinsame Maße (beide Aussehen) ---------- */
+
+/* Beschriftungen wie in der Demo („Was?“, „Für wen?“): ruhig, 16 px */
+:root[data-aussehen='glas'] .neu-formular .feld,
+:root[data-aussehen='bento'] .neu-formular .feld {
+  gap: 8px;
+}
+
+:root[data-aussehen='glas'] .neu-formular .feld > span,
+:root[data-aussehen='bento'] .neu-formular .feld > span {
+  font-size: 1rem;
+  padding: 0 2px;
+}
+
+/* Hinweise und leise Zeilen in Formularen, Einkauf und Urlaub: nie unter 16 px */
+:root[data-aussehen='glas'] .neu-formular .leise,
+:root[data-aussehen='glas'] .neu-formular small,
+:root[data-aussehen='glas'] .listen-editor .leise,
+:root[data-aussehen='glas'] .formular .info,
+:root[data-aussehen='glas'] .urlaub-seite .leise,
+:root[data-aussehen='glas'] .einkauf small,
+:root[data-aussehen='bento'] .neu-formular .leise,
+:root[data-aussehen='bento'] .neu-formular small,
+:root[data-aussehen='bento'] .listen-editor .leise,
+:root[data-aussehen='bento'] .formular .info,
+:root[data-aussehen='bento'] .urlaub-seite .leise,
+:root[data-aussehen='bento'] .einkauf small {
+  font-size: 1rem;
+}
+
+/* Textfelder: 52 px hoch, 17 px Schrift (iOS zoomt nicht) */
+:root[data-aussehen='glas'] .neu-formular .feld input,
+:root[data-aussehen='glas'] .zeile-eingabe input,
+:root[data-aussehen='glas'] .eingabe-zeile > input[type='text'],
+:root[data-aussehen='glas'] .ek-eingabe input,
+:root[data-aussehen='bento'] .neu-formular .feld input,
+:root[data-aussehen='bento'] .zeile-eingabe input,
+:root[data-aussehen='bento'] .eingabe-zeile > input[type='text'],
+:root[data-aussehen='bento'] .ek-eingabe input {
+  min-height: 52px;
+  padding: 8px 16px;
+  font-size: 1.0625rem;
+  color: var(--ink);
+}
+
+:root[data-aussehen='glas'] .neu-formular .feld textarea,
+:root[data-aussehen='bento'] .neu-formular .feld textarea {
+  min-height: 96px;
+  padding: 14px 16px;
+  font-size: 1.0625rem;
+  line-height: 1.4;
+  color: var(--ink);
+}
+
+/* Datum + Uhrzeit nebeneinander: die Beschriftungen teilen sich eine Zeile (subgrid), damit die Felder auch dann auf einer Höhe
+   stehen, wenn „Uhrzeit (optional)“ zweizeilig wird; die einzeilige Beschriftung sitzt unten, direkt über ihrem Feld */
+:root[data-aussehen='glas'] .neu-formular .feld-paar,
+:root[data-aussehen='bento'] .neu-formular .feld-paar {
+  grid-template-rows: auto auto;
+  row-gap: 8px;
+}
+
+:root[data-aussehen='glas'] .neu-formular .feld-paar > .feld,
+:root[data-aussehen='bento'] .neu-formular .feld-paar > .feld {
+  display: grid;
+  grid-row: span 2;
+  grid-template-rows: subgrid;
+  align-items: end;
+}
+
+:root[data-aussehen='glas'] .neu-formular .feld-paar > .feld > .eingabe-feld,
+:root[data-aussehen='bento'] .neu-formular .feld-paar > .feld > .eingabe-feld {
+  align-self: start;
+}
+
+/* Datum und Uhrzeit wie in der Demo: EIN Feld, der Auswahl-Knopf sitzt rechts darin (44 × 44, ganz antippbar) */
+:root[data-aussehen='glas'] .eingabe-zeile,
+:root[data-aussehen='bento'] .eingabe-zeile {
+  position: relative;
+  gap: 0;
+}
+
+:root[data-aussehen='glas'] .eingabe-zeile > input[type='text'],
+:root[data-aussehen='bento'] .eingabe-zeile > input[type='text'] {
+  padding-right: 52px;
+  letter-spacing: 0.01em;
+}
+
+:root[data-aussehen='glas'] .picker-knopf,
+:root[data-aussehen='bento'] .picker-knopf {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  margin-top: -22px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+  font-size: 1.15rem;
+}
+
+:root[data-aussehen='glas'] .eingabe-hinweis,
+:root[data-aussehen='bento'] .eingabe-hinweis {
+  padding: 0 4px;
+  font-size: 1rem;
+  white-space: nowrap; /* „Donnerstag, 15. Oktober“ in einer Zeile: darf unter das Uhrzeit-Feld reichen (das hat keinen Hinweis) */
+}
+
+:root[data-aussehen='glas'] .eingabe-hinweis:empty,
+:root[data-aussehen='bento'] .eingabe-hinweis:empty {
+  min-height: 0;
+}
+
+/* Fokus: der Rand wird Akzent (2 px), außen ein weicher Hof; Fehler bleiben rot (auch mit Fokus) */
+:root[data-aussehen='glas'] .neu-formular .feld input:focus,
+:root[data-aussehen='glas'] .neu-formular .feld textarea:focus,
+:root[data-aussehen='glas'] .zeile-eingabe input:focus,
+:root[data-aussehen='glas'] .eingabe-zeile > input[type='text']:focus,
+:root[data-aussehen='glas'] .ek-eingabe input:focus,
+:root[data-aussehen='bento'] .neu-formular .feld input:focus,
+:root[data-aussehen='bento'] .neu-formular .feld textarea:focus,
+:root[data-aussehen='bento'] .zeile-eingabe input:focus,
+:root[data-aussehen='bento'] .eingabe-zeile > input[type='text']:focus,
+:root[data-aussehen='bento'] .ek-eingabe input:focus {
+  outline: none;
+  border-color: var(--akzent);
+  box-shadow: inset 0 0 0 1px var(--akzent), 0 0 0 4px color-mix(in srgb, var(--akzent) 26%, transparent);
+}
+
+:root[data-aussehen='glas'] .eingabe-zeile > input[type='text'][aria-invalid='true'],
+:root[data-aussehen='glas'] .neu-formular .feld input[aria-invalid='true'],
+:root[data-aussehen='bento'] .eingabe-zeile > input[type='text'][aria-invalid='true'],
+:root[data-aussehen='bento'] .neu-formular .feld input[aria-invalid='true'] {
+  border-color: var(--gefahr);
+  box-shadow: inset 0 0 0 1px var(--gefahr);
+}
+
+:root[data-aussehen='glas'] .eingabe-zeile > input[type='text'][aria-invalid='true']:focus,
+:root[data-aussehen='bento'] .eingabe-zeile > input[type='text'][aria-invalid='true']:focus {
+  box-shadow: inset 0 0 0 1px var(--gefahr), 0 0 0 4px color-mix(in srgb, var(--gefahr) 24%, transparent);
+}
+
+:root[data-aussehen='glas'] .ek-eingabe input:disabled,
+:root[data-aussehen='bento'] .ek-eingabe input:disabled {
+  opacity: 0.6;
+}
+
+/* Chips in Formularen, Listen-Editoren und „Oft gekauft“: 44 px, 16 px Schrift */
+:root[data-aussehen='glas'] .neu-formular .chip,
+:root[data-aussehen='glas'] .listen-editor .chip,
+:root[data-aussehen='glas'] .ek-oft .chip,
+:root[data-aussehen='bento'] .neu-formular .chip,
+:root[data-aussehen='bento'] .listen-editor .chip,
+:root[data-aussehen='bento'] .ek-oft .chip {
+  min-height: 44px;
+  padding: 6px 16px;
+  font-size: 1rem;
+}
+
+:root[data-aussehen='glas'] .neu-formular .chip-reihe,
+:root[data-aussehen='bento'] .neu-formular .chip-reihe {
+  gap: 10px 8px;
+}
+
+:root[data-aussehen='glas'] .neu-formular .chip.symbol,
+:root[data-aussehen='bento'] .neu-formular .chip.symbol {
+  min-width: 48px;
+  min-height: 48px;
+  padding: 4px 8px;
+  font-size: 1.375rem;
+}
+
+/* Entfernbare Chips (Mitnehmen, Sachen, Listen in „Mehr“): das ✕ ist ein eigener 44-px-Bereich am Ende (der ganze Chip entfernt),
+   sichtbar als runder Knopf darin */
+:root[data-aussehen='glas'] .chip.entfernbar,
+:root[data-aussehen='bento'] .chip.entfernbar {
+  padding-right: 0;
+}
+
+:root[data-aussehen='glas'] .chip.entfernbar .x,
+:root[data-aussehen='bento'] .chip.entfernbar .x {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  margin: -6px 0 -6px 2px;
+  border-radius: 50%;
+  font-size: 0.875rem;
+  font-weight: 800;
+}
+
+/* Wiederholen: zwei gleich breite Hälften (Umschalter wie im Konto) */
+:root[data-aussehen='glas'] .serie-wahl,
+:root[data-aussehen='bento'] .serie-wahl {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+}
+
+:root[data-aussehen='glas'] .neu-formular .serie-wahl .chip,
+:root[data-aussehen='bento'] .neu-formular .serie-wahl .chip {
+  justify-content: center;
+  padding: 6px 10px;
+  white-space: nowrap;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+:root[data-aussehen='glas'] .stepper,
+:root[data-aussehen='bento'] .stepper {
+  margin-top: 4px;
+}
+
+:root[data-aussehen='glas'] .stepper .rund,
+:root[data-aussehen='bento'] .stepper .rund {
+  width: 48px;
+  height: 48px;
+}
+
+:root[data-aussehen='glas'] .stepper-wert,
+:root[data-aussehen='bento'] .stepper-wert {
+  font-family: var(--font-zahl);
+  font-size: 1.0625rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Gruppen der Vorschläge (Sachen): Kopf 44 px */
+:root[data-aussehen='glas'] .neu-formular .gruppen summary,
+:root[data-aussehen='bento'] .neu-formular .gruppen summary {
+  min-height: 44px;
+}
+
+/* Vorschau „So steht es im Kalender …“ */
+:root[data-aussehen='glas'] .neu-formular .vorschau,
+:root[data-aussehen='bento'] .neu-formular .vorschau {
+  gap: 6px;
+  padding: 14px 16px;
+}
+
+/* Speichern/Abbrechen wie in der Demo: groß, über die ganze Breite, „Speichern“ breiter */
+:root[data-aussehen='glas'] .neu-formular > .knopfzeile,
+:root[data-aussehen='bento'] .neu-formular > .knopfzeile {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
+  gap: 10px;
+}
+
+:root[data-aussehen='glas'] .neu-formular > .knopfzeile .knopf,
+:root[data-aussehen='bento'] .neu-formular > .knopfzeile .knopf {
+  min-height: 56px;
+  font-size: 1.0625rem;
+}
+
+/* Neu: die Kacheln wie die „Was?“-Kacheln der Demo – Symbol oben, Name darunter, mittig */
+:root[data-aussehen='glas'] .neu-seite .kachel,
+:root[data-aussehen='bento'] .neu-seite .kachel {
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 116px;
+  padding: 14px 10px;
+  text-align: center;
+}
+
+:root[data-aussehen='glas'] .neu-seite .kachel b,
+:root[data-aussehen='bento'] .neu-seite .kachel b {
+  font-size: 1.0625rem;
+}
+
+/* Einkauf: Eingabezeile mit rundem ＋ (52 px) */
+:root[data-aussehen='glas'] .ek-eingabe,
+:root[data-aussehen='bento'] .ek-eingabe {
+  grid-template-columns: minmax(0, 1fr) 96px 52px;
+}
+
+:root[data-aussehen='glas'] .ek-eingabe .ek-plus,
+:root[data-aussehen='bento'] .ek-eingabe .ek-plus {
+  width: 52px;
+  height: 52px;
+  min-height: 52px;
+  border-radius: 50%;
+}
+
+:root[data-aussehen='glas'] .ek-oft > small,
+:root[data-aussehen='bento'] .ek-oft > small {
+  padding: 0 2px;
+}
+
+:root[data-aussehen='glas'] .ek-zeile,
+:root[data-aussehen='bento'] .ek-zeile {
+  border-radius: 20px;
+}
+
+:root[data-aussehen='glas'] .ek-haupt,
+:root[data-aussehen='bento'] .ek-haupt {
+  min-height: 56px;
+  padding: 6px 6px 6px 14px;
+  gap: 14px;
+}
+
+:root[data-aussehen='glas'] .ek-name,
+:root[data-aussehen='bento'] .ek-name {
+  font-size: 1.0625rem;
+}
+
+/* Name und Menge eng untereinander: die Demo-Liste passt samt Anzeige beim Herunterziehen auf einen Bildschirm (sonst scrollte die
+   Seite, sobald der Finger beim Ziehen zurückgeht) */
+:root[data-aussehen='glas'] .ek-haupt .karte-text,
+:root[data-aussehen='bento'] .ek-haupt .karte-text {
+  line-height: 1.22;
+}
+
+:root[data-aussehen='glas'] .ek-haken,
+:root[data-aussehen='bento'] .ek-haken {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  border-color: var(--ek-rand);
+  font-size: 1rem;
+  font-weight: 900;
+}
+
+:root[data-aussehen='glas'] .ek-zeile.gekauft .ek-haken,
+:root[data-aussehen='bento'] .ek-zeile.gekauft .ek-haken {
+  border-color: transparent;
+  background: var(--ek-voll);
+  color: var(--ek-haken-ink);
+}
+
+:root[data-aussehen='glas'] .ek-weg,
+:root[data-aussehen='bento'] .ek-weg {
+  width: 52px;
+  font-size: 1.1rem;
+}
+
+:root[data-aussehen='glas'] .einkauf .knopfzeile .knopf,
+:root[data-aussehen='bento'] .einkauf .knopfzeile .knopf {
+  min-height: 44px;
+  padding: 8px 20px;
+}
+
+/* Herunterziehen: Anzeige als Pille (passt in die 44 px, die sie beim Aktualisieren hat) */
+:root[data-aussehen='glas'] .ek-ziehen span:not(:empty),
+:root[data-aussehen='bento'] .ek-ziehen span:not(:empty) {
+  margin-bottom: 4px;
+  padding: 6px 16px;
+  font-size: 1rem;
+  line-height: 1.2;
+}
+
+:root[data-aussehen='glas'] .ek-stand,
+:root[data-aussehen='bento'] .ek-stand {
+  padding: 0 4px;
+  font-size: 1rem;
+}
+
+/* „Rückgängig“ und andere Aktionen in der Meldung: eigene Pille statt Unterstrich, 44 px hoch */
+:root[data-aussehen='glas'] .toast-aktion,
+:root[data-aussehen='bento'] .toast-aktion {
+  flex: none;
+  margin: -6px -8px -6px 0;
+  padding: 0 16px;
+  border-radius: 999px;
+  text-decoration: none;
+}
+
+/* Urlaub: Jahreswahl als eine Fläche; Zeitraum bricht nur am Strich um, nie mitten im Datum */
+:root[data-aussehen='glas'] .urlaub-seite .jahr-wahl,
+:root[data-aussehen='bento'] .urlaub-seite .jahr-wahl {
+  padding: 8px;
+  border-radius: 30px;
+}
+
+:root[data-aussehen='glas'] .urlaub-seite .jahr-titel,
+:root[data-aussehen='bento'] .urlaub-seite .jahr-titel {
+  gap: 0;
+}
+
+:root[data-aussehen='glas'] .urlaub-seite .jahr-wahl .rund,
+:root[data-aussehen='bento'] .urlaub-seite .jahr-wahl .rund {
+  font-size: 1.625rem;
+}
+
+:root[data-aussehen='glas'] .urlaub-seite .jahr-titel b,
+:root[data-aussehen='bento'] .urlaub-seite .jahr-titel b {
+  font-family: var(--font-titel);
+  font-size: 1.125rem;
+}
+
+:root[data-aussehen='glas'] .urlaub-seite .jahr-titel small,
+:root[data-aussehen='bento'] .urlaub-seite .jahr-titel small {
+  font-size: 1rem;
+}
+
+:root[data-aussehen='glas'] .urlaub-seite .jahr-titel .knopf,
+:root[data-aussehen='bento'] .urlaub-seite .jahr-titel .knopf {
+  margin-top: 4px;
+}
+
+:root[data-aussehen='glas'] .urlaub-seite .liste,
+:root[data-aussehen='bento'] .urlaub-seite .liste {
+  gap: 10px;
+}
+
+:root[data-aussehen='glas'] .urlaub-seite .liste .zeile,
+:root[data-aussehen='bento'] .urlaub-seite .liste .zeile {
+  gap: 12px;
+  min-height: 68px;
+  padding: 10px 10px 10px 14px;
+  border-radius: 20px;
+}
+
+:root[data-aussehen='glas'] .urlaub-seite .liste .zeile .emoji,
+:root[data-aussehen='bento'] .urlaub-seite .liste .zeile .emoji {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  font-size: 1.25rem;
+}
+
+:root[data-aussehen='glas'] .zeitraum > span,
+:root[data-aussehen='bento'] .zeitraum > span {
+  white-space: nowrap;
+}
+
+:root[data-aussehen='glas'] .urlaub-seite .liste .zeile .knopf,
+:root[data-aussehen='bento'] .urlaub-seite .liste .zeile .knopf {
+  flex: none;
+  padding: 8px 14px;
+}
+
+/* ---------- 3. Glas ---------- */
+
+/* Neu: getönte Glaskacheln (Farbe aus .tint), Symbol mit farbigem Schein, Lichtkante */
+:root[data-aussehen='glas'] .neu-seite .kachel {
+  border: 1.5px solid color-mix(in srgb, var(--c) 40%, var(--glas-kante));
+  border-radius: 24px;
+  box-shadow: var(--schatten-karte);
+}
+
+:root[data-aussehen='glas'] .neu-seite .kachel .emoji {
+  font-size: 2.375rem;
+  filter: drop-shadow(0 6px 10px color-mix(in srgb, var(--c) 45%, transparent));
+}
+
+:root[data-aussehen='glas'] .neu-seite .kachel b {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+/* Formularkarte: neutrales Glas (wie das Blatt der Demo); die Art steckt im Symbol-Kreis des Kopfes */
+:root[data-aussehen='glas'] .neu-formular .formular {
+  gap: 18px;
+  padding: 18px 16px 20px;
+  border: 1px solid var(--glas-kante);
+  background: linear-gradient(165deg, var(--glas-hoch), var(--karte) 75%);
+}
+
+:root[data-aussehen='glas'] .neu-formular .formular > .karte-zeile .emoji.gross {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--c) 40%, var(--glas-kante));
+  background: linear-gradient(165deg, color-mix(in srgb, var(--c) 18%, var(--glas-hoch)), color-mix(in srgb, var(--c) 30%, var(--glas-stark)));
+  box-shadow: inset 0 1px 0 var(--glas-kante), 0 8px 18px -8px color-mix(in srgb, var(--c) 70%, transparent);
+  font-size: 1.75rem;
+}
+
+:root[data-aussehen='glas'] .neu-formular .formular > .karte-zeile b {
+  font-family: var(--font-titel);
+  font-size: var(--titel-blatt);
+  font-weight: var(--gewicht-titel);
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+:root[data-aussehen='glas'] .neu-formular .feld > span {
+  color: var(--ink-2);
+  font-weight: 650;
+}
+
+/* Felder: helles Glas mit feiner Linie */
+:root[data-aussehen='glas'] .neu-formular .feld input,
+:root[data-aussehen='glas'] .neu-formular .feld textarea,
+:root[data-aussehen='glas'] .zeile-eingabe input,
+:root[data-aussehen='glas'] .eingabe-zeile > input[type='text'],
+:root[data-aussehen='glas'] .ek-eingabe input {
+  border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
+  border-radius: 18px;
+  background: var(--feld-bg);
+  box-shadow: inset 0 1px 2px rgba(30, 20, 80, 0.05);
+}
+
+/* Auswahl-Knopf im Feld: schlichtes Symbol (grau, wie die Demo) mit zartem Kreis beim Antippen */
+:root[data-aussehen='glas'] .picker-knopf {
+  filter: grayscale(1) contrast(1.15);
+}
+
+:root[data-aussehen='glas'] .picker-knopf:active {
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+}
+
+/* Chips: Glas-Pillen; gewählt eine dunkle Pille (hell im Dunkelmodus) wie „Mia“ in der Demo */
+:root[data-aussehen='glas'] .neu-formular .chip,
+:root[data-aussehen='glas'] .listen-editor .chip {
+  border: 1px solid color-mix(in srgb, var(--ink) 10%, transparent);
+  background: var(--glas-stark);
+  box-shadow: inset 0 1px 0 var(--glas-kante);
+  font-weight: 650;
+}
+
+:root[data-aussehen='glas'] .neu-formular .chip.aktiv,
+:root[data-aussehen='glas'] .neu-formular .chip.entfernbar,
+:root[data-aussehen='glas'] .listen-editor .chip.entfernbar {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--bg);
+  box-shadow: 0 6px 14px -6px rgba(20, 10, 60, 0.45);
+}
+
+:root[data-aussehen='glas'] .chip.entfernbar .x {
+  background: radial-gradient(circle 13px, color-mix(in srgb, var(--bg) 22%, transparent) 96%, transparent);
+  color: inherit;
+}
+
+/* Wiederholen: zarte Rinne, die Wahl ist ein heller Glastropfen (wie der Konto-Umschalter) */
+:root[data-aussehen='glas'] .serie-wahl {
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+  box-shadow: inset 0 1px 2px rgba(20, 10, 60, 0.08);
+}
+
+:root[data-aussehen='glas'] .neu-formular .serie-wahl .chip.aktiv {
+  border-color: transparent;
+  background: var(--tropfen);
+  color: var(--ink);
+  box-shadow: 0 4px 14px -4px rgba(30, 20, 80, 0.3), inset 0 1px 0 var(--glas-kante);
+}
+
+:root[data-aussehen='glas'] .stepper .rund {
+  border: 1px solid var(--glas-kante);
+  background: var(--glas-stark);
+  box-shadow: var(--schatten-knopf), 0 4px 12px -6px rgba(30, 20, 80, 0.3);
+}
+
+/* Vorschläge (Sachen) und Pyjamas-Knopf */
+:root[data-aussehen='glas'] .neu-formular .gruppen details {
+  border: 1px solid var(--glas-kante);
+  border-radius: 18px;
+  padding: 6px 12px 10px;
+  background: var(--glas-hoch);
+  box-shadow: inset 0 1px 0 var(--glas-kante);
+}
+
+:root[data-aussehen='glas'] .neu-formular .gruppen summary {
+  font-weight: 700;
+}
+
+:root[data-aussehen='glas'] .neu-formular .knopf.schnellstart {
+  border: 1px solid color-mix(in srgb, var(--sache) 34%, var(--glas-kante));
+  border-radius: 22px;
+  padding: 14px 16px;
+  background: linear-gradient(165deg, color-mix(in srgb, var(--sache) 14%, var(--glas-hoch)), color-mix(in srgb, var(--sache) 22%, var(--karte)) 80%);
+  box-shadow: var(--schatten-karte);
+}
+
+:root[data-aussehen='glas'] .neu-formular .knopf.schnellstart small {
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+:root[data-aussehen='glas'] .neu-formular .vorschau {
+  border: 1px dashed color-mix(in srgb, var(--ink) 24%, transparent);
+  border-radius: 20px;
+  background: var(--glas-hoch);
+}
+
+:root[data-aussehen='glas'] .neu-formular .vorschau.zu-lang {
+  border-color: var(--abwesend);
+  border-style: solid;
+}
+
+:root[data-aussehen='glas'] .neu-formular .vorschau b {
+  font-weight: 700;
+}
+
+/* Einkauf: Liste aus Glaszeilen; gekauft zart in Orange */
+:root[data-aussehen='glas'] .ek-oft .chip {
+  border: 1px solid var(--glas-kante);
+  background: var(--glas-stark);
+  box-shadow: inset 0 1px 0 var(--glas-kante), 0 4px 12px -8px rgba(30, 20, 80, 0.35);
+}
+
+:root[data-aussehen='glas'] .ek-zeile {
+  border: 1px solid var(--glas-kante);
+  background: linear-gradient(165deg, var(--glas-hoch), var(--karte) 75%);
+  box-shadow: var(--schatten-karte);
+}
+
+:root[data-aussehen='glas'] .ek-zeile.gekauft {
+  border-color: color-mix(in srgb, var(--einkauf) 22%, var(--glas-kante));
+  background: color-mix(in srgb, var(--einkauf) 8%, var(--karte));
+  box-shadow: none;
+}
+
+:root[data-aussehen='glas'] .ek-haken {
+  border-width: 2px;
+  background: var(--glas-stark);
+}
+
+:root[data-aussehen='glas'] .ek-zeile.gekauft .ek-haken {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), 0 4px 10px -3px color-mix(in srgb, var(--einkauf) 75%, transparent);
+}
+
+:root[data-aussehen='glas'] .ek-ziehen span:not(:empty) {
+  border: 1px solid var(--glas-kante);
+  background: linear-gradient(165deg, var(--glas-hoch), var(--glas-stark));
+  box-shadow: var(--schatten-karte);
+}
+
+:root[data-aussehen='glas'] .ek-ziehen[data-phase='bereit'] span,
+:root[data-aussehen='glas'] .ek-ziehen[data-phase='fertig'] span {
+  border-color: color-mix(in srgb, var(--einkauf) 55%, var(--glas-kante));
+  background: color-mix(in srgb, var(--einkauf) 18%, var(--glas-stark));
+}
+
+/* Meldung: „Rückgängig“ als Akzent-Pille */
+:root[data-aussehen='glas'] .toast-aktion {
+  background: color-mix(in srgb, var(--akzent) 13%, transparent);
+  color: var(--akzent-text);
+}
+
+:root[data-aussehen='glas'] .toast.fehler .toast-aktion {
+  background: color-mix(in srgb, var(--gefahr-ink) 18%, transparent);
+  color: inherit;
+}
+
+/* Urlaub: Jahreswahl als Glasfläche mit runden Glasknöpfen */
+:root[data-aussehen='glas'] .urlaub-seite .jahr-wahl {
+  border: 1px solid var(--glas-kante);
+  background: linear-gradient(165deg, var(--glas-hoch), var(--karte) 75%);
+  box-shadow: var(--schatten-karte);
+}
+
+:root[data-aussehen='glas'] .urlaub-seite .jahr-wahl .rund {
+  border: 1px solid var(--glas-kante);
+  background: color-mix(in srgb, var(--urlaub) 12%, var(--glas-stark));
+  box-shadow: inset 0 1px 0 var(--glas-kante);
+  font-weight: 700;
+}
+
+:root[data-aussehen='glas'] .urlaub-seite .jahr-titel b {
+  font-weight: 750;
+  letter-spacing: -0.015em;
+}
+
+:root[data-aussehen='glas'] .urlaub-seite .liste .zeile {
+  box-shadow: var(--schatten-karte);
+}
+
+:root[data-aussehen='glas'] .urlaub-seite .liste .zeile .emoji {
+  border: 1px solid var(--glas-kante);
+  background: color-mix(in srgb, var(--urlaub) 14%, var(--glas-stark));
+}
+
+:root[data-aussehen='glas'] .urlaub-seite .zeitraum {
+  font-weight: 700;
+}
+
+/* ---------- 4. Bento ---------- */
+
+/* Neu: bunte Kacheln (Tönung aus .tint), das Symbol auf einem hellen Bonbon */
+:root[data-aussehen='bento'] .neu-seite .kachel {
+  border: 0;
+  border-radius: 26px;
+}
+
+:root[data-aussehen='bento'] .neu-seite .kachel .emoji {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  background: var(--knopf-auf-tint);
+  box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--c) 22%, transparent);
+  font-size: 2rem;
+}
+
+:root[data-aussehen='bento'] .neu-seite .kachel b {
+  font-weight: 600;
+  font-size: 1.125rem;
+}
+
+/* Formular: keine Karte – die Felder stehen wie im Blatt der Demo direkt auf der Seite; der Kopf ist eine getönte Kachel */
+:root[data-aussehen='bento'] .neu-formular .formular {
+  gap: 18px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+:root[data-aussehen='bento'] .neu-formular .formular > .karte-zeile {
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: 26px;
+  background: color-mix(in srgb, var(--c) 24%, var(--karte));
+  box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--c) 36%, transparent);
+}
+
+:root[data-aussehen='bento'] .neu-formular .formular > .karte-zeile .emoji.gross {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--knopf-auf-tint);
+  font-size: 1.875rem;
+}
+
+:root[data-aussehen='bento'] .neu-formular .formular > .karte-zeile b {
+  font-family: var(--font-titel);
+  font-size: var(--titel-blatt);
+  font-weight: 600;
+  line-height: 1.15;
+}
+
+:root[data-aussehen='bento'] .neu-formular .feld > span {
+  color: var(--ink-2);
+  font-weight: 800;
+}
+
+/* Felder: weiß mit Ring (2 px), runde Ecken */
+:root[data-aussehen='bento'] .neu-formular .feld input,
+:root[data-aussehen='bento'] .neu-formular .feld textarea,
+:root[data-aussehen='bento'] .zeile-eingabe input,
+:root[data-aussehen='bento'] .eingabe-zeile > input[type='text'],
+:root[data-aussehen='bento'] .ek-eingabe input {
+  border: var(--feld-rand);
+  border-radius: 20px;
+  background: var(--feld-bg);
+}
+
+:root[data-aussehen='bento'] .picker-knopf:active {
+  background: var(--flaeche-2);
+}
+
+/* Chips: weiße Bonbons mit Kante; gewählt getönt mit kräftigem Ring (Personen in ihrer Farbe, immer mit Emoji und Name) */
+:root[data-aussehen='bento'] .neu-formular .chip,
+:root[data-aussehen='bento'] .listen-editor .chip {
+  border-color: transparent;
+  background: var(--karte);
+  color: var(--ink);
+  box-shadow: var(--lippe);
+}
+
+:root[data-aussehen='bento'] .neu-formular .chip.aktiv {
+  background: color-mix(in srgb, var(--c, var(--akzent)) 20%, var(--karte));
+  box-shadow: inset 0 0 0 3px var(--c, var(--akzent));
+}
+
+/* Für wen: nicht gewählt weiß wie in der Demo; gewählt in der Tönung der Person mit Ring in ihrer Farbe (--c kommt inline von der Art) */
+:root[data-aussehen='bento'] .neu-formular .chip.fuer-chip:not(.aktiv) { background: var(--karte); color: var(--ink); }
+:root[data-aussehen='bento'] .neu-formular .chip.fuer-chip.kind.aktiv { background: var(--person-kind-tint); color: var(--person-kind-ink); box-shadow: inset 0 0 0 3px var(--person-kind); }
+:root[data-aussehen='bento'] .neu-formular .chip.fuer-chip.papa.aktiv { background: var(--person-papa-tint); color: var(--person-papa-ink); box-shadow: inset 0 0 0 3px var(--person-papa); }
+:root[data-aussehen='bento'] .neu-formular .chip.fuer-chip.mama.aktiv { background: var(--person-mama-tint); color: var(--person-mama-ink); box-shadow: inset 0 0 0 3px var(--person-mama); }
+:root[data-aussehen='bento'] .neu-formular .chip.fuer-chip.alle.aktiv { background: var(--person-gemeinsam-tint); color: var(--person-gemeinsam-ink); box-shadow: inset 0 0 0 3px var(--person-gemeinsam); }
+
+:root[data-aussehen='bento'] .chip.entfernbar .x {
+  background: radial-gradient(circle 13px, var(--flaeche-2) 96%, transparent);
+  color: var(--ink);
+}
+
+/* Wiederholen: weiße Rinne, die Wahl ein Traubenknopf */
+:root[data-aussehen='bento'] .serie-wahl {
+  padding: 5px;
+  background: var(--karte);
+  box-shadow: var(--lippe);
+}
+
+:root[data-aussehen='bento'] .neu-formular .serie-wahl .chip.aktiv {
+  background: var(--akzent);
+  color: var(--akzent-ink);
+  box-shadow: inset 0 -3px 0 rgb(0 0 0 / 0.18);
+}
+
+:root[data-aussehen='bento'] .stepper .rund {
+  border: 0;
+  background: var(--karte);
+  box-shadow: var(--lippe);
+  font-weight: 900;
+}
+
+/* Vorschläge (Sachen): weiße Kacheln mit Kante; darin die Chips auf --karte-2 */
+:root[data-aussehen='bento'] .neu-formular .gruppen details {
+  border: 0;
+  border-radius: 20px;
+  padding: 6px 12px 12px;
+  background: var(--karte);
+  box-shadow: var(--lippe);
+}
+
+:root[data-aussehen='bento'] .neu-formular .gruppen details .chip:not(.aktiv) {
+  background: var(--karte-2);
+  box-shadow: none;
+}
+
+:root[data-aussehen='bento'] .neu-formular .gruppen summary {
+  font-family: var(--font-titel);
+  font-weight: 600;
+  font-size: 1.0625rem;
+}
+
+:root[data-aussehen='bento'] .neu-formular .knopf.schnellstart {
+  border: 0;
+  border-radius: 24px;
+  padding: 14px 16px;
+  background: color-mix(in srgb, var(--sache) 22%, var(--karte));
+  box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--sache) 40%, transparent);
+}
+
+:root[data-aussehen='bento'] .neu-formular .knopf.schnellstart b {
+  font-family: var(--font-titel);
+  font-weight: 600;
+  font-size: 1.0625rem;
+}
+
+:root[data-aussehen='bento'] .neu-formular .knopf.schnellstart small {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+:root[data-aussehen='bento'] .neu-formular .vorschau {
+  border: 0;
+  border-radius: 22px;
+  background: var(--karte);
+  outline: 2px dashed var(--linie);
+  outline-offset: -6px;
+  box-shadow: var(--lippe);
+}
+
+:root[data-aussehen='bento'] .neu-formular .vorschau.zu-lang {
+  outline-color: var(--abwesend);
+}
+
+:root[data-aussehen='bento'] .neu-formular > .knopfzeile .knopf:not(.primaer) {
+  background: var(--karte);
+}
+
+/* Einkauf: Kachel-Zeilen mit Bonbon-Kante; gekauft eingesunken (ohne Kante) */
+:root[data-aussehen='bento'] .ek-oft .chip {
+  box-shadow: var(--lippe);
+}
+
+:root[data-aussehen='bento'] .ek-zeile {
+  border: 0;
+  background: var(--karte);
+  box-shadow: var(--lippe);
+}
+
+:root[data-aussehen='bento'] .ek-zeile.gekauft {
+  background: var(--karte-2);
+  box-shadow: none;
+}
+
+:root[data-aussehen='bento'] .ek-haken {
+  border-width: 3px;
+}
+
+:root[data-aussehen='bento'] .ek-zeile.gekauft .ek-haken {
+  box-shadow: inset 0 -2px 0 rgb(0 0 0 / 0.16);
+}
+
+:root[data-aussehen='bento'] .ek-weg {
+  font-weight: 900;
+}
+
+:root[data-aussehen='bento'] .ek-ziehen span:not(:empty) {
+  border: 0;
+  background: var(--person-mama-tint);
+  color: var(--person-mama-ink);
+  box-shadow: var(--lippe);
+}
+
+:root[data-aussehen='bento'] .ek-ziehen[data-phase='bereit'] span,
+:root[data-aussehen='bento'] .ek-ziehen[data-phase='fertig'] span {
+  box-shadow: inset 0 0 0 2px var(--ek-rand);
+}
+
+/* Meldung (dunkle Pille, hell im Dunkelmodus): „Rückgängig“ als helle Pille darin */
+:root[data-aussehen='bento'] .toast-aktion {
+  background: color-mix(in srgb, var(--toast-ink) 18%, transparent);
+  color: var(--toast-ink);
+  font-weight: 900;
+}
+
+/* Urlaub: weiße Jahreskachel, runde Meer-Knöpfe, Zeilen als Meer-Kacheln */
+:root[data-aussehen='bento'] .urlaub-seite .jahr-wahl {
+  background: var(--karte);
+  box-shadow: var(--lippe);
+}
+
+:root[data-aussehen='bento'] .urlaub-seite .jahr-wahl .rund {
+  width: 48px;
+  height: 48px;
+  border: 0;
+  background: var(--meer-tint);
+  color: var(--meer-ink);
+  font-weight: 900;
+}
+
+:root[data-aussehen='bento'] .urlaub-seite .jahr-wahl .rund:disabled {
+  background: var(--karte-2);
+  color: var(--ink-2);
+}
+
+:root[data-aussehen='bento'] .urlaub-seite .jahr-titel b {
+  font-weight: 600;
+  text-wrap: balance;
+}
+
+:root[data-aussehen='bento'] .urlaub-seite .liste .zeile {
+  border: 0;
+  background: var(--meer-tint);
+  color: var(--meer-ink);
+  box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--urlaub) 35%, transparent);
+}
+
+:root[data-aussehen='bento'] .urlaub-seite .liste .zeile small {
+  color: var(--meer-ink);
+}
+
+:root[data-aussehen='bento'] .urlaub-seite .liste .zeile .emoji {
+  background: var(--knopf-auf-tint);
+}
+
+:root[data-aussehen='bento'] .urlaub-seite .zeitraum {
+  font-weight: 900;
+}
+
+/* ---------- 5. Bewegung ----------
+   Abhaken: nur die eben angetippte Zeile (.ek-frisch, kurz nach dem Tipp; --ek-seit = negative Verzögerung, damit ein Neuzeichnen
+   währenddessen die Bewegung fortsetzt statt sie neu zu starten; später spielt kein Neuzeichnen etwas erneut).
+   Glas: der Haken springt mit Überschwingen auf, ein Lichtring breitet sich aus und verglüht. Bento: der Haken hüpft groß, die
+   Zeile federt kurz ein. Zurückholen: der leere Ring zieht sich kurz zusammen. Nur transform/opacity; die Zeile ist sofort bedienbar. */
+
+@keyframes formulare-haken-glas {
+  0% {
+    transform: scale(0.4);
+  }
+  55% {
+    transform: scale(1.18);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes formulare-licht-glas {
+  0% {
+    opacity: 0.85;
+    transform: scale(0.9);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(2.1);
+  }
+}
+
+@keyframes formulare-haken-bento {
+  0% {
+    transform: scale(0.3) rotate(-20deg);
+  }
+  45% {
+    transform: scale(1.32) rotate(8deg);
+  }
+  70% {
+    transform: scale(0.9) rotate(-3deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+@keyframes formulare-zeile-bento {
+  0% {
+    transform: scale(0.96);
+  }
+  50% {
+    transform: scale(1.015);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes formulare-offen {
+  0% {
+    transform: scale(0.75);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .ek-zeile.gekauft.ek-frisch .ek-haken {
+    animation: formulare-haken-glas 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+    animation-delay: var(--ek-seit, 0ms); /* läuft nach einem Neuzeichnen an derselben Stelle weiter */
+  }
+
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .ek-zeile.gekauft.ek-frisch .ek-haken::after {
+    content: '';
+    position: absolute;
+    inset: -3px;
+    border-radius: 50%;
+    border: 2px solid var(--ek-glanz);
+    box-shadow: 0 0 12px var(--ek-glanz);
+    opacity: 0;
+    pointer-events: none;
+    animation: formulare-licht-glas 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+    animation-delay: var(--ek-seit, 0ms); /* läuft nach einem Neuzeichnen an derselben Stelle weiter */
+  }
+
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .ek-zeile.gekauft.ek-frisch .ek-haken {
+    animation: formulare-haken-bento 0.55s cubic-bezier(0.3, 0.7, 0.3, 1);
+    animation-delay: var(--ek-seit, 0ms); /* läuft nach einem Neuzeichnen an derselben Stelle weiter */
+  }
+
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .ek-zeile.gekauft.ek-frisch {
+    animation: formulare-zeile-bento 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+    animation-delay: var(--ek-seit, 0ms); /* läuft nach einem Neuzeichnen an derselben Stelle weiter */
+  }
+
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .ek-zeile.offen.ek-frisch .ek-haken,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .ek-zeile.offen.ek-frisch .ek-haken {
+    animation: formulare-offen 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+    animation-delay: var(--ek-seit, 0ms); /* läuft nach einem Neuzeichnen an derselben Stelle weiter */
+  }
+
+  /* federnder Tipp auf Kacheln, Zeilen und runden Knöpfen (wie die Knöpfe im Fundament) */
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .neu-seite .kachel,
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .ek-haupt,
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .urlaub-seite .rund,
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .stepper .rund,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .neu-seite .kachel,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .ek-haupt,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .urlaub-seite .rund,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .stepper .rund {
+    transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .neu-seite .kachel:active,
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .ek-haupt:active {
+    transform: scale(0.97);
+    transition-duration: 0.12s;
+  }
+
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .neu-seite .kachel:active,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .ek-haupt:active {
+    transform: scale(0.95);
+    transition-duration: 0.08s;
+  }
+
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .urlaub-seite .rund:active,
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .stepper .rund:active,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .urlaub-seite .rund:active,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .stepper .rund:active {
+    transform: scale(0.9);
+    transition-duration: 0.08s;
+  }
+}
