@@ -198,7 +198,7 @@ test.describe('Öffnen von Fixkosten und Sparziele: alles spielt einmal – auch
     const zielText = await page.locator('.fk-kopf .fk-gross').textContent();
     // Tropfen/Blob: in einem frühen Bild zwischen Start (Kontostand, 0) und Ziel
     expect(ende.x, 'der Tropfen steht am Ende unter der neuen Wahl').toBeGreaterThan(20);
-    const unterwegs = (b) => b.x > 2 && b.x < ende.x - 2;
+    const unterwegs = (b) => b.x > 2 && Math.abs(b.x - ende.x) > 2; // auch Bilder, in denen der Blob über das Ziel hinausschwingt
     const wege = `${bilder.slice(0, 20).map((b) => Math.round(b.x)).join(', ')} … → ${Math.round(ende.x)}`;
     expect(bilder.slice(0, frueh).some(unterwegs), `früh unterwegs: ${wege}`).toBe(true);
     expect(bilder.filter(unterwegs).length, `sichtbar unterwegs (mehrere Bilder): ${wege}`).toBeGreaterThanOrEqual(3);
