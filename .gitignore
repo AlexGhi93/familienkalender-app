@@ -1,3 +1,6 @@
 node_modules/
 test-results/
 playwright-report/
+
+# Basis der visuellen Regression (hängt von Schriften und Kantenglättung dieses Rechners ab)
+tests/visuell/__basis__/

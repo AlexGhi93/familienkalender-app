@@ -1,4 +1,52 @@
-/* Familienkalender: freundliches, helles Kinder-Thema für die Eltern. Farben als Variablen, Tönungen per color-mix. */
+/* Familienkalender: freundliches, helles Kinder-Thema für die Eltern. Farben als Variablen, Tönungen per color-mix.
+
+   DESIGN-TOKENS (1.2.0) – alles, was ein Aussehen ändern darf. Die Werte hier sind Klassisch (= Stand 1.1.2, Pixel für Pixel,
+   geprüft mit npm run test:visuell). Glas und Bento überschreiben sie in themes/glas.css bzw. themes/bento.css unter
+   :root[data-aussehen="…"] (je Hell und Dunkel) und ergänzen dort, wo nötig, eigene Regeln.
+
+   Flächen      --bg            Hintergrund der Seite
+                --karte         Karten
+                --karte-2       Flächen in und neben Karten: Zeilen, Eingabefelder, Knöpfe, runde Knöpfe (Klassisch = --karte)
+                --linie         Rahmenfarbe
+                --rand          Rahmenbreite von Karten, Zeilen, Feldern und Knöpfen
+   Text         --ink           Schrift
+                --ink-2         leise Schrift (Untertitel, Hinweise)
+   Akzent       --akzent        Akzentfarbe (aktive Knöpfe, Fokus, „Neu“)
+                --akzent-ink    Schrift auf --akzent
+   Radien       --r-karte       Karten, Kacheln, Diagramme
+                --r-knopf       Knöpfe
+                --r-zeile       Zeilen und Kästen in Listen und Karten
+                --r-feld        Eingabefelder
+                --r-chip        Chips, Marken, Umschalter, Meldung (Pille)
+                --r-blatt       obere Ecken des Blatts (Dialog von unten)
+                --r-zelle       Tage im Monatsraster
+   Schatten     --schatten-karte      Karten und Kacheln (Dunkel: eigener Wert)
+                --schatten-schwebend  Blatt
+                --schatten-leiste     Pinsel-Leiste des Schichtplans
+   Schrift      --font-text     Grundschrift (body)
+                --font-titel    Titel (Seitentitel, Blatt-Titel, Abschnitte, Kartentitel)
+                --font-zahl     Beträge, Uhrzeiten und Tabellenzahlen (tabular-nums)
+                --gewicht-titel Gewicht der Titel
+                --titel-gross   Seitentitel (h1.gruss)
+                --titel-seite   Monatstitel (Monat)
+                --titel-blatt   Titel im Blatt
+                --titel-karte   Titel in Karten (h3)
+                --titel-abschnitt Abschnittstitel (Großbuchstaben)
+   Tableiste    --tabs-hoehe    Höhe (ohne sicheren Bereich unten)
+                --tabs-bg       Fläche
+                --tabs-blur     backdrop-filter der Leiste
+                --tabs-rand     Rand oben
+                --tabs-radius   Ecken (schwebend: rund)
+                --tabs-abstand  schwebend: Abstand zu Rand und Boden (0px = angedockt, Klassisch)
+                --tabs-schatten Schatten (schwebend)
+   Blatt        --blatt-bg      Fläche
+                --blatt-blur    backdrop-filter des Blatts (Klassisch: none)
+                --blatt-schleier Abdunkeln dahinter
+   Bewegung     --dauer-kurz    kurze Übergänge (Schleier, Meldung)
+                --dauer-mittel  Blatt auf/zu
+                --kurve-feder   Kurve des Blatts (mit Feder)
+                --kurve-sanft   sanfte Kurve (Schleier, Meldung)
+   Die Schriften der Aussehen (FK Onest, FK Fredoka, FK Nunito) sind weiter unten nur deklariert; Klassisch nutzt sie nicht. */
 
 :root {
   --bg: #fff7ec;
@@ -55,11 +103,42 @@
   --sf-grau: #a8a29e;
   --sf-grau-ink: #1c1917;
 
-  --radius: 20px;
-  --radius-klein: 14px;
-  --schatten: 0 1px 0 rgba(45, 42, 62, 0.04), 0 8px 22px rgba(45, 42, 62, 0.07);
+  /* Design-Tokens (Liste und Zweck: Kopf dieser Datei); die Werte sind Klassisch */
+  --karte-2: var(--karte);
+  --rand: 1.5px;
+  --r-karte: 20px;
+  --r-knopf: 14px;
+  --r-zeile: 14px;
+  --r-feld: 14px;
+  --r-chip: 999px;
+  --r-blatt: 26px;
+  --r-zelle: 12px;
+  --schatten-karte: 0 1px 0 rgba(45, 42, 62, 0.04), 0 8px 22px rgba(45, 42, 62, 0.07);
+  --schatten-schwebend: 0 -10px 40px rgba(20, 16, 36, 0.25);
+  --schatten-leiste: 0 -10px 24px rgba(20, 16, 36, 0.14);
+  --font-text: ui-rounded, 'SF Pro Rounded', 'Nunito', 'Segoe UI Variable Text', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-titel: var(--font-text);
+  --font-zahl: var(--font-text);
+  --gewicht-titel: 800;
+  --titel-gross: 1.9rem;
+  --titel-seite: 1.5rem;
+  --titel-blatt: 1.2rem;
+  --titel-karte: 1.05rem;
+  --titel-abschnitt: 0.8rem;
   --tabs-hoehe: 68px;
-  --schrift: ui-rounded, 'SF Pro Rounded', 'Nunito', 'Segoe UI Variable Text', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --tabs-bg: color-mix(in srgb, var(--karte) 92%, transparent);
+  --tabs-blur: blur(14px);
+  --tabs-rand: var(--rand) solid var(--linie);
+  --tabs-radius: 0;
+  --tabs-abstand: 0px;
+  --tabs-schatten: none;
+  --blatt-bg: var(--bg);
+  --blatt-blur: none;
+  --blatt-schleier: rgba(20, 16, 36, 0.45);
+  --dauer-kurz: 0.18s;
+  --dauer-mittel: 0.22s;
+  --kurve-feder: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --kurve-sanft: ease;
   color-scheme: light;
 }
 
@@ -74,7 +153,7 @@
     --akzent-ink: #1f1b2e;
     --gefahr: #ff7b7b;
     --gefahr-ink: #1f1b2e; /* helles Rot braucht dunkle Schrift (Weiß hätte nur 2,5:1) */
-    --schatten: 0 1px 0 rgba(0, 0, 0, 0.2), 0 8px 22px rgba(0, 0, 0, 0.3);
+    --schatten-karte: 0 1px 0 rgba(0, 0, 0, 0.2), 0 8px 22px rgba(0, 0, 0, 0.3);
     --serie-papa: #3987e5;
     --serie-mama: #d95926;
     /* Schichtplan dunkel: dunkle Töne aufgehellt (≥ 2:1 auf --karte), Kürzel weiter ≥ 4,5:1; in beiden dunklen Blöcken gleich */
@@ -124,7 +203,7 @@
   --akzent-ink: #1f1b2e;
   --gefahr: #ff7b7b;
   --gefahr-ink: #1f1b2e; /* helles Rot braucht dunkle Schrift (Weiß hätte nur 2,5:1) */
-  --schatten: 0 1px 0 rgba(0, 0, 0, 0.2), 0 8px 22px rgba(0, 0, 0, 0.3);
+  --schatten-karte: 0 1px 0 rgba(0, 0, 0, 0.2), 0 8px 22px rgba(0, 0, 0, 0.3);
   --serie-papa: #3987e5;
   --serie-mama: #d95926;
   /* Schichtplan dunkel: dunkle Töne aufgehellt (≥ 2:1 auf --karte), Kürzel weiter ≥ 4,5:1; in beiden dunklen Blöcken gleich */
@@ -167,6 +246,38 @@
   color-scheme: light;
 }
 
+/* Schriften der Aussehen (lokal, OFL, siehe fonts/LIZENZ.md): Glas = Onest, Bento = Fredoka (Titel) und Nunito (Text).
+   Nur deklariert: Klassisch nennt sie in keiner Schriftliste und lädt sie deshalb nie. Das Präfix „FK“ ist Absicht – „Nunito“
+   steht schon in --font-text (als installierte Systemschrift); hieße diese Datei so, nähme Klassisch sie auf Telefonen ohne
+   ui-rounded. unicode-range = die Teilmenge der Dateien (Latein mit Ä Ö Ü ß, €, Satzzeichen der App). */
+@font-face {
+  font-family: 'FK Onest';
+  src: url('fonts/onest.woff2') format('woff2');
+  font-weight: 400 900;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0020-007E, U+00A0-00FF, U+0131, U+0152-0153, U+2013-2014, U+2018-201A, U+201C-201E, U+2022, U+2026, U+2039-203A, U+20AC, U+2190-2193, U+2212, U+2248, U+2260, U+2264-2265;
+}
+
+@font-face {
+  font-family: 'FK Fredoka';
+  src: url('fonts/fredoka.woff2') format('woff2');
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0020-007E, U+00A0-00FF, U+0131, U+0152-0153, U+2013-2014, U+2018-201A, U+201C-201E, U+2022, U+2026, U+2039-203A, U+20AC, U+2190-2193, U+2212, U+2248, U+2260, U+2264-2265;
+}
+
+@font-face {
+  font-family: 'FK Nunito';
+  src: url('fonts/nunito.woff2') format('woff2');
+  font-weight: 400 900;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0020-007E, U+00A0-00FF, U+0131, U+0152-0153, U+2013-2014, U+2018-201A, U+201C-201E, U+2022, U+2026, U+2039-203A, U+20AC, U+2190-2193, U+2212, U+2248, U+2260, U+2264-2265;
+}
+
+
 [hidden] {
   display: none !important;
 }
@@ -184,7 +295,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
-  font-family: var(--schrift);
+  font-family: var(--font-text);
   font-size: 16px;
   line-height: 1.4;
   -webkit-text-size-adjust: 100%;
@@ -228,7 +339,7 @@ button {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  padding: calc(env(safe-area-inset-top, 0px) + 18px) 16px calc(var(--tabs-hoehe) + env(safe-area-inset-bottom, 0px) + 36px);
+  padding: calc(env(safe-area-inset-top, 0px) + 18px) 16px calc(var(--tabs-hoehe) + var(--tabs-abstand) + env(safe-area-inset-bottom, 0px) + 36px);
 }
 
 .kopf {
@@ -245,15 +356,16 @@ button {
 .pille {
   background: color-mix(in srgb, var(--kita) 18%, var(--karte));
   border: 1.5px solid color-mix(in srgb, var(--kita) 45%, transparent);
-  border-radius: 999px;
+  border-radius: var(--r-chip);
   padding: 3px 12px;
   font-size: 0.85rem;
   font-weight: 700;
 }
 
 .gruss {
-  font-size: 1.9rem;
-  font-weight: 800;
+  font-family: var(--font-titel);
+  font-size: var(--titel-gross);
+  font-weight: var(--gewicht-titel);
   line-height: 1.15;
 }
 
@@ -270,8 +382,9 @@ button {
 
 .abschnitt > h2,
 .abschnitt-titel {
-  font-size: 0.8rem;
-  font-weight: 800;
+  font-family: var(--font-titel);
+  font-size: var(--titel-abschnitt);
+  font-weight: var(--gewicht-titel);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--ink-2);
@@ -290,17 +403,18 @@ button {
 
 .karte {
   background: var(--karte);
-  border: 1.5px solid var(--linie);
-  border-radius: var(--radius);
+  border: var(--rand) solid var(--linie);
+  border-radius: var(--r-karte);
   padding: 14px;
-  box-shadow: var(--schatten);
+  box-shadow: var(--schatten-karte);
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
 .karte h3 {
-  font-size: 1.05rem;
+  font-family: var(--font-titel);
+  font-size: var(--titel-karte);
 }
 
 .tint {
@@ -352,7 +466,7 @@ button {
   align-items: center;
   border: 1.5px solid color-mix(in srgb, var(--c, var(--ink-2)) 40%, transparent);
   background: color-mix(in srgb, var(--c, var(--ink-2)) 12%, var(--karte));
-  border-radius: 999px;
+  border-radius: var(--r-chip);
   padding: 6px 12px;
   font-size: 0.9rem;
   min-height: 34px;
@@ -401,9 +515,9 @@ button.chip {
 /* ---------- Knöpfe ---------- */
 
 .knopf {
-  border: 1.5px solid var(--linie);
-  background: var(--karte);
-  border-radius: var(--radius-klein);
+  border: var(--rand) solid var(--linie);
+  background: var(--karte-2);
+  border-radius: var(--r-knopf);
   padding: 10px 14px;
   font-weight: 700;
 }
@@ -529,7 +643,7 @@ button.chip {
   text-align: center;
   font-weight: 800;
   padding: 12px;
-  border-radius: var(--radius);
+  border-radius: var(--r-karte);
   background: color-mix(in srgb, var(--urlaub) 16%, var(--karte));
   border: 1.5px solid color-mix(in srgb, var(--urlaub) 45%, transparent);
 }
@@ -543,16 +657,17 @@ button.chip {
 }
 
 .monat-kopf h1 {
-  font-size: 1.5rem;
-  font-weight: 800;
+  font-family: var(--font-titel);
+  font-size: var(--titel-seite);
+  font-weight: var(--gewicht-titel);
 }
 
 .rund {
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  border: 1.5px solid var(--linie);
-  background: var(--karte);
+  border: var(--rand) solid var(--linie);
+  background: var(--karte-2);
   font-size: 1.4rem;
   line-height: 1;
 }
@@ -575,8 +690,8 @@ button.chip {
   --c: transparent;
   position: relative;
   aspect-ratio: 1 / 1.12;
-  border: 1.5px solid var(--linie);
-  border-radius: 12px;
+  border: var(--rand) solid var(--linie);
+  border-radius: var(--r-zelle);
   background: var(--karte);
   padding: 3px 0 0;
   display: flex;
@@ -665,9 +780,9 @@ button.chip {
   padding: 16px;
   min-height: 112px;
   text-align: left;
-  border-radius: var(--radius);
+  border-radius: var(--r-karte);
   border: 2px solid color-mix(in srgb, var(--c) 50%, transparent);
-  box-shadow: var(--schatten);
+  box-shadow: var(--schatten-karte);
 }
 
 .kachel b {
@@ -689,9 +804,9 @@ button.chip {
 .feld input {
   min-height: 46px;
   padding: 8px 12px;
-  border-radius: var(--radius-klein);
-  border: 1.5px solid var(--linie);
-  background: var(--karte);
+  border-radius: var(--r-feld);
+  border: var(--rand) solid var(--linie);
+  background: var(--karte-2);
 }
 
 .formular .info {
@@ -718,9 +833,9 @@ button.chip {
   width: 100%;
   min-height: 74px;
   padding: 10px 12px;
-  border-radius: var(--radius-klein);
-  border: 1.5px solid var(--linie);
-  background: var(--karte);
+  border-radius: var(--r-feld);
+  border: var(--rand) solid var(--linie);
+  background: var(--karte-2);
   font: inherit;
   resize: vertical;
 }
@@ -754,9 +869,9 @@ small.notiz {
   min-width: 0;
   min-height: 46px;
   padding: 8px 12px;
-  border-radius: var(--radius-klein);
-  border: 1.5px solid var(--linie);
-  background: var(--karte);
+  border-radius: var(--r-feld);
+  border: var(--rand) solid var(--linie);
+  background: var(--karte-2);
 }
 
 .chip.entfernbar .x {
@@ -770,9 +885,9 @@ small.notiz {
   flex-direction: column;
   gap: 4px;
   padding: 12px 14px;
-  border-radius: var(--radius-klein);
-  background: var(--karte);
-  border: 1.5px dashed var(--linie);
+  border-radius: var(--r-zeile);
+  background: var(--karte-2);
+  border: var(--rand) dashed var(--linie);
 }
 
 .vorschau small {
@@ -802,9 +917,9 @@ small.notiz {
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  border-radius: var(--radius-klein);
-  border: 1.5px solid var(--linie);
-  background: var(--karte);
+  border-radius: var(--r-zeile);
+  border: var(--rand) solid var(--linie);
+  background: var(--karte-2);
 }
 
 .zeile.tint {
@@ -842,9 +957,9 @@ small.notiz {
   position: absolute;
   inset: 0;
   touch-action: none; /* Ziehen auf dem Hintergrund bewegt nicht die Seite darunter */
-  background: rgba(20, 16, 36, 0.45);
+  background: var(--blatt-schleier);
   opacity: 0;
-  transition: opacity 0.18s ease;
+  transition: opacity var(--dauer-kurz) var(--kurve-sanft);
 }
 
 .blatt {
@@ -854,12 +969,14 @@ small.notiz {
   width: min(100%, 520px);
   max-height: 88dvh;
   overflow-y: auto;
-  background: var(--bg);
-  border-radius: 26px 26px 0 0;
+  background: var(--blatt-bg);
+  -webkit-backdrop-filter: var(--blatt-blur);
+  backdrop-filter: var(--blatt-blur);
+  border-radius: var(--r-blatt) var(--r-blatt) 0 0;
   padding: 8px 16px calc(env(safe-area-inset-bottom, 0px) + 22px);
   transform: translate(-50%, 100%);
-  transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
-  box-shadow: 0 -10px 40px rgba(20, 16, 36, 0.25);
+  transition: transform var(--dauer-mittel) var(--kurve-feder);
+  box-shadow: var(--schatten-schwebend);
   overscroll-behavior: contain; /* Scrollen im Blatt reicht nie an die Seite weiter */
 }
 
@@ -911,16 +1028,17 @@ html:has(.blatt-huelle > .blatt[role='dialog']) body {
 }
 
 .blatt-kopf h2 {
-  font-size: 1.2rem;
-  font-weight: 800;
+  font-family: var(--font-titel);
+  font-size: var(--titel-blatt);
+  font-weight: var(--gewicht-titel);
 }
 
 .blatt-zu {
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  border: 1.5px solid var(--linie);
-  background: var(--karte);
+  border: var(--rand) solid var(--linie);
+  background: var(--karte-2);
 }
 
 .blatt-inhalt {
@@ -942,17 +1060,17 @@ html:has(.blatt-huelle > .blatt[role='dialog']) body {
 .toast {
   position: fixed;
   left: 50%;
-  bottom: calc(var(--tabs-hoehe) + env(safe-area-inset-bottom, 0px) + 26px);
+  bottom: calc(var(--tabs-hoehe) + var(--tabs-abstand) + env(safe-area-inset-bottom, 0px) + 26px);
   transform: translate(-50%, 12px);
   width: max-content; /* sonst bricht der Text bei left: 50% in eine schmale Blase um */
   max-width: min(92vw, 420px);
   padding: 12px 18px;
-  border-radius: 999px;
+  border-radius: var(--r-chip);
   background: var(--ink);
   color: var(--bg);
   font-weight: 700;
   opacity: 0;
-  transition: opacity 0.18s ease, transform 0.18s ease;
+  transition: opacity var(--dauer-kurz) var(--kurve-sanft), transform var(--dauer-kurz) var(--kurve-sanft);
   z-index: 60;
   text-align: center;
 }
@@ -967,18 +1085,20 @@ html:has(.blatt-huelle > .blatt[role='dialog']) body {
 .tabs {
   position: fixed;
   left: 50%;
-  bottom: 0;
+  bottom: var(--tabs-abstand);
   transform: translateX(-50%);
-  width: min(100%, 520px);
+  width: calc(min(100%, 520px) - 2 * var(--tabs-abstand));
   height: calc(var(--tabs-hoehe) + env(safe-area-inset-bottom, 0px));
   padding-bottom: env(safe-area-inset-bottom, 0px);
   display: grid;
   grid-template-columns: repeat(3, 1fr) 52px repeat(4, 1fr); /* „Neu“ als runder Hauptknopf an vierter Stelle, sieben gleich breite Karten */
   align-items: center;
-  background: color-mix(in srgb, var(--karte) 92%, transparent);
-  -webkit-backdrop-filter: blur(14px);
-  backdrop-filter: blur(14px);
-  border-top: 1.5px solid var(--linie);
+  background: var(--tabs-bg);
+  -webkit-backdrop-filter: var(--tabs-blur);
+  backdrop-filter: var(--tabs-blur);
+  border-top: var(--tabs-rand);
+  border-radius: var(--tabs-radius);
+  box-shadow: var(--tabs-schatten);
   z-index: 40;
 }
 
@@ -1067,7 +1187,7 @@ html:has(.blatt-huelle > .blatt[role='dialog']) body {
   flex-wrap: wrap;
   gap: 8px 10px;
   padding: 10px 12px;
-  border-radius: var(--radius-klein);
+  border-radius: var(--r-zeile);
   background: color-mix(in srgb, var(--karte) 70%, transparent);
   border: 1.5px solid color-mix(in srgb, var(--sache) 30%, transparent);
 }
@@ -1090,7 +1210,7 @@ html:has(.blatt-huelle > .blatt[role='dialog']) body {
   font-size: 0.75rem;
   font-weight: 800;
   padding: 3px 9px;
-  border-radius: 999px;
+  border-radius: var(--r-chip);
   background: color-mix(in srgb, var(--sache) 30%, var(--karte));
   border: 1.5px solid var(--sache);
 }
@@ -1137,7 +1257,7 @@ html:has(.blatt-huelle > .blatt[role='dialog']) body {
 
 .gruppen details {
   border: 1.5px solid color-mix(in srgb, var(--sache) 35%, transparent);
-  border-radius: var(--radius-klein);
+  border-radius: var(--r-zeile);
   padding: 8px 10px;
   background: color-mix(in srgb, var(--karte) 60%, transparent);
 }
@@ -1230,7 +1350,7 @@ html:has(.blatt-huelle > .blatt[role='dialog']) body {
   gap: 6px;
   padding: 10px 16px;
   background: var(--karte);
-  border-bottom: 1.5px solid var(--linie);
+  border-bottom: var(--rand) solid var(--linie);
   font-weight: 700;
   font-size: 0.9rem;
 }
@@ -1275,8 +1395,8 @@ html:has(.blatt-huelle > .blatt[role='dialog']) body {
   padding: 16px;
   background: var(--karte);
   border: 2px solid var(--linie);
-  border-radius: var(--radius);
-  box-shadow: var(--schatten);
+  border-radius: var(--r-karte);
+  box-shadow: var(--schatten-karte);
 }
 
 .willkommen-knopf.primaer {
@@ -1299,7 +1419,7 @@ html:has(.blatt-huelle > .blatt[role='dialog']) body {
   font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   font-size: 0.95rem;
   padding: 12px;
-  border-radius: var(--radius-klein);
+  border-radius: var(--r-zeile);
   background: color-mix(in srgb, var(--akzent) 10%, var(--karte));
   border: 1.5px dashed var(--akzent);
   word-break: break-all;
@@ -1316,9 +1436,9 @@ html:has(.blatt-huelle > .blatt[role='dialog']) body {
 .einrichtung input[type='email'] {
   width: 100%;
   padding: 10px 12px;
-  border-radius: var(--radius-klein);
-  border: 1.5px solid var(--linie);
-  background: var(--karte);
+  border-radius: var(--r-feld);
+  border: var(--rand) solid var(--linie);
+  background: var(--karte-2);
   min-height: 46px;
 }
 
@@ -1332,8 +1452,8 @@ html:has(.blatt-huelle > .blatt[role='dialog']) body {
 }
 
 .anleitung {
-  border: 1.5px solid var(--linie);
-  border-radius: var(--radius-klein);
+  border: var(--rand) solid var(--linie);
+  border-radius: var(--r-zeile);
   padding: 8px 12px;
   background: color-mix(in srgb, var(--karte) 70%, transparent);
 }
@@ -1409,7 +1529,7 @@ html:has(.blatt-huelle > .blatt[role='dialog']) body {
   gap: 8px;
   margin-top: 14px;
   padding-top: 12px;
-  border-top: 1.5px dashed var(--linie);
+  border-top: var(--rand) dashed var(--linie);
 }
 
 .push-abschnitt[hidden] {
@@ -1435,13 +1555,14 @@ html:has(.blatt-huelle > .blatt[role='dialog']) body {
 }
 
 .eingabe-zeile > input[type='text'] {
+  font-family: var(--font-zahl);
   flex: 1;
   min-width: 0;
   min-height: 46px;
   padding: 8px 10px;
-  border-radius: var(--radius-klein);
-  border: 1.5px solid var(--linie);
-  background: var(--karte);
+  border-radius: var(--r-feld);
+  border: var(--rand) solid var(--linie);
+  background: var(--karte-2);
   font: inherit;
   font-size: 1rem;
   font-variant-numeric: tabular-nums;
@@ -1459,9 +1580,9 @@ html:has(.blatt-huelle > .blatt[role='dialog']) body {
   justify-content: center;
   width: 44px;
   min-height: 46px;
-  border-radius: var(--radius-klein);
-  border: 1.5px solid var(--linie);
-  background: var(--karte);
+  border-radius: var(--r-knopf);
+  border: var(--rand) solid var(--linie);
+  background: var(--karte-2);
   font-size: 1.15rem;
   overflow: hidden;
 }
@@ -1495,7 +1616,7 @@ html:has(.blatt-huelle > .blatt[role='dialog']) body {
   padding: 14px 16px;
   border: 2.5px solid var(--c);
   background: color-mix(in srgb, var(--c) 14%, var(--karte));
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--c) 18%, transparent), var(--schatten);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--c) 18%, transparent), var(--schatten-karte);
 }
 
 .termin-heute.naechster {
@@ -1505,13 +1626,13 @@ html:has(.blatt-huelle > .blatt[role='dialog']) body {
 
 .termin-heute.morgen {
   border-width: 2px;
-  box-shadow: var(--schatten);
+  box-shadow: var(--schatten-karte);
 }
 
 .termin-heute.vorbei {
   opacity: 0.55;
   border-style: dashed;
-  box-shadow: var(--schatten);
+  box-shadow: var(--schatten-karte);
 }
 
 .th-kopf {
@@ -1521,6 +1642,7 @@ html:has(.blatt-huelle > .blatt[role='dialog']) body {
 }
 
 .th-zeit {
+  font-family: var(--font-zahl);
   min-width: 4.4ch;
   font-size: 2.1rem;
   font-weight: 900;
@@ -1552,7 +1674,7 @@ html:has(.blatt-huelle > .blatt[role='dialog']) body {
   display: inline-flex;
   align-items: center;
   padding: 3px 10px;
-  border-radius: 999px;
+  border-radius: var(--r-chip);
   border: 1.5px solid var(--c);
   background: color-mix(in srgb, var(--c) 20%, var(--karte));
   font-size: 0.85rem;
@@ -1609,9 +1731,9 @@ html:has(.blatt-huelle > .blatt[role='dialog']) body {
   min-width: 0;
   min-height: 48px;
   padding: 8px 12px;
-  border-radius: var(--radius-klein);
-  border: 1.5px solid var(--linie);
-  background: var(--karte);
+  border-radius: var(--r-feld);
+  border: var(--rand) solid var(--linie);
+  background: var(--karte-2);
   color: var(--ink);
   font-size: 1rem;
 }
@@ -1643,9 +1765,9 @@ html:has(.blatt-huelle > .blatt[role='dialog']) body {
 .ek-zeile {
   display: flex;
   align-items: stretch;
-  border-radius: var(--radius-klein);
-  border: 1.5px solid var(--linie);
-  background: var(--karte);
+  border-radius: var(--r-zeile);
+  border: var(--rand) solid var(--linie);
+  background: var(--karte-2);
 }
 
 .ek-haupt {
@@ -1719,7 +1841,7 @@ html:has(.blatt-huelle > .blatt[role='dialog']) body {
   flex-direction: column;
   gap: 4px;
   padding: 10px 12px;
-  border-radius: var(--radius-klein);
+  border-radius: var(--r-zeile);
   border: 2px solid var(--gefahr);
   background: color-mix(in srgb, var(--gefahr) 12%, var(--karte));
 }
@@ -1758,9 +1880,9 @@ html:has(.blatt-huelle > .blatt[role='dialog']) body {
 .verlauf-suche {
   min-height: 48px;
   padding: 8px 12px;
-  border-radius: var(--radius-klein);
-  border: 1.5px solid var(--linie);
-  background: var(--karte);
+  border-radius: var(--r-feld);
+  border: var(--rand) solid var(--linie);
+  background: var(--karte-2);
   color: var(--ink);
   font-size: 1rem;
 }
@@ -1820,9 +1942,9 @@ html:has(.blatt-huelle > .blatt[role='dialog']) body {
   min-width: 0;
   min-height: 48px;
   padding: 8px 12px;
-  border-radius: var(--radius-klein);
-  border: 1.5px solid var(--linie);
-  background: var(--karte);
+  border-radius: var(--r-feld);
+  border: var(--rand) solid var(--linie);
+  background: var(--karte-2);
   color: var(--ink);
   font-size: 1.1rem;
   font-variant-numeric: tabular-nums;
@@ -1848,7 +1970,7 @@ html:has(.blatt-huelle > .blatt[role='dialog']) body {
 
 .konto-reihe.zusammen {
   padding-top: 6px;
-  border-top: 1.5px dashed var(--linie);
+  border-top: var(--rand) dashed var(--linie);
   font-weight: 800;
 }
 
@@ -1858,6 +1980,7 @@ html:has(.blatt-huelle > .blatt[role='dialog']) body {
 }
 
 .konto-stand {
+  font-family: var(--font-zahl);
   flex: 0 0 auto;
   text-align: right;
   font-variant-numeric: tabular-nums;
@@ -1870,11 +1993,12 @@ html:has(.blatt-huelle > .blatt[role='dialog']) body {
 }
 
 .konto-delta {
+  font-family: var(--font-zahl);
   flex: 0 0 auto;
   margin-left: auto;
   padding: 2px 10px;
-  border-radius: 999px;
-  border: 1.5px solid var(--linie);
+  border-radius: var(--r-chip);
+  border: var(--rand) solid var(--linie);
   font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
@@ -1940,7 +2064,7 @@ html:has(.blatt-huelle > .blatt[role='dialog']) body {
 .konto-summe .extra-trenner {
   margin-top: 6px;
   padding-top: 8px;
-  border-top: 1.5px dashed var(--linie);
+  border-top: var(--rand) dashed var(--linie);
 }
 
 .extra-formular select.konto-eingabe {
@@ -1965,9 +2089,9 @@ html:has(.blatt-huelle > .blatt[role='dialog']) body {
   align-items: center;
   gap: 10px;
   padding: 6px 4px 6px 10px;
-  border-radius: var(--radius-klein);
-  border: 1.5px solid var(--linie);
-  background: var(--karte);
+  border-radius: var(--r-zeile);
+  border: var(--rand) solid var(--linie);
+  background: var(--karte-2);
 }
 
 .extra-zeile .karte-text b {
@@ -2021,10 +2145,10 @@ html:has(.blatt-huelle > .blatt[role='dialog']) body {
   flex-direction: column;
   gap: 2px;
   padding: 10px 10px 8px;
-  border-radius: var(--radius-klein);
-  border: 1.5px solid var(--linie);
-  background: var(--karte);
-  box-shadow: var(--schatten);
+  border-radius: var(--r-zeile);
+  border: var(--rand) solid var(--linie);
+  background: var(--karte-2);
+  box-shadow: var(--schatten-karte);
 }
 
 .konto-kachel-titel {
@@ -2053,10 +2177,10 @@ figure.diagramm {
   gap: 8px;
   margin: 0;
   padding: 12px 10px 10px;
-  border-radius: var(--radius);
-  border: 1.5px solid var(--linie);
+  border-radius: var(--r-karte);
+  border: var(--rand) solid var(--linie);
   background: var(--karte);
-  box-shadow: var(--schatten);
+  box-shadow: var(--schatten-karte);
   outline-offset: 2px;
 }
 
@@ -2214,10 +2338,10 @@ figure.diagramm {
   z-index: 5;
   max-width: calc(100% - 8px);
   padding: 8px 10px;
-  border-radius: var(--radius-klein);
+  border-radius: var(--r-zeile);
   background: var(--ink);
   color: var(--bg);
-  box-shadow: var(--schatten);
+  box-shadow: var(--schatten-karte);
   font-size: 0.85rem;
   pointer-events: none;
 }
@@ -2268,6 +2392,7 @@ figure.diagramm {
 
 .diag-tabelle th,
 .diag-tabelle td {
+  font-family: var(--font-zahl);
   padding: 4px 6px;
   border-top: 1px solid var(--linie);
   text-align: right;
@@ -2314,7 +2439,7 @@ figure.diagramm {
 
 .karte .banner-fehler {
   padding: 8px 10px;
-  border-radius: var(--radius-klein);
+  border-radius: var(--r-zeile);
   border: 1.5px dashed var(--gefahr);
 }
 
@@ -2345,7 +2470,7 @@ figure.diagramm {
 
 .menue-eintrag.offen {
   background: color-mix(in srgb, var(--c) 9%, var(--karte));
-  border-radius: var(--radius-klein);
+  border-radius: var(--r-zeile);
 }
 
 .menue-zeile {
@@ -2356,7 +2481,7 @@ figure.diagramm {
   min-height: 62px;
   padding: 8px;
   border: 0;
-  border-radius: var(--radius-klein);
+  border-radius: var(--r-zeile);
   background: none;
   text-align: left;
 }
@@ -2915,7 +3040,7 @@ html:has(.screen.einkauf) {
   min-width: 0;
   min-height: 50px;
   padding: 6px 12px;
-  border-radius: var(--radius-klein);
+  border-radius: var(--r-zeile);
   border: 1.5px solid color-mix(in srgb, var(--c) 55%, transparent);
   background: color-mix(in srgb, var(--c) 16%, var(--karte));
   text-align: left;
@@ -2956,8 +3081,8 @@ html:has(.screen.einkauf) {
   width: 100%;
   min-height: 46px;
   padding: 6px 12px;
-  border: 1.5px dashed var(--linie);
-  border-radius: var(--radius-klein);
+  border: var(--rand) dashed var(--linie);
+  border-radius: var(--r-zeile);
   background: none;
   color: var(--ink-2);
   text-align: left;
@@ -3119,8 +3244,8 @@ html:has(.screen.einkauf) {
 
 .sp-monat {
   background: var(--karte);
-  border: 1.5px solid var(--linie);
-  border-radius: var(--radius);
+  border: var(--rand) solid var(--linie);
+  border-radius: var(--r-karte);
   padding: 6px 8px;
 }
 
@@ -3160,7 +3285,7 @@ html:has(.screen.einkauf) {
   flex-direction: column;
   gap: 2px;
   padding: 2px 1px 3px;
-  border: 1.5px solid var(--linie);
+  border: var(--rand) solid var(--linie);
   border-radius: 10px;
   background: var(--karte);
   text-align: center;
@@ -3262,7 +3387,7 @@ html:has(.screen.einkauf) {
   height: 14px;
   margin: 1.5px 0;
   background: transparent;
-  border: 1.5px dashed var(--linie);
+  border: var(--rand) dashed var(--linie);
 }
 
 .sp-raster.eine-person .sp-streifen {
@@ -3337,7 +3462,7 @@ html:has(.screen.einkauf) {
 
 /* Pinsel: feste Leiste über den Registerkarten; die Seite bekommt unten so viel Platz, wie die Leiste hoch ist (--pinsel-hoehe, gemessen) */
 .schicht-seite.mit-pinsel {
-  padding-bottom: calc(var(--tabs-hoehe) + env(safe-area-inset-bottom, 0px) + var(--pinsel-hoehe, 240px) + 16px);
+  padding-bottom: calc(var(--tabs-hoehe) + var(--tabs-abstand) + env(safe-area-inset-bottom, 0px) + var(--pinsel-hoehe, 240px) + 16px);
 }
 
 .sp-zelle {
@@ -3347,7 +3472,7 @@ html:has(.screen.einkauf) {
 .sp-pinsel {
   position: fixed;
   left: 50%;
-  bottom: calc(var(--tabs-hoehe) + env(safe-area-inset-bottom, 0px));
+  bottom: calc(var(--tabs-hoehe) + var(--tabs-abstand) + env(safe-area-inset-bottom, 0px));
   transform: translateX(-50%);
   width: min(100%, 520px);
   max-height: 50dvh;
@@ -3359,7 +3484,7 @@ html:has(.screen.einkauf) {
   background: var(--karte);
   border-top: 2px solid var(--akzent);
   border-radius: 22px 22px 0 0;
-  box-shadow: 0 -10px 24px rgba(20, 16, 36, 0.14);
+  box-shadow: var(--schatten-leiste);
   z-index: 39; /* unter den Registerkarten (40) und der Meldung (60) */
 }
 
@@ -3374,7 +3499,7 @@ html:has(.screen.einkauf) {
   display: flex;
   gap: 3px;
   padding: 3px;
-  border-radius: 999px;
+  border-radius: var(--r-chip);
   background: color-mix(in srgb, var(--akzent) 12%, var(--karte));
 }
 
@@ -3382,7 +3507,7 @@ html:has(.screen.einkauf) {
   min-height: 32px;
   padding: 0 12px;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--r-chip);
   background: transparent;
   font-size: 0.85rem;
   font-weight: 800;
@@ -3398,7 +3523,7 @@ html:has(.screen.einkauf) {
   min-height: 38px;
   padding: 0 18px;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--r-chip);
   background: var(--akzent);
   color: var(--akzent-ink);
   font-weight: 800;
@@ -3418,9 +3543,9 @@ html:has(.screen.einkauf) {
   gap: 4px;
   min-height: 32px; /* kompakt wie in der Machette; drei Reihen für Papas acht Arten und „Frei“ */
   padding: 2px 9px 2px 3px;
-  border: 1.5px solid var(--linie);
-  border-radius: 999px;
-  background: var(--karte);
+  border: var(--rand) solid var(--linie);
+  border-radius: var(--r-chip);
+  background: var(--karte-2);
   font-size: 0.74rem;
   font-weight: 700;
   white-space: nowrap;
@@ -3441,7 +3566,7 @@ html:has(.screen.einkauf) {
   font-size: 0.64rem;
   min-width: 20px;
   padding: 2px 5px;
-  border-radius: 999px;
+  border-radius: var(--r-chip);
   text-align: center;
 }
 
@@ -3522,7 +3647,7 @@ html:has(.screen.einkauf) {
   gap: 6px;
   min-height: 44px;
   padding: 2px 4px 2px 10px;
-  border-radius: var(--radius-klein);
+  border-radius: var(--r-zeile);
   background: color-mix(in srgb, var(--ink-2) 10%, var(--karte));
   font-size: 0.85rem;
   font-weight: 700;
@@ -3555,8 +3680,8 @@ html:has(.screen.einkauf) {
   flex-direction: column;
   gap: 10px;
   padding: 10px;
-  border: 1.5px dashed var(--linie);
-  border-radius: var(--radius-klein);
+  border: var(--rand) dashed var(--linie);
+  border-radius: var(--r-zeile);
 }
 
 .sp-tag-zusatz-kopf {
@@ -3581,7 +3706,7 @@ html:has(.screen.einkauf) {
 .push-telefon-fehlt {
   margin: 0;
   padding: 8px 10px;
-  border-radius: var(--radius-klein);
+  border-radius: var(--r-zeile);
   background: color-mix(in srgb, var(--gefahr) 12%, var(--karte));
   color: var(--ink);
 }
@@ -3656,7 +3781,7 @@ html:has(.screen.einkauf) {
   font-size: 0.72rem;
   min-width: 40px; /* Kürzel wie „F“, „NM“, „2T“ gleich breit: Texte und Knöpfe der Zeilen stehen bündig */
   padding: 3px 6px;
-  border-radius: 999px;
+  border-radius: var(--r-chip);
   text-align: center;
 }
 
@@ -3685,9 +3810,9 @@ html:has(.screen.einkauf) {
 .sp-art-pfeil {
   width: 40px;
   height: 40px;
-  border: 1.5px solid var(--linie);
+  border: var(--rand) solid var(--linie);
   border-radius: 50%;
-  background: var(--karte);
+  background: var(--karte-2);
   font-size: 1rem;
   font-weight: 800;
 }
@@ -3786,7 +3911,7 @@ html:has(.screen.einkauf) {
   display: flex;
   gap: 4px;
   padding: 4px;
-  border-radius: 999px;
+  border-radius: var(--r-chip);
   background: color-mix(in srgb, var(--akzent) 14%, var(--karte));
 }
 
@@ -3796,7 +3921,7 @@ html:has(.screen.einkauf) {
   min-height: 44px;
   padding: 0 4px;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--r-chip);
   background: transparent;
   color: var(--ink-2);
   font-weight: 800;
@@ -3826,6 +3951,7 @@ html:has(.screen.einkauf) {
 }
 
 .fk-gross {
+  font-family: var(--font-zahl);
   font-size: 2rem;
   font-weight: 900;
   letter-spacing: -0.01em;
@@ -3842,6 +3968,7 @@ html:has(.screen.einkauf) {
 }
 
 .fk-kopf-zeile b {
+  font-family: var(--font-zahl);
   font-size: 1rem;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
@@ -3852,6 +3979,7 @@ html:has(.screen.einkauf) {
 }
 
 .fk-chip-betrag {
+  font-family: var(--font-zahl);
   font-variant-numeric: tabular-nums;
 }
 
@@ -3867,6 +3995,7 @@ html:has(.screen.einkauf) {
 }
 
 .fk-karte-titel small {
+  font-family: var(--font-zahl);
   color: var(--ink-2);
   font-weight: 800;
   font-size: 0.85rem;
@@ -3899,6 +4028,7 @@ html:has(.screen.einkauf) {
 }
 
 .fk-tag {
+  font-family: var(--font-zahl);
   flex: none;
   width: 34px;
   text-align: center;
@@ -3927,6 +4057,7 @@ html:has(.screen.einkauf) {
 }
 
 .fk-b {
+  font-family: var(--font-zahl);
   flex: none;
   text-align: right;
   font-weight: 800;
@@ -4016,6 +4147,7 @@ html:has(.screen.einkauf) {
 }
 
 .fk-legende {
+  font-family: var(--font-zahl);
   display: flex;
   flex-wrap: wrap;
   gap: 2px 12px;
@@ -4088,9 +4220,9 @@ html:has(.screen.einkauf) {
   width: 100%;
   min-height: 46px;
   padding: 8px 10px;
-  border-radius: var(--radius-klein);
-  border: 1.5px solid var(--linie);
-  background: var(--karte);
+  border-radius: var(--r-zeile);
+  border: var(--rand) solid var(--linie);
+  background: var(--karte-2);
   color: var(--ink);
   font: inherit;
 }
@@ -4109,7 +4241,7 @@ html:has(.screen.einkauf) {
 .fk-vorlage {
   min-height: 44px;
   padding: 4px 11px;
-  border-radius: 999px;
+  border-radius: var(--r-chip);
   border: 1.5px solid transparent;
   background: color-mix(in srgb, var(--akzent) 14%, var(--karte));
   color: var(--ink);
@@ -4142,9 +4274,9 @@ html:has(.screen.einkauf) {
   flex-direction: column;
   gap: 10px;
   padding: 6px 12px 12px;
-  border-radius: var(--radius-klein);
+  border-radius: var(--r-zeile);
   background: color-mix(in srgb, var(--akzent) 8%, var(--karte));
-  border: 1.5px solid var(--linie);
+  border: var(--rand) solid var(--linie);
 }
 
 .fk-vorschau {
@@ -4195,7 +4327,7 @@ html:has(.screen.einkauf) {
   height: 44px;
   margin: -8px -6px -6px 0;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--r-chip);
   background: color-mix(in srgb, var(--akzent) 12%, var(--karte));
   color: var(--ink);
   font-size: 1.1rem;
@@ -4220,6 +4352,7 @@ html:has(.screen.einkauf) {
 }
 
 .sz-raster {
+  font-family: var(--font-zahl);
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 2px 10px;
@@ -4266,6 +4399,7 @@ html:has(.screen.einkauf) {
 }
 
 .sz-frei-betrag {
+  font-family: var(--font-zahl);
   font-size: 1.3rem;
   font-weight: 900;
   font-variant-numeric: tabular-nums;
@@ -4287,6 +4421,7 @@ html:has(.screen.einkauf) {
 }
 
 .sz-delta {
+  font-family: var(--font-zahl);
   white-space: nowrap;
   font-weight: 900;
   font-variant-numeric: tabular-nums;
@@ -4320,6 +4455,7 @@ html:has(.screen.einkauf) {
 }
 
 .sz-zeile b {
+  font-family: var(--font-zahl);
   flex: none;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;

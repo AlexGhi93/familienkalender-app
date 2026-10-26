@@ -27,6 +27,7 @@ npx playwright install chromium
 npm test               # Unit-Tests (dauert etwa 2 Sekunden)
 npm run test:e2e       # End-to-End-Tests in allen drei Aussehen (startet den Server selbst, etwa 4 Minuten)
 npm run test:alle      # beides nacheinander
+npm run test:visuell   # Klassisch Pixel für Pixel gegen die Basis in tests/visuell/__basis__/ (git-ignoriert; neu: -- --update-snapshots)
 ```
 
 Einzelne Dateien oder Tests:
@@ -79,6 +80,9 @@ $env:CI=1; npm run test:e2e
 | `unit/schicht-abgleich.test.js`, `unit/schicht-farben.test.js` | Abgleich alle 30 Sekunden und bei der Rückkehr (höchstens einmal pro Minute); Farbpalette hell/dunkel im Theme (Kontrast der Kürzel) |
 | `unit/blatt-ziehen.test.js` | Blätter nach unten wischen: ab 100 px oder kurz und schnell geworfen schließt, sonst zurück; Totzone und Richtung eines Zugs |
 | `unit/push-*.test.js` | Push-Plan (Zeiten in Wien, Zeitumstellung, Monatsende) und Meldungen (RFC-8291-Testvektor, Entschlüsselung, stabiles `h`) |
+| `unit/design-tokens.test.js` | Design-Tokens in `theme.css` (Werte von Klassisch, Liste im Kopf, alte Namen ersetzt) und lokale Schriften (`FK …`, woff2, ≤ 250 KB, OFL-Texte) |
+| `e2e/schriften.spec.js` | In allen drei Aussehen keine Anfrage an einen anderen Ursprung; Klassisch lädt die neuen Schriften nie; `font/woff2` |
+| `visuell/klassisch.spec.js` | Visuelle Regression Klassisch (Hell, Dunkel per System, Dunkel gewählt): alle Seiten, Blätter, Willkommen, Datenschutz |
 | `e2e/willkommen.spec.js` | Erster Start mit drei Wegen, Demo starten, falscher Code |
 | `e2e/tabs.spec.js` | Tab-Leiste: acht Registerkarten (Heute, Monat, Einkauf, ＋ Neu, Schicht, Urlaub, Konto, Mehr), Fenstertitel je Seite („Kontostand“ für `#/konto`, „Schichtplan“ für `#/schicht`), Einkauf und Kontostand ohne „‹ Zurück“, „＋ Neu“ rund an vierter Stelle, bei 320, 375 und 390 px nichts abgeschnitten oder überlappt |
 | `e2e/heute.spec.js` | Abschnitte, „Demnächst“ als kompakte Zeilen (Antippen öffnet den Tag), Schnell-Eintrag, offene Tage, Wochenende, Kontostand am Monatsende, Sachen erledigt |
