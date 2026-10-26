@@ -214,7 +214,7 @@ export function mehrScreen({ store, ui }) {
   const animieren = ui.seiteBetreten !== false; // nur beim Betreten, nicht bei jedem Neuzeichnen (z. B. nach dem Speichern)
   return h(
     'section',
-    { class: 'screen' },
+    { class: 'screen mehr-seite' },
     h('h1', { class: 'gruss' }, 'Mehr ⚙️'),
     menue({ eintraege: [kontoApp], startIndex: animieren ? 0 : null }),
     menue({ eintraege: einstellungen, startIndex: animieren ? 1 : null }),
