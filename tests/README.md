@@ -28,7 +28,15 @@ npm test               # Unit-Tests (dauert etwa 2 Sekunden)
 npm run test:e2e       # End-to-End-Tests in allen drei Aussehen (startet den Server selbst, etwa 4 Minuten)
 npm run test:alle      # beides nacheinander
 npm run test:visuell   # Klassisch Pixel für Pixel gegen die Basis in tests/visuell/__basis__/ (git-ignoriert; erzeugt auf 097adc4, siehe tests/visuell/klassisch.spec.js)
+npm run test:kontrast  # Kontrast ≥ 4,5:1 (Buchstabenpixel gegen den Hintergrund) und Ziele ≥ 44 px, alle Bildschirme × 3 Aussehen × Hell/Dunkel (etwa 10 Minuten)
+npm run test:leistung  # Bewegung auf 4× langsamerer CPU: lange Aufgaben und verlorene Bilder in Glas und Bento (etwa 3 Minuten)
+npm run test:webkit    # nur lokal: Glas und Bento in Safari/WebKit als iPhone (einmalig `npx playwright install webkit`)
+node tests/visuell/galerie.mjs   # Fotos aller Bildschirme × 3 Aussehen × Hell/Dunkel mit index.html (Standard: .superpowers/…/screens/task-10)
 ```
+
+`kontrast.mjs` nimmt `--aussehen glas,bento`, `--modus dunkel`, `--bildschirm heute,monat`, `--breite 360` (z. B. Samsung mit größerer
+Anzeige) und `--json datei`; `galerie.mjs` dazu `--browser webkit` und `--ordner`. Der WebKit-Port für Windows rechnet variable
+Schriften nicht (alles erscheint dünn) – Schriftstärken also nur auf dem echten iPhone beurteilen.
 
 Einzelne Dateien oder Tests:
 
@@ -101,6 +109,7 @@ $env:CI=1; npm run test:e2e
 | `e2e/blatt-wischen.spec.js` | Blätter nach unten wischen (echte Touch-Ereignisse): am Griff, an der Überschrift oder im Inhalt ganz oben schließt (Tagesblatt in Schicht und Monat, Notiz gespeichert), 40 px langsam springt zurück, kurzer Wurf schließt, gescrollter Inhalt scrollt, seitlich und aus Eingabefeldern kein Zug; am Griff auch nach dem Antippen eines Uhrzeit-Felds (markierter Wert) und nach langem Drücken, Neuzeichnen mitten im Zug hängt nicht fest, Wischen verlässt das Eingabefeld; ✕/Escape/Hintergrund/Wischen rufen `beimSchliessen` genau einmal; mit und ohne Bewegung; kein Neuladen durch Herunterziehen (html/body `overscroll-behavior-y: none`, auch zwei Blätter, Einkaufsliste danach wieder `contain`) |
 | `e2e/app.spec.js` | Konto & App: Karten, Hell/Dunkel, Sicherung als Download, Demo zurücksetzen, Version |
 | `e2e/aussehen.spec.js` | Aussehen und Bewegung in „Darstellung“ (nur Projekt Klassisch): sofort und nach dem Neuladen, zurück zu Klassisch ohne Attribut, Wechsel bei offenem Blatt, kaputte Werte → Klassisch, `aria-pressed` und Fokus nach der Wahl, offline mit Service Worker (`themes/glas.css` aus dem Zwischenspeicher, Gegenprobe: Ungespeichertes kommt nicht; dafür setzt `playwright.config.js` `PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS=1`) |
+| `e2e/aussehen-ziele.spec.js` | Glas und Bento: Tab-Karten, Tage in Monat und Schichtplan ≥ 44 px bei 360/375/384 px Breite, Schließen-Knopf 44 × 44 neben langem Blatt-Titel, ein Chip wird beim Wählen nicht breiter |
 | `e2e/google.spec.js` | Google-Modus ohne Netz aus dem gespeicherten Stand: Banner, Status in Mehr, fünf Karten, „Dieses Telefon gehört“; Login-Dienst aus: Verhalten wie bisher (Token-Weg, „gilt eine Stunde“, keine Sitzung, keine Anfrage an den Dienst) |
 
 Vermutete Fehler in `src/` sind als offene Tests markiert (`{ todo: … }` bei den Unit-Tests, `test.fixme` bei Playwright)
@@ -132,7 +141,8 @@ und stehen dort mit Datei und Zeile im Kommentar. Wird ein Fehler behoben, die M
 - Wischen und Ziehen: echte Touch-Ereignisse über das DevTools-Protokoll (`Input.dispatchTouchEvent`, siehe `einkauf-aktuell.spec.js`).
 - Stabile Selektoren: Rollen und sichtbarer Text (`getByRole('button', { name: 'Speichern' })`), vorhandene IDs und Klassen
   (`#menue-betreuung`, `.menue-eintrag[data-id="familie"]`). Keine festen Wartezeiten – auf Zustände warten (`expect(…).toBeVisible()`).
-- Drei Projekte, dieselbe Suite: `telefon-chromium` (Klassisch), `telefon-glas`, `telefon-bento`. Die Option `aussehen` (in `hilfen.js`)
+- Drei Projekte, dieselbe Suite: `telefon-chromium` (Klassisch), `telefon-glas`, `telefon-bento`. Lokal kommen auf Wunsch
+  `webkit-glas` und `webkit-bento` dazu (Safari-Engine als iPhone 17 Pro, nur die Dateien der Aussehen; `npm run test:webkit`). Die Option `aussehen` (in `hilfen.js`)
   legt `fk.aussehen.v1` einmal je Kontext vor dem Laden ab (Neuladen und neue Tabs behalten eine Wahl aus dem Test); im Test steht
   sie als Fixture `aussehen` bereit (null = Klassisch).
 - Standard ist „reduzierte Bewegung“ (siehe `playwright.config.js`). Wer Animationen prüft, schaltet sie im Test wieder ein:

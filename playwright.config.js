@@ -6,6 +6,12 @@ import { defineConfig, devices } from '@playwright/test';
 // `serviceWorkers: 'block'`, für sie ändert sich nichts. Gilt auch auf dem CI-Server (die Worker erben die Umgebung).
 process.env.PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS ??= '1';
 
+// Safari/WebKit (nur lokal, nicht auf dem CI-Server): `npm run test:webkit` oder `npx playwright test --project=webkit-glas`.
+// Die WebKit-Projekte gibt es nur, wenn eines davon verlangt ist (oder PW_WEBKIT=1); der Merker geht über die Umgebung an die Worker.
+// Einmalig nötig: `npx playwright install webkit`.
+if (process.argv.some((a) => /webkit/.test(a) && /project/.test(a)) || process.argv.some((a, i) => /^--project$/.test(process.argv[i - 1] ?? '') && /webkit/.test(a))) process.env.PW_WEBKIT = '1';
+const MIT_WEBKIT = process.env.PW_WEBKIT === '1';
+
 const PORT = Number(process.env.PW_PORT) || 8141; // PW_PORT: eigener Port für parallele Läufe (z. B. in einem git worktree)
 const CI = Boolean(process.env.CI);
 /** Chromium im Telefonformat; `reducedMotion` kommt für alle Projekte aus `use.contextOptions` unten. */
@@ -16,6 +22,9 @@ const TELEFON = {
   hasTouch: true,
   isMobile: true,
 };
+/** WebKit als iPhone 17 Pro (402 × 874 CSS-px, Safari-PWA ohne Leisten): Glas und Bento über die Hauptbildschirme. */
+const IPHONE = { ...devices['iPhone 15 Pro'], viewport: { width: 402, height: 874 }, screen: { width: 402, height: 874 }, deviceScaleFactor: 3 };
+const WEBKIT_DATEIEN = /(aussehen-[a-z]+|heute|monat|schichtplan-glas-bento|konto-bewegung|mehr)\.spec\.js$/;
 
 export default defineConfig({
   testDir: 'tests/e2e',
@@ -43,6 +52,12 @@ export default defineConfig({
     { name: 'telefon-chromium', use: { ...TELEFON } },
     { name: 'telefon-glas', use: { ...TELEFON, aussehen: 'glas' }, testIgnore: /aussehen\.spec\.js$/ },
     { name: 'telefon-bento', use: { ...TELEFON, aussehen: 'bento' }, testIgnore: /aussehen\.spec\.js$/ },
+    ...(MIT_WEBKIT
+      ? [
+          { name: 'webkit-glas', use: { ...IPHONE, aussehen: 'glas' }, testMatch: WEBKIT_DATEIEN, testIgnore: /aussehen\.spec\.js$/ },
+          { name: 'webkit-bento', use: { ...IPHONE, aussehen: 'bento' }, testMatch: WEBKIT_DATEIEN, testIgnore: /aussehen\.spec\.js$/ },
+        ]
+      : []),
   ],
   webServer: {
     command: `node tests/server.mjs ${PORT}`,
