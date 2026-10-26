@@ -3,6 +3,9 @@
 import { h } from './dom.js';
 import { toast } from './components.js';
 import { pinselAktion, pinselModel, pinselStart } from '../app/views/schicht-model.js';
+import { schichtAm } from '../domain/schicht.js';
+import { merker, GEMALT_MS, PINSEL_REIN_MS } from './schicht-bewegung.js';
+import { zeitTeile } from './schicht-zeiten.js';
 
 const PERSONEN = [
   ['papa', '👨 Papa'],
@@ -16,30 +19,34 @@ const PERSONEN = [
  */
 export const musterKlassen = (muster) => (muster ? `gestreift muster-${muster}` : '');
 
-// Haken für die Bewegung in Glas/Bento (themes/schicht.css; in Klassisch ohne Stil): die Leiste trägt beim ersten Zeichnen nach dem
-// Öffnen `sp-pinsel-neu` (sie federt herein); der gerade gemalte Streifen trägt `sp-gemalt` (er stempelt), solange sein Stempel läuft.
-// Nach einem Tipp zeichnet die Seite meist zweimal (sofort und nach dem Speichern): `--sp-gemalt-vor` (negative Verzögerung) lässt den
-// Stempel im neuen Knoten an derselben Stelle weiterlaufen statt neu zu beginnen. Danach spielt nichts erneut.
-let leisteFrisch = false;
-let gemalt = null; // { datum, person, seit } des letzten Tipps mit einer Dienst-Art
-const GEMALT_MS = 600; // länger als der Stempel in Glas (0,5 s) und Bento (0,42 s)
-
-/** Der gerade gemalte Streifen ({ datum, person, vor: ms seit dem Tipp }) oder null, wenn kein Stempel mehr läuft. */
-export function gemaltJetzt() {
-  if (!gemalt) return null;
-  const vor = performance.now() - gemalt.seit;
-  if (vor >= GEMALT_MS) {
-    gemalt = null;
-    return null;
-  }
-  return { datum: gemalt.datum, person: gemalt.person, vor };
+/**
+ * Angezeigter Text mit Zeitspanne („Dienstbesprechung 18:00–19:30“): in Glas/Bento eine Hülle mit der Spanne als `.sp-zeiten` (kein
+ * Umbruch nach dem Strich). Klassisch bekommt den Text unverändert (getrennte Textläufe verschöben dort Glyphen um Subpixel). Der Text
+ * (textContent, Vorlesen) ist in beiden Fällen derselbe; ein Wechsel des Aussehens zeichnet die Seite beim nächsten Öffnen neu.
+ */
+export function mitZeiten(text) {
+  if (!document.documentElement.hasAttribute('data-aussehen')) return text;
+  const teile = zeitTeile(text);
+  if (!teile.some((t) => t.zeit)) return text;
+  return h('span', {}, teile.map((t) => (t.zeit ? h('span', { class: 'sp-zeiten' }, t.text) : t.text)));
 }
+
+// Haken für die Bewegung in Glas/Bento (themes/schicht.css, Merker in schicht-bewegung.js; in Klassisch ohne Stil): die Leiste trägt
+// `sp-pinsel-neu`, solange sie nach dem Öffnen hereinfedert, der gerade gemalte Streifen `sp-gemalt`, solange er stempelt – jeweils mit
+// der vergangenen Zeit als negativer Verzögerung (`--sp-pinsel-vor`, `--sp-gemalt-vor`): ein Neuzeichnen dazwischen (Tipp, Speichern)
+// lässt die Bewegung weiterlaufen, statt sie springen oder neu beginnen zu lassen.
+const leisteRein = merker(PINSEL_REIN_MS);
+const gemalt = merker(GEMALT_MS);
+
+/** Der gerade gemalte Streifen ({ datum, person, vorher, vor }) oder null, wenn kein Stempel mehr läuft. */
+export const gemaltJetzt = () => gemalt.lesen();
 
 /** Öffnet den Pinsel (Person nach Filter, erste aktive Art) bzw. schließt ihn. */
 export function pinselUmschalten({ store, ui }) {
   ui.schicht.pinsel = ui.schicht.pinsel ? null : pinselStart(store.getState(), ui.schicht.filter);
-  leisteFrisch = ui.schicht.pinsel !== null;
-  gemalt = null;
+  if (ui.schicht.pinsel) leisteRein.setzen({});
+  else leisteRein.loeschen();
+  gemalt.loeschen();
   ui.rendern();
 }
 
@@ -51,7 +58,8 @@ export function pinselTippen({ store }, pinsel, datum) {
   const { person, k } = pinselModel(state, pinsel); // eine inzwischen archivierte Art: wie angezeigt die erste aktive
   const a = pinselAktion(state, jm, tag, { person, k });
   if (!a) return;
-  gemalt = a.aktion === 'pinsel' ? { datum, person, seit: performance.now() } : null;
+  if (a.aktion === 'pinsel') gemalt.setzen({ datum, person, vorher: schichtAm(state.schicht?.monate?.[jm], person, tag) });
+  else gemalt.loeschen();
   const aufrufe = {
     setzen: () => store.schichtSetzen(jm, tag, person, null),
     pinsel: () => store.schichtPinsel(jm, tag, person, a.k),
@@ -59,7 +67,10 @@ export function pinselTippen({ store }, pinsel, datum) {
     zusatzWeg: () => store.schichtZusatzEntfernen(jm, tag, person, { k: a.k, von: a.von, bis: a.bis }),
   };
   // Speicherfehler meldet der Store selbst (und nimmt nur diesen Tipp zurück); hier landen abgelehnte Änderungen, z. B. „Höchstens 3 Zusätze pro Tag.“
-  aufrufe[a.aktion]().catch((fehler) => toast(fehler?.message ?? 'Das hat nicht geklappt. Bitte noch einmal versuchen.', { art: 'fehler' }));
+  aufrufe[a.aktion]().catch((fehler) => {
+    gemalt.loeschen(); // abgelehnt: kein Stempel mehr auf dem zurückgenommenen Tag
+    toast(fehler?.message ?? 'Das hat nicht geklappt. Bitte noch einmal versuchen.', { art: 'fehler' });
+  });
 }
 
 /**
@@ -93,11 +104,10 @@ export function pinselLeiste({ store, ui }) {
       h('span', { class: 'sp-pinsel-name' }, name), // Haken: Glas/Bento zeigen nur das Kürzel (der Name bleibt vorgelesen und steht im Hinweis)
     );
 
-  const neu = leisteFrisch;
-  leisteFrisch = false;
+  const rein = leisteRein.lesen();
   const leiste = h(
     'section',
-    { class: neu ? 'sp-pinsel sp-pinsel-neu' : 'sp-pinsel', 'aria-label': 'Pinsel: Schichten eintragen' },
+    { class: rein ? 'sp-pinsel sp-pinsel-neu' : 'sp-pinsel', 'aria-label': 'Pinsel: Schichten eintragen' },
     h(
       'div',
       { class: 'sp-pinsel-kopf' },
@@ -128,8 +138,9 @@ export function pinselLeiste({ store, ui }) {
       p.arten.map((a) => artKnopf(a.gewaehlt, `sf-${a.farbe} ${musterKlassen(a.muster)}`.trim(), a.kuerzel, a.name, a.k)),
       artKnopf(p.frei, 'frei', '–', 'Frei', null),
     ),
-    h('p', { class: 'sp-pinsel-hinweis' }, p.hinweis),
+    h('p', { class: 'sp-pinsel-hinweis' }, mitZeiten(p.hinweis)),
   );
+  if (rein) leiste.style?.setProperty('--sp-pinsel-vor', `${-Math.round(rein.vor)}ms`); // Haken: federt weiter, wo sie war
   hoeheMerken(leiste);
   return leiste;
 }

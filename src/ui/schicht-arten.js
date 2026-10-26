@@ -8,7 +8,7 @@ import { blatt, toast } from './components.js';
 import { zeitFeld } from './eingabefelder.js';
 import { artEntwurf, artEntwurfFehler, schichtArtenModel } from '../app/views/schicht-model.js';
 import { MAX_KUERZEL, MAX_NAME, PALETTE } from '../domain/schicht.js';
-import { musterKlassen } from './schicht-pinsel.js';
+import { mitZeiten, musterKlassen } from './schicht-pinsel.js';
 
 const ALLGEMEINER_FEHLER = 'Das hat nicht geklappt. Bitte noch einmal versuchen.';
 const FALSCHE_UHRZEIT = 'Bitte eine Uhrzeit wie 07:30 eingeben.';
@@ -118,7 +118,7 @@ export function oeffneSchichtarten({ store }) {
       'li',
       { class: 'sp-art-zeile' },
       kuerzelPille(a),
-      h('span', { class: 'sp-art-text' }, a.text),
+      h('span', { class: 'sp-art-text' }, mitZeiten(a.text)),
       h(
         'span',
         { class: 'sp-art-pfeile' },
@@ -151,7 +151,7 @@ export function oeffneSchichtarten({ store }) {
       'li',
       { class: 'sp-art-zeile aus' },
       kuerzelPille(a),
-      h('span', { class: 'sp-art-text' }, a.text),
+      h('span', { class: 'sp-art-text' }, mitZeiten(a.text)),
       h(
         'button',
         {

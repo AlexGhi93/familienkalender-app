@@ -9,7 +9,7 @@ import { blatt, toast } from './components.js';
 import { zeitFeld } from './eingabefelder.js';
 import { erinnerungHinweis, schichtTagModel } from '../app/views/schicht-model.js';
 import { MAX_NOTIZ } from '../domain/schicht.js';
-import { musterKlassen } from './schicht-pinsel.js';
+import { mitZeiten, musterKlassen } from './schicht-pinsel.js';
 import { geloeschtMelden, sicherLoeschen } from './fortschritt.js';
 
 const ALLGEMEINER_FEHLER = 'Das hat nicht geklappt. Bitte noch einmal versuchen.';
@@ -132,7 +132,7 @@ export function oeffneSchichtTag({ store, ui = null }, datum) {
           { class: 'sp-tag-zusatz' },
           kuerzelPille(z.kuerzel, `sf-${z.farbe}`),
           ' ',
-          h('span', { class: 'sp-tag-zusatz-text' }, z.text),
+          h('span', { class: 'sp-tag-zusatz-text' }, mitZeiten(z.text)),
           ' ',
           h(
             'button',
@@ -245,7 +245,7 @@ export function oeffneSchichtTag({ store, ui = null }, datum) {
     return h(
       'article',
       { class: 'karte sp-tag-karte', 'data-person': p.person },
-      h('h3', { class: 'sp-tag-kopf' }, h('span', {}, `${p.emoji} ${p.name}`), h('small', {}, p.schicht.nacht ? `${p.schicht.text} ☾` : p.schicht.text)),
+      h('h3', { class: 'sp-tag-kopf' }, h('span', {}, `${p.emoji} ${p.name}`), h('small', {}, mitZeiten(p.schicht.nacht ? `${p.schicht.text} ☾` : p.schicht.text))),
       artenReihe(p),
       notizFeld(p),
       zusatzListe(p),

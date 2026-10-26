@@ -5,7 +5,8 @@ import { h } from './dom.js';
 import { datumLang } from '../app/format-de.js';
 import { FEIERTAG_EMOJI } from '../app/views/gemeinsam.js';
 import { rasterFilter, schichtMonatModel } from '../app/views/schicht-model.js';
-import { gemaltJetzt, musterKlassen, pinselLeiste, pinselTippen, pinselUmschalten } from './schicht-pinsel.js';
+import { stempelt } from './schicht-bewegung.js';
+import { gemaltJetzt, mitZeiten, musterKlassen, pinselLeiste, pinselTippen, pinselUmschalten } from './schicht-pinsel.js';
 
 const PERSON = { papa: { name: 'Papa', emoji: '👨' }, mama: { name: 'Mama', emoji: '👩' } };
 const FILTER = [
@@ -63,13 +64,13 @@ function zelle(z, m, { store, ui }, gemalt) {
           )
         : null,
     ),
-    m.personen.map((p) => streifenKnoten(p, z.streifen[p], gemalt?.datum === z.datum && gemalt.person === p ? gemalt : null)),
+    m.personen.map((p) => streifenKnoten(p, z.streifen[p], stempelt(gemalt, z.datum, p, z.streifen[p]) ? gemalt : null)),
   );
 }
 
 function legendeEintrag(e) {
   const klassen = ['sp-lg-kuerzel', `sf-${e.farbe}`, musterKlassen(e.muster)];
-  return h('span', { class: 'sp-lg' }, h('i', { class: klassen.filter(Boolean).join(' ') }, e.kuerzel), e.text);
+  return h('span', { class: 'sp-lg' }, h('i', { class: klassen.filter(Boolean).join(' ') }, e.kuerzel), mitZeiten(e.text));
 }
 
 export function schichtScreen({ store, ui }) {
