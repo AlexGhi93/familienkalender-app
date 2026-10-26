@@ -909,6 +909,17 @@ describe('Eigenschaft: Σ Zuteilung + ΔFrei = Ersparnis (auf den Cent), nichts 
       let ersparnis = 0;
       let verfallen = 0;
       let ausgeglichen = 0;
+      // unabhängig von der Rechnung gezählt (Monate der Reihe nach): jeder Abschluss „ausgegeben“ kommt im ersten Monat mit Kontostand ab
+      // seinem Abschlussmonat zurück (im Abschlussmonat selbst, wenn der einen hat), ganz und genau einmal; ohne Kontostand wartet er weiter
+      let wartend = 0;
+      for (const mo of [...v.monate].reverse()) {
+        wartend += summe(mo.abschluss.filter((a) => a.art === 'ausgegeben').map((a) => a.cents));
+        if (mo.gespart === null) assert.equal(mo.ausgleich, 0, `Fall ${fall} ${mo.monat}: ohne Kontostand kein Ausgleich`);
+        else {
+          assert.equal(mo.ausgleich, wartend, `Fall ${fall} ${mo.monat}: genau die wartenden Abschlüsse „ausgegeben“ werden ausgeglichen`);
+          wartend = 0;
+        }
+      }
       for (const mo of v.monate) {
         const zu = mo.zuteilung.map((t) => t.cents);
         assert.ok(mo.frei.vorher >= 0 && mo.frei.nachher >= 0, `Fall ${fall} ${mo.monat}: Frei nie negativ`);
@@ -1013,6 +1024,8 @@ describe('Eigenschaft: Σ Zuteilung + ΔFrei = Ersparnis (auf den Cent), nichts 
       assert.equal(v.noetigGesamt, summe(offen.map((z) => z.noetigProMonat)));
       // „ausgegeben“ wurde vom Konto bezahlt (steckt im Kontostand) und kommt als Ausgleich zurück: nichts doppelt abgezogen
       assert.equal(summe(ausgegeben.map((z) => z.gespart)), ausgeglichen + v.ausgleichOffen, `Fall ${fall}: jeder Abschluss „ausgegeben“ wird ausgeglichen`);
+      // unabhängig von `ausgleichOffen` der Rechnung: offen sind genau die Abschlüsse „ausgegeben“ nach dem letzten Monat mit Kontostand
+      assert.equal(v.ausgleichOffen, wartend, `Fall ${fall}: der wartende Ausgleich sind genau die Abschlüsse nach dem letzten Kontostand`);
       assert.equal(v.frei + v.summeZiele, ersparnis + verfallen - v.ausgleichOffen, `Fall ${fall}: zurückgelegt + Frei = Ersparnis seit Beginn`);
       if (v.ausgleichOffen > 0) offeneAusgleiche += 1;
     }

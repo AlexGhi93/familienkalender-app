@@ -1,6 +1,6 @@
 // Nachrichten an die Krabbelstube bzw. den Kindergarten: Blatt mit 21 Situationen in vier Gruppen, drei Tonarten, eigener Anrede, Heute/Morgen, Angaben, änderbarem Text und
 // Senden per WhatsApp, SMS, E-Mail, Teilen oder Kopieren; Wege dorthin (Heute, Meldung nach „Krank“/„Abwesend“, Mehr) und Einstellungen.
-import { test, expect, starteDemo, tab, erwarteToast, WERKTAG_DATUM } from './hilfen.js';
+import { test, expect, starteDemo, tab, erwarteToast, kopierteTexte, WERKTAG_DATUM } from './hilfen.js';
 import { seedDemo } from '../../src/app/seed.js';
 
 const SITUATIONEN = [
@@ -188,21 +188,18 @@ test('Mehr → Nachrichten: ungültige Angaben werden gemeldet und nicht gespeic
   expect(await gespeichert()).toMatchObject({ einrichtungTelefon: '', einrichtungEmail: '' });
 });
 
-test.describe('Kopieren', () => {
-  test.use({ permissions: ['clipboard-read', 'clipboard-write'] });
+// die Zwischenablage ist die des Tests (hilfen.js), nie die echte des Rechners
+test('„Kopieren“ legt den (geänderten) Text in die Zwischenablage', async ({ page }) => {
+  await starteDemo(page);
+  await oeffneVonHeute(page);
+  await senden(page).getByRole('button', { name: 'Kopieren' }).click();
+  await erwarteToast(page, 'Kopiert ✓');
+  expect(await kopierteTexte(page)).toEqual([STANDARD_TEXT]);
 
-  test('„Kopieren“ legt den (geänderten) Text in die Zwischenablage', async ({ page }) => {
-    await starteDemo(page);
-    await oeffneVonHeute(page);
-    await senden(page).getByRole('button', { name: 'Kopieren' }).click();
-    await erwarteToast(page, 'Kopiert ✓');
-    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(STANDARD_TEXT);
-
-    await textfeld(page).fill('Liebes Team,\nheute etwas später.\nLG');
-    await senden(page).getByRole('button', { name: 'Kopieren' }).click();
-    await erwarteToast(page, 'Kopiert ✓');
-    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('Liebes Team,\nheute etwas später.\nLG');
-  });
+  await textfeld(page).fill('Liebes Team,\nheute etwas später.\nLG');
+  await senden(page).getByRole('button', { name: 'Kopieren' }).click();
+  await erwarteToast(page, 'Kopiert ✓');
+  expect(await kopierteTexte(page)).toEqual([STANDARD_TEXT, 'Liebes Team,\nheute etwas später.\nLG']);
 });
 
 test('„Teilen …“ erscheint, wo das Telefon teilen kann, und übergibt den Text', async ({ page }) => {

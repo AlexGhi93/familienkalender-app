@@ -63,7 +63,11 @@ async function wurf(page, ort, dy, schritte = 3) {
   await cdp.detach();
 }
 
-/** Öffnet ein Blatt über die echte Komponente; `window.__zu` zählt die Aufrufe von `beimSchliessen`. */
+/**
+ * Öffnet ein Blatt über die echte Komponente; `window.__zu` zählt die Aufrufe von `beimSchliessen`, `window.__beimZu` hält den Zustand
+ * genau in diesem Moment fest (die Hülle ist dann schon `.zu`, ein Feld schon verlassen). So hängt keine Prüfung davon ab, ob die Hülle
+ * nach dem Loslassen noch da ist: mit Bewegung verschwindet sie nach festen 180 ms, und die Umläufe des Tests können länger dauern.
+ */
 async function testBlatt(page, { zeilen = 3, mitFeld = false, titel = 'Testblatt' } = {}) {
   await page.evaluate(
     async ({ zeilen, mitFeld, titel }) => {
@@ -71,11 +75,20 @@ async function testBlatt(page, { zeilen = 3, mitFeld = false, titel = 'Testblatt
       const { h } = await import('/src/ui/dom.js');
       window.__zu ??= {};
       window.__zu[titel] = 0;
+      window.__beimZu ??= {};
       window.__blaetter ??= {};
       window.__blaetter[titel] = blatt({
         titel,
         beimSchliessen: () => {
           window.__zu[titel] += 1;
+          const t = [...document.querySelectorAll('.blatt')].find((el) => el.getAttribute('aria-label') === titel);
+          window.__beimZu[titel] = {
+            zu: t?.closest('.blatt-huelle')?.classList.contains('zu') ?? null,
+            aktivIstFeld: document.activeElement?.classList.contains('test-feld') ?? false,
+            blur: window.__blur ?? 0,
+            inline: t?.style.transform ?? null,
+            dauer: t ? getComputedStyle(t).transitionDuration : null,
+          };
         },
         render: () => [
           mitFeld
@@ -98,6 +111,7 @@ async function testBlatt(page, { zeilen = 3, mitFeld = false, titel = 'Testblatt
   await expect.poll(() => verschiebung(page)).toBe(0);
 }
 const zuGezaehlt = (page, titel = 'Testblatt') => page.evaluate((t) => window.__zu[t], titel);
+const beimZu = (page, titel = 'Testblatt') => page.evaluate((t) => window.__beimZu[t] ?? null, titel);
 
 test.describe('nach unten wischen', () => {
   test('Tagesblatt im Schichtplan: am Griff 150 px nach unten → folgt dem Finger, schließt, Notiz gespeichert (beimSchliessen)', async ({ page }) => {
@@ -178,14 +192,18 @@ test.describe('nach unten wischen', () => {
   test('seitlich ziehen und ein Zug aus einem Eingabefeld bewegen das Blatt nicht; Tippen auf Knöpfe wirkt weiter', async ({ page }) => {
     await starteDemo(page, { route: '#/schicht' });
     await testBlatt(page, { mitFeld: true });
+    // Vor dem Loslassen kurz still halten: sonst wirft der Browser die schnelle Bewegung als Wurf (Fling) weiter, auch wenn nichts scrollt,
+    // und ein Tipp, der einen laufenden Wurf beendet, löst absichtlich keinen Klick aus (so verschluckte die Headless-Shell den Tipp aufs ✕).
     const seitlich = await finger(page, page.locator('.test-zeile').first());
     await seitlich.ziehe(10, { dx: 150 });
     expect(await verschiebung(page)).toBe(0);
+    await seitlich.halte(150);
     await seitlich.loslassen();
 
     const ausFeld = await finger(page, page.locator('.test-feld'));
     await ausFeld.ziehe(150);
     expect(await verschiebung(page)).toBe(0);
+    await ausFeld.halte(150);
     await ausFeld.loslassen();
     await expect(page.getByRole('dialog', { name: 'Testblatt' })).toBeVisible();
     expect(await zuGezaehlt(page)).toBe(0);
@@ -245,12 +263,8 @@ test.describe('mit Bewegung', () => {
     const f = await finger(page, page.locator('.blatt-griff'));
     await f.ziehe(150);
     await f.loslassen();
-    const zustand = await page.evaluate(() => {
-      const huelle = document.querySelector('.blatt-huelle');
-      const t = huelle?.querySelector('.blatt');
-      return huelle && { zu: huelle.classList.contains('zu'), inline: t.style.transform, dauer: getComputedStyle(t).transitionDuration };
-    });
-    expect(zustand).toEqual({ zu: true, inline: '', dauer: expect.not.stringMatching(/^0s$/) });
+    // beim Schließen: hinausgleiten über die Klasse (mit Übergang), keine Transformation mehr am Element
+    await expect.poll(() => beimZu(page)).toMatchObject({ zu: true, inline: '', dauer: expect.not.stringMatching(/^0s$/) });
     await expect(page.locator('.blatt-huelle')).toHaveCount(0);
     expect(await zuGezaehlt(page)).toBe(1);
   });
@@ -302,6 +316,40 @@ test.describe('Nachbesserungen (Review Runde 1)', () => {
     await f.ziehe(150);
     await f.loslassen();
     await expect(page.getByRole('dialog')).toHaveCount(0);
+  });
+
+  test('Uhrzeit-Feld angetippt (Wert markiert): Wischen aus dem Inhalt schließt ebenfalls und verlässt zuerst das Feld', async ({ page }) => {
+    await starteDemo(page, { route: '#/schicht' });
+    await zelle(page, '2026-10-23').click();
+    const karteMama = page.locator('.sp-tag-karte[data-person="mama"]');
+    await karteMama.getByRole('button', { name: '＋ Dienstbesprechung', exact: true }).click();
+    const von = karteMama.locator('.sp-tag-zusatz-form').getByRole('textbox', { name: 'Von', exact: true });
+    await von.tap();
+    await expect.poll(() => page.evaluate(() => String(document.getSelection()))).toBe('18:00');
+    await expect(von).toBeFocused();
+    // verlässt das Feld den Fokus, solange das Blatt noch offen ist (wie beim ✕), oder erst, wenn es schon zugeht bzw. weg ist?
+    await von.evaluate((feld) => {
+      feld.addEventListener('blur', () => {
+        window.__vonVerlassen = { blattOffen: !feld.closest('.blatt-huelle')?.classList.contains('zu') };
+      });
+    });
+    await tafel(page).evaluate((el) => {
+      el.scrollTop = 0; // nichts nach unten gescrollt: ein Zug nach unten gehört dem Blatt (das Feld bleibt markiert)
+    });
+    // Chromium meldet die Markierung in einem Feld als zusammengefallen; andere Browser melden sie als Markierung des Dokuments (im Blatt).
+    // Dieser Fall ist der, für den die Ausnahme „fokussiertes Feld“ in inhaltMarkiert da ist – hier wird er nachgestellt.
+    const markierung = await page.evaluate(() => {
+      const auswahl = document.getSelection();
+      Object.defineProperty(auswahl, 'isCollapsed', { get: () => false, configurable: true });
+      return { zusammen: auswahl.isCollapsed, imBlatt: document.querySelector('.blatt').contains(auswahl.anchorNode) };
+    });
+    expect(markierung).toEqual({ zusammen: false, imBlatt: true });
+    // im Inhalt aufsetzen (Kopf einer Karte: nicht der Griff, kein Feld) – die Markierung im fokussierten Feld zählt nicht als markierter Inhalt
+    const f = await finger(page, page.locator('.sp-tag-karte .sp-tag-kopf').first());
+    await f.ziehe(150);
+    await f.loslassen();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    expect(await page.evaluate(() => window.__vonVerlassen ?? null)).toEqual({ blattOffen: true });
   });
 
   test('markierter Text im Inhalt verhindert das Ziehen aus dem Inhalt, nicht aber am Griff', async ({ page }) => {
@@ -368,8 +416,8 @@ test.describe('Nachbesserungen mit Bewegung (Review Runde 1)', () => {
     const f = await finger(page, page.locator('.blatt-griff'));
     await f.ziehe(150);
     await f.loslassen();
-    // noch während das Blatt hinausgleitet: das Feld hat den Fokus schon abgegeben
-    expect(await page.evaluate(() => [Boolean(document.querySelector('.blatt-huelle.zu')), document.activeElement?.classList.contains('test-feld') ?? false, window.__blur])).toEqual([true, false, 1]);
+    // schon beim Schließen (das Blatt beginnt hinauszugleiten): das Feld hat den Fokus abgegeben, genau einmal
+    await expect.poll(() => beimZu(page)).toMatchObject({ zu: true, aktivIstFeld: false, blur: 1 });
     await expect(page.getByRole('dialog')).toHaveCount(0);
   });
 });

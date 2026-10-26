@@ -14,10 +14,50 @@ export const KONFIG_GOOGLE = { v: 1, modus: 'google', rolle: 'besitzer', kalende
 export const NETZFEHLER = /Failed to load resource|net::ERR_/;
 
 /**
+ * Läuft in jeder Seite vor deren Skripten: eine Zwischenablage nur im Test (nie die echte des Rechners, und parallele Tests stören sich
+ * nicht) und kein Teilen – so verhält sich jeder Browser gleich (das volle Chrome kann unter Windows teilen, die Headless-Shell nicht).
+ * Was kopiert wurde, liest `kopierteTexte(page)`; ein Test, der Teilen braucht, setzt `navigator.share` selbst.
+ */
+function browserAttrappen() {
+  const kopiert = [];
+  Object.defineProperty(window, '__kopiert', { value: kopiert });
+  const ablage = globalThis.Clipboard?.prototype;
+  if (ablage) {
+    const ersetze = (name, f) => Object.defineProperty(ablage, name, { value: f, configurable: true, writable: true });
+    ersetze('writeText', async (text) => {
+      kopiert.push(String(text));
+    });
+    ersetze('readText', async () => kopiert.at(-1) ?? '');
+    ersetze('write', async () => {
+      throw new DOMException('Im Test nur writeText', 'NotAllowedError');
+    });
+    ersetze('read', async () => []);
+  }
+  // der alte Weg (execCommand) darf ebenfalls nicht in die echte Zwischenablage
+  const befehl = Document.prototype.execCommand;
+  Document.prototype.execCommand = function (name, ...rest) {
+    if (!/^(copy|cut)$/i.test(name)) return befehl.call(this, name, ...rest);
+    const feld = document.activeElement;
+    kopiert.push(typeof feld?.selectionStart === 'number' ? feld.value.slice(feld.selectionStart, feld.selectionEnd) : String(document.getSelection()));
+    return true;
+  };
+  delete Navigator.prototype.share;
+  delete Navigator.prototype.canShare;
+}
+
+/** Was die Seite seit dem Laden in die (Test-)Zwischenablage gelegt hat, in der Reihenfolge. */
+export const kopierteTexte = (page) => page.evaluate(() => [...window.__kopiert]);
+
+/**
  * `test` mit Wache: jeder `pageerror` und jedes `console.error` lässt den Test scheitern.
  * Ein Test kann erwartete Meldungen erlauben: `test.use({ erlaubteFehler: /Muster/ })`.
+ * Jede Seite bekommt dazu `browserAttrappen` (Zwischenablage nur im Test, kein Teilen).
  */
 export const test = basis.extend({
+  context: async ({ context }, use) => {
+    await context.addInitScript(browserAttrappen);
+    await use(context);
+  },
   erlaubteFehler: [null, { option: true }],
   fehlerWache: [
     async ({ page, erlaubteFehler }, use) => {
