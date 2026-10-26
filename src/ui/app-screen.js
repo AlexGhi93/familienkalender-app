@@ -1,5 +1,5 @@
 // „Konto & App“: alles, was das Konto und dieses Telefon betrifft (Google, Erinnerungen, Darstellung, Sicherung, Zurücksetzen). Erreichbar von „Mehr“.
-import { fuelle, h } from './dom.js';
+import { h } from './dom.js';
 import { bestaetigen, chip, toast } from './components.js';
 import { VERSION } from '../app/version.js';
 import { kontoKarten } from './konto-karte.js';
@@ -13,28 +13,28 @@ const AUSSEHEN_TEXTE = [['klassisch', 'Klassisch'], ['glas', 'Glas & Licht'], ['
 const BEWEGUNG_TEXTE = [['an', 'An'], ['reduziert', 'Reduziert']];
 
 /**
- * Eine Reihe Chips für eine Wahl dieses Telefons; tippen wendet sofort an und zeichnet nur die Reihe neu. Markiert ist, was gerade gilt
- * (auch wenn der Speicher gesperrt ist und die Wahl deshalb nur bis zum Neuladen hält).
+ * Eine Reihe Chips für eine Wahl dieses Telefons; tippen wendet sofort an. Markiert ist, was gerade gilt (`.aktiv` und `aria-pressed`,
+ * auch wenn der Speicher gesperrt ist und die Wahl deshalb nur bis zum Neuladen hält). Die Knöpfe bleiben dieselben, nur ihr Zustand
+ * ändert sich – so behält die Tastatur nach der Wahl den Fokus.
  */
 function wahlReihe(name, texte, { lese, wendeAn, inhalt = (wahl, text) => text }) {
-  const box = h('div', { class: 'chip-reihe', role: 'group', 'aria-label': name });
   let aktuell = lese();
-  function zeichne() {
-    fuelle(
-      box,
-      ...texte.map(([wahl, text]) =>
-        chip(inhalt(wahl, text), {
-          art: aktuell === wahl ? 'aktiv' : '',
-          onClick: () => {
-            aktuell = wendeAn(wahl);
-            zeichne();
-          },
-        }),
-      ),
-    );
+  const knoepfe = texte.map(([wahl, text]) =>
+    chip(inhalt(wahl, text), {
+      onClick: () => {
+        aktuell = wendeAn(wahl);
+        markiere();
+      },
+    }),
+  );
+  function markiere() {
+    texte.forEach(([wahl], i) => {
+      knoepfe[i].classList.toggle('aktiv', aktuell === wahl);
+      knoepfe[i].setAttribute('aria-pressed', String(aktuell === wahl));
+    });
   }
-  zeichne();
-  return box;
+  markiere();
+  return h('div', { class: 'chip-reihe', role: 'group', 'aria-label': name }, ...knoepfe);
 }
 
 const aussehenVorschau = (wahl) =>

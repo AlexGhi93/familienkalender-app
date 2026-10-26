@@ -4,6 +4,15 @@
 import { DARSTELLUNG_SCHLUESSEL, gueltigeDarstellung, themeAttribut } from '../domain/darstellung.js';
 import { AUSSEHEN_SCHLUESSEL, BEWEGUNG_SCHLUESSEL, aussehenAttribut, aussehenThemeFarben, bewegungAttribut, gueltigeBewegung, gueltigesAussehen } from '../domain/aussehen.js';
 
+/** localStorage dieses Telefons; null, wenn schon der Zugriff wirft (Browser blockiert alle Website-Daten). */
+function standardSpeicher() {
+  try {
+    return globalThis.localStorage ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function lese(speicher, schluessel, gueltig) {
   try {
     return gueltig(speicher?.getItem(schluessel));
@@ -46,12 +55,12 @@ function setzeThemeFarben(dokument, aussehen, darstellung) {
 }
 
 /** Gespeicherte Wahl dieses Telefons ('auto' | 'hell' | 'dunkel'); ohne Speicher oder bei Fehlern 'auto'. */
-export function leseDarstellung(speicher = globalThis.localStorage) {
+export function leseDarstellung(speicher = standardSpeicher()) {
   return lese(speicher, DARSTELLUNG_SCHLUESSEL, gueltigeDarstellung);
 }
 
 /** Wendet die Wahl sofort an (data-theme, theme-color) und merkt sie sich; Automatisch löscht die Wahl. Gibt die gültige Wahl zurück. */
-export function wendeDarstellungAn(wahl, { dokument = document, speicher = globalThis.localStorage } = {}) {
+export function wendeDarstellungAn(wahl, { dokument = document, speicher = standardSpeicher() } = {}) {
   const w = gueltigeDarstellung(wahl);
   setzeAttribut(dokument, 'data-theme', themeAttribut(w));
   setzeThemeFarben(dokument, geltendesAussehen(dokument), w);
@@ -60,12 +69,12 @@ export function wendeDarstellungAn(wahl, { dokument = document, speicher = globa
 }
 
 /** Gespeichertes Aussehen dieses Telefons ('klassisch' | 'glas' | 'bento'); ohne Speicher, bei Fehlern oder unbekanntem Wert 'klassisch'. */
-export function leseAussehen(speicher = globalThis.localStorage) {
+export function leseAussehen(speicher = standardSpeicher()) {
   return lese(speicher, AUSSEHEN_SCHLUESSEL, gueltigesAussehen);
 }
 
 /** Wendet das Aussehen sofort an (data-aussehen, theme-color) und merkt es sich; Klassisch entfernt Attribut und Eintrag. */
-export function wendeAussehenAn(wahl, { dokument = document, speicher = globalThis.localStorage } = {}) {
+export function wendeAussehenAn(wahl, { dokument = document, speicher = standardSpeicher() } = {}) {
   const a = gueltigesAussehen(wahl);
   setzeAttribut(dokument, 'data-aussehen', aussehenAttribut(a));
   setzeThemeFarben(dokument, a, geltendeDarstellung(dokument));
@@ -74,12 +83,12 @@ export function wendeAussehenAn(wahl, { dokument = document, speicher = globalTh
 }
 
 /** Gespeicherte Bewegung dieses Telefons ('an' | 'reduziert'); ohne Speicher, bei Fehlern oder unbekanntem Wert 'an'. */
-export function leseBewegung(speicher = globalThis.localStorage) {
+export function leseBewegung(speicher = standardSpeicher()) {
   return lese(speicher, BEWEGUNG_SCHLUESSEL, gueltigeBewegung);
 }
 
 /** Wendet die Bewegung sofort an (data-bewegung="reduziert" oder kein Attribut) und merkt sie sich; „an“ löscht den Eintrag. */
-export function wendeBewegungAn(wahl, { dokument = document, speicher = globalThis.localStorage } = {}) {
+export function wendeBewegungAn(wahl, { dokument = document, speicher = standardSpeicher() } = {}) {
   const b = gueltigeBewegung(wahl);
   setzeAttribut(dokument, 'data-bewegung', bewegungAttribut(b));
   merke(speicher, BEWEGUNG_SCHLUESSEL, b, 'an');

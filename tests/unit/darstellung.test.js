@@ -138,3 +138,26 @@ describe('Bewegung zur Laufzeit', () => {
     assert.equal(wendeBewegungAn('xyz', { dokument, speicher: speicherAttrappe({}, { kaputt: true }) }), 'an');
   });
 });
+
+describe('Speicher, dessen Zugriff selbst wirft (Browser blockiert alle Website-Daten)', () => {
+  test('lesen und anwenden ohne Speicher-Argument werfen nicht, sondern nehmen den Standard', (t) => {
+    const vorher = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      get() {
+        throw new DOMException('Zugriff verweigert', 'SecurityError');
+      },
+    });
+    t.after(() => (vorher ? Object.defineProperty(globalThis, 'localStorage', vorher) : delete globalThis.localStorage));
+    assert.equal(leseDarstellung(), 'auto');
+    assert.equal(leseAussehen(), 'klassisch');
+    assert.equal(leseBewegung(), 'an');
+    const dokument = dokumentAttrappe();
+    assert.equal(wendeAussehenAn('glas', { dokument }), 'glas');
+    assert.equal(wendeBewegungAn('reduziert', { dokument }), 'reduziert');
+    assert.equal(wendeDarstellungAn('dunkel', { dokument }), 'dunkel');
+    assert.equal(html(dokument, 'data-aussehen'), 'glas');
+    assert.equal(html(dokument, 'data-bewegung'), 'reduziert');
+    assert.deepEqual(dokument.farben(), [{ farbe: '#0D0B19', media: null }]);
+  });
+});

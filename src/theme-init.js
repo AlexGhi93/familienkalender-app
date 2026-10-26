@@ -3,21 +3,19 @@
 // auch in src/domain/darstellung.js, src/domain/aussehen.js und src/ui/darstellung.js; ein Test prüft sie gegeneinander.
 // Ohne Wahl (Automatisch, Klassisch, Bewegung an) setzt es kein Attribut und lässt die zwei theme-color-Zeilen im HTML gelten.
 (function () {
-  var wahl = 'auto';
-  var aussehen = 'klassisch';
-  var bewegung = 'an';
-  try {
-    var gespeichert = localStorage.getItem('fk.darstellung.v1');
-    if (gespeichert === 'hell' || gespeichert === 'dunkel') wahl = gespeichert;
-    var a = localStorage.getItem('fk.aussehen.v1');
-    if (a === 'glas' || a === 'bento') aussehen = a;
-    if (localStorage.getItem('fk.bewegung.v1') === 'reduziert') bewegung = 'reduziert';
-  } catch (fehler) {
-    // Speicher gesperrt (privater Modus o. Ä.): dem Telefon folgen, Klassisch, Bewegung an
-    wahl = 'auto';
-    aussehen = 'klassisch';
-    bewegung = 'an';
+  // jeder Schlüssel für sich (wie src/ui/darstellung.js): wirft ein Zugriff, gilt für diesen Wert der Standard
+  function lies(schluessel) {
+    try {
+      return localStorage.getItem(schluessel);
+    } catch (fehler) {
+      return null; // Speicher gesperrt (privater Modus o. Ä.)
+    }
   }
+  var gespeichert = lies('fk.darstellung.v1');
+  var wahl = gespeichert === 'hell' || gespeichert === 'dunkel' ? gespeichert : 'auto';
+  var a = lies('fk.aussehen.v1');
+  var aussehen = a === 'glas' || a === 'bento' ? a : 'klassisch';
+  var bewegung = lies('fk.bewegung.v1') === 'reduziert' ? 'reduziert' : 'an';
   var wurzel = document.documentElement;
   if (wahl === 'hell') wurzel.setAttribute('data-theme', 'light');
   else if (wahl === 'dunkel') wurzel.setAttribute('data-theme', 'dark');

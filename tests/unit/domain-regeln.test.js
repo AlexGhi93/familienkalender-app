@@ -238,48 +238,70 @@ describe('Darstellung (Hell/Dunkel), Aussehen und Bewegung', () => {
   });
 
   // src/theme-init.js läuft vor allen Modulen als klassisches Skript und wiederholt dieselben Regeln (Darstellung, Aussehen, Bewegung):
-  // beide müssen für jede Kombination dieselben Attribute am <html> und dieselben theme-color-Metas ergeben.
+  // beide müssen für jede Kombination dieselben Attribute am <html> und dieselbe wirksame theme-color ergeben.
+  // Nachgebaut wie im Browser: theme-init.js steht in index.html VOR den zwei theme-color-Metas, beim Laufen ist der Kopf also noch
+  // leer; seine eigenen Metas stehen danach vor denen aus dem HTML, und es gilt das erste Meta, dessen media passt (oder das keins hat).
   const skript = readFileSync(new URL('../../src/theme-init.js', import.meta.url), 'utf8');
+  const HTML_METAS = [
+    { farbe: '#FFF7EC', media: '(prefers-color-scheme: light)' },
+    { farbe: '#1F1B2E', media: '(prefers-color-scheme: dark)' },
+  ];
+  const SYSTEM = { hell: '(prefers-color-scheme: light)', dunkel: '(prefers-color-scheme: dark)' };
+  /** Wirksame Farbe einer Meta-Liste für ein helles bzw. dunkles Telefon. */
+  const wirksam = (liste) => Object.fromEntries(Object.entries(SYSTEM).map(([name, media]) => [name, liste.find((m) => !m.media || m.media === media)?.farbe]));
 
+  /** `speicherKaputt`: true = jeder Zugriff wirft, ein Schlüssel = nur dieser wirft. */
   function themeInitAusfuehren({ darstellung = null, aussehen = null, bewegung = null } = {}, { speicherKaputt = false } = {}) {
     const attribute = new Map();
-    const metas = [{ name: 'theme-color', content: '#FFF7EC', media: '(prefers-color-scheme: light)', entfernt: false }, { name: 'theme-color', content: '#1F1B2E', media: '(prefers-color-scheme: dark)', entfernt: false }];
-    const neu = [];
+    const kopf = [];
     const document = {
       documentElement: { setAttribute: (k, v) => attribute.set(k, v), removeAttribute: (k) => attribute.delete(k) },
-      querySelectorAll: () => metas.map((m) => ({ remove: () => (m.entfernt = true) })),
+      querySelectorAll: () => kopf.map((m) => ({ remove: () => kopf.splice(kopf.indexOf(m), 1) })),
       createElement: () => {
         const el = { attrs: {}, setAttribute: (k, v) => (el.attrs[k] = v) };
         return el;
       },
-      head: { append: (el) => neu.push(el.attrs) },
+      head: { append: (el) => kopf.push({ farbe: el.attrs.content, media: el.attrs.media ?? null }) },
     };
     const gespeichert = { [DARSTELLUNG_SCHLUESSEL]: darstellung, [AUSSEHEN_SCHLUESSEL]: aussehen, [BEWEGUNG_SCHLUESSEL]: bewegung };
     const localStorage = {
       getItem: (k) => {
-        if (speicherKaputt) throw new Error('gesperrt');
+        if (speicherKaputt === true || speicherKaputt === k) throw new Error('gesperrt');
         return gespeichert[k] ?? null;
       },
     };
     vm.runInNewContext(skript, { document, localStorage });
-    const uebrig = metas.filter((m) => !m.entfernt).map(({ content, media }) => ({ farbe: content, media }));
+    const eigene = [...kopf];
     return {
       theme: attribute.get('data-theme') ?? null,
       aussehen: attribute.get('data-aussehen') ?? null,
       bewegung: attribute.get('data-bewegung') ?? null,
-      farben: [...uebrig, ...neu.map((a) => ({ farbe: a.content, media: a.media ?? null }))],
+      eigene,
+      wirksam: wirksam([...eigene, ...HTML_METAS]), // danach liest der Browser die zwei Metas aus dem HTML
     };
   }
 
+  /** Was die Regeln verlangen: dieselben Attribute; eigene Metas nur, wenn etwas gewählt ist; wirksam wie zur Laufzeit. */
   const erwartet = ({ darstellung = null, aussehen = null, bewegung = null } = {}) => {
     const d = gueltigeDarstellung(darstellung);
     const a = gueltigesAussehen(aussehen);
-    return { theme: themeAttribut(d), aussehen: aussehenAttribut(a), bewegung: bewegungAttribut(gueltigeBewegung(bewegung)), farben: aussehenThemeFarben(a, d) };
+    const farben = aussehenThemeFarben(a, d);
+    return {
+      theme: themeAttribut(d),
+      aussehen: aussehenAttribut(a),
+      bewegung: bewegungAttribut(gueltigeBewegung(bewegung)),
+      eigene: d === 'auto' && a === 'klassisch' ? [] : farben,
+      wirksam: wirksam(farben),
+    };
   };
 
   for (const darstellung of [null, 'auto', 'hell', 'dunkel', 'lila']) {
     test(`theme-init.js stimmt mit domain/darstellung.js überein (gespeichert: ${darstellung})`, () => {
-      assert.deepEqual(themeInitAusfuehren({ darstellung }), { theme: themeAttribut(gueltigeDarstellung(darstellung)), aussehen: null, bewegung: null, farben: themeFarben(gueltigeDarstellung(darstellung)) });
+      const d = gueltigeDarstellung(darstellung);
+      const ergebnis = themeInitAusfuehren({ darstellung });
+      assert.deepEqual(ergebnis, erwartet({ darstellung }));
+      assert.equal(ergebnis.theme, themeAttribut(d));
+      assert.deepEqual(ergebnis.wirksam, wirksam(themeFarben(d)));
     });
   }
 
@@ -294,16 +316,23 @@ describe('Darstellung (Hell/Dunkel), Aussehen und Bewegung', () => {
     });
   }
 
-  test('theme-init.js: Klassisch, Automatisch und Bewegung „an“ setzen kein Attribut und lassen die zwei Metas aus dem HTML stehen', () => {
-    assert.deepEqual(themeInitAusfuehren(), { theme: null, aussehen: null, bewegung: null, farben: themeFarben('auto') });
+  test('theme-init.js: Klassisch, Automatisch und Bewegung „an“ setzen kein Attribut und kein Meta (es gelten die zwei aus dem HTML)', () => {
+    assert.deepEqual(themeInitAusfuehren(), { theme: null, aussehen: null, bewegung: null, eigene: [], wirksam: { hell: '#FFF7EC', dunkel: '#1F1B2E' } });
+  });
+
+  test('theme-init.js: ein gewähltes Aussehen gewinnt gegen die Metas aus dem HTML', () => {
+    assert.deepEqual(themeInitAusfuehren({ aussehen: 'glas' }).wirksam, { hell: '#F1EEFA', dunkel: '#0D0B19' });
+    assert.deepEqual(themeInitAusfuehren({ aussehen: 'bento', darstellung: 'dunkel' }).wirksam, { hell: '#14111D', dunkel: '#14111D' });
   });
 
   test('theme-init.js folgt bei gesperrtem Speicher dem Telefon, Klassisch und Bewegung „an“', () => {
-    assert.deepEqual(themeInitAusfuehren({ darstellung: 'dunkel', aussehen: 'glas', bewegung: 'reduziert' }, { speicherKaputt: true }), {
-      theme: null,
-      aussehen: null,
-      bewegung: null,
-      farben: themeFarben('auto'),
-    });
+    assert.deepEqual(themeInitAusfuehren({ darstellung: 'dunkel', aussehen: 'glas', bewegung: 'reduziert' }, { speicherKaputt: true }), erwartet());
+  });
+
+  test('theme-init.js liest jeden Schlüssel für sich: wirft nur einer, gelten die anderen (wie src/ui/darstellung.js)', () => {
+    const werte = { darstellung: 'dunkel', aussehen: 'glas', bewegung: 'reduziert' };
+    assert.deepEqual(themeInitAusfuehren(werte, { speicherKaputt: AUSSEHEN_SCHLUESSEL }), erwartet({ ...werte, aussehen: null }));
+    assert.deepEqual(themeInitAusfuehren(werte, { speicherKaputt: DARSTELLUNG_SCHLUESSEL }), erwartet({ ...werte, darstellung: null }));
+    assert.deepEqual(themeInitAusfuehren(werte, { speicherKaputt: BEWEGUNG_SCHLUESSEL }), erwartet({ ...werte, bewegung: null }));
   });
 });

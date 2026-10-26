@@ -1,7 +1,7 @@
 // Aussehen (Klassisch, Glas & Licht, Bento bunt) und Bewegung (An, Reduziert) in „Konto & App → Darstellung“: sofort wirksam, nach dem
 // Neuladen noch da (theme-init.js setzt es vor dem ersten Zeichnen), mit offenem Blatt ohne Schaden, kaputte Werte → Klassisch, offline
 // aus dem Zwischenspeicher. Läuft nur im Projekt „telefon-chromium“ (Klassisch); die anderen Projekte starten schon mit einem Aussehen.
-import { test, expect, starteDemo } from './hilfen.js';
+import { test, expect, starteDemo, NETZFEHLER } from './hilfen.js';
 
 const karte = (page) => page.locator('article.karte').filter({ has: page.getByRole('heading', { name: 'Darstellung', exact: true }) });
 const gruppe = (page, name) => karte(page).getByRole('group', { name, exact: true });
@@ -106,7 +106,37 @@ test('Wechsel bei offenem Blatt: das Blatt bleibt offen und bedienbar, kein Fehl
   }
   await blatt.getByRole('button', { name: 'Abbrechen' }).click();
   await expect(blatt).toHaveCount(0);
-  await expect(gruppe(page, 'Aussehen').getByRole('button', { name: 'Glas & Licht' })).toBeEnabled();
+  // die Karte ist danach weiter bedienbar
+  await gruppe(page, 'Aussehen').getByRole('button', { name: 'Glas & Licht' }).click();
+  await expect(html(page)).toHaveAttribute('data-aussehen', 'glas');
+  await expect(gruppe(page, 'Aussehen').locator('.chip.aktiv')).toHaveText('Glas & Licht');
+});
+
+test('Chips melden ihren Zustand (aria-pressed) und behalten nach der Wahl den Fokus der Tastatur', async ({ page }) => {
+  await starteDemo(page, { route: '#/app' });
+  const gedrueckt = (name) => gruppe(page, name).locator('.chip').evaluateAll((k) => k.map((x) => [x.textContent, x.getAttribute('aria-pressed')]));
+  expect(await gedrueckt('Hell oder Dunkel')).toEqual([['Automatisch', 'true'], ['☀️ Hell', 'false'], ['🌙 Dunkel', 'false']]);
+  expect(await gedrueckt('Aussehen')).toEqual([['Klassisch', 'true'], ['Glas & Licht', 'false'], ['Bento bunt', 'false']]);
+  expect(await gedrueckt('Bewegung')).toEqual([['An', 'true'], ['Reduziert', 'false']]);
+
+  for (const [name, knopf] of [['Aussehen', 'Bento bunt'], ['Bewegung', 'Reduziert'], ['Hell oder Dunkel', '🌙 Dunkel']]) {
+    const chip = gruppe(page, name).getByRole('button', { name: knopf, exact: true });
+    await chip.focus();
+    await page.keyboard.press('Enter');
+    await expect(chip).toHaveAttribute('aria-pressed', 'true');
+    await expect(chip).toBeFocused();
+    await expect(gruppe(page, name).locator('[aria-pressed="true"]')).toHaveCount(1);
+  }
+  await expect(html(page)).toHaveAttribute('data-aussehen', 'bento');
+  await expect(html(page)).toHaveAttribute('data-bewegung', 'reduziert');
+  await expect(html(page)).toHaveAttribute('data-theme', 'dark');
+  // Leertaste wie ein Klick, der Fokus bleibt
+  const klassisch = gruppe(page, 'Aussehen').getByRole('button', { name: 'Klassisch', exact: true });
+  await klassisch.focus();
+  await page.keyboard.press('Space');
+  await expect(klassisch).toBeFocused();
+  await expect(html(page)).not.toHaveAttribute('data-aussehen');
+  expect(await gedrueckt('Aussehen')).toEqual([['Klassisch', 'true'], ['Glas & Licht', 'false'], ['Bento bunt', 'false']]);
 });
 
 test('kaputte Werte im Speicher → Klassisch und Bewegung an', async ({ page }) => {
@@ -122,7 +152,10 @@ test('kaputte Werte im Speicher → Klassisch und Bewegung an', async ({ page })
 
 test.describe('offline', () => {
   // Der Service Worker meldet sich nur über https oder „localhost“ an (src/main.js), deshalb hier localhost statt 127.0.0.1.
-  test.use({ serviceWorkers: 'allow', baseURL: async ({ baseURL }, use) => use(baseURL.replace('127.0.0.1', 'localhost')) });
+  // Damit „offline“ auch die Anfragen des Service Workers selbst trifft, setzt playwright.config.js
+  // PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS=1; die Gegenprobe unten zeigt, dass das Netz wirklich zu ist.
+  // Die Gegenprobe meldet absichtlich einen Ladefehler (net::ERR_…) – nur der ist hier erlaubt.
+  test.use({ serviceWorkers: 'allow', baseURL: async ({ baseURL }, use) => use(baseURL.replace('127.0.0.1', 'localhost')), erlaubteFehler: NETZFEHLER });
 
   test('nach einer Ladung mit Service Worker: Aussehen bleibt, themes/glas.css kommt aus dem Zwischenspeicher', async ({ page, context }) => {
     await starteDemo(page, { route: '#/app', speicher: { 'fk.aussehen.v1': 'glas' } });
@@ -130,8 +163,13 @@ test.describe('offline', () => {
     await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
     await page.reload(); // jetzt laufen alle Dateien durch den Service Worker und landen im Zwischenspeicher
     await expect(page.locator('nav.tabs')).toBeVisible();
+    // der Service Worker legt im Hintergrund ab: warten, bis glas.css wirklich im Zwischenspeicher liegt
+    await expect.poll(() => page.evaluate(() => caches.match('/themes/glas.css').then(Boolean))).toBe(true);
 
     await context.setOffline(true);
+    // Gegenprobe: was nie im Zwischenspeicher lag, kommt offline nicht (sonst würde der Test auch ohne Zwischenspeicher bestehen)
+    expect(await page.evaluate(() => fetch(`/datenschutz.html?nie=${Date.now()}`).then(() => 'geladen', () => 'weg'))).toBe('weg');
+
     const css = page.waitForResponse((r) => r.url().endsWith('/themes/glas.css'));
     await page.reload();
     const antwort = await css;
@@ -140,6 +178,22 @@ test.describe('offline', () => {
     await expect(page.locator('nav.tabs')).toBeVisible();
     await expect(html(page)).toHaveAttribute('data-aussehen', 'glas');
     await expect(gruppe(page, 'Aussehen').locator('.chip.aktiv')).toHaveText('Glas & Licht');
-    await context.setOffline(false);
+  });
+});
+
+test.describe('Vorbelegung der Projekte Glas/Bento (Option `aussehen` aus hilfen.js)', () => {
+  test.use({ aussehen: 'glas' });
+
+  test('gilt einmal pro Kontext: eine Wahl in der App überlebt Neuladen und neue Tabs', async ({ page, context }) => {
+    await starteDemo(page, { route: '#/app' });
+    await expect(html(page)).toHaveAttribute('data-aussehen', 'glas');
+    await gruppe(page, 'Aussehen').getByRole('button', { name: 'Klassisch' }).click();
+    await page.reload();
+    await expect(html(page)).not.toHaveAttribute('data-aussehen');
+    const zweite = await context.newPage();
+    await zweite.goto('/#/app');
+    await expect(zweite.locator('nav.tabs')).toBeVisible();
+    await expect(zweite.locator('html')).not.toHaveAttribute('data-aussehen');
+    await zweite.close();
   });
 });

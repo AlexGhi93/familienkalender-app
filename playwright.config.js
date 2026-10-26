@@ -1,6 +1,11 @@
 // End-to-End-Tests (Playwright): Chromium im Telefonformat, ein Projekt je Aussehen (Klassisch, Glas, Bento). Der Server ist tests/server.mjs (ohne Abhängigkeiten).
 import { defineConfig, devices } from '@playwright/test';
 
+// Ohne diesen Schalter wirkt `context.setOffline(true)` in Playwright 1.56 nicht auf die Anfragen, die der Service Worker selbst stellt –
+// der Offline-Test in aussehen.spec.js könnte dann nicht zwischen Zwischenspeicher und Netz unterscheiden. Alle anderen Tests laufen mit
+// `serviceWorkers: 'block'`, für sie ändert sich nichts. Gilt auch auf dem CI-Server (die Worker erben die Umgebung).
+process.env.PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS ??= '1';
+
 const PORT = 8141;
 const CI = Boolean(process.env.CI);
 /** Chromium im Telefonformat; `reducedMotion` kommt für alle Projekte aus `use.contextOptions` unten. */

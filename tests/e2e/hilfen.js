@@ -49,13 +49,13 @@ function browserAttrappen() {
 export const kopierteTexte = (page) => page.evaluate(() => [...window.__kopiert]);
 
 /**
- * Legt das Aussehen des Projekts (`aussehen`: 'glas' | 'bento') in localStorage, bevor theme-init.js läuft – einmal je Tab, damit ein
- * Neuladen eine Wahl behält, die der Test in der App getroffen hat.
+ * Legt das Aussehen des Projekts (`aussehen`: 'glas' | 'bento') in localStorage, bevor theme-init.js läuft – einmal je Kontext
+ * (Merker im localStorage, den alle Tabs teilen), damit Neuladen und neue Tabs eine Wahl behalten, die der Test in der App getroffen hat.
  */
 function aussehenVorbelegen(wert) {
   try {
-    if (sessionStorage.getItem('fk.test.aussehen')) return;
-    sessionStorage.setItem('fk.test.aussehen', '1');
+    if (localStorage.getItem('fk.test.aussehen-vorbelegt')) return;
+    localStorage.setItem('fk.test.aussehen-vorbelegt', '1');
     localStorage.setItem('fk.aussehen.v1', wert);
   } catch {
     // Seite ohne Speicher (about:blank): nichts zu tun
