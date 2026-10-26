@@ -46,6 +46,11 @@
                 --dauer-mittel  Blatt auf/zu
                 --kurve-feder   Kurve des Blatts (mit Feder)
                 --kurve-sanft   sanfte Kurve (Schleier, Meldung)
+                --dauer-tab     Tabwechsel (View Transition bzw. Fallback; ≤ 260 ms)
+                --dauer-einblenden  eine Karte beim ersten Zeichnen eines Bildschirms (.bw-einblenden)
+                --staffel       Abstand zwischen zwei Karten beim Einblenden (höchstens 8 gestaffelt)
+                --dauer-fortschritt Füllen eines Balkens (.bw-fortschritt)
+                Klassen und Keyframes der Bewegung (nur Glas/Bento): Abschnitt „Bewegung“ am Ende dieser Datei.
    Die Schriften der Aussehen (FK Onest, FK Fredoka, FK Nunito) sind weiter unten nur deklariert; Klassisch nutzt sie nicht. */
 
 :root {
@@ -139,6 +144,10 @@
   --dauer-mittel: 0.22s;
   --kurve-feder: cubic-bezier(0.2, 0.8, 0.2, 1);
   --kurve-sanft: ease;
+  --dauer-tab: 0.22s;
+  --dauer-einblenden: 0.5s;
+  --staffel: 45ms;
+  --dauer-fortschritt: 0.7s;
   color-scheme: light;
 }
 
@@ -4538,4 +4547,146 @@ html:has(.screen.einkauf) {
 .sz-wahl small {
   color: var(--ink-2);
   font-weight: 600;
+}
+
+/* ---------- Bewegung (1.2.0, src/ui/bewegung.js): nur Glas und Bento, nur mit Bewegung ----------
+   Klassisch nutzt nichts davon (die Klassen entstehen dort nie). Aus bei data-bewegung="reduziert" und prefers-reduced-motion.
+   Nur transform und opacity, keine linear()-Kurven (iOS rechnet sie nicht auf dem Compositor). Allgemeine Klassen für die
+   Aufgaben 4–9; ihre Würze (Kurven, Wege, Dauer über die Tokens) kommt in themes/glas.css bzw. themes/bento.css:
+   .bw-einblenden          am Behälter beim ersten Zeichnen eines Bildschirms je Besuch (einblenden()); jedes Kind trägt --bw-i
+                           (0…8) → Verzögerung --bw-i × --staffel. Ersetzt eine eigene `animation` der Kinder, solange es läuft.
+   .bw-fortschritt         Füllung eines Balkens mit voller Breite, transform: scaleX(anteil) (fortschritt()); Ursprung links.
+   .bw-konfetti            Konfetti-Hülle (konfetti(), nur Bento), fest am Anker, ohne Zeiger, aria-hidden;
+   .bw-konfetti-teil       Teilchen mit --bw-dx, --bw-dy, --bw-fall, --bw-dreh, --bw-dauer, --bw-verz, --bw-farbe (--konfetti-1…4).
+   :root.bw-wechselt       solange ein Tabwechsel als View Transition läuft; #inhalt heißt dann „bw-seite“ (Tableiste bleibt stehen).
+   :root.bw-tabwechsel     Tabwechsel ohne View Transitions (kurz nach dem Zeichnen): #inhalt kommt herein.
+   [data-bw-schluessel]    Schlüssel für hochzaehlen()/fortschritt(): Neuzeichnen mit demselben Wert spielt nichts erneut.
+   Keyframes: bw-rein (Karten), bw-seite-rein / bw-seite-raus (Seite), bw-konfetti (Teilchen). */
+
+@keyframes bw-rein {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.97);
+  }
+}
+
+@keyframes bw-seite-rein {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+@keyframes bw-seite-raus {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes bw-konfetti {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(0deg);
+  }
+  40% {
+    opacity: 1;
+    transform: translate(var(--bw-dx), var(--bw-dy)) rotate(calc(var(--bw-dreh) * 0.4));
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(var(--bw-dx) * 1.25), calc(var(--bw-dy) + var(--bw-fall))) rotate(var(--bw-dreh));
+  }
+}
+
+.bw-fortschritt {
+  transform-origin: left center;
+}
+
+.bw-konfetti {
+  position: fixed;
+  z-index: 70;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.bw-konfetti-teil {
+  position: absolute;
+  left: -4px;
+  top: -5px;
+  width: 8px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--bw-farbe);
+  will-change: transform, opacity;
+  animation: bw-konfetti var(--bw-dauer, 1s) cubic-bezier(0.2, 0.7, 0.3, 1) var(--bw-verz, 0ms) both;
+}
+
+.bw-konfetti-teil:nth-child(3n) {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+/* Das Bild eines laufenden Übergangs soll keine Tipps abfangen. Chrome schickt sie trotzdem an <html>; bewegung.js beendet den
+   Übergang dann sofort und gibt den Tipp an das Element darunter weiter (tippDurchUebergang). */
+:root[data-aussehen='glas']::view-transition,
+:root[data-aussehen='bento']::view-transition {
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .bw-einblenden > *,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .bw-einblenden > * {
+    animation: bw-rein var(--dauer-einblenden) var(--kurve-feder) backwards;
+    animation-delay: calc(var(--bw-i, 0) * var(--staffel));
+  }
+
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .bw-fortschritt,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .bw-fortschritt {
+    transition: transform var(--dauer-fortschritt) var(--kurve-feder);
+  }
+
+  :root[data-aussehen='glas'].bw-tabwechsel:not([data-bewegung='reduziert']) #inhalt,
+  :root[data-aussehen='bento'].bw-tabwechsel:not([data-bewegung='reduziert']) #inhalt {
+    animation: bw-seite-rein var(--dauer-tab) var(--kurve-feder);
+  }
+
+  :root[data-aussehen='glas'].bw-wechselt #inhalt,
+  :root[data-aussehen='bento'].bw-wechselt #inhalt {
+    view-transition-name: bw-seite;
+  }
+
+  :root[data-aussehen='glas']::view-transition-group(*),
+  :root[data-aussehen='bento']::view-transition-group(*) {
+    animation-duration: var(--dauer-tab);
+  }
+
+  :root[data-aussehen='glas']::view-transition-old(bw-seite),
+  :root[data-aussehen='bento']::view-transition-old(bw-seite) {
+    animation: bw-seite-raus calc(var(--dauer-tab) * 0.6) var(--kurve-sanft) both;
+  }
+
+  :root[data-aussehen='glas']::view-transition-new(bw-seite),
+  :root[data-aussehen='bento']::view-transition-new(bw-seite) {
+    animation: bw-seite-rein var(--dauer-tab) var(--kurve-feder) both;
+  }
+
+  :root[data-aussehen='glas']::view-transition-old(root),
+  :root[data-aussehen='glas']::view-transition-new(root),
+  :root[data-aussehen='bento']::view-transition-old(root),
+  :root[data-aussehen='bento']::view-transition-new(root) {
+    animation-duration: var(--dauer-tab);
+  }
+}
+
+/* „Bewegung: Reduziert“ in Glas und Bento: wie prefers-reduced-motion – keine Übergänge, keine Animationen (Klassisch bleibt wie 1.1.2) */
+:root[data-aussehen='glas'][data-bewegung='reduziert'] *,
+:root[data-aussehen='glas'][data-bewegung='reduziert'] *::before,
+:root[data-aussehen='glas'][data-bewegung='reduziert'] *::after,
+:root[data-aussehen='bento'][data-bewegung='reduziert'] *,
+:root[data-aussehen='bento'][data-bewegung='reduziert'] *::before,
+:root[data-aussehen='bento'][data-bewegung='reduziert'] *::after {
+  transition: none !important;
+  animation: none !important;
 }

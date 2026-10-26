@@ -140,6 +140,7 @@ export function kontoModel(state, heute, { demo = false, monat: gewuenscht = nul
     sum.monate > 0
       ? {
           seitBeginn: deltaText(sum.seitBeginn),
+          seitBeginnCents: sum.seitBeginn, // für das Hochzählen in Glas/Bento (ui/bewegung.js)
           durchschnitt: deltaText(sum.durchschnitt),
           monate: sum.monate,
           imPlus: sum.imPlus,

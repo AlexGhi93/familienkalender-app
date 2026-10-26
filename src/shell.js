@@ -29,6 +29,7 @@ import { monatVor } from './domain/konto.js';
 import { planQuellen, quellenGeaendert } from './push/plan.js';
 import { createSchichtVorlader } from './app/schicht-vorladen.js';
 import { nurHintergrundGeaendert } from './app/hintergrund.js';
+import { einblenden, neuerBesuch, tabWechsel } from './ui/bewegung.js';
 
 const SEITEN = {
   heute: heuteScreen,
@@ -154,8 +155,12 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
         fuelle(inhalt, verbindenKarte({ verbinden, verbindung: ui.verbindung, login: auth.dauerAnmeldung?.() ?? null }));
       } else {
         ui.seiteBetreten = seite !== letzteSeite;
+        if (ui.seiteBetreten) neuerBesuch(); // Einblenden/Hochzählen dürfen auf der neuen Seite wieder spielen
         letzteSeite = seite;
         fuelle(inhalt, SEITEN[seite]({ store, ui }));
+        // Glas/Bento: die Karten kommen beim ersten Zeichnen dieses Bildschirms gestaffelt herein – nicht bei jedem Neuzeichnen
+        // (Speichern, Vorladen im Hintergrund, anderes Telefon), sonst „ploppt“ alles ständig (siehe ui/bewegung.js)
+        einblenden(inhalt.firstElementChild, seite === 'konto' ? `konto-${ui.kontoAnsicht}` : seite);
         if (seite === 'monat') ui.monatLaden();
         if (seite === 'urlaub') ui.urlaubLaden();
         if (seite === 'verlauf') ui.verlaufLaden();
@@ -349,7 +354,9 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
     }
   }
 
-  fenster.addEventListener('hashchange', () => ui.rendern());
+  // Seitenwechsel (Tab-Leiste, Links, Zurück): in Glas/Bento als kurzer Übergang, sonst sofort (ui/bewegung.js). Neuzeichnen aus dem
+  // Store (Speichern, Vorladen, anderes Telefon) geht nie durch den Übergang.
+  fenster.addEventListener('hashchange', () => tabWechsel(() => ui.rendern(), { dokument: fenster.document ?? document }));
 
   let letzterFehler = null;
   let letzteFehlerNr = store.getState().fehlerNr ?? 0;

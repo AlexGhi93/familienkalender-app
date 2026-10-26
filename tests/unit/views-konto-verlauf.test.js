@@ -48,7 +48,7 @@ describe('kontoModel', () => {
 
   test('Zusammenfassung, Balken (ohne Extra) und Diagramm ab zwei Monaten', () => {
     const m = kontoModel(zustand({ konto: k }), '2026-10-14');
-    assert.deepEqual(m.zusammenfassung, { seitBeginn: '+510 €', durchschnitt: '+255 €', monate: 2, imPlus: 1, text: '1 von 2 Monaten im Plus', ohneExtra: { seitBeginn: '+310 €', durchschnitt: '+155 €', text: '1 von 2 Monaten im Plus ohne Extra' } });
+    assert.deepEqual(m.zusammenfassung, { seitBeginn: '+510 €', seitBeginnCents: 51000, durchschnitt: '+255 €', monate: 2, imPlus: 1, text: '1 von 2 Monaten im Plus', ohneExtra: { seitBeginn: '+310 €', durchschnitt: '+155 €', text: '1 von 2 Monaten im Plus ohne Extra' } });
     assert.deepEqual(m.balken.map((b) => [b.monat, b.wert, b.extra, b.art, b.text]), [
       ['2026-08', 40000, 20000, 'plus', 'August 2026: +600 € (ohne Extra +400 €)'],
       ['2026-09', -9000, 0, 'minus', 'September 2026: −90 €'],

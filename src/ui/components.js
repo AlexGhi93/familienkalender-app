@@ -1,4 +1,5 @@
 import { blattZiehenAnbinden } from './blatt-ziehen.js';
+import { blattSchliessenMs } from './bewegung.js';
 import { fuelle, h, svg } from './dom.js';
 
 /** Farbe eines Typs als CSS-Variable `--c`; die Tönung kommt aus dem Stylesheet (color-mix). */
@@ -67,15 +68,20 @@ export function blatt({ titel, render, beimSchliessen = () => {} }) {
     document.removeEventListener('keydown', beiTaste);
     huelle.classList.add('zu');
     // Bei reduzierter Bewegung gibt es nichts hinauszugleiten: gleich weg, damit nichts unsichtbar über der Seite liegt.
-    if (matchMedia('(prefers-reduced-motion: reduce)').matches) huelle.remove();
-    else setTimeout(() => huelle.remove(), 180);
+    // Klassisch wie bisher 180 ms; Glas/Bento so lange wie ihr Blatt-Übergang (--dauer-mittel), siehe bewegung.js.
+    const nachMs = blattSchliessenMs(document);
+    if (nachMs === 0) huelle.remove();
+    else setTimeout(() => huelle.remove(), nachMs);
     beimSchliessen();
   }
   blattZiehenAnbinden({ huelle, tafel, schliessen });
   document.addEventListener('keydown', beiTaste);
   neuZeichnen();
   document.body.append(huelle);
-  requestAnimationFrame(() => huelle.classList.add('auf'));
+  // erst im nächsten Bild „auf“ (damit es hereingleitet) – aber nicht mehr, wenn es inzwischen schon geschlossen wurde
+  requestAnimationFrame(() => {
+    if (offen) huelle.classList.add('auf');
+  });
   schliessenKnopf.focus();
   return { schliessen, neuZeichnen };
 }

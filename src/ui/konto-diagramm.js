@@ -5,6 +5,7 @@ import { fuelle, h, svg } from './dom.js';
 import { chip } from './components.js';
 import { achsenText, balkenLayout, pfadTeile, schoeneSkala } from '../app/views/konto-diagramm.js';
 import { deltaText } from '../domain/konto.js';
+import { hochzaehlen } from './bewegung.js';
 
 const BREITE = 340;
 
@@ -22,11 +23,15 @@ export function bereichLeiste(m, setze) {
 export function kacheln(m) {
   const z = m.zusammenfassung;
   if (!z) return null;
-  const kachel = (titel, wert, zusatz) => h('div', { class: 'konto-kachel' }, h('span', { class: 'konto-kachel-titel' }, titel), h('b', { class: 'konto-kachel-wert' }, wert), zusatz ? h('small', {}, zusatz) : null);
+  const kachel = (titel, wert, zusatz, eigenschaften = {}) =>
+    h('div', { class: 'konto-kachel' }, h('span', { class: 'konto-kachel-titel' }, titel), h('b', { class: 'konto-kachel-wert', ...eigenschaften }, wert), zusatz ? h('small', {}, zusatz) : null);
+  const erste = kachel(m.zeitraumText, z.seitBeginn, z.ohneExtra ? `ohne Extra ${z.ohneExtra.seitBeginn}` : null, { 'data-bw-schluessel': 'konto-seit-beginn' });
+  // Glas/Bento mit Bewegung: die Ersparnis zählt beim ersten Zeigen bzw. nach einem anderen Zeitraum hoch (Klassisch: gleich der Text)
+  hochzaehlen(erste.querySelector('.konto-kachel-wert'), z.seitBeginnCents, deltaText);
   return h(
     'div',
     { class: 'konto-kacheln' },
-    kachel(m.zeitraumText, z.seitBeginn, z.ohneExtra ? `ohne Extra ${z.ohneExtra.seitBeginn}` : null),
+    erste,
     kachel('Ø pro Monat', z.durchschnitt, z.ohneExtra ? `ohne Extra ${z.ohneExtra.durchschnitt}` : null),
     kachel('Im Plus', `${z.imPlus} von ${z.monate}`, z.ohneExtra ? z.ohneExtra.text.replace(/^\d+ von \d+ /, '') : 'Monaten'),
   );
