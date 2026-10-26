@@ -1,2 +1,725 @@
 /* Aussehen „Glas & Licht“ (1.2.0): alle Regeln stehen unter :root[data-aussehen="glas"] und wirken in Klassisch nicht.
-   Wird immer geladen (index.html, nach theme.css); Inhalt folgt ab Task 4. */
+   Wird immer geladen (index.html, nach theme.css). Werte aus der Demo .superpowers/design-2026/a-glas (vom Nutzer gewählt).
+   Aufbau: 1. Tokens Hell, Dunkel (System, mit Wache) und Dunkel (gewählt)  2. Licht je Tab (Aurora)  3. Grundbausteine der ganzen App
+   (Seite, Tableiste mit Glastropfen, Blatt, Karten, Knöpfe, Chips, Umschalter, Felder, Meldung, Rückfrage, Fokus)  4. Heute
+   5. Bewegung. Echtes Glas (backdrop-filter) NUR auf Tableiste und Blatt (die Pinsel-Leiste folgt in Aufgabe 6); Karten sind
+   „Fake-Glas“: Verlauf + Lichtkante + weicher Schatten, kein Blur. Bewegung nur über transform/opacity/scale, nie bei „Reduziert“. */
+
+/* ---------- 1. Tokens ---------- */
+
+:root[data-aussehen='glas'] {
+  /* Glas-Bausteine (nur in dieser Datei): Fläche oben hell, Fläche kräftig, Lichtkante, Tropfen, deckende Fläche für Klebeleisten */
+  --glas-hoch: rgba(255, 255, 255, 0.8);
+  --glas-stark: rgba(255, 255, 255, 0.78);
+  --glas-kante: rgba(255, 255, 255, 0.95);
+  --tropfen: rgba(255, 255, 255, 0.95);
+  --karte-voll: #faf9fe;
+  --schatten-hoch: 0 2px 4px rgba(40, 28, 96, 0.06), 0 24px 60px -12px rgba(46, 28, 120, 0.35);
+  --licht-deckung: 0.9;
+  /* Licht je Tab (je drei weiche Flecken): Heute Morgenlicht, Monat Lila/Himmel, Schicht Türkis/Limette, Konto Grün/Gold, Rest */
+  --licht-heute-1: #ffb08a;
+  --licht-heute-2: #ff9cc2;
+  --licht-heute-3: #ffd77e;
+  --licht-monat-1: #a990ff;
+  --licht-monat-2: #8ec8ff;
+  --licht-monat-3: #f2a5ff;
+  --licht-schicht-1: #79e3d2;
+  --licht-schicht-2: #86a9ff;
+  --licht-schicht-3: #c3f08c;
+  --licht-konto-1: #8fe6b4;
+  --licht-konto-2: #ffd889;
+  --licht-konto-3: #8fd8ff;
+  --licht-rest-1: #b9a6ff;
+  --licht-rest-2: #ffb4cf;
+  --licht-rest-3: #9fe0e8;
+
+  --bg: #f1eefa;
+  --karte: rgba(255, 255, 255, 0.56);
+  --karte-2: var(--glas-stark);
+  --ink: #1b1830;
+  --ink-2: #3f3958;
+  --linie: rgba(27, 24, 48, 0.1);
+  --akzent: #5a3ccf;
+  --akzent-ink: #ffffff;
+  --akzent-text: #3f2aa3; /* Akzent als Schrift direkt auf dem Licht (z. B. „‹ Zurück“): dunkler, damit ≥ 4,5:1 auch über dem hellsten Fleck */
+  --rand: 1px;
+  --karte-rand: 1px solid var(--glas-kante);
+  --feld-rand: 1px solid var(--linie);
+  --feld-bg: rgba(255, 255, 255, 0.72);
+  --chip-grund: var(--glas-stark);
+  --chip-anteil: 10%;
+  --chip-aktiv-anteil: 26%;
+  --tint-grund: var(--glas-hoch);
+  --tint-anteil: 15%;
+  --seite-bild: radial-gradient(circle min(85vw, 368px) at 22% 6%, var(--licht-1) 0%, color-mix(in srgb, var(--licht-1) 45%, transparent) 38%, transparent 68%),
+    radial-gradient(circle min(85vw, 368px) at 88% 46%, var(--licht-2) 0%, color-mix(in srgb, var(--licht-2) 45%, transparent) 38%, transparent 68%),
+    radial-gradient(circle min(85vw, 368px) at 42% 98%, var(--licht-3) 0%, color-mix(in srgb, var(--licht-3) 45%, transparent) 38%, transparent 68%);
+  --licht-1: var(--licht-rest-1);
+  --licht-2: var(--licht-rest-2);
+  --licht-3: var(--licht-rest-3);
+  --licht-anim: glas-licht-rest;
+  --r-karte: 24px;
+  --r-knopf: 999px;
+  --r-zeile: 18px;
+  --r-feld: 16px;
+  --r-chip: 999px;
+  --r-blatt: 32px;
+  --r-zelle: 14px;
+  --r-pinsel: 26px;
+  --schatten-karte: inset 0 1px 0 var(--glas-kante), 0 1px 1px rgba(40, 28, 96, 0.04), 0 12px 32px -10px rgba(56, 36, 140, 0.22);
+  --schatten-schwebend: inset 0 1px 0 var(--glas-kante), var(--schatten-hoch);
+  --schatten-leiste: var(--schatten-hoch);
+  --schatten-knopf: inset 0 1px 0 var(--glas-kante);
+  --fokus-ring: 3px solid var(--akzent);
+  --fokus-abstand: 2px;
+  --font-text: 'FK Onest', ui-rounded, 'SF Pro Rounded', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-titel: var(--font-text);
+  --font-zahl: var(--font-text);
+  --font-feld: var(--font-text);
+  --gewicht-titel: 750;
+  --titel-gross: 2.125rem;
+  --titel-seite: 1.75rem;
+  --titel-blatt: 1.375rem;
+  --titel-karte: 1.0625rem;
+  --titel-abschnitt: 0.94rem;
+  --titel-schicht: 1.75rem;
+  --tabs-hoehe: 66px;
+  --tabs-bg: rgba(255, 255, 255, 0.8);
+  --tabs-blur: blur(28px) saturate(180%);
+  --tabs-rand: 0 solid transparent;
+  --tabs-rahmen: 0 solid transparent;
+  --tabs-radius: 33px;
+  --tabs-abstand: 10px;
+  --tabs-schatten: inset 0 1px 0 var(--glas-kante), var(--schatten-hoch);
+  --tab-aktiv: var(--akzent);
+  --tab-aktiv-bg: transparent;
+  --fab-bg: radial-gradient(circle at 35% 25%, #b7a2ff, #6a48e6 55%, #4b2fc0);
+  --fab-ink: #ffffff;
+  --fab-schatten: 0 10px 22px -6px rgba(90, 60, 207, 0.7), inset 0 1px 1px rgba(255, 255, 255, 0.6), inset 0 -2px 4px rgba(30, 10, 90, 0.35);
+  --pinsel-bg: var(--karte-voll);
+  --toast-bg: rgba(255, 255, 255, 0.96);
+  --toast-ink: var(--ink);
+  --blatt-bg: rgba(255, 255, 255, 0.8);
+  --blatt-blur: blur(24px) saturate(180%);
+  --blatt-schleier: rgba(8, 6, 20, 0.42);
+  --dauer-kurz: 0.2s;
+  --dauer-mittel: 0.52s;
+  --kurve-feder: cubic-bezier(0.32, 1.2, 0.6, 1);
+  --kurve-sanft: cubic-bezier(0.22, 1, 0.36, 1);
+  --dauer-tab: 0.22s;
+  --dauer-einblenden: 0.68s;
+  --staffel: 55ms;
+  --dauer-fortschritt: 1.3s;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-aussehen='glas']:not([data-theme='light']) {
+    --glas-hoch: rgba(50, 43, 88, 0.72);
+    --glas-stark: rgba(36, 31, 64, 0.82);
+    --glas-kante: rgba(255, 255, 255, 0.14);
+    --tropfen: rgba(255, 255, 255, 0.17);
+    --karte-voll: #1b1730;
+    --schatten-hoch: 0 2px 4px rgba(0, 0, 0, 0.3), 0 28px 70px -12px rgba(0, 0, 0, 0.75);
+    --licht-deckung: 0.62;
+    --licht-heute-1: #c2410c;
+    --licht-heute-2: #a21caf;
+    --licht-heute-3: #6d28d9;
+    --licht-monat-1: #5b3df0;
+    --licht-monat-2: #1d4ed8;
+    --licht-monat-3: #9d2bb0;
+    --licht-schicht-1: #0f8f86;
+    --licht-schicht-2: #2546c8;
+    --licht-schicht-3: #3f7d16;
+    --licht-konto-1: #11845a;
+    --licht-konto-2: #a16207;
+    --licht-konto-3: #0e6aa8;
+    --licht-rest-1: #5b3df0;
+    --licht-rest-2: #a21caf;
+    --licht-rest-3: #0e7490;
+    --bg: #0d0b19;
+    --karte: rgba(26, 22, 48, 0.6);
+    --ink: #f5f2ff;
+    --ink-2: #cbc4e6;
+    --linie: rgba(255, 255, 255, 0.12);
+    --akzent: #b9a5ff;
+    --akzent-ink: #170f3a;
+    --akzent-text: var(--akzent);
+    --feld-bg: rgba(20, 17, 40, 0.62);
+    --tint-anteil: 18%;
+    --schatten-karte: inset 0 1px 0 var(--glas-kante), 0 1px 1px rgba(0, 0, 0, 0.3), 0 14px 36px -12px rgba(0, 0, 0, 0.6);
+    --tabs-bg: rgba(30, 26, 54, 0.85);
+    --toast-bg: rgba(44, 38, 78, 0.97);
+    --blatt-bg: rgba(36, 31, 64, 0.84);
+    --blatt-schleier: rgba(0, 0, 0, 0.5);
+    color-scheme: dark;
+  }
+}
+
+:root[data-aussehen='glas'][data-theme='dark'] {
+  --glas-hoch: rgba(50, 43, 88, 0.72);
+  --glas-stark: rgba(36, 31, 64, 0.82);
+  --glas-kante: rgba(255, 255, 255, 0.14);
+  --tropfen: rgba(255, 255, 255, 0.17);
+  --karte-voll: #1b1730;
+  --schatten-hoch: 0 2px 4px rgba(0, 0, 0, 0.3), 0 28px 70px -12px rgba(0, 0, 0, 0.75);
+  --licht-deckung: 0.62;
+  --licht-heute-1: #c2410c;
+  --licht-heute-2: #a21caf;
+  --licht-heute-3: #6d28d9;
+  --licht-monat-1: #5b3df0;
+  --licht-monat-2: #1d4ed8;
+  --licht-monat-3: #9d2bb0;
+  --licht-schicht-1: #0f8f86;
+  --licht-schicht-2: #2546c8;
+  --licht-schicht-3: #3f7d16;
+  --licht-konto-1: #11845a;
+  --licht-konto-2: #a16207;
+  --licht-konto-3: #0e6aa8;
+  --licht-rest-1: #5b3df0;
+  --licht-rest-2: #a21caf;
+  --licht-rest-3: #0e7490;
+  --bg: #0d0b19;
+  --karte: rgba(26, 22, 48, 0.6);
+  --ink: #f5f2ff;
+  --ink-2: #cbc4e6;
+  --linie: rgba(255, 255, 255, 0.12);
+  --akzent: #b9a5ff;
+  --akzent-ink: #170f3a;
+  --akzent-text: var(--akzent);
+  --feld-bg: rgba(20, 17, 40, 0.62);
+  --tint-anteil: 18%;
+  --schatten-karte: inset 0 1px 0 var(--glas-kante), 0 1px 1px rgba(0, 0, 0, 0.3), 0 14px 36px -12px rgba(0, 0, 0, 0.6);
+  --tabs-bg: rgba(30, 26, 54, 0.85);
+  --toast-bg: rgba(44, 38, 78, 0.97);
+  --blatt-bg: rgba(36, 31, 64, 0.84);
+  --blatt-schleier: rgba(0, 0, 0, 0.5);
+  color-scheme: dark;
+}
+
+/* Ohne backdrop-filter (alte Browser): Leiste und Blatt deckend, damit nichts Unscharfes fehlt und nichts durchscheint */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root[data-aussehen='glas'] {
+    --tabs-bg: var(--karte-voll);
+    --blatt-bg: var(--karte-voll);
+  }
+}
+
+/* ---------- 2. Licht je Tab ----------
+   Die aktive Karte der Tableiste bestimmt das Licht (Heute, Monat, Schicht, Konto, sonst „Rest“). Die Fläche liegt fest hinter der
+   Seite (body::before, --seite-bild). Beim Wechsel blendet das neue Licht ein und „setzt sich“ einmal (2,6 s), danach steht es still:
+   kein Endlos-Driften unter dem Glas. Neuzeichnen auf derselben Seite ändert den Namen der Animation nicht und spielt nichts erneut. */
+
+:root[data-aussehen='glas']:has(> body > #app > .tabs > .tab.aktiv[href='#/heute']) {
+  --licht-1: var(--licht-heute-1);
+  --licht-2: var(--licht-heute-2);
+  --licht-3: var(--licht-heute-3);
+  --licht-anim: glas-licht-heute;
+}
+
+:root[data-aussehen='glas']:has(> body > #app > .tabs > .tab.aktiv[href='#/monat']) {
+  --licht-1: var(--licht-monat-1);
+  --licht-2: var(--licht-monat-2);
+  --licht-3: var(--licht-monat-3);
+  --licht-anim: glas-licht-monat;
+}
+
+:root[data-aussehen='glas']:has(> body > #app > .tabs > .tab.aktiv[href='#/schicht']) {
+  --licht-1: var(--licht-schicht-1);
+  --licht-2: var(--licht-schicht-2);
+  --licht-3: var(--licht-schicht-3);
+  --licht-anim: glas-licht-schicht;
+}
+
+:root[data-aussehen='glas']:has(> body > #app > .tabs > .tab.aktiv[href='#/konto']) {
+  --licht-1: var(--licht-konto-1);
+  --licht-2: var(--licht-konto-2);
+  --licht-3: var(--licht-konto-3);
+  --licht-anim: glas-licht-konto;
+}
+
+/* html ohne eigenen Hintergrund: dann malt der Browser den von body (--bg) auf die ganze Leinwand – unter body::before, das das Licht
+   trägt (ein eigener body-Hintergrund läge darüber). body behält seine Farbe (getComputedStyle bleibt aussagekräftig). */
+:root[data-aussehen='glas'] {
+  background: transparent;
+}
+
+:root[data-aussehen='glas'] body {
+  background-image: none;
+}
+
+:root[data-aussehen='glas'] body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: var(--seite-bild);
+  opacity: var(--licht-deckung);
+  transform-origin: 40% 20%;
+}
+
+@keyframes glas-licht-heute {
+  from {
+    opacity: 0;
+    transform: scale(1.12) translateY(-3%);
+  }
+}
+
+@keyframes glas-licht-monat {
+  from {
+    opacity: 0;
+    transform: scale(1.12) translateY(-3%);
+  }
+}
+
+@keyframes glas-licht-schicht {
+  from {
+    opacity: 0;
+    transform: scale(1.12) translateY(-3%);
+  }
+}
+
+@keyframes glas-licht-konto {
+  from {
+    opacity: 0;
+    transform: scale(1.12) translateY(-3%);
+  }
+}
+
+@keyframes glas-licht-rest {
+  from {
+    opacity: 0;
+    transform: scale(1.12) translateY(-3%);
+  }
+}
+
+/* ---------- 3. Grundbausteine ---------- */
+
+/* Klebeleisten oben (Verbindung, Fortschritt) brauchen eine deckende Fläche: darunter läuft Inhalt durch */
+:root[data-aussehen='glas'] .banner {
+  background: color-mix(in srgb, var(--abwesend) 22%, var(--karte-voll));
+}
+
+:root[data-aussehen='glas'] .fortschritt {
+  background: var(--karte-voll);
+}
+
+/* Titel: groß, kräftig, eng gesetzt; Abschnitte ruhig (keine Großbuchstaben) */
+:root[data-aussehen='glas'] .gruss,
+:root[data-aussehen='glas'] .monat-kopf h1 {
+  letter-spacing: -0.025em;
+  line-height: 1.08;
+}
+
+:root[data-aussehen='glas'] .abschnitt > h2,
+:root[data-aussehen='glas'] .abschnitt-titel {
+  text-transform: none;
+  letter-spacing: 0;
+  padding: 0 4px;
+}
+
+:root[data-aussehen='glas'] .abschnitt {
+  margin-top: 8px;
+}
+
+:root[data-aussehen='glas'] .pille {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 14px;
+  background: linear-gradient(165deg, var(--glas-hoch), var(--glas-stark));
+  border: 1px solid var(--glas-kante);
+  box-shadow: var(--schatten-karte);
+  font-size: 0.875rem;
+  font-weight: 650;
+}
+
+/* Karten: Fake-Glas (Verlauf von hell oben nach zart unten), Lichtkante als Rand, weicher Schatten. Getönte Karten und Zeilen mischen
+   ihre Farbe in denselben Verlauf. */
+:root[data-aussehen='glas'] .karte:not(.tint) {
+  background: linear-gradient(165deg, var(--glas-hoch), var(--karte) 70%);
+}
+
+:root[data-aussehen='glas'] .karte {
+  padding: 16px;
+}
+
+:root[data-aussehen='glas'] .tint {
+  background: linear-gradient(165deg, color-mix(in srgb, var(--c) var(--tint-anteil), var(--glas-hoch)), color-mix(in srgb, var(--c) calc(var(--tint-anteil) + 6%), var(--karte)) 70%);
+  border-color: color-mix(in srgb, var(--c) 32%, var(--glas-kante));
+}
+
+:root[data-aussehen='glas'] .zeile:not(.tint) {
+  border-color: var(--linie);
+}
+
+/* Knöpfe: Glas-Pille; „primär“ als leuchtender Akzent */
+:root[data-aussehen='glas'] .knopf {
+  font-weight: 650;
+  border-color: var(--linie);
+}
+
+:root[data-aussehen='glas'] .knopf.primaer {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--akzent) 86%, #ffffff), var(--akzent));
+  border-color: transparent;
+  box-shadow: 0 8px 20px -8px color-mix(in srgb, var(--akzent) 70%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+:root[data-aussehen='glas'] .knopf.gefahr {
+  border-color: transparent;
+  box-shadow: 0 8px 20px -8px color-mix(in srgb, var(--gefahr) 60%, transparent);
+}
+
+:root[data-aussehen='glas'] .zurueck {
+  color: var(--akzent-text);
+}
+
+/* Chips: Glas-Pille mit feiner Linie; aktiv kräftiger getönt */
+:root[data-aussehen='glas'] .chip {
+  border-width: 1px;
+  border-color: color-mix(in srgb, var(--c, var(--ink)) 18%, transparent);
+  font-weight: 600;
+}
+
+:root[data-aussehen='glas'] .chip.aktiv {
+  border-width: 2px;
+  border-color: var(--c, var(--akzent));
+  font-weight: 750;
+}
+
+/* Umschalter (Konto: Kontostand · Fixkosten · Sparziele): zarte Rinne, die Wahl ist ein heller Glastropfen */
+:root[data-aussehen='glas'] .konto-segment {
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+  box-shadow: inset 0 1px 2px rgba(20, 10, 60, 0.08);
+}
+
+:root[data-aussehen='glas'] .konto-segment-knopf {
+  font-weight: 650;
+  font-size: 0.94rem;
+}
+
+:root[data-aussehen='glas'] .konto-segment-knopf.aktiv {
+  background: var(--tropfen);
+  color: var(--ink);
+  box-shadow: 0 4px 14px -4px rgba(30, 20, 80, 0.3), inset 0 1px 0 var(--glas-kante);
+}
+
+/* Felder: die Schrift der Seite, etwas leichter als die Beschriftung */
+:root[data-aussehen='glas'] .feld input,
+:root[data-aussehen='glas'] .feld textarea {
+  font-weight: 500;
+}
+
+/* Tableiste: schwebende Glas-Pille über dem sicheren Bereich. Der Glastropfen (::before) gleitet zur aktiven Karte; seine Stelle kommt
+   aus der aktiven Karte (Spalten wie in theme.css: drei Karten, 52 px „Neu“, vier Karten). Auf „Neu“ und Unterseiten ist er weg.
+   Die Leiste bleibt beim Neuzeichnen bestehen (nur ihre Karten werden ersetzt), deshalb gleitet der Tropfen wirklich. */
+:root[data-aussehen='glas'] .tabs {
+  bottom: calc(var(--tabs-abstand) + env(safe-area-inset-bottom, 0px));
+  height: var(--tabs-hoehe);
+  padding: 5px;
+}
+
+:root[data-aussehen='glas'] .tabs::before {
+  content: '';
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  left: 5px;
+  width: calc((100% - 62px) / 7);
+  border-radius: 28px;
+  background: color-mix(in srgb, var(--akzent) 13%, var(--glas-stark));
+  box-shadow: inset 0 1px 0 var(--glas-kante), inset 0 -1px 0 color-mix(in srgb, var(--akzent) 20%, transparent), 0 6px 16px -6px color-mix(in srgb, var(--akzent) 55%, transparent);
+  pointer-events: none;
+  opacity: var(--tropfen-sicht, 0);
+  transform: translateX(var(--tropfen-x, 0px));
+}
+
+:root[data-aussehen='glas'] .tabs:has(> .tab.aktiv:nth-child(1)) { --tropfen-x: 0%; --tropfen-sicht: 1; --tropfen-anim: glas-tropfen-1; }
+:root[data-aussehen='glas'] .tabs:has(> .tab.aktiv:nth-child(2)) { --tropfen-x: 100%; --tropfen-sicht: 1; --tropfen-anim: glas-tropfen-2; }
+:root[data-aussehen='glas'] .tabs:has(> .tab.aktiv:nth-child(3)) { --tropfen-x: 200%; --tropfen-sicht: 1; --tropfen-anim: glas-tropfen-3; }
+:root[data-aussehen='glas'] .tabs:has(> .tab.aktiv:nth-child(5)) { --tropfen-x: calc(300% + 52px); --tropfen-sicht: 1; --tropfen-anim: glas-tropfen-5; }
+:root[data-aussehen='glas'] .tabs:has(> .tab.aktiv:nth-child(6)) { --tropfen-x: calc(400% + 52px); --tropfen-sicht: 1; --tropfen-anim: glas-tropfen-6; }
+:root[data-aussehen='glas'] .tabs:has(> .tab.aktiv:nth-child(7)) { --tropfen-x: calc(500% + 52px); --tropfen-sicht: 1; --tropfen-anim: glas-tropfen-7; }
+:root[data-aussehen='glas'] .tabs:has(> .tab.aktiv:nth-child(8)) { --tropfen-x: calc(600% + 52px); --tropfen-sicht: 1; --tropfen-anim: glas-tropfen-8; }
+
+:root[data-aussehen='glas'] .tab {
+  position: relative;
+  z-index: 1;
+  justify-content: center;
+  min-height: 44px;
+  height: 100%;
+  padding: 0;
+  font-weight: 650;
+  border-radius: 28px;
+}
+
+:root[data-aussehen='glas'] .tab.fab .tab-symbol {
+  width: 50px;
+  height: 50px;
+  margin-top: -18px;
+  font-size: 1.75rem;
+}
+
+/* Blatt: echtes Glas (backdrop-filter über --blatt-blur), Lichtkante oben, dezenter Griff */
+:root[data-aussehen='glas'] .blatt {
+  padding-left: 20px;
+  padding-right: 20px;
+}
+
+:root[data-aussehen='glas'] .blatt-griff {
+  width: 40px;
+  background: color-mix(in srgb, var(--ink) 25%, transparent);
+}
+
+:root[data-aussehen='glas'] .blatt-kopf h2 {
+  letter-spacing: -0.02em;
+}
+
+:root[data-aussehen='glas'] .blatt-zu {
+  border: 0;
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  font-size: 1.05rem;
+}
+
+:root[data-aussehen='glas'] .blatt-inhalt h3 {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.94rem;
+  font-weight: 700;
+}
+
+:root[data-aussehen='glas'] .blatt-text {
+  font-size: 1.0625rem;
+}
+
+/* Meldung: helle Glaspille mit Lichtkante und Schatten (fast deckend: hier gibt es keinen Blur) */
+:root[data-aussehen='glas'] .toast {
+  border: 1px solid var(--glas-kante);
+  box-shadow: inset 0 1px 0 var(--glas-kante), var(--schatten-hoch);
+  font-weight: 650;
+}
+
+:root[data-aussehen='glas'] .toast-aktion {
+  color: var(--akzent);
+}
+
+:root[data-aussehen='glas'] .toast.fehler .toast-aktion {
+  color: inherit;
+}
+
+/* Fokus: der Ring folgt der runden Form */
+:root[data-aussehen='glas'] .knopf:focus-visible,
+:root[data-aussehen='glas'] .chip:focus-visible,
+:root[data-aussehen='glas'] .tab:focus-visible {
+  border-radius: 999px;
+}
+
+/* ---------- 4. Heute ---------- */
+
+/* Kopf wie in der Demo: kleiner Gruß über dem großen Datum */
+:root[data-aussehen='glas'] .heute-seite > .gruss {
+  margin-top: 6px;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--ink-2);
+}
+
+:root[data-aussehen='glas'] .heute-seite > .datum {
+  margin-top: -12px;
+  font-family: var(--font-titel);
+  font-size: var(--titel-gross);
+  font-weight: var(--gewicht-titel);
+  line-height: 1.06;
+  letter-spacing: -0.025em;
+  color: var(--ink);
+}
+
+:root[data-aussehen='glas'] .abschnitt:has(.termin-heute) > h2 {
+  color: var(--ink);
+  font-size: 1rem;
+}
+
+/* Termin heute/morgen: getönte Glasfläche, die Uhrzeit groß und eng */
+:root[data-aussehen='glas'] .termin-heute {
+  border: 1px solid color-mix(in srgb, var(--c) 32%, var(--glas-kante));
+  border-radius: 22px;
+  background: linear-gradient(165deg, color-mix(in srgb, var(--c) 16%, var(--glas-hoch)), color-mix(in srgb, var(--c) 22%, var(--karte)) 70%);
+  box-shadow: var(--schatten-karte);
+}
+
+:root[data-aussehen='glas'] .termin-heute.naechster {
+  border-width: 1.5px;
+  border-color: color-mix(in srgb, var(--c) 55%, transparent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--c) 14%, transparent), var(--schatten-karte);
+}
+
+:root[data-aussehen='glas'] .termin-heute.vorbei {
+  border-style: dashed;
+}
+
+:root[data-aussehen='glas'] .th-zeit {
+  font-size: 2.1rem;
+  font-weight: 780;
+  letter-spacing: -0.03em;
+}
+
+:root[data-aussehen='glas'] .th-text b {
+  font-size: 1.0625rem;
+  font-weight: 700;
+}
+
+:root[data-aussehen='glas'] .th-marke {
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-weight: 650;
+  color: var(--ink-2);
+}
+
+:root[data-aussehen='glas'] .th-marke.gleich,
+:root[data-aussehen='glas'] .th-marke.laeuft {
+  background: transparent;
+  color: var(--ink);
+}
+
+:root[data-aussehen='glas'] .puls {
+  width: 9px;
+  height: 9px;
+  background: var(--akzent);
+}
+
+/* Status („Wie war's heute?“) mit den vier Schnellknöpfen: getönte Glasflächen */
+:root[data-aussehen='glas'] .kachel-knopf {
+  border: 1px solid color-mix(in srgb, var(--c) 34%, var(--glas-kante));
+  border-radius: 20px;
+  background: linear-gradient(165deg, color-mix(in srgb, var(--c) 14%, var(--glas-hoch)), color-mix(in srgb, var(--c) 22%, var(--karte)) 80%);
+  box-shadow: var(--schatten-knopf);
+}
+
+/* Bringen/Holen: zwei Glasflächen in Personenfarbe, oben „bringt 07:30“, darunter groß die Person (wie in der Demo) */
+:root[data-aussehen='glas'] .dienst-karte {
+  padding: 12px;
+  gap: 8px;
+}
+
+:root[data-aussehen='glas'] .dienst-wann {
+  font-weight: 650;
+  font-size: 0.94rem;
+  color: var(--ink-2);
+}
+
+:root[data-aussehen='glas'] .dienst-knopf {
+  flex-direction: column-reverse;
+  justify-content: center;
+  min-height: 64px;
+  padding: 8px 14px;
+  border: 1px solid color-mix(in srgb, var(--c) 30%, transparent);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--c) 16%, var(--glas-stark));
+}
+
+:root[data-aussehen='glas'] .dienst-knopf small {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+:root[data-aussehen='glas'] .dienst-knopf b {
+  font-size: 1.125rem;
+  font-weight: 720;
+}
+
+:root[data-aussehen='glas'] .dienst-knopf.niemand {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--ink) 28%, transparent);
+  background: var(--karte);
+}
+
+:root[data-aussehen='glas'] .dienst-leer {
+  border: 1px dashed color-mix(in srgb, var(--ink) 28%, transparent);
+  border-radius: 18px;
+}
+
+/* „Krabbelstube benachrichtigen“: Glas-Pille, leicht türkis */
+:root[data-aussehen='glas'] .knopf.nachricht-oeffnen {
+  min-height: 52px;
+  background: linear-gradient(165deg, color-mix(in srgb, var(--urlaub) 14%, var(--glas-hoch)), color-mix(in srgb, var(--urlaub) 20%, var(--karte)));
+  border-color: color-mix(in srgb, var(--urlaub) 30%, var(--glas-kante));
+  box-shadow: var(--schatten-karte);
+}
+
+/* Sachen, Einkauf, Kontostand: getönte Glaskarten (siehe .tint); Zeilen darin hell */
+:root[data-aussehen='glas'] .sachen .sache {
+  border-width: 1px;
+  background: var(--glas-stark);
+}
+
+:root[data-aussehen='glas'] .tag-marke {
+  border-width: 1px;
+}
+
+/* Countdown als Glas-Pille, Urlaubsring auf zarter Bahn */
+:root[data-aussehen='glas'] .countdown {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 52px;
+  border-radius: 999px;
+  border: 1px solid var(--glas-kante);
+  background: linear-gradient(165deg, color-mix(in srgb, var(--urlaub) 12%, var(--glas-hoch)), color-mix(in srgb, var(--urlaub) 18%, var(--karte)));
+  box-shadow: var(--schatten-karte);
+  font-weight: 700;
+}
+
+:root[data-aussehen='glas'] .ring-bahn {
+  stroke: color-mix(in srgb, var(--urlaub) 18%, transparent);
+}
+
+/* ---------- 5. Bewegung (nur ohne „Reduziert“ und ohne prefers-reduced-motion) ---------- */
+
+@keyframes glas-tropfen-1 { 0%, 100% { scale: 1; } 40% { scale: 1.32 0.84; } 75% { scale: 0.94 1.05; } }
+@keyframes glas-tropfen-2 { 0%, 100% { scale: 1; } 40% { scale: 1.32 0.84; } 75% { scale: 0.94 1.05; } }
+@keyframes glas-tropfen-3 { 0%, 100% { scale: 1; } 40% { scale: 1.32 0.84; } 75% { scale: 0.94 1.05; } }
+@keyframes glas-tropfen-5 { 0%, 100% { scale: 1; } 40% { scale: 1.32 0.84; } 75% { scale: 0.94 1.05; } }
+@keyframes glas-tropfen-6 { 0%, 100% { scale: 1; } 40% { scale: 1.32 0.84; } 75% { scale: 0.94 1.05; } }
+@keyframes glas-tropfen-7 { 0%, 100% { scale: 1; } 40% { scale: 1.32 0.84; } 75% { scale: 0.94 1.05; } }
+@keyframes glas-tropfen-8 { 0%, 100% { scale: 1; } 40% { scale: 1.32 0.84; } 75% { scale: 0.94 1.05; } }
+
+@media (prefers-reduced-motion: no-preference) {
+  /* das Licht setzt sich einmal je Tabwechsel (neuer Animationsname = Neustart) und steht dann */
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) body::before {
+    animation: var(--licht-anim) 2.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  /* Tropfen: gleitet mit Überschwingen und dehnt sich unterwegs (scale; neuer Animationsname je Karte = Neustart) */
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .tabs::before {
+    transition: transform 0.56s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s ease;
+    animation: var(--tropfen-anim, none) 0.56s cubic-bezier(0.3, 0.7, 0.3, 1);
+  }
+
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .knopf,
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .kachel-knopf,
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .dienst-knopf,
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) button.chip {
+    transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .knopf:active,
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .kachel-knopf:active,
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .dienst-knopf:active,
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) button.chip:active {
+    transform: scale(0.965);
+    transition-duration: 0.12s;
+  }
+
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .toast {
+    transform: translate(-50%, 16px) scale(0.96);
+    transition: opacity var(--dauer-kurz) ease, transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .toast.auf {
+    transform: translate(-50%, 0) scale(1);
+  }
+}

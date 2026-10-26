@@ -77,7 +77,11 @@ for (const breite of [320, 375, 390]) {
       await starteDemo(page);
       const masse = await leiste(page).evaluate((nav) => {
         const r = (el) => el.getBoundingClientRect();
+        const cs = getComputedStyle(nav);
         return {
+          // Klassisch: angedockt (0 px); Glas und Bento schweben mit --tabs-abstand und Innenabstand der Leiste
+          abstand: parseFloat(cs.getPropertyValue('--tabs-abstand')) || 0,
+          innen: { links: parseFloat(cs.paddingLeft) || 0, rechts: parseFloat(cs.paddingRight) || 0 },
           fenster: document.documentElement.clientWidth,
           leiste: { links: r(nav).left, rechts: r(nav).right, ueberlauf: nav.scrollWidth - nav.clientWidth },
           tabs: [...nav.querySelectorAll('a.tab')].map((a) => ({ links: r(a).left, rechts: r(a).right, breite: r(a).width })),
@@ -87,8 +91,8 @@ for (const breite of [320, 375, 390]) {
         };
       });
       expect(masse.fenster).toBe(breite);
-      expect(masse.leiste.links).toBeCloseTo(0, 1);
-      expect(masse.leiste.rechts).toBeCloseTo(breite, 1);
+      expect(masse.leiste.links).toBeCloseTo(masse.abstand, 1);
+      expect(masse.leiste.rechts).toBeCloseTo(breite - masse.abstand, 1);
       expect(masse.leiste.ueberlauf).toBe(0);
       expect(masse.tabs).toHaveLength(8);
       // „Neu“ ist der runde Hauptknopf an vierter Stelle; der Kreis bleibt in seiner Karte
@@ -97,11 +101,11 @@ for (const breite of [320, 375, 390]) {
       expect(masse.kreis.width).toBeGreaterThanOrEqual(46);
       expect(masse.kreis.left).toBeGreaterThanOrEqual(masse.fab.left - 0.5);
       expect(masse.kreis.right).toBeLessThanOrEqual(masse.fab.right + 0.5);
-      // die übrigen sieben gleich breit; lückenlos und ohne Überlappung von Rand zu Rand
+      // die übrigen sieben gleich breit; lückenlos und ohne Überlappung von Rand zu Rand (Rand = Innenkante der Leiste)
       const seiten = masse.tabs.filter((_, i) => i !== 3).map((t) => t.breite);
       for (const b of seiten) expect(Math.abs(b - seiten[0])).toBeLessThan(0.5);
-      expect(masse.tabs[0].links).toBeCloseTo(0, 1);
-      expect(Math.abs(masse.tabs[7].rechts - breite)).toBeLessThan(0.5);
+      expect(masse.tabs[0].links).toBeCloseTo(masse.abstand + masse.innen.links, 1);
+      expect(Math.abs(masse.tabs[7].rechts - (breite - masse.abstand - masse.innen.rechts))).toBeLessThan(0.5);
       for (let i = 1; i < 8; i += 1) expect(Math.abs(masse.tabs[i].links - masse.tabs[i - 1].rechts)).toBeLessThan(0.5);
       // jede Beschriftung passt ganz in ihre Karte (nicht abgeschnitten, nicht in die Nachbarkarte)
       masse.texte.forEach((t, i) => {

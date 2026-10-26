@@ -45,7 +45,7 @@ function terminHeuteKarte(t) {
   const hatChips = t.fuerText || t.mitnehmen.length > 0 || t.kosten;
   return h(
     'article',
-    { class: `karte termin-heute ${t.zeitStatus}${t.naechster ? ' naechster' : ''}`, style: farbe(t.farbe), 'aria-label': `${t.label}, ${t.time ?? 'ganztägig'}, ${t.inText}` },
+    { class: `karte termin-heute ${t.zeitStatus}${t.naechster ? ' naechster' : ''}`, 'data-fuer': t.fuer ?? 'gemeinsam', style: farbe(t.farbe), 'aria-label': `${t.label}, ${t.time ?? 'ganztägig'}, ${t.inText}` },
     h(
       'div',
       { class: 'th-kopf' },
@@ -56,7 +56,7 @@ function terminHeuteKarte(t) {
       ? h(
           'div',
           { class: 'chips' },
-          t.fuerText ? chip(`${t.fuerEmoji} ${t.fuerText}`) : null,
+          t.fuerText ? chip(`${t.fuerEmoji} ${t.fuerText}`, { art: `fuer-chip ${t.fuer}` }) : null,
           erstes ? chip(`🎒 ${erstes}`) : null,
           rest.map((x) => chip(x)),
           t.kosten ? chip(`💶 ${t.kosten}`) : null,
@@ -231,7 +231,7 @@ export function heuteScreen({ store, ui }) {
   const naechster = m.urlaub.countdown;
   return h(
     'section',
-    { class: 'screen' },
+    { class: 'screen heute-seite' },
     h('header', { class: 'kopf' }, h('span', { class: 'marke' }, `🌸 ${ui.titel()}`), h('span', { class: 'pille' }, m.einrichtung)),
     h('h1', { class: 'gruss' }, `${m.gruss.text} ${m.gruss.emoji}`),
     h('p', { class: 'datum' }, m.datumText),

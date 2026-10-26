@@ -1,2 +1,713 @@
 /* Aussehen „Bento bunt“ (1.2.0): alle Regeln stehen unter :root[data-aussehen="bento"] und wirken in Klassisch nicht.
-   Wird immer geladen (index.html, nach theme.css); Inhalt folgt ab Task 4. */
+   Wird immer geladen (index.html, nach theme.css). Werte aus der Demo .superpowers/design-2026/b-bento (vom Nutzer gewählt).
+   Aufbau: 1. Tokens Hell, Dunkel (System, mit Wache) und Dunkel (gewählt)  2. Grundbausteine der ganzen App (Seite, Tableiste mit
+   Blob, Blatt, Kacheln, Knöpfe, Chips, Umschalter, Felder, Meldung, Rückfrage, Fokus)  3. Heute  4. Bewegung.
+   „Bonbon-Kante“ statt grauer Schatten: jede Kachel hat unten eine 3-px-Innenkante (--lippe) in der Tönung ihrer Fläche; schwebende
+   Schatten nur für Tableiste und Blatt. Personenfarben (Papa blau, Mama koralle, Kind gelb, Gemeinsam mint) stehen nie allein:
+   immer mit Name oder Emoji. Titel in FK Fredoka (≤ 700), Text und Zahlen in FK Nunito (gleich breite Ziffern). Kein backdrop-filter. */
+
+/* ---------- 1. Tokens ---------- */
+
+:root[data-aussehen='bento'] {
+  /* Bento-Bausteine (nur in dieser Datei) */
+  --lippe: inset 0 -3px 0 rgb(29 24 48 / 0.07);
+  --flaeche-2: #e9e5f6;
+  --knopf-auf-tint: rgb(255 255 255 / 0.62);
+  --person-papa: #2b66f0;
+  --person-papa-tint: #dce7ff;
+  --person-papa-ink: #0f2a66;
+  --person-papa-auf: #ffffff;
+  --person-mama: #f2602f;
+  --person-mama-tint: #ffe2d6;
+  --person-mama-ink: #5c1a05;
+  --person-mama-auf: #2a0d03;
+  --person-kind: #f5b400;
+  --person-kind-tint: #fff0c4;
+  --person-kind-ink: #4a3300;
+  --person-kind-auf: #3a2800;
+  --person-gemeinsam: #12a26e;
+  --person-gemeinsam-tint: #d2f3e4;
+  --person-gemeinsam-ink: #063b27;
+  --person-gemeinsam-auf: #032a1b;
+  --meer-tint: #d3f2f5;
+  --meer-ink: #053b42;
+  --konfetti-1: var(--person-papa);
+  --konfetti-2: var(--person-mama);
+  --konfetti-3: var(--person-kind);
+  --konfetti-4: var(--person-gemeinsam);
+
+  --bg: #f1effa;
+  --karte: #ffffff;
+  --karte-2: #efecf9;
+  --ink: #1d1830;
+  --ink-2: #575170;
+  --linie: #d9d3ec;
+  --akzent: #6440f5;
+  --akzent-ink: #ffffff;
+  --rand: 0px;
+  --karte-rand: 0 solid transparent;
+  --feld-rand: 2px solid var(--linie);
+  --feld-bg: var(--karte);
+  --chip-grund: var(--karte);
+  --chip-anteil: 16%;
+  --chip-aktiv-anteil: 34%;
+  --tint-grund: var(--karte);
+  --tint-anteil: 22%;
+  --seite-bild: none;
+  --r-karte: 24px;
+  --r-knopf: 999px;
+  --r-zeile: 18px;
+  --r-feld: 18px;
+  --r-chip: 999px;
+  --r-blatt: 34px;
+  --r-zelle: 14px;
+  --r-pinsel: 24px;
+  --schatten-karte: var(--lippe);
+  --schatten-schwebend: 0 -10px 40px rgb(14 8 36 / 0.25);
+  --schatten-leiste: 0 -2px 0 var(--linie), 0 18px 40px rgb(20 10 60 / 0.22);
+  --schatten-knopf: var(--lippe);
+  --fokus-ring: 3px solid var(--akzent);
+  --fokus-abstand: 2px;
+  --font-text: 'FK Nunito', ui-rounded, 'SF Pro Rounded', 'Segoe UI Variable Text', system-ui, -apple-system, sans-serif;
+  --font-titel: 'FK Fredoka', 'FK Nunito', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif;
+  --font-zahl: var(--font-text); /* Nunito: gleich breite Ziffern; Fredoka hat keine */
+  --font-feld: var(--font-text);
+  --gewicht-titel: 600;
+  --titel-gross: 1.875rem;
+  --titel-seite: 1.5rem;
+  --titel-blatt: 1.5rem;
+  --titel-karte: 1.125rem;
+  --titel-abschnitt: 1.25rem;
+  --titel-schicht: 1.75rem;
+  --tabs-hoehe: 74px;
+  --tabs-bg: var(--karte);
+  --tabs-blur: none;
+  --tabs-rand: 0 solid transparent;
+  --tabs-rahmen: 0 solid transparent;
+  --tabs-radius: 28px;
+  --tabs-abstand: 8px;
+  --tabs-schatten: 0 -1px 0 var(--linie), 0 14px 34px rgb(20 10 60 / 0.16);
+  --tab-aktiv: var(--ink);
+  --tab-aktiv-bg: transparent;
+  --fab-bg: var(--akzent);
+  --fab-ink: var(--akzent-ink);
+  --fab-schatten: 0 6px 16px color-mix(in srgb, var(--akzent) 45%, transparent), inset 0 -3px 0 rgb(0 0 0 / 0.14);
+  --pinsel-bg: var(--karte);
+  --toast-bg: var(--ink);
+  --toast-ink: var(--bg);
+  --blatt-bg: var(--bg);
+  --blatt-blur: none;
+  --blatt-schleier: rgb(14 8 36 / 0.45);
+  --dauer-kurz: 0.2s;
+  --dauer-mittel: 0.55s;
+  --kurve-feder: cubic-bezier(0.25, 1.3, 0.5, 1);
+  --kurve-sanft: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --dauer-tab: 0.22s;
+  --dauer-einblenden: 0.62s;
+  --staffel: 42ms;
+  --dauer-fortschritt: 1s;
+  font-synthesis-weight: none; /* FK Fredoka geht bis 700: nie ein künstlich fett gerechnetes 800/900 */
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-aussehen='bento']:not([data-theme='light']) {
+    --lippe: inset 0 -3px 0 rgb(0 0 0 / 0.28), inset 0 1px 0 rgb(255 255 255 / 0.05);
+    --flaeche-2: #2e2843;
+    --knopf-auf-tint: rgb(255 255 255 / 0.1);
+    --person-papa: #7aa2ff;
+    --person-papa-tint: #1c2c57;
+    --person-papa-ink: #d6e2ff;
+    --person-papa-auf: #071637;
+    --person-mama: #ff8d66;
+    --person-mama-tint: #4a2116;
+    --person-mama-ink: #ffdacd;
+    --person-mama-auf: #2a0d03;
+    --person-kind: #ffcf4d;
+    --person-kind-tint: #3e300b;
+    --person-kind-ink: #ffeaa9;
+    --person-kind-auf: #3a2800;
+    --person-gemeinsam: #3fd39b;
+    --person-gemeinsam-tint: #0f3a2b;
+    --person-gemeinsam-ink: #c0f2db;
+    --person-gemeinsam-auf: #032a1b;
+    --meer-tint: #0d3940;
+    --meer-ink: #c2f3f8;
+    --bg: #14111d;
+    --karte: #221d31;
+    --karte-2: #2e2843;
+    --ink: #f5f2ff;
+    --ink-2: #c9c3e0; /* heller als in der Demo: leise Schrift auf dunklen Tönungen ≥ 4,5:1 */
+    --linie: #3b3453;
+    --akzent: #9a80ff;
+    --akzent-ink: #160e33;
+    --tint-anteil: 26%;
+    --tabs-schatten: 0 -1px 0 var(--linie), 0 14px 34px rgb(0 0 0 / 0.45);
+    --blatt-schleier: rgb(0 0 0 / 0.55);
+    color-scheme: dark;
+  }
+}
+
+:root[data-aussehen='bento'][data-theme='dark'] {
+  --lippe: inset 0 -3px 0 rgb(0 0 0 / 0.28), inset 0 1px 0 rgb(255 255 255 / 0.05);
+  --flaeche-2: #2e2843;
+  --knopf-auf-tint: rgb(255 255 255 / 0.1);
+  --person-papa: #7aa2ff;
+  --person-papa-tint: #1c2c57;
+  --person-papa-ink: #d6e2ff;
+  --person-papa-auf: #071637;
+  --person-mama: #ff8d66;
+  --person-mama-tint: #4a2116;
+  --person-mama-ink: #ffdacd;
+  --person-mama-auf: #2a0d03;
+  --person-kind: #ffcf4d;
+  --person-kind-tint: #3e300b;
+  --person-kind-ink: #ffeaa9;
+  --person-kind-auf: #3a2800;
+  --person-gemeinsam: #3fd39b;
+  --person-gemeinsam-tint: #0f3a2b;
+  --person-gemeinsam-ink: #c0f2db;
+  --person-gemeinsam-auf: #032a1b;
+  --meer-tint: #0d3940;
+  --meer-ink: #c2f3f8;
+  --bg: #14111d;
+  --karte: #221d31;
+  --karte-2: #2e2843;
+  --ink: #f5f2ff;
+  --ink-2: #c9c3e0; /* heller als in der Demo: leise Schrift auf dunklen Tönungen ≥ 4,5:1 */
+  --linie: #3b3453;
+  --akzent: #9a80ff;
+  --akzent-ink: #160e33;
+  --tint-anteil: 26%;
+  --tabs-schatten: 0 -1px 0 var(--linie), 0 14px 34px rgb(0 0 0 / 0.45);
+  --blatt-schleier: rgb(0 0 0 / 0.55);
+  color-scheme: dark;
+}
+
+/* ---------- 2. Grundbausteine ---------- */
+
+:root[data-aussehen='bento'] body {
+  font-weight: 600;
+}
+
+:root[data-aussehen='bento'] b,
+:root[data-aussehen='bento'] strong {
+  font-weight: 800;
+}
+
+/* Titel: Fredoka 600; Abschnitte groß und ruhig (keine Großbuchstaben) */
+:root[data-aussehen='bento'] .abschnitt > h2,
+:root[data-aussehen='bento'] .abschnitt-titel {
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--ink);
+  padding: 0 4px;
+}
+
+:root[data-aussehen='bento'] .abschnitt {
+  margin-top: 6px;
+}
+
+:root[data-aussehen='bento'] .gruss {
+  letter-spacing: -0.01em;
+}
+
+:root[data-aussehen='bento'] .marke {
+  font-family: var(--font-titel);
+  font-weight: 600;
+  font-size: 1.0625rem;
+}
+
+:root[data-aussehen='bento'] .pille {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 0;
+  background: var(--person-gemeinsam-tint);
+  color: var(--person-gemeinsam-ink);
+  box-shadow: var(--lippe);
+  font-weight: 800;
+}
+
+/* Kacheln: weiße Fläche, große Ecken, Bonbon-Kante; getönte Kacheln tragen die Kante in ihrer Farbe */
+:root[data-aussehen='bento'] .karte {
+  padding: 16px;
+}
+
+:root[data-aussehen='bento'] .tint {
+  border-color: transparent;
+  box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--c) 34%, transparent);
+}
+
+:root[data-aussehen='bento'] .hinweis {
+  outline: 2px dashed var(--linie);
+  outline-offset: -5px;
+}
+
+:root[data-aussehen='bento'] .zeile {
+  box-shadow: var(--lippe);
+}
+
+/* Knöpfe: Pillen ohne Rand mit Bonbon-Kante; „primär“ traubenlila; in getönten Kacheln halb durchsichtig weiß */
+:root[data-aussehen='bento'] .knopf {
+  font-weight: 800;
+}
+
+:root[data-aussehen='bento'] .knopf.primaer {
+  box-shadow: inset 0 -3px 0 rgb(0 0 0 / 0.18);
+}
+
+:root[data-aussehen='bento'] .knopf.gefahr {
+  box-shadow: inset 0 -3px 0 rgb(0 0 0 / 0.18);
+}
+
+:root[data-aussehen='bento'] .tint .knopf:not(.primaer):not(.gefahr) {
+  background: var(--knopf-auf-tint);
+  box-shadow: none;
+}
+
+:root[data-aussehen='bento'] .zurueck {
+  font-weight: 900;
+}
+
+/* Chips: ohne Rand, kräftige Schrift; in getönten Kacheln halb durchsichtig weiß; aktiv mit Ring in ihrer Farbe */
+:root[data-aussehen='bento'] .chip {
+  border-color: transparent;
+  font-weight: 800;
+}
+
+:root[data-aussehen='bento'] .tint .chip:not(.aktiv) {
+  background: var(--knopf-auf-tint);
+}
+
+:root[data-aussehen='bento'] .chip.aktiv {
+  border-width: 2.5px;
+  border-color: var(--c, var(--akzent));
+  font-weight: 900;
+}
+
+/* Personen-Chips (Hook .fuer-chip + Person): Tönung und Tinte der Person, immer mit Emoji und Name */
+:root[data-aussehen='bento'] .chip.fuer-chip.papa { background: var(--person-papa-tint); color: var(--person-papa-ink); }
+:root[data-aussehen='bento'] .chip.fuer-chip.mama { background: var(--person-mama-tint); color: var(--person-mama-ink); }
+:root[data-aussehen='bento'] .chip.fuer-chip.kind { background: var(--person-kind-tint); color: var(--person-kind-ink); }
+
+/* Umschalter (Konto): weiße Rinne mit Kante, die Wahl ist ein lila Knopf */
+:root[data-aussehen='bento'] .konto-segment {
+  padding: 5px;
+  background: var(--karte);
+  box-shadow: var(--lippe);
+}
+
+:root[data-aussehen='bento'] .konto-segment-knopf {
+  font-size: 0.94rem;
+}
+
+:root[data-aussehen='bento'] .konto-segment-knopf.aktiv {
+  box-shadow: inset 0 -3px 0 rgb(0 0 0 / 0.16);
+}
+
+/* Felder: weiß mit Innenring, Fokus traubenlila */
+:root[data-aussehen='bento'] .feld input,
+:root[data-aussehen='bento'] .feld textarea {
+  font-weight: 700;
+}
+
+/* Tableiste: weiße schwebende Leiste; der Blob (::before) springt zur aktiven Karte, dehnt sich unterwegs und trägt die Farbe des
+   Bereichs (Heute lila, Monat mint, Einkauf koralle, Schicht blau, Urlaub meer, Konto gelb, Mehr grau). Spalten wie in theme.css. */
+:root[data-aussehen='bento'] .tabs {
+  bottom: calc(var(--tabs-abstand) + env(safe-area-inset-bottom, 0px));
+  height: var(--tabs-hoehe);
+  padding: 0 2px;
+}
+
+:root[data-aussehen='bento'] .tabs::before {
+  content: '';
+  position: absolute;
+  top: 7px;
+  bottom: 7px;
+  left: 4px;
+  width: calc((100% - 4px - 52px) / 7 - 4px);
+  border-radius: 18px;
+  background: var(--blob-farbe, var(--flaeche-2));
+  pointer-events: none;
+  opacity: var(--blob-sicht, 0);
+  transform: translateX(var(--blob-x, 0px));
+}
+
+:root[data-aussehen='bento'] .tabs:has(> .tab.aktiv:nth-child(1)) { --blob-x: 0px; --blob-sicht: 1; --blob-farbe: color-mix(in srgb, var(--akzent) 22%, var(--karte)); --blob-anim: bento-blob-1; }
+:root[data-aussehen='bento'] .tabs:has(> .tab.aktiv:nth-child(2)) { --blob-x: calc(100% + 4px); --blob-sicht: 1; --blob-farbe: var(--person-gemeinsam-tint); --blob-anim: bento-blob-2; }
+:root[data-aussehen='bento'] .tabs:has(> .tab.aktiv:nth-child(3)) { --blob-x: calc(200% + 8px); --blob-sicht: 1; --blob-farbe: var(--person-mama-tint); --blob-anim: bento-blob-3; }
+:root[data-aussehen='bento'] .tabs:has(> .tab.aktiv:nth-child(5)) { --blob-x: calc(300% + 12px + 52px); --blob-sicht: 1; --blob-farbe: var(--person-papa-tint); --blob-anim: bento-blob-5; }
+:root[data-aussehen='bento'] .tabs:has(> .tab.aktiv:nth-child(6)) { --blob-x: calc(400% + 16px + 52px); --blob-sicht: 1; --blob-farbe: var(--meer-tint); --blob-anim: bento-blob-6; }
+:root[data-aussehen='bento'] .tabs:has(> .tab.aktiv:nth-child(7)) { --blob-x: calc(500% + 20px + 52px); --blob-sicht: 1; --blob-farbe: var(--person-kind-tint); --blob-anim: bento-blob-7; }
+:root[data-aussehen='bento'] .tabs:has(> .tab.aktiv:nth-child(8)) { --blob-x: calc(600% + 24px + 52px); --blob-sicht: 1; --blob-farbe: var(--flaeche-2); --blob-anim: bento-blob-8; }
+
+:root[data-aussehen='bento'] .tab {
+  position: relative;
+  z-index: 1;
+  justify-content: center;
+  gap: 3px;
+  height: 64px;
+  padding: 0;
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: var(--ink-2);
+}
+
+:root[data-aussehen='bento'] .tab.aktiv {
+  font-weight: 900;
+}
+
+@media (max-width: 359px) {
+  :root[data-aussehen='bento'] .tab {
+    font-size: 0.58rem; /* wie Klassisch: kleiner, aber nie abgeschnitten */
+  }
+}
+
+:root[data-aussehen='bento'] .tab-symbol {
+  font-size: 1.4rem;
+}
+
+:root[data-aussehen='bento'] .tab.aktiv .tab-symbol {
+  transform: translateY(-2px) scale(1.12);
+}
+
+:root[data-aussehen='bento'] .tab.fab .tab-symbol {
+  width: 52px; /* so breit wie seine Spalte in der Leiste (die Demo hatte 56 px) */
+  height: 52px;
+  margin-top: -24px;
+  font-family: var(--font-titel);
+  font-size: 2rem;
+  font-weight: 500;
+}
+
+/* Blatt: Seitenfläche, große runde Ecken, kräftiger Griff, runder Schließen-Knopf ohne Rand */
+:root[data-aussehen='bento'] .blatt-griff {
+  height: 6px;
+  margin-top: 6px;
+}
+
+:root[data-aussehen='bento'] .blatt-zu {
+  border: 0;
+  background: var(--flaeche-2);
+  font-weight: 900;
+}
+
+:root[data-aussehen='bento'] .blatt-inhalt h3 {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+:root[data-aussehen='bento'] .blatt-text {
+  font-size: 1.0625rem;
+}
+
+/* Meldung: dunkle Pille (hell im Dunkelmodus) */
+:root[data-aussehen='bento'] .toast {
+  font-weight: 800;
+}
+
+/* Fokus: der Ring folgt den runden Formen */
+:root[data-aussehen='bento'] .knopf:focus-visible,
+:root[data-aussehen='bento'] .chip:focus-visible {
+  border-radius: 999px;
+}
+
+:root[data-aussehen='bento'] .tab:focus-visible {
+  border-radius: 20px;
+}
+
+/* ---------- 3. Heute ---------- */
+
+/* Hero-Kachel: Gruß und Datum zusammen auf Traubenlila (zwei Elemente, eine Fläche), mit dem hellen Kreis der Demo oben rechts */
+:root[data-aussehen='bento'] .heute-seite > .gruss {
+  position: relative;
+  z-index: 1; /* der große Kreis darf über die Datumsfläche reichen (gleiche Farbe), oben und rechts wird er abgeschnitten */
+  clip-path: inset(0 0 -120px 0 round 30px 30px 0 0);
+  overflow-x: clip; /* clip-path schneidet nur das Bild: ohne dies ragte der Kreis rechts aus der Seite (seitliches Scrollen) */
+  margin-top: 4px;
+  padding: 20px 18px 2px;
+  border-radius: 30px 30px 0 0;
+  background: var(--akzent);
+  color: var(--akzent-ink);
+  font-size: 1.25rem;
+}
+
+:root[data-aussehen='bento'] .heute-seite > .gruss::after {
+  content: '';
+  position: absolute;
+  right: -26px;
+  top: -26px;
+  width: 92px;
+  height: 92px;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 0.14);
+}
+
+:root[data-aussehen='bento'] .heute-seite > .datum {
+  margin-top: -14px;
+  padding: 0 18px 20px;
+  border-radius: 0 0 30px 30px;
+  background: var(--akzent);
+  color: var(--akzent-ink);
+  box-shadow: inset 0 -3px 0 rgb(0 0 0 / 0.16);
+  font-family: var(--font-titel);
+  font-size: 2.25rem;
+  font-weight: 600;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+}
+
+/* Termin heute/morgen: weiße Kachel, die Uhrzeit als große Pille in der Farbe der Person (Kind gelb, Papa blau, Mama koralle,
+   für alle mint; Hook data-fuer) – der Name steht als Chip daneben */
+:root[data-aussehen='bento'] .termin-heute {
+  --fuer: var(--person-gemeinsam);
+  --fuer-auf: var(--person-gemeinsam-auf);
+  border: 0;
+  background: var(--karte);
+  box-shadow: var(--lippe);
+}
+
+:root[data-aussehen='bento'] .termin-heute[data-fuer='kind'] { --fuer: var(--person-kind); --fuer-auf: var(--person-kind-auf); }
+:root[data-aussehen='bento'] .termin-heute[data-fuer='papa'] { --fuer: var(--person-papa); --fuer-auf: var(--person-papa-auf); }
+:root[data-aussehen='bento'] .termin-heute[data-fuer='mama'] { --fuer: var(--person-mama); --fuer-auf: var(--person-mama-auf); }
+
+:root[data-aussehen='bento'] .termin-heute.naechster {
+  background: var(--karte);
+  box-shadow: inset 0 0 0 3px color-mix(in srgb, var(--fuer) 55%, transparent), var(--lippe);
+}
+
+:root[data-aussehen='bento'] .termin-heute.vorbei {
+  box-shadow: var(--lippe);
+}
+
+:root[data-aussehen='bento'] .th-zeit {
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 18px;
+  background: var(--fuer);
+  color: var(--fuer-auf);
+  box-shadow: inset 0 -3px 0 rgb(0 0 0 / 0.12);
+  font-size: 1.875rem;
+  font-weight: 900;
+}
+
+:root[data-aussehen='bento'] .th-zeit.ganztags {
+  font-size: 1.05rem;
+}
+
+:root[data-aussehen='bento'] .th-text b {
+  font-size: 1.0625rem;
+  font-weight: 800;
+}
+
+:root[data-aussehen='bento'] .th-marke {
+  border: 0;
+  padding: 0;
+  gap: 2px;
+  background: transparent;
+  font-size: 0.875rem;
+  font-weight: 800;
+}
+
+:root[data-aussehen='bento'] .th-marke.gleich,
+:root[data-aussehen='bento'] .th-marke.laeuft {
+  background: transparent;
+}
+
+:root[data-aussehen='bento'] .puls {
+  background: var(--person-mama);
+  animation-iteration-count: 4; /* keine Dauerbewegung: pulsiert viermal, dann Ruhe */
+}
+
+/* Status („Wie war's heute?“): getönte Kachel, die vier Schnellknöpfe als kleine Kacheln mit Bonbon-Kante */
+:root[data-aussehen='bento'] .kachel-knopf {
+  border: 0;
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--c) 18%, var(--karte));
+  box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--c) 40%, transparent);
+}
+
+:root[data-aussehen='bento'] .kachel-knopf b {
+  font-family: var(--font-titel);
+  font-weight: 600;
+  font-size: 1.125rem;
+}
+
+/* Bringen/Holen: zwei große Kacheln in Personenfarbe (Papa blau, Mama koralle) statt einer Karte mit Knöpfen; „🚗 Heute“ steht
+   als Zeile darüber. Oben „bringt 07:30“, darunter groß Emoji und Name. */
+:root[data-aussehen='bento'] .dienst-karte {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+:root[data-aussehen='bento'] .dienst-wann {
+  grid-column: 1 / -1;
+  padding: 2px 4px 0;
+  font-family: var(--font-titel);
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+:root[data-aussehen='bento'] .dienst-knopf {
+  flex-direction: column-reverse;
+  justify-content: flex-end;
+  gap: 4px;
+  min-height: 104px;
+  padding: 14px 16px;
+  border: 0;
+  border-radius: 24px;
+  background: var(--karte);
+  color: var(--ink);
+  box-shadow: var(--lippe);
+}
+
+:root[data-aussehen='bento'] .dienst-knopf.papa {
+  background: var(--person-papa-tint);
+  color: var(--person-papa-ink);
+  box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--person-papa) 30%, transparent);
+}
+
+:root[data-aussehen='bento'] .dienst-knopf.mama {
+  background: var(--person-mama-tint);
+  color: var(--person-mama-ink);
+  box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--person-mama) 30%, transparent);
+}
+
+:root[data-aussehen='bento'] .dienst-knopf small {
+  color: inherit;
+  font-size: 0.875rem;
+  font-weight: 800;
+}
+
+:root[data-aussehen='bento'] .dienst-knopf b {
+  font-family: var(--font-titel);
+  font-size: 1.625rem;
+  font-weight: 600;
+  line-height: 1.15;
+}
+
+:root[data-aussehen='bento'] .dienst-knopf.niemand {
+  outline: 2px dashed var(--linie);
+  outline-offset: -5px;
+}
+
+:root[data-aussehen='bento'] .dienst-leer {
+  grid-column: 1 / -1;
+  min-height: 56px;
+  border: 0;
+  border-radius: 24px;
+  background: var(--karte);
+  outline: 2px dashed var(--linie);
+  outline-offset: -5px;
+  box-shadow: var(--lippe);
+}
+
+/* „Krabbelstube benachrichtigen“: Meer-Kachel */
+:root[data-aussehen='bento'] .knopf.nachricht-oeffnen {
+  min-height: 56px;
+  border-radius: 24px;
+  background: var(--meer-tint);
+  color: var(--meer-ink);
+  box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--urlaub) 35%, transparent);
+}
+
+/* Sachen: Zeilen darin weiß mit Kante */
+:root[data-aussehen='bento'] .sachen .sache {
+  border: 0;
+  background: color-mix(in srgb, var(--karte) 88%, transparent);
+}
+
+:root[data-aussehen='bento'] .sachen .sache.heute,
+:root[data-aussehen='bento'] .sachen .sache.ueberfaellig {
+  box-shadow: inset 0 0 0 2.5px var(--sache);
+}
+
+:root[data-aussehen='bento'] .sachen .sache.ueberfaellig {
+  box-shadow: inset 0 0 0 2.5px var(--krank);
+}
+
+:root[data-aussehen='bento'] .tag-marke {
+  border: 0;
+}
+
+/* Demnächst: Zeilen als getönte Kacheln */
+:root[data-aussehen='bento'] .verlauf-zeile {
+  min-height: 60px;
+  padding: 10px 14px;
+}
+
+/* Countdown: Meer-Kachel; Urlaubsring auf weicher Bahn */
+:root[data-aussehen='bento'] .countdown {
+  padding: 16px;
+  border: 0;
+  border-radius: 24px;
+  background: var(--meer-tint);
+  color: var(--meer-ink);
+  box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--urlaub) 35%, transparent);
+  font-weight: 900;
+}
+
+:root[data-aussehen='bento'] .ring-zahl {
+  font-family: var(--font-zahl);
+  font-weight: 900;
+}
+
+/* ---------- 4. Bewegung (nur ohne „Reduziert“ und ohne prefers-reduced-motion) ---------- */
+
+@keyframes bento-blob-1 { 0%, 100% { scale: 1; } 40% { scale: 1.55 0.82; } 75% { scale: 0.88 1.08; } }
+@keyframes bento-blob-2 { 0%, 100% { scale: 1; } 40% { scale: 1.55 0.82; } 75% { scale: 0.88 1.08; } }
+@keyframes bento-blob-3 { 0%, 100% { scale: 1; } 40% { scale: 1.55 0.82; } 75% { scale: 0.88 1.08; } }
+@keyframes bento-blob-5 { 0%, 100% { scale: 1; } 40% { scale: 1.55 0.82; } 75% { scale: 0.88 1.08; } }
+@keyframes bento-blob-6 { 0%, 100% { scale: 1; } 40% { scale: 1.55 0.82; } 75% { scale: 0.88 1.08; } }
+@keyframes bento-blob-7 { 0%, 100% { scale: 1; } 40% { scale: 1.55 0.82; } 75% { scale: 0.88 1.08; } }
+@keyframes bento-blob-8 { 0%, 100% { scale: 1; } 40% { scale: 1.55 0.82; } 75% { scale: 0.88 1.08; } }
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Blob: springt mit Überschwingen und dehnt sich unterwegs (Squash & Stretch über scale; neuer Animationsname je Karte = Neustart) */
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .tabs::before {
+    transition: transform 0.56s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s ease;
+    animation: var(--blob-anim, none) 0.56s cubic-bezier(0.3, 0.7, 0.3, 1);
+  }
+
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .tab-symbol {
+    transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  /* federnder Tipp auf Kacheln und Knöpfen */
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .knopf,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .kachel-knopf,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .dienst-knopf,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) button.chip,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .tab.fab .tab-symbol {
+    transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .knopf:active,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .kachel-knopf:active,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .dienst-knopf:active {
+    transform: scale(0.95);
+    transition-duration: 0.08s;
+  }
+
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) button.chip:active,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .tab.fab:active .tab-symbol {
+    transform: scale(0.9);
+    transition-duration: 0.08s;
+  }
+
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .toast {
+    transform: translate(-50%, 20px) scale(0.9);
+    transition: opacity var(--dauer-kurz) ease, transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .toast.auf {
+    transform: translate(-50%, 0) scale(1);
+  }
+}
