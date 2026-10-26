@@ -4,3 +4,7 @@ playwright-report/
 
 # Basis der visuellen Regression (hängt von Schriften und Kantenglättung dieses Rechners ab)
 tests/visuell/__basis__/
+
+# Arbeitsordner (Pläne, Berichte, Bildschirmfotos der Galerie – hunderte MB): nie ins öffentliche Repo
+.superpowers/
+.internal/

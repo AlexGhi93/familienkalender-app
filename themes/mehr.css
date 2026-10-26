@@ -198,8 +198,8 @@
 :root[data-aussehen='bento'] .willkommen .leise,
 :root[data-aussehen='glas'] .verbinden-seite .leise,
 :root[data-aussehen='bento'] .verbinden-seite .leise,
-:root[data-aussehen='glas'] .verlauf-zeile .karte-text small,
-:root[data-aussehen='bento'] .verlauf-zeile .karte-text small,
+:root[data-aussehen='glas'] .screen.verlauf .verlauf-zeile .karte-text small,
+:root[data-aussehen='bento'] .screen.verlauf .verlauf-zeile .karte-text small,
 :root[data-aussehen='glas'] .blatt .nachricht-details .leise,
 :root[data-aussehen='bento'] .blatt .nachricht-details .leise,
 :root[data-aussehen='glas'] .mehr-seite .feld > span,
@@ -511,21 +511,21 @@
   gap: 10px;
 }
 
-:root[data-aussehen='glas'] .verlauf-zeile,
-:root[data-aussehen='bento'] .verlauf-zeile {
+:root[data-aussehen='glas'] .screen.verlauf .verlauf-zeile,
+:root[data-aussehen='bento'] .screen.verlauf .verlauf-zeile {
   gap: 12px;
   min-height: 64px;
   padding: 10px 12px 10px 14px;
   border-radius: 20px;
 }
 
-:root[data-aussehen='glas'] .verlauf-zeile .karte-text b,
-:root[data-aussehen='bento'] .verlauf-zeile .karte-text b {
+:root[data-aussehen='glas'] .screen.verlauf .verlauf-zeile .karte-text b,
+:root[data-aussehen='bento'] .screen.verlauf .verlauf-zeile .karte-text b {
   font-size: 1.0625rem;
 }
 
-:root[data-aussehen='glas'] .verlauf-zeile .pfeil,
-:root[data-aussehen='bento'] .verlauf-zeile .pfeil {
+:root[data-aussehen='glas'] .screen.verlauf .verlauf-zeile .pfeil,
+:root[data-aussehen='bento'] .screen.verlauf .verlauf-zeile .pfeil {
   display: grid;
   flex: none;
   place-items: center;
@@ -935,7 +935,7 @@
   font-weight: 500;
 }
 
-:root[data-aussehen='glas'] .verlauf-zeile .pfeil {
+:root[data-aussehen='glas'] .screen.verlauf .verlauf-zeile .pfeil {
   background: color-mix(in srgb, var(--ink) 6%, transparent);
 }
 
@@ -1208,11 +1208,11 @@
   font-weight: 700;
 }
 
-:root[data-aussehen='bento'] .verlauf-zeile .karte-text b {
+:root[data-aussehen='bento'] .screen.verlauf .verlauf-zeile .karte-text b {
   font-weight: 800;
 }
 
-:root[data-aussehen='bento'] .verlauf-zeile .pfeil {
+:root[data-aussehen='bento'] .screen.verlauf .verlauf-zeile .pfeil {
   background: var(--knopf-auf-tint);
   color: var(--ink);
   font-weight: 900;

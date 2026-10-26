@@ -673,3 +673,12 @@
     padding-right: 2px;
   }
 }
+
+/* Tastatur-Fokus (Tastatur, iOS-Tastatursteuerung, Schaltersteuerung): der Ring gewinnt über den Schmuck-Umriss der Zelle (heute: kein
+   Umriss, Konflikt: gestrichelt). Der Konflikt bleibt am ⚠️-Abzeichen erkennbar. Steht am Ende: gleiche Spezifität, spätere Regel. */
+:root[data-aussehen='glas'] .monat-seite .zelle:focus-visible,
+:root[data-aussehen='bento'] .monat-seite .zelle:focus-visible {
+  z-index: 2;
+  outline: var(--fokus-ring);
+  outline-offset: var(--fokus-abstand);
+}

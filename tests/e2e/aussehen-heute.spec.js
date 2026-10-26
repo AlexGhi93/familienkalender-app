@@ -115,3 +115,30 @@ test.describe('Tippziele der Tab-Leiste auf einem 375-px-Telefon', () => {
     }
   });
 });
+
+test('Heute „Demnächst“: die Zeilen behalten ihren Heute-Look – die Regeln der Verlauf-Seite (mehr.css) gelten nur dort', async ({ page, aussehen }) => {
+  test.skip(!aussehen, 'nur Glas und Bento');
+  await starteDemo(page);
+  const heute = page.locator('.heute-seite .verlauf-zeile').first();
+  await expect(heute).toBeVisible();
+  const stil = (loc) =>
+    loc.evaluate((el) => {
+      const s = getComputedStyle(el);
+      const p = el.querySelector('.pfeil');
+      return { hoehe: s.minHeight, rechts: s.paddingRight, pfeilBreite: p ? getComputedStyle(p).width : null, pfeilGrund: p ? getComputedStyle(p).backgroundColor : null };
+    });
+  const h = await stil(heute);
+  if (aussehen === 'bento') {
+    expect(h.hoehe).toBe('60px'); // bento.css (Aufgabe 4)
+    expect(h.rechts).toBe('14px');
+  }
+  expect(h.pfeilBreite, 'kein runder Verlauf-Pfeil auf Heute').not.toBe('30px');
+  expect(h.pfeilGrund).toBe('rgba(0, 0, 0, 0)');
+  // Gegenprobe: auf der Verlauf-Seite bleibt deren Look
+  await page.goto('/#/verlauf');
+  const verlauf = page.locator('.screen.verlauf .verlauf-zeile').first();
+  await expect(verlauf).toBeVisible();
+  const v = await stil(verlauf);
+  expect(v.hoehe).toBe('64px');
+  expect(v.pfeilBreite).toBe('30px');
+});

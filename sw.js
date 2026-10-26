@@ -2,7 +2,23 @@
 // und nur offline auf den Zwischenspeicher zurückgreifen.
 const CACHE = 'familienkalender-v2';
 
-self.addEventListener('install', () => self.skipWaiting());
+// Die Schriften der Aussehen (Glas: Onest, Bento: Fredoka + Nunito, zusammen ≈ 90 KB) liegen gleich nach der Anmeldung im
+// Zwischenspeicher – auch die eines Aussehens, das noch nie gewählt wurde: wer es offline zum ersten Mal wählt, sieht seine Schrift.
+// Abrufe danach laufen weiter zuerst übers Netz (siehe fetch). Fehlt das Netz beim Anmelden, kommen sie wie bisher beim ersten Gebrauch.
+const SCHRIFTEN = ['./fonts/onest.woff2', './fonts/fredoka.woff2', './fonts/nunito.woff2'];
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    (async () => {
+      try {
+        await (await caches.open(CACHE)).addAll(SCHRIFTEN);
+      } catch {
+        // offline beim Anmelden: kein Hindernis, die Schriften kommen beim ersten Gebrauch in den Zwischenspeicher
+      }
+      await self.skipWaiting();
+    })(),
+  );
+});
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(

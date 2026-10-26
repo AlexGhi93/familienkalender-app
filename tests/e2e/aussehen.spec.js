@@ -178,6 +178,26 @@ test.describe('offline', () => {
     await expect(page.locator('nav.tabs')).toBeVisible();
     await expect(html(page)).toHaveAttribute('data-aussehen', 'glas');
     await expect(gruppe(page, 'Aussehen').locator('.chip.aktiv')).toHaveText('Glas & Licht');
+    // auch die Schrift kommt offline (Review Focus 4)
+    await page.evaluate(() => document.fonts.load('750 16px "FK Onest"').catch(() => null));
+    expect(await page.evaluate(() => [...document.fonts].find((f) => /Onest/.test(f.family))?.status)).toBe('loaded');
+  });
+
+  test('die Schriften ALLER Aussehen liegen nach der ersten Ladung im Zwischenspeicher – offline zu einem nie gewählten Aussehen wechseln', async ({ page, context }) => {
+    await starteDemo(page, { route: '#/app' }); // Klassisch: die Seite selbst lädt keine der Schriften
+    await page.evaluate(() => navigator.serviceWorker.ready);
+    await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
+    for (const datei of ['/fonts/onest.woff2', '/fonts/fredoka.woff2', '/fonts/nunito.woff2']) {
+      await expect.poll(() => page.evaluate((d) => caches.match(d).then(Boolean), datei), datei).toBe(true);
+    }
+    await context.setOffline(true);
+    await gruppe(page, 'Aussehen').getByRole('button', { name: 'Bento bunt' }).click();
+    await expect(html(page)).toHaveAttribute('data-aussehen', 'bento');
+    const status = await page.evaluate(async () => {
+      await Promise.allSettled(['800 16px "FK Nunito"', '600 16px "FK Fredoka"'].map((f) => document.fonts.load(f)));
+      return [...document.fonts].filter((f) => /Nunito|Fredoka/.test(f.family)).map((f) => `${f.family.replace(/"/g, '')}: ${f.status}`).sort();
+    });
+    expect(status).toEqual(['FK Fredoka: loaded', 'FK Nunito: loaded']);
   });
 });
 

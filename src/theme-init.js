@@ -25,7 +25,9 @@
   if (bewegung === 'reduziert') wurzel.setAttribute('data-bewegung', 'reduziert');
   else wurzel.removeAttribute('data-bewegung');
   if (wahl === 'auto' && aussehen === 'klassisch') return; // die zwei theme-color-Zeilen im HTML genügen
-  // [hell, dunkel] je Aussehen; die Metas stehen vor denen im HTML, das erste passende gilt
+  // [hell, dunkel] je Aussehen. Die neuen Metas landen VOR den theme-color-Metas aus index.html, weil dieses Skript im <head> über
+  // ihnen steht (sie sind beim Lauf noch nicht gelesen; querySelectorAll unten findet sie deshalb nicht) – und das erste passende gilt.
+  // Das <script> muss also über den Metas bleiben, sonst gewinnen die Klassisch-Farben aus dem HTML.
   var farben = aussehen === 'glas' ? ['#F1EEFA', '#0D0B19'] : aussehen === 'bento' ? ['#F1EFFA', '#14111D'] : ['#FFF7EC', '#1F1B2E'];
   var alt = document.querySelectorAll('meta[name="theme-color"]');
   for (var i = 0; i < alt.length; i += 1) alt[i].remove();

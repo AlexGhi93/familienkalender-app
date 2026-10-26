@@ -447,11 +447,7 @@
   font-size: 0.94rem;
 }
 
-:root[data-aussehen='glas'] .konto-segment-knopf.aktiv {
-  background: var(--tropfen);
-  color: var(--ink);
-  box-shadow: 0 4px 14px -4px rgba(30, 20, 80, 0.3), inset 0 1px 0 var(--glas-kante);
-}
+/* die Wahl selbst (Glastropfen als ::before) zeichnet themes/konto.css */
 
 /* Felder: die Schrift der Seite, etwas leichter als die Beschriftung */
 :root[data-aussehen='glas'] .feld input,
@@ -567,13 +563,7 @@
   font-weight: 650;
 }
 
-:root[data-aussehen='glas'] .toast-aktion {
-  color: var(--akzent);
-}
-
-:root[data-aussehen='glas'] .toast.fehler .toast-aktion {
-  color: inherit;
-}
+/* „Rückgängig“ in der Meldung: themes/formulare.css */
 
 /* Fokus: der Ring folgt der runden Form */
 :root[data-aussehen='glas'] .knopf:focus-visible,

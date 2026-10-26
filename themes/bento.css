@@ -348,9 +348,7 @@
   font-size: 0.94rem;
 }
 
-:root[data-aussehen='bento'] .konto-segment-knopf.aktiv {
-  box-shadow: inset 0 -3px 0 rgb(0 0 0 / 0.16);
-}
+/* die Wahl selbst (Blob als ::before) zeichnet themes/konto.css */
 
 /* Felder: weiß mit Innenring, Fokus traubenlila */
 :root[data-aussehen='bento'] .feld input,
@@ -705,6 +703,13 @@
   outline: 2px dashed var(--linie);
   outline-offset: -5px;
   box-shadow: var(--lippe);
+}
+
+/* Tastatur-Fokus: der Ring ersetzt den gestrichelten Schmuck-Umriss („Wer?“), solange der Knopf den Fokus hat */
+:root[data-aussehen='bento'] .dienst-knopf:focus-visible,
+:root[data-aussehen='bento'] .dienst-leer:focus-visible {
+  outline: var(--fokus-ring);
+  outline-offset: var(--fokus-abstand);
 }
 
 /* auf Heute große Kacheln (im Tagesblatt bleiben sie kompakt) */
