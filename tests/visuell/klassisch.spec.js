@@ -16,6 +16,9 @@ const ABEND = '2026-10-14T19:00:00+02:00';
 const test = basis.extend({
   darstellung: [null, { option: true }],
   context: async ({ context, darstellung }, use) => {
+    // Die Basis entstand mit 1.1.2; die Nummer in „Konto & App“ ist Inhalt, kein Aussehen: hier steht sie fest auf 1.1.2
+    // (auch für die Versionsprüfung, die dieselbe Datei liest).
+    await context.route(/\/src\/app\/version\.js(\?|$)/, (route) => route.fulfill({ contentType: 'text/javascript; charset=utf-8', body: "export const VERSION = '1.1.2';" }));
     if (darstellung) {
       await context.addInitScript((wert) => {
         try {
