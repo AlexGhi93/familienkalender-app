@@ -320,6 +320,56 @@ test.describe('Monat und Tagesblatt in Glas und Bento', () => {
     }
   });
 
+  test('Wochentage ≥ 16 px; bei 375 px: Zellen ≥ 44 px, die Karte steht in der Flucht der Seite, kein waagerechtes Scrollen', async ({ page, aussehen }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    await starteDemo(page, { route: '#/monat' });
+    await expect(page.locator('.screen.monat-seite .raster')).toBeVisible();
+    for (const groesse of await page.locator('.wochentage span').evaluateAll((ss) => ss.map((s) => parseFloat(getComputedStyle(s).fontSize)))) {
+      expect(groesse).toBeGreaterThanOrEqual(16);
+    }
+    for (const box of await page.locator('.raster .zelle').evaluateAll((zs) => zs.map((z) => z.getBoundingClientRect().toJSON()))) {
+      expect(box.width).toBeGreaterThanOrEqual(44);
+    }
+    const kanten = await page.evaluate(() => {
+      const r = (s) => document.querySelector(s).getBoundingClientRect();
+      return { wt: r('.monat-seite > .wochentage'), raster: r('.monat-seite > .raster'), stat: r('.monat-seite > .statistik') };
+    });
+    for (const k of [kanten.wt, kanten.raster]) {
+      expect(Math.abs(k.left - kanten.stat.left), `${aussehen}: linke Kante wie die Statistik-Karte`).toBeLessThan(0.5);
+      expect(Math.abs(k.right - kanten.stat.right), `${aussehen}: rechte Kante wie die Statistik-Karte`).toBeLessThan(0.5);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+  });
+
+  // monat.css darf nur Monat und Tagesblatt treffen: .monat-kopf gibt es auch in Schicht (sp-monat) und Urlaub (jahr-wahl)
+  for (const route of ['#/schicht', '#/urlaub', '#/heute', '#/konto', '#/mehr']) {
+    test(`themes/monat.css trifft auf ${route} kein Element (auch nicht die Pfeile von Schicht und Urlaub)`, async ({ page }) => {
+      await starteDemo(page, { route });
+      if (route === '#/schicht') await expect(page.locator('.sp-monat .rund').first()).toBeVisible();
+      if (route === '#/urlaub') await expect(page.locator('.jahr-wahl .rund').first()).toBeVisible();
+      const treffer = await page.evaluate(() => {
+        const blatt = [...document.styleSheets].find((s) => s.href?.endsWith('/themes/monat.css'));
+        const selektoren = [];
+        const sammle = (regeln) => {
+          for (const r of regeln) {
+            if (r.selectorText) selektoren.push(...r.selectorText.split(','));
+            else if (r.cssRules) sammle(r.cssRules);
+          }
+        };
+        sammle(blatt.cssRules);
+        const pfeile = [...document.querySelectorAll('.sp-monat .rund, .jahr-wahl .rund')];
+        const aus = [];
+        for (const sel of selektoren) {
+          for (const el of document.querySelectorAll(sel)) if (el !== document.documentElement) aus.push(`${sel.trim()} → ${el.className}`);
+          for (const el of pfeile) if (el.matches(sel)) aus.push(`Pfeil: ${sel.trim()}`);
+        }
+        return { anzahl: selektoren.length, aus: [...new Set(aus)] };
+      });
+      expect(treffer.anzahl).toBeGreaterThan(50);
+      expect(treffer.aus).toEqual([]);
+    });
+  }
+
   test('Tagesblatt: „Eintragen“ als Zweierraster mit gleich breitem Rand (aktiv und nicht aktiv), Felder ≥ 44 px', async ({ page }) => {
     await starteDemo(page, { route: '#/monat' });
     await zelle(page, 'Dienstag, 13. Oktober').click();

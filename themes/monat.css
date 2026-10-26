@@ -18,6 +18,7 @@
   --monat-tint-rand: 50%;
   --monat-karte-schatten: 0 1px 1px rgba(40, 28, 96, 0.04), 0 12px 32px -10px rgba(56, 36, 140, 0.22);
   --monat-heute-leuchten: 0 6px 18px -4px color-mix(in srgb, var(--akzent) 70%, transparent);
+  --monat-punkt-schein: none;
 }
 
 :root[data-aussehen='bento'] {
@@ -32,10 +33,11 @@
     --monat-tint-rand: 62%;
     --monat-karte-schatten: 0 1px 1px rgba(0, 0, 0, 0.3), 0 14px 36px -12px rgba(0, 0, 0, 0.6);
     --monat-heute-leuchten: 0 6px 20px -4px color-mix(in srgb, var(--akzent) 60%, transparent);
+    --monat-punkt-schein: drop-shadow(0 0 1.5px rgb(255 255 255 / 0.8)); /* 🩺 (lila) bleibt auf dunklem Glas sichtbar */
   }
 
   :root[data-aussehen='bento']:not([data-theme='light']) {
-    --monat-tint: 36%;
+    --monat-tint: 40%;
     --monat-tint-lippe: 55%;
   }
 }
@@ -46,17 +48,18 @@
   --monat-tint-rand: 62%;
   --monat-karte-schatten: 0 1px 1px rgba(0, 0, 0, 0.3), 0 14px 36px -12px rgba(0, 0, 0, 0.6);
   --monat-heute-leuchten: 0 6px 20px -4px color-mix(in srgb, var(--akzent) 60%, transparent);
+  --monat-punkt-schein: drop-shadow(0 0 1.5px rgb(255 255 255 / 0.8));
 }
 
 :root[data-aussehen='bento'][data-theme='dark'] {
-  --monat-tint: 36%;
+  --monat-tint: 40%;
   --monat-tint-lippe: 55%;
 }
 
 /* ---------- 2. Glas: Monat ---------- */
 
 /* Blättern: runde Glasknöpfe mit Lichtkante */
-:root[data-aussehen='glas'] .monat-kopf .rund {
+:root[data-aussehen='glas'] .monat-seite > .monat-kopf .rund {
   border: 1px solid var(--glas-kante);
   background: linear-gradient(165deg, var(--tropfen), var(--glas-stark));
   box-shadow: var(--schatten-karte);
@@ -66,12 +69,15 @@
 }
 
 /* Wochentage + Raster = eine Glaskarte: oben die Kopfzeile (heller Teil mit Lichtkante), unten das Raster (Verlauf und Schatten).
-   Die Kopfzeile schließt die Lücke der Seite (gap 14px) mit einem negativen Rand; beide ragen 6px in den Seitenrand, damit die
-   Zellen so breit bleiben wie in Klassisch (≥ 44px auch bei 375px). */
+   Die Kopfzeile schließt die Lücke der Seite mit einem negativen Rand: -14px = .screen { gap: 14px } in theme.css (Abschnitt
+   „Seite“; ändert sich die Lücke dort, muss sie hier mit – der e2e-Test in monat.spec.js prüft die Naht). Die Karte steht in der
+   Flucht der Seite (wie Kopf, Legende, Statistik); 4px Innenabstand + 4px Lücke halten die Zellen ≥ 44px bei 375px. Spalten mit
+   minmax(0, 1fr): bei großer Systemschrift läuft das Raster nicht waagerecht über. */
 :root[data-aussehen='glas'] .monat-seite > .wochentage {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 4px;
-  margin: 0 -6px -14px;
-  padding: 14px 6px 8px;
+  margin: 0 0 -14px;
+  padding: 14px 4px 8px;
   border: 1px solid var(--glas-kante);
   border-bottom: 0;
   border-radius: 28px 28px 0 0;
@@ -80,9 +86,9 @@
 }
 
 :root[data-aussehen='glas'] .monat-seite > .raster {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 4px;
-  margin: 0 -6px;
-  padding: 0 6px 8px;
+  padding: 0 4px 8px;
   border: 1px solid var(--glas-kante);
   border-top: 0;
   border-radius: 0 0 28px 28px;
@@ -91,7 +97,7 @@
 }
 
 :root[data-aussehen='glas'] .monat-seite .wochentage span {
-  font-size: 0.9375rem;
+  font-size: 1rem;
   font-weight: 650;
   color: var(--ink-2);
 }
@@ -128,6 +134,7 @@
   right: 3px;
   bottom: 3px;
   font-size: 0.75rem;
+  filter: var(--monat-punkt-schein);
 }
 
 :root[data-aussehen='glas'] .monat-seite .zelle .punkt.links {
@@ -137,7 +144,21 @@
 
 :root[data-aussehen='glas'] .monat-seite .zelle .punkt.mitte {
   right: auto;
-  left: 50%;
+  left: 4px;
+  transform: none; /* unten links statt unten mittig: das Tagessymbol (i) bleibt frei */
+}
+
+:root[data-aussehen='glas'] .monat-seite .zelle:has(.punkt.links) .punkt.mitte {
+  left: 18px;
+}
+
+/* steht unten links eine Marke, rückt das Tagessymbol etwas nach rechts (kein 🎈 über 🎉) */
+:root[data-aussehen='glas'] .monat-seite .zelle:has(.punkt.mitte) i {
+  margin-left: 12px;
+}
+
+:root[data-aussehen='glas'] .monat-seite .zelle:has(.punkt.links):has(.punkt.mitte) i {
+  margin-left: 24px;
 }
 
 :root[data-aussehen='glas'] .monat-seite .zelle.ausserhalb {
@@ -225,6 +246,10 @@
 
 /* ---------- 3. Glas: Tagesblatt ---------- */
 
+:root[data-aussehen='glas'] .blatt:has(.tb-eintragen) .blatt-inhalt h3 {
+  font-size: 1rem; /* Fundament: 0.94rem (15px) in allen Glas-Blättern; hier ≥ 16px */
+}
+
 :root[data-aussehen='glas'] .blatt:has(.tb-eintragen) .konflikt-hinweis {
   padding: 12px 14px;
   border: 1px solid color-mix(in srgb, var(--gefahr) 50%, transparent);
@@ -294,7 +319,7 @@
   border-color: var(--c, var(--akzent));
   background: linear-gradient(165deg, color-mix(in srgb, var(--c, var(--akzent)) 26%, var(--glas-hoch)), color-mix(in srgb, var(--c, var(--akzent)) 34%, var(--karte)) 80%);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--c, var(--akzent)) 22%, transparent), var(--schatten-knopf);
-  font-weight: 750;
+  font-weight: 650; /* gleiche Schrift wie nicht aktiv: nichts springt (wie .chip.aktiv im Fundament) */
 }
 
 :root[data-aussehen='glas'] .tb-eintragen .chip:last-child:nth-child(odd) {
@@ -322,7 +347,7 @@
   box-shadow: var(--lippe);
 }
 
-:root[data-aussehen='bento'] .monat-kopf .rund {
+:root[data-aussehen='bento'] .monat-seite > .monat-kopf .rund {
   width: 48px;
   height: 48px;
   border: 0;
@@ -333,7 +358,7 @@
 }
 
 :root[data-aussehen='bento'] .monat-seite .wochentage span {
-  font-size: 0.9375rem;
+  font-size: 1rem;
   font-weight: 800;
   color: var(--ink-2);
 }
@@ -389,6 +414,14 @@
   right: 4px;
   bottom: auto;
   font-size: 0.75rem;
+}
+
+/* schmale Telefone (< 375px): die Arztmarke rückt an den Rand und wird kleiner, damit sie zweistellige Zahlen nicht berührt */
+@media (max-width: 374px) {
+  :root[data-aussehen='bento'] .monat-seite .zelle .punkt:not(.links):not(.mitte) {
+    right: 2px;
+    font-size: 0.625rem;
+  }
 }
 
 :root[data-aussehen='bento'] .monat-seite .zelle .punkt.links {
@@ -571,12 +604,6 @@
   font-size: 1rem;
 }
 
-/* Bringen & Abholen im Blatt: Personenkacheln kompakt (auf Heute sind sie hoch) */
-:root[data-aussehen='bento'] .blatt:has(.tb-eintragen) .dienst-blatt .dienst-knopf {
-  justify-content: center;
-  min-height: 76px;
-}
-
 :root[data-aussehen='bento'] .blatt:has(.tb-eintragen) .blatt-inhalt > .leise:first-child {
   padding: 18px 16px;
   border-radius: 20px;
@@ -607,20 +634,20 @@
 
   /* Antippen: Zelle und Blätter-Knopf geben federnd nach (nur transform) */
   :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .monat-seite .zelle,
-  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .monat-kopf .rund,
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .monat-seite > .monat-kopf .rund,
   :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .monat-seite .zelle,
-  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .monat-kopf .rund {
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .monat-seite > .monat-kopf .rund {
     transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
   }
 
   :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .monat-seite .zelle:active,
-  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .monat-kopf .rund:active {
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .monat-seite > .monat-kopf .rund:active {
     transform: scale(0.94);
     transition-duration: 0.1s;
   }
 
   :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .monat-seite .zelle:active,
-  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .monat-kopf .rund:active {
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .monat-seite > .monat-kopf .rund:active {
     transform: scale(0.9);
     transition-duration: 0.08s;
   }
