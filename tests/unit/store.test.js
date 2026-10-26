@@ -67,6 +67,50 @@ describe('laden und Demo-Adapter', () => {
     await store.laden();
     assert.equal(await store.sichereBereich('2020-01-01', '2020-02-01'), false);
   });
+
+  /** Demo mit Google-Fenster und gezähltem ladeBereich; mit `halten` wartet jedes Laden, bis der Test es freigibt. */
+  function mitBereichen({ halten = false } = {}) {
+    const geladen = [];
+    const freigaben = [];
+    const t = aufbau({
+      aendern: (a) => ({
+        ...a,
+        laden: async () => ({ ...(await a.laden()), fenster: { von: '2026-09-01', bis: '2028-04-06' } }),
+        ladeBereich: async (von, bis) => {
+          geladen.push(`${von}|${bis}`);
+          if (halten) await new Promise((weiter) => freigaben.push(weiter));
+          return { tage: {}, urlaub: [], termine: [] };
+        },
+      }),
+    });
+    const freigeben = async () => {
+      while (freigaben.length) freigaben.shift()();
+      await new Promise((r) => setTimeout(r, 0));
+    };
+    return { ...t, geladen, freigeben };
+  }
+
+  test('derselbe Bereich zweimal gleichzeitig: einmal geladen, beide Male true', async () => {
+    const { store, geladen, freigeben } = mitBereichen({ halten: true });
+    await store.laden();
+    const erste = store.sichereBereich('2026-06-01', '2026-09-01');
+    const zweite = store.sichereBereich('2026-06-01', '2026-09-01');
+    await freigeben();
+    assert.deepEqual(await Promise.all([erste, zweite]), [true, true]);
+    assert.deepEqual(geladen, ['2026-06-01|2026-09-01']);
+  });
+
+  test('aneinander anschließende geladene Bereiche decken zusammen ab: kein zweites Laden', async () => {
+    const { store, geladen } = mitBereichen();
+    await store.laden();
+    assert.equal(await store.sichereBereich('2026-06-01', '2026-09-01'), true);
+    assert.equal(await store.sichereBereich('2026-03-01', '2026-06-01'), true);
+    assert.equal(await store.sichereBereich('2026-03-01', '2026-09-01'), true);
+    assert.equal(await store.sichereBereich('2026-04-01', '2026-10-01'), true); // reicht ins Fenster hinein
+    assert.deepEqual(geladen, ['2026-06-01|2026-09-01', '2026-03-01|2026-06-01']);
+    assert.equal(await store.sichereBereich('2025-12-01', '2026-09-01'), true); // Dezember bis Februar fehlte noch
+    assert.equal(geladen.length, 3);
+  });
 });
 
 describe('Tage', () => {
@@ -552,6 +596,28 @@ describe('Schichtplan', () => {
     assert.equal(store.getState(), vorher);
   });
 
+  test('erneutes Lesen ohne Änderung behält Katalog, Monate und das Monats-Objekt (kein neuer Push-Abgleich)', async () => {
+    const { store } = aufbau();
+    await store.laden();
+    await store.schichtLaden(JM);
+    await store.schichtLaden('2026-12'); // hin- und zurückblättern
+    const vorher = store.getState().schicht;
+    await store.schichtLaden(JM);
+    await store.schichtLaden('2026-12');
+    await store.schichtVorladen(); // liest die Schichtarten immer neu
+    assert.equal(await store.schichtAktualisieren([JM]), true); // aktuell, nichts Neues
+    const nachher = store.getState().schicht;
+    assert.equal(nachher.monate, vorher.monate);
+    assert.equal(nachher.monate[JM], vorher.monate[JM]);
+    assert.equal(nachher.katalog, vorher.katalog);
+    // eine echte Änderung ersetzt nur diesen Monat
+    await store.schichtSetzen(JM, 9, 'papa', 'A');
+    await store.schichtLaden(JM);
+    const geaendert = store.getState().schicht;
+    assert.notEqual(geaendert.monate[JM], vorher.monate[JM]);
+    assert.equal(geaendert.monate['2026-11'], vorher.monate['2026-11']);
+  });
+
   test('schichtAktualisieren: übernimmt, was das andere Telefon geschrieben hat; nicht, wenn inzwischen selbst geschrieben wurde', async () => {
     let fremd = null;
     let warte = null;
@@ -688,7 +754,7 @@ describe('Schichtplan', () => {
     await store.schichtLaden(JM);
     const monate = store.getState().schicht.monate;
     fremd = { ...standardKatalog(), arten: { ...standardKatalog().arten, mama: standardKatalog().arten.mama.slice(0, 2) } };
-    assert.deepEqual(await store.schichtArtSpeichern('papa', { kuerzel: 'BS', name: 'Bereitschaft', farbe: 'grau' }), { ok: false, fehler: 'Speichern hat nicht geklappt. Bitte noch einmal versuchen.' });
+    assert.deepEqual(await store.schichtArtSpeichern('papa', { kuerzel: 'BS', name: 'Bereitschaft', farbe: 'grau' }), { ok: false, fehler: 'Speichern hat nicht geklappt. Bitte noch einmal versuchen.', gemeldet: true });
     const s = store.getState().schicht;
     assert.deepEqual(s.katalog, fremd);
     assert.equal(store.getState().fehler, 'Speichern hat nicht geklappt. Bitte noch einmal versuchen.');
@@ -763,7 +829,7 @@ describe('Schichtplan', () => {
     await adapter.aendereSchichtarten((kat) => ({ ...kat, arten: { ...kat.arten, papa: [...kat.arten.papa, { k: 'J', kuerzel: 'B', name: 'Bergbahn', farbe: 'braun', gruppe: 'dienst' }] } }));
     assert.equal(store.getState().schicht.katalog.arten.papa.some((a) => a.kuerzel === 'B'), false);
     const r = await store.schichtArtSpeichern('papa', { kuerzel: 'b', name: 'Bereitschaft', farbe: 'grau' });
-    assert.deepEqual(r, { ok: false, fehler: 'Dieses Kürzel gibt es schon.' });
+    assert.deepEqual(r, { ok: false, fehler: 'Dieses Kürzel gibt es schon.', gemeldet: true }); // gemeldet: die Shell zeigt die Meldung, die Oberfläche nicht noch einmal
     assert.equal(store.getState().fehler, 'Dieses Kürzel gibt es schon.'); // die Fehlermeldung (Toast) trägt den genauen Text
     assert.deepEqual(store.getState().schicht.katalog, gespeichert(speicher).schicht.katalog); // neu gelesen: der Stand im Kalender
     assert.deepEqual(store.getState().schicht.katalog.arten.papa.at(-1).name, 'Bergbahn');

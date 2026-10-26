@@ -243,8 +243,12 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
       const { jahr } = urlaubModel(store.getState(), store.heute(), ui.urlaubJahr);
       store.sichereBereich(jahr.start, addDays(jahr.end, 1));
     },
-    /** Holt den Verlauf bis zum gewählten Beginn nach (nach einem vollständigen Neuladen fehlen die älteren Monate wieder). */
+    /**
+     * Holt den Verlauf bis zum gewählten Beginn nach (nach einem vollständigen Neuladen fehlen die älteren Monate wieder).
+     * Während „Ältere laden“ läuft, lädt der Knopf selbst: sonst käme derselbe Zeitraum noch einmal in einem größeren Stück.
+     */
     verlaufLaden() {
+      if (ui.verlauf.laedt) return;
       const fenster = store.getState().fenster;
       if (fenster && ui.verlauf.von && ui.verlauf.von < fenster.von) store.sichereBereich(ui.verlauf.von, fenster.von);
     },

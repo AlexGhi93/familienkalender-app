@@ -195,6 +195,11 @@ describe('Verlauf', () => {
   test('Ältere laden: nur mit bekanntem Fenster und höchstens fünf Jahre zurück', () => {
     assert.equal(verlaufModel({ ...state, fenster: { von: '2026-01-01', bis: '2027-01-01' } }, '2026-10-14').aeltereMoeglich, true);
     assert.equal(verlaufModel({ ...state, fenster: { von: '2021-10-01', bis: '2027-01-01' } }, '2026-10-14').aeltereMoeglich, false);
+    // schon nachgeladen (`von` vor dem Fenster): zählt der wirklich geladene Beginn
+    const fenster = { von: '2026-09-01', bis: '2028-04-06' };
+    assert.equal(verlaufModel({ ...state, fenster }, '2026-10-14', { von: '2021-12-01' }).aeltereMoeglich, true);
+    assert.equal(verlaufModel({ ...state, fenster }, '2026-10-14', { von: '2021-09-01' }).aeltereMoeglich, false);
+    assert.equal(verlaufModel({ ...state, fenster }, '2026-10-14', { von: '2026-12-01' }).aeltereMoeglich, true); // `von` nach dem Fenster zählt nicht
     assert.equal(fruehereGrenze('2026-02-15'), '2025-11-01');
     assert.equal(fruehereGrenze('2026-04-01', 3), '2026-01-01');
     assert.equal(fruehereGrenze('2026-01-01', 12), '2025-01-01');

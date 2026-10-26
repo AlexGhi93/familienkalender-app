@@ -102,7 +102,8 @@ export function oeffneSchichtarten({ store }) {
       knopf.disabled = false;
       knopf.textContent = 'Speichern';
     }
-    toast(r.fehler ?? ALLGEMEINER_FEHLER, { art: 'fehler' }); // z. B. „Dieses Kürzel gibt es schon.“: Eingabe bleibt stehen
+    // z. B. „Dieses Kürzel gibt es schon.“: Eingabe bleibt stehen. Kam der Fehler beim Schreiben, zeigt die Shell ihn schon (`gemeldet`).
+    if (!r.gemeldet) toast(r.fehler ?? ALLGEMEINER_FEHLER, { art: 'fehler' });
   }
 
   function verschieben(person, a, richtung) {

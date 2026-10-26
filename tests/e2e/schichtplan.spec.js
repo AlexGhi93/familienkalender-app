@@ -1,6 +1,6 @@
 // Schichtplan (Demo): Registerkarte „Schicht“, Monatsraster mit zwei Streifen je Tag (oben Papa, unten Mama), Monatswechsel,
 // Filter (gemerkt auf diesem Telefon), Zählung und Legende; auf 375 px ragt nichts hinaus.
-import { test, expect, starteDemo, starteGoogleAusSnapshot, starteGoogleVerbunden, tab, erwarteToast, NETZFEHLER } from './hilfen.js';
+import { test, expect, starteDemo, starteGoogleAusSnapshot, starteGoogleVerbunden, tab, erwarteToast, fehlerToastsZaehlen, NETZFEHLER } from './hilfen.js';
 import { standardKatalog } from '../../src/domain/schicht.js';
 
 const zelle = (page, datum) => page.locator(`.sp-zelle[data-datum="${datum}"]`);
@@ -895,8 +895,11 @@ test.describe('Schichtarten bearbeiten', () => {
       const fremd = standardKatalog();
       fremd.arten.papa.push({ k: 'J', kuerzel: 'B', name: 'Bereitschaft', farbe: 'grau', gruppe: 'dienst' });
       google.setzeSchichtarten(fremd);
+      const toasts = await fehlerToastsZaehlen(page);
       await formular(page).getByRole('button', { name: 'Speichern' }).click();
       await expect(page.locator('.toast.fehler')).toHaveText('Dieses Kürzel gibt es schon.');
+      await page.waitForTimeout(600);
+      expect(await toasts.anzahl(), 'genau eine Fehlermeldung').toBe(1);
       await expect(formular(page)).toBeVisible();
       await expect(formular(page).getByRole('textbox', { name: 'Name' })).toHaveValue('Bergbahn');
       await expect(formular(page).getByRole('textbox', { name: 'Kürzel' })).toHaveValue('B');

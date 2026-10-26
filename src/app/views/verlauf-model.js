@@ -134,9 +134,10 @@ const aufsteigend = (a, b) => a.start.localeCompare(b.start) || a.zeit.localeCom
 /**
  * Verlauf für die Anzeige. `filter` = { typ ('alle' …), jahr (Zahl oder null), text }.
  * bevorstehend: ab morgen, aufsteigend. vergangen: bis heute, absteigend, nach Monaten gruppiert.
- * jahre, gesamt: unabhängig vom Filter (für die Chips). aeltereMoeglich: Google-Fenster bekannt und noch keine fünf Jahre zurück.
+ * jahre, gesamt: unabhängig vom Filter (für die Chips). aeltereMoeglich: Google-Fenster bekannt und der geladene Beginn (`von`, sonst
+ * der Beginn des Fensters) noch keine fünf Jahre zurück.
  */
-export function verlaufModel(state, heute, { typ = 'alle', jahr = null, text = '' } = {}) {
+export function verlaufModel(state, heute, { typ = 'alle', jahr = null, text = '', von = null } = {}) {
   const alle = verlaufEintraege(state);
   const suche = String(text).trim().toLocaleLowerCase('de');
   const treffer = alle.filter(
@@ -160,6 +161,6 @@ export function verlaufModel(state, heute, { typ = 'alle', jahr = null, text = '
     anzahl: treffer.length,
     gesamt: alle.length,
     jahre,
-    aeltereMoeglich: Boolean(state.fenster) && state.fenster.von > frueheste,
+    aeltereMoeglich: Boolean(state.fenster) && (von && von < state.fenster.von ? von : state.fenster.von) > frueheste,
   };
 }

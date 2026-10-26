@@ -1,6 +1,6 @@
 // „Kontostand“ (Diagramme, Kennzahlen, Eintragen in der Demo, „Sparen pro Monat“ mit älteren Monaten zum Aufklappen,
 // Erklärung der Sonderbeträge) und „Verlauf“ (Suche, Filter, Tag öffnen).
-import { test, expect, starteDemo, erwarteToast } from './hilfen.js';
+import { test, expect, starteDemo, starteGoogleVerbunden, erwarteToast, NETZFEHLER } from './hilfen.js';
 
 test.describe('Kontostand', () => {
   test('Diagramme: Verlauf mit drei Linien, Balken mit Sonderbeträgen, Kennzahlen', async ({ page }) => {
@@ -215,5 +215,46 @@ test.describe('Verlauf', () => {
     await page.getByRole('dialog').getByRole('button', { name: 'Schließen' }).click();
     await page.getByRole('button', { name: '‹ Zurück' }).click();
     await expect(page).toHaveURL(/#\/mehr$/);
+  });
+});
+
+test.describe('Verlauf mit Google', () => {
+  test.use({ erlaubteFehler: NETZFEHLER }); // fehlende versteckte Ereignisse antworten 404
+
+  test('„Ältere laden“: jedes Antippen lädt drei Monate mehr (genau einmal), bis fünf Jahre da sind', async ({ page }) => {
+    const google = await starteGoogleVerbunden(page, { route: '#/verlauf' });
+    await expect(page.getByRole('heading', { name: 'Verlauf 📜' })).toBeVisible();
+    const bereich = page.locator('.verlauf-aeltere');
+    const knopf = bereich.getByRole('button', { name: 'Ältere laden' });
+    const hinweis = bereich.locator('small');
+    await expect(hinweis).toHaveText('Geladen ab September 2026');
+    const listen = () => google.anfragen.filter((a) => /^GET \/calendars\/[^/]+\/events$/.test(a)).length;
+    const anfang = listen();
+    // 'weg' (fünf Jahre geladen), 'lädt' oder der Hinweis „Geladen ab …“; in einem Schritt gelesen, damit nichts dazwischen neu zeichnet
+    const zustand = () =>
+      page.evaluate(() => {
+        const b = document.querySelector('.verlauf-aeltere');
+        if (!b) return 'weg';
+        return b.querySelector('button').disabled ? 'lädt' : b.querySelector('small')?.textContent;
+      });
+
+    for (const monat of ['Juni 2026', 'März 2026', 'Dezember 2025']) {
+      const vorher = listen();
+      await knopf.click(); // schon das erste Antippen lädt
+      await expect.poll(zustand).toBe(`Geladen ab ${monat}`);
+      expect(listen() - vorher, `Listen-Anfragen bis ${monat}`).toBe(3); // ein Bereich in drei Kalendern, nichts doppelt
+    }
+
+    // Weiter bis fünf Jahre zurück (vor dem 14.10.2021 ist Schluss): danach verschwindet der Knopf.
+    let schritte = 3;
+    while ((await zustand()) !== 'weg' && schritte < 40) {
+      const text = await zustand();
+      await knopf.click();
+      await expect.poll(async () => ((await zustand()) === 'lädt' ? text : await zustand())).not.toBe(text);
+      schritte += 1;
+    }
+    expect(schritte).toBe(20); // September 2026 → September 2021 in Schritten zu drei Monaten
+    await page.waitForTimeout(300); // eine doppelte Anfrage nach dem Laden käme jetzt an
+    expect(listen() - anfang).toBe(3 * 20);
   });
 });

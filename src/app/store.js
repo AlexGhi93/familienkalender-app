@@ -51,6 +51,20 @@ const zufaelligeId = () => `u${Array.from({ length: 11 }, () => Math.floor(Math.
 
 const istAuthFehler = (fehler) => fehler?.name === 'AuthAbgelaufen';
 
+/** `alt`, wenn `neu` denselben Inhalt hat (gleiches JSON), sonst `neu`: so bleibt die Identität unveränderter Daten erhalten. */
+const gleichOder = (alt, neu) => (alt != null && JSON.stringify(alt) === JSON.stringify(neu) ? alt : neu);
+
+/** Liegt [von, bis) vollständig in den Bereichen `bereiche` ({ von, bis }, auch mehrere aneinander anschließende oder überlappende)? */
+function bereichAbgedeckt(von, bis, bereiche) {
+  let bisHier = von;
+  for (const b of [...bereiche].sort((x, y) => x.von.localeCompare(y.von))) {
+    if (b.von > bisHier) break;
+    if (b.bis > bisHier) bisHier = b.bis;
+    if (bisHier >= bis) return true;
+  }
+  return bisHier >= bis;
+}
+
 /**
  * Schichtplan im Zustand: `katalog` null = noch nicht gelesen (die Ansicht zeigt dann die Standardarten). `vorgeladen` = der Monat
  * ('JJJJ-MM'), ab dem Schichtarten und Monate (siehe `schichtVorladen`) seit dem Start aus dem Kalender gelesen wurden, nicht nur aus dem
@@ -149,7 +163,30 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
   const hoerer = new Set();
   const wartend = []; // Schreibvorgänge, die wegen abgelaufener Anmeldung noch fehlen
   const geladeneBereiche = [];
-  const ladendeBereiche = new Set();
+  const ladendeBereiche = new Map(); // Schlüssel „von|bis“ → laufendes Laden (dieselbe Zusage für jeden, der denselben Bereich anfordert)
+
+  /** Lädt [von, bis) und übernimmt Tage, Urlaub und Termine dieses Zeitraums; Ergebnis wie sichereBereich. */
+  async function bereichLaden(von, bis) {
+    let erfolg = false;
+    try {
+      const d = await adapter.ladeBereich(von, bis);
+      const tage = { ...state.tage };
+      for (const k of Object.keys(tage)) if (k >= von && k < bis) delete tage[k];
+      Object.assign(tage, d.tage);
+      state = {
+        ...state,
+        tage,
+        termine: [...state.termine.filter((t) => !(t.date >= von && t.date < bis)), ...d.termine],
+        urlaub: [...state.urlaub.filter((u) => !d.urlaub.some((x) => x.id === u.id)), ...d.urlaub],
+      };
+      geladeneBereiche.push({ von, bis });
+      erfolg = true;
+    } catch (fehler) {
+      state = istAuthFehler(fehler) ? { ...state, anmeldungNoetig: true } : { ...state, fehler: 'Dieser Zeitraum konnte nicht geladen werden.' };
+    }
+    melden();
+    return erfolg;
+  }
   let letzteLadung = 0;
   let checksLaufen = false;
   let schreibend = 0; // Schreibvorgänge, die gerade laufen
@@ -177,7 +214,6 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     if (daten?.ziele?.unlesbar) return zieleUnlesbarUebernehmen(daten.ziele);
     return !daten?.ziele || zieleOffen.size > 0 || stand !== zieleStand ? state.ziele : zieleZustand(daten.ziele, 'geladen');
   }
-  /** Ist Ändern gerade verboten? → Meldung oder null (unlesbar, oder nicht (erfolgreich) gelesen). */
   /**
    * Frisch gelesene, aber unlesbare Sparziele gehen immer vor: leer und gesperrt, auch wenn eine eigene Änderung unterwegs ist oder auf
    * die Anmeldung wartet (ihr Speichern würde ohnehin abgelehnt) – die Warteschlange wird geleert.
@@ -190,6 +226,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     }
     return zieleZustand(gelesen, 'geladen');
   }
+  /** Ist Ändern gerade verboten? → Meldung oder null (unlesbar, oder nicht (erfolgreich) gelesen). */
   const zieleGesperrt = () => (state.ziele.unlesbar ? TEXT_ZIELE_GESPERRT : state.ziele.status === 'geladen' || state.ziele.status === 'gespeichert' ? null : TEXT_ZIELE_NICHT_GELADEN);
   const melden = () => {
     for (const h of hoerer) h(state);
@@ -469,7 +506,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
 
   /**
    * Ändert Teil `nr` der Fixkosten (siehe `teilAendern`): sofort sichtbar, gespeichert als `fn` auf der NEUESTEN Fassung dieses Teils
-   * (die anderen drei Teile bleiben unberührt). Ergebnis wie `schichtKatalogAendern`: { ok: true } | { ok: false, fehler } |
+   * (die anderen drei Teile bleiben unberührt). Ergebnis wie `schichtKatalogAendern`: { ok: true } | { ok: false, fehler, gemeldet: true } |
    * { ok: false, wartet: true, fehler }. Wirft, wenn `fn` schon auf dem angezeigten Stand ablehnt (dann ändert sich nichts).
    */
   async function fixTeilAendern(nr, fn) {
@@ -764,8 +801,8 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
 
   /**
    * Ändert die Schichtarten (siehe `schichtAendern`); gibt es noch keine, wird von den Standardarten ausgegangen. Ergebnis:
-   * { ok: true } nach dem Speichern im Kalender, sonst { ok: false, fehler } (fachliche Meldung wie „Dieses Kürzel gibt es schon.“ oder
-   * der allgemeine Text; zurückgenommen und neu gelesen) bzw. { ok: false, wartet: true, fehler } (wird nach dem Anmelden gespeichert).
+   * { ok: true } nach dem Speichern im Kalender, sonst { ok: false, fehler, gemeldet: true } (fachliche Meldung wie „Dieses Kürzel gibt es
+   * schon.“ oder der allgemeine Text; zurückgenommen und neu gelesen; die Meldung steht schon in state.fehler) bzw. { ok: false, wartet: true, fehler } (wird nach dem Anmelden gespeichert).
    * Wirft nur, wenn die Eingabe schon auf dem angezeigten Stand abgelehnt wird (dann ändert sich nichts).
    */
   async function schichtKatalogAendern(fn) {
@@ -775,8 +812,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       lesen: async () => (await adapter.leseSchichtarten()).katalog ?? null,
       normalisiere: (k) => normalisiereKatalog(k).katalog,
     });
-    if (ergebnis === 'ok') return { ok: true };
-    return ergebnis === 'auth' ? { ok: false, wartet: true, fehler } : { ok: false, fehler };
+    return teilErgebnis({ ergebnis, fehler }); // gemeldet: die Meldung steht schon in state.fehler (die Shell zeigt sie)
   }
 
   /**
@@ -803,14 +839,17 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
         auth ||= istAuthFehler(r.reason);
         return;
       }
-      if (!(eigene && s.monate[m])) neueMonate[m] = normalisiereMonat(r.value?.monat ?? null, m).monat;
+      if (!(eigene && s.monate[m])) neueMonate[m] = gleichOder(s.monate[m], normalisiereMonat(r.value?.monat ?? null, m).monat);
       status[m] = 'geladen';
     });
     let kat = s.katalog;
     const katalogGelesen = mitKatalog && katalog.status === 'fulfilled';
     if (mitKatalog && katalog.status === 'rejected') auth ||= istAuthFehler(katalog.reason);
-    else if (katalogGelesen && (kat === null || (katalogNeu && !eigene))) kat = normalisiereKatalog(katalog.value?.katalog ?? null).katalog;
-    state = { ...state, schicht: { ...s, katalog: kat, monate: neueMonate, status }, ...(auth ? { anmeldungNoetig: true } : {}) };
+    else if (katalogGelesen && (kat === null || (katalogNeu && !eigene))) kat = gleichOder(kat, normalisiereKatalog(katalog.value?.katalog ?? null).katalog);
+    // Unverändert gelesen: dieselben Objekte behalten. Der Push-Plan (push/plan.js `planQuellen`) vergleicht nach Identität; ein neues,
+    // aber gleiches Objekt löste sonst bei jedem Blättern oder Abgleich einen Push-Abgleich samt frischem Lesen aus.
+    const monateGleich = Object.keys(neueMonate).length === Object.keys(s.monate).length && Object.keys(neueMonate).every((m) => neueMonate[m] === s.monate[m]);
+    state = { ...state, schicht: { ...s, katalog: kat, monate: monateGleich ? s.monate : neueMonate, status }, ...(auth ? { anmeldungNoetig: true } : {}) };
     melden();
     return { katalogGelesen, monateGelesen: jms.every((m) => status[m] === 'geladen') };
   }
@@ -977,37 +1016,22 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     },
 
     /**
-     * Holt Tage, Urlaub und Termine eines Zeitraums nach (Monat zurückblättern); mehrfaches Anfordern lädt nur einmal.
-     * Ergebnis: true, wenn der Zeitraum jetzt da ist; false, wenn es nicht möglich war (Demo, Fehler) oder gerade schon geladen wird.
+     * Holt Tage, Urlaub und Termine eines Zeitraums nach (Monat zurückblättern); mehrfaches Anfordern lädt nur einmal: wer einen
+     * Bereich anfordert, der gerade geladen wird, wartet auf dasselbe Laden. Abgedeckt ist ein Zeitraum auch durch mehrere
+     * aneinander anschließende geladene Bereiche (z. B. „Ältere laden“ Schritt für Schritt).
+     * Ergebnis: true, wenn der Zeitraum jetzt da ist; false, wenn es nicht möglich war (Demo, Fehler).
      */
-    async sichereBereich(von, bis) {
-      if (!adapter.ladeBereich || !state.fenster) return false;
-      const abgedeckt = (b) => b.von <= von && b.bis >= bis;
+    sichereBereich(von, bis) {
+      if (!adapter.ladeBereich || !state.fenster) return Promise.resolve(false);
+      if (bereichAbgedeckt(von, bis, [state.fenster, ...geladeneBereiche])) return Promise.resolve(true);
       const schluessel = `${von}|${bis}`;
-      if (abgedeckt(state.fenster) || geladeneBereiche.some(abgedeckt)) return true;
-      if (ladendeBereiche.has(schluessel)) return false;
-      ladendeBereiche.add(schluessel);
-      let erfolg = false;
-      try {
-        const d = await adapter.ladeBereich(von, bis);
-        const tage = { ...state.tage };
-        for (const k of Object.keys(tage)) if (k >= von && k < bis) delete tage[k];
-        Object.assign(tage, d.tage);
-        state = {
-          ...state,
-          tage,
-          termine: [...state.termine.filter((t) => !(t.date >= von && t.date < bis)), ...d.termine],
-          urlaub: [...state.urlaub.filter((u) => !d.urlaub.some((x) => x.id === u.id)), ...d.urlaub],
-        };
-        geladeneBereiche.push({ von, bis });
-        erfolg = true;
-      } catch (fehler) {
-        state = istAuthFehler(fehler) ? { ...state, anmeldungNoetig: true } : { ...state, fehler: 'Dieser Zeitraum konnte nicht geladen werden.' };
-      } finally {
-        ladendeBereiche.delete(schluessel);
+      if (!ladendeBereiche.has(schluessel)) {
+        ladendeBereiche.set(
+          schluessel,
+          bereichLaden(von, bis).finally(() => ladendeBereiche.delete(schluessel)),
+        );
       }
-      melden();
-      return erfolg;
+      return ladendeBereiche.get(schluessel);
     },
 
     /**
@@ -1320,10 +1344,10 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     },
 
     /**
-     * Ziel löschen (domain zielLoeschArt): ein laufendes immer – mit Geld wird es im laufenden Monat „gelöscht“ abgeschlossen (sein Gespartes
-     * geht zu Frei, die Vergangenheit bleibt), ohne jede Spur wirklich entfernt; ein
-     * abgeschlossenes nur, wenn es nie Geld bekommen hat (sonst TEXT_NICHT_LOESCHBAR: nur ausblenden). Geprüft mit dem frisch gelesenen
-     * Kontostand (das andere Telefon könnte den Monat eben vervollständigt haben). Ergebnis wie `zielBeenden`, bei Erfolg mit
+     * Ziel löschen (domain zielLoeschArt). Ein laufendes Ziel geht immer: hat es Geld bekommen, wird es im laufenden Monat „gelöscht“
+     * abgeschlossen (sein Gespartes geht zu Frei, die Vergangenheit bleibt); hat es keine Spur hinterlassen, wird es wirklich entfernt.
+     * Ein abgeschlossenes Ziel geht nur, wenn es nie Geld bekommen hat (sonst TEXT_NICHT_LOESCHBAR: nur ausblenden). Geprüft mit dem
+     * frisch gelesenen Kontostand (das andere Telefon könnte den Monat eben vervollständigt haben). Ergebnis wie `zielBeenden`, bei Erfolg mit
      * `rueckgaengig()`: holt genau das Gelöschte (Ziel und seine Verschiebungen, wie sie im Kalender standen) zurück.
      */
     async zielLoeschen(id) {
@@ -1581,7 +1605,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     },
 
     /**
-     * Schichtart anlegen (ohne `k`) oder ändern (mit `k`): { ok: true, k } nach dem Speichern im Kalender, sonst { ok: false, fehler }
+     * Schichtart anlegen (ohne `k`) oder ändern (mit `k`): { ok: true, k } nach dem Speichern im Kalender, sonst { ok: false, fehler, gemeldet?, wartet? }
      * (siehe `schichtKatalogAendern`). Eine neue Art wird nach dem Speichern an ihrem Kürzel im gespeicherten Katalog wiedergefunden
      * (hat das andere Telefon gleichzeitig eine angelegt, kann ihr Schlüssel ein anderer sein). Wirft bei einer ungültigen Eingabe.
      */
