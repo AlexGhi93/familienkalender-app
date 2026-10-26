@@ -66,7 +66,7 @@ describe('Konto-Umschalter: data-von nur direkt nach dem Umschalten', () => {
 
   /** Ein Zeichnen des Umschalters zur Zeit `jetzt`; `bilder` sammelt die Rückrufe für das erste gemalte Bild, `x` ist die Stelle des Tropfens. */
   const bilder = [];
-  const zeichne = (ui, jetzt, x = null) => kontoUmschalter(ui, { jetzt, bild: (fn) => bilder.push(fn), tropfenX: () => x });
+  const zeichne = (ui, jetzt, x = null) => kontoUmschalter(ui, { jetzt, bild: (fn) => bilder.push(fn), tropfenX: () => x, effekte: () => true });
   const gemalt = (t) => bilder.splice(0).forEach((fn) => fn(t));
 
   test('Betreten der Seite: kein data-von; Umschalten: die vorige Ansicht; Neuzeichnen während des Gleitens: läuft weiter, später: keins', () => {
@@ -111,6 +111,17 @@ describe('Konto-Umschalter: data-von nur direkt nach dem Umschalten', () => {
     zeichne({ kontoAnsicht: 'fixkosten' }, 100);
     assert.equal(zeichne({ kontoAnsicht: 'fixkosten' }, 100 + OHNE_BILD_MS).getAttribute('data-von'), null);
     bilder.length = 0;
+  });
+
+  test('Klassisch und reduziert (ohne Effekte): kein Bildwechsel geplant, kein data-von, keine Stilwerte', () => {
+    const ohne = (ui, jetzt) => kontoUmschalter(ui, { jetzt, bild: (fn) => bilder.push(fn), tropfenX: () => 12, effekte: () => false });
+    ohne({ kontoAnsicht: 'kontostand', seiteBetreten: true }, 0);
+    for (const [ansicht, jetzt] of [['fixkosten', 100], ['sparziele', 200], ['kontostand', 300]]) {
+      const el = ohne({ kontoAnsicht: ansicht }, jetzt);
+      assert.equal(el.getAttribute('data-von'), null);
+      assert.deepEqual(el.stil, {});
+    }
+    assert.equal(bilder.length, 0, 'nichts läuft');
   });
 
   test('die drei Knöpfe bleiben gleich (Reihenfolge, aria-pressed)', () => {

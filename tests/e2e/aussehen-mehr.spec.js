@@ -135,8 +135,9 @@ test.describe('Neuzeichnen im Hintergrund', () => {
     const vorher = await page.locator('.darstellung-karte').elementHandle();
     await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
     await expect.poll(() => vorher.evaluate((el) => el.isConnected)).toBe(false); // wirklich neu gezeichnet
-    // das Licht der Seite (glas-licht-*, Fundament glas.css) ist nicht Teil dieses Bereichs; alles andere darf nicht neu laufen
-    const laufend = await page.evaluate(() => document.getAnimations().map((a) => a.animationName ?? a.transitionProperty ?? 'x').filter((n) => !/^glas-licht-/.test(n)));
+    // auch das Licht der Seite (glas-licht-*) läuft nicht neu (bewegung.spec.js). Es bleibt als beendete Animation (fill: both) in
+    // getAnimations() stehen – gezählt wird deshalb nur, was läuft.
+    const laufend = await page.evaluate(() => document.getAnimations().filter((a) => a.playState === 'running').map((a) => a.animationName ?? a.transitionProperty ?? 'x'));
     expect(laufend).toEqual([]);
   });
 });

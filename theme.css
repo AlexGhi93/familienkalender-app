@@ -4632,6 +4632,8 @@ html:has(.screen.einkauf) {
                            (0…8) → Verzögerung --bw-i × --staffel. Ersetzt eine eigene `animation` der Kinder, solange es läuft.
                            Achtung: transform an den Kindern macht sie kurz zum Bezug für position: fixed darin (z. B. .sp-pinsel).
    :root.bw-tabwechsel     kurz nach einem Tabwechsel (tabWechsel(), Dauer --dauer-tab): #inhalt blendet ein (nur opacity).
+   :root.bw-tropfen-frisch zwei Bilder lang nach einem Wechsel von einer Seite ohne aktive Karte (tabWechsel()): Tropfen/Blob der
+                           Tab-Leiste entsteht ohne Gleiten (Safari startete sonst einen Übergang vom linken Rand).
    .bw-fortschritt         Füllung eines Balkens mit voller Breite, transform: scaleX(anteil) (fortschritt(), nur Glas/Bento).
    .bw-konfetti            Konfetti-Hülle (konfetti(), nur Bento), fest am Anker, ohne Zeiger, aria-hidden;
    .bw-konfetti-teil       Teilchen mit --bw-dx, --bw-dy, --bw-fall, --bw-dreh, --bw-dauer, --bw-verz, --bw-farbe (--konfetti-1…4).

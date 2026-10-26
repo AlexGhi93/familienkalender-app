@@ -163,11 +163,11 @@
 }
 
 :root[data-aussehen='glas'] .sp-feiertag {
-  font-size: 0.66rem;
+  font-size: 0.6875rem; /* 11 px: kleinste Schrift (Kürzel im dichten Raster) */
 }
 
 :root[data-aussehen='glas'] .sp-zusatz {
-  font-size: 0.625rem;
+  font-size: 0.6875rem; /* 11 px: kleinste Schrift (Kürzel im dichten Raster) */
   font-weight: 800;
   line-height: 13px;
   padding: 0 2px;
@@ -176,10 +176,10 @@
 
 :root[data-aussehen='glas'] .sp-mehr,
 :root[data-aussehen='glas'] .sp-notiz {
-  font-size: 0.625rem;
+  font-size: 0.6875rem; /* 11 px: kleinste Schrift (Kürzel im dichten Raster) */
 }
 
-/* Marken „DB +2 ✎“ (≥ 10 px): wird es eng, rücken sie innerhalb ihrer Gruppe in eine weitere Zeile, statt über den Rand zu ragen */
+/* Marken „DB +2 ✎“ (≥ 11 px): wird es eng, rücken sie innerhalb ihrer Gruppe in eine weitere Zeile, statt über den Rand zu ragen */
 :root[data-aussehen='glas'] .sp-marken {
   flex-wrap: wrap;
   justify-content: flex-end;
@@ -777,11 +777,11 @@
 }
 
 :root[data-aussehen='bento'] .sp-feiertag {
-  font-size: 0.66rem;
+  font-size: 0.6875rem; /* 11 px: kleinste Schrift (Kürzel im dichten Raster) */
 }
 
 :root[data-aussehen='bento'] .sp-zusatz {
-  font-size: 0.625rem;
+  font-size: 0.6875rem; /* 11 px: kleinste Schrift (Kürzel im dichten Raster) */
   font-weight: 900;
   line-height: 14px;
   padding: 0 2px;
@@ -790,10 +790,10 @@
 
 :root[data-aussehen='bento'] .sp-mehr,
 :root[data-aussehen='bento'] .sp-notiz {
-  font-size: 0.625rem;
+  font-size: 0.6875rem; /* 11 px: kleinste Schrift (Kürzel im dichten Raster) */
 }
 
-/* Marken „DB +2 ✎“ (≥ 10 px): wird es eng, rücken sie innerhalb ihrer Gruppe in eine weitere Zeile, statt über den Rand zu ragen */
+/* Marken „DB +2 ✎“ (≥ 11 px): wird es eng, rücken sie innerhalb ihrer Gruppe in eine weitere Zeile, statt über den Rand zu ragen */
 :root[data-aussehen='bento'] .sp-marken {
   flex-wrap: wrap;
   justify-content: flex-end;
@@ -1413,5 +1413,29 @@
   :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .sp-pinsel-art:not(.aktiv):active {
     transform: scale(0.9);
     transition-duration: 0.08s;
+  }
+}
+
+/* Schmale Telefone: Tage ≥ 44 px breit – weniger Innenabstand und Abstand im Glas-Raster. Unter 390 px (375 px: 45,0 px statt
+   43,6 px), unter 370 px zusätzlich mit 10 px Seitenrand aus glas.css/bento.css (360 px: Glas 44,9 px, Bento 44,3 px). */
+@media (max-width: 389px) {
+  :root[data-aussehen='glas'] .schicht-seite .wochentage {
+    gap: 3px;
+    padding: 0 5px;
+  }
+
+  :root[data-aussehen='glas'] .sp-raster {
+    gap: 3px;
+    padding: 4px;
+  }
+}
+
+@media (max-width: 369px) {
+  :root[data-aussehen='glas'] .schicht-seite .wochentage {
+    padding: 0 4px;
+  }
+
+  :root[data-aussehen='glas'] .sp-raster {
+    padding: 3px;
   }
 }

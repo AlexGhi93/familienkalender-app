@@ -82,7 +82,7 @@
   --titel-seite: 1.75rem;
   --titel-blatt: 1.375rem;
   --titel-karte: 1.0625rem;
-  --titel-abschnitt: 0.94rem;
+  --titel-abschnitt: 1rem;
   --titel-schicht: 1.75rem;
   --tabs-hoehe: 66px;
   --tabs-bg: rgba(255, 255, 255, 0.8);
@@ -92,10 +92,12 @@
   --tabs-radius: 33px;
   --tabs-abstand: 10px;
   --tabs-innen: 5px; /* Innenabstand der Leiste (nur Glas) */
+  --fab-spalte: 52px; /* Spalte des runden „Neu“ in der Leiste (wie theme.css); unter 370 px schmaler, siehe unten */
   --tabs-schatten: inset 0 1px 0 var(--glas-kante), var(--schatten-hoch);
   --tab-aktiv: var(--akzent);
   --tab-aktiv-bg: transparent;
-  --fab-bg: radial-gradient(circle at 35% 25%, #b7a2ff, #6a48e6 55%, #4b2fc0);
+  /* das helle Licht sitzt oben links am Rand: unter dem weißen „＋“ bleibt es ≥ 4,5:1 (vorher 3:1 über dem Glanz) */
+  --fab-bg: radial-gradient(circle at 30% 14%, #a48cff, #6a48e6 34%, #4b2fc0);
   --fab-ink: #ffffff;
   --fab-schatten: 0 10px 22px -6px rgba(90, 60, 207, 0.7), inset 0 1px 1px rgba(255, 255, 255, 0.6), inset 0 -2px 4px rgba(30, 10, 90, 0.35);
   --pinsel-bg: var(--karte-voll);
@@ -201,12 +203,41 @@
   color-scheme: dark;
 }
 
-/* Telefone unter 390 px: die Leiste rückt näher an den Rand, damit jede Karte ≥ 44 px breit bleibt (375 px: 44,1 px). Unter
-   ≈ 370 px reicht der Platz für acht Karten nicht mehr (320 px: 36 px, angedockt wären es 38 px) – siehe Bericht. */
+/* Telefone unter 390 px: die Leiste rückt näher an den Rand, damit jede Karte ≥ 44 px breit bleibt (375 px: 44,1 px; 384 px wie
+   Samsung S2x Ultra: 45,4 px). Unter 370 px (z. B. 360 px mit größerer Anzeige) wird zusätzlich die Spalte von „Neu“ schmaler:
+   360 px → 44,0 px. Unter 358 px reicht der Platz nicht mehr (320 px: 36 px, wie bisher). */
 @media (max-width: 389px) {
   :root[data-aussehen='glas'] {
     --tabs-abstand: 4px;
     --tabs-innen: 3px;
+  }
+}
+
+@media (max-width: 369px) {
+  /* schmaler Seitenrand: Monat und Schicht behalten Tage ≥ 44 px (themes/monat.css, schicht.css) */
+  :root[data-aussehen='glas'] .screen {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+}
+
+/* 358–369 px: die Spalte von „Neu“ (und sein Kreis) wird 44 px schmal, damit die sieben Karten ≥ 44 px bleiben; darunter reicht der
+   Platz ohnehin nicht, dann bleibt der größere Kreis wie bisher */
+@media (min-width: 358px) and (max-width: 369px) {
+  :root[data-aussehen='glas'] {
+    --tabs-abstand: 2px;
+    --tabs-innen: 2px;
+    --fab-spalte: 44px;
+  }
+
+  :root[data-aussehen='glas'] .tabs {
+    grid-template-columns: repeat(3, 1fr) var(--fab-spalte) repeat(4, 1fr);
+  }
+
+  :root[data-aussehen='glas'] .tabs > .tab.fab .tab-symbol {
+    width: 44px; /* so breit wie seine Spalte: der runde Knopf ragt nicht in die Nachbarkarten */
+    height: 44px;
+    font-size: 1.5rem; /* das „＋“ bleibt ganz im kleineren Kreis */
   }
 }
 
@@ -369,6 +400,7 @@
 
 /* Knöpfe: Glas-Pille; „primär“ als leuchtender Akzent */
 :root[data-aussehen='glas'] .knopf {
+  min-height: 44px; /* Ziel ≥ 44 px auch ohne Rand (Bento: --rand 0) und mit eigener Schrift */
   font-weight: 650;
   border-color: var(--linie);
 }
@@ -449,7 +481,7 @@
   top: var(--tabs-innen);
   bottom: var(--tabs-innen);
   left: var(--tabs-innen);
-  width: calc((100% - 2 * var(--tabs-innen) - 52px) / 7);
+  width: calc((100% - 2 * var(--tabs-innen) - var(--fab-spalte)) / 7);
   border-radius: 28px;
   background: color-mix(in srgb, var(--akzent) 13%, var(--glas-stark));
   box-shadow: inset 0 1px 0 var(--glas-kante), inset 0 -1px 0 color-mix(in srgb, var(--akzent) 20%, transparent), 0 6px 16px -6px color-mix(in srgb, var(--akzent) 55%, transparent);
@@ -464,10 +496,10 @@
 :root[data-aussehen='glas'] .tabs:has(> .tab.aktiv[href='#/heute']) { --tropfen-x: 0%; --tropfen-anim: glas-tropfen-1; }
 :root[data-aussehen='glas'] .tabs:has(> .tab.aktiv[href='#/monat']) { --tropfen-x: 100%; --tropfen-anim: glas-tropfen-2; }
 :root[data-aussehen='glas'] .tabs:has(> .tab.aktiv[href='#/einkauf']) { --tropfen-x: 200%; --tropfen-anim: glas-tropfen-3; }
-:root[data-aussehen='glas'] .tabs:has(> .tab.aktiv[href='#/schicht']) { --tropfen-x: calc(300% + 52px); --tropfen-anim: glas-tropfen-5; }
-:root[data-aussehen='glas'] .tabs:has(> .tab.aktiv[href='#/urlaub']) { --tropfen-x: calc(400% + 52px); --tropfen-anim: glas-tropfen-6; }
-:root[data-aussehen='glas'] .tabs:has(> .tab.aktiv[href='#/konto']) { --tropfen-x: calc(500% + 52px); --tropfen-anim: glas-tropfen-7; }
-:root[data-aussehen='glas'] .tabs:has(> .tab.aktiv[href='#/mehr']) { --tropfen-x: calc(600% + 52px); --tropfen-anim: glas-tropfen-8; }
+:root[data-aussehen='glas'] .tabs:has(> .tab.aktiv[href='#/schicht']) { --tropfen-x: calc(300% + var(--fab-spalte)); --tropfen-anim: glas-tropfen-5; }
+:root[data-aussehen='glas'] .tabs:has(> .tab.aktiv[href='#/urlaub']) { --tropfen-x: calc(400% + var(--fab-spalte)); --tropfen-anim: glas-tropfen-6; }
+:root[data-aussehen='glas'] .tabs:has(> .tab.aktiv[href='#/konto']) { --tropfen-x: calc(500% + var(--fab-spalte)); --tropfen-anim: glas-tropfen-7; }
+:root[data-aussehen='glas'] .tabs:has(> .tab.aktiv[href='#/mehr']) { --tropfen-x: calc(600% + var(--fab-spalte)); --tropfen-anim: glas-tropfen-8; }
 
 :root[data-aussehen='glas'] .tab {
   position: relative;
@@ -476,8 +508,15 @@
   min-height: 44px;
   height: 100%;
   padding: 0;
+  font-size: 0.6875rem; /* 11 px: kleinste Schrift der Aussehen (Apple „Caption 2“); Klassisch 10,6 px */
   font-weight: 650;
   border-radius: 28px;
+}
+
+@media (max-width: 357px) {
+  :root[data-aussehen='glas'] .tab {
+    font-size: 0.58rem; /* wie Klassisch: kleiner, aber nie abgeschnitten */
+  }
 }
 
 :root[data-aussehen='glas'] .tab.fab .tab-symbol {
@@ -503,6 +542,7 @@
 }
 
 :root[data-aussehen='glas'] .blatt-zu {
+  flex: none; /* nie schmaler als 44 px, auch neben einem langen Titel (Nachricht-Blatt) */
   border: 0;
   background: color-mix(in srgb, var(--ink) 8%, transparent);
   font-size: 1.05rem;
@@ -511,7 +551,7 @@
 :root[data-aussehen='glas'] .blatt-inhalt h3 {
   text-transform: none;
   letter-spacing: 0;
-  font-size: 0.94rem;
+  font-size: 1rem;
   font-weight: 700;
 }
 
@@ -727,6 +767,12 @@
   :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .tabs::before {
     transition: transform 0.56s cubic-bezier(0.34, 1.56, 0.64, 1);
     animation: var(--tropfen-anim, none) 0.56s cubic-bezier(0.3, 0.7, 0.3, 1);
+  }
+
+  /* Safari: ein neu entstehender Tropfen (von „Neu“, Konto & App …) bekäme einen Übergang von translateX(0) und fegte vom Rand
+     herein; bw-tropfen-frisch (src/ui/bewegung.js, zwei Bilder lang) lässt ihn gleich an seiner Karte stehen */
+  :root[data-aussehen='glas'].bw-tropfen-frisch:not([data-bewegung='reduziert']) .tabs::before {
+    transition: none;
   }
 
   :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .knopf,

@@ -81,14 +81,29 @@ function tokenMs(dokument, name) {
  * In Glas/Bento mit Bewegung blendet #inhalt danach kurz ein (Klasse `bw-tabwechsel` an <html>, nur opacity, --dauer-tab ≤ 260 ms);
  * ein zweiter Wechsel startet die Bewegung neu. Klassisch und reduziert: nur `aktualisieren()`.
  * Bewusst ohne View Transitions (Ruling Task 3): sie zeichnen erst ein Bild später und schicken Tipps währenddessen an <html>.
+ * Kommt man von einer Seite ohne aktive Karte, trägt <html> zwei Bilder lang `bw-tropfen-frisch` (Tropfen/Blob ohne Gleiten).
  */
 export function tabWechsel(aktualisieren, { dokument = globalThis.document } = {}) {
-  aktualisieren();
-  if (!effekteAn(dokument)) return;
-  const wurzel = dokument.documentElement;
+  const wurzel = dokument?.documentElement;
   const fenster = fensterVon(dokument);
-  wurzel.classList.remove('bw-tabwechsel');
-  void wurzel.offsetWidth; // die Animation neu starten, falls sie vom letzten Wechsel noch lief
+  // Tropfen/Blob der Tab-Leiste (::before): gab es eben keine aktive Karte, entsteht er jetzt neu. Safari startet dann einen Übergang
+  // von translateX(0) – er fegte vom linken Rand herein. `bw-tropfen-frisch` schaltet das Gleiten ab, bis das neue Bild steht.
+  const frisch = effekteAn(dokument) && typeof dokument.querySelector === 'function' && !dokument.querySelector('nav.tabs > .tab.aktiv:not(.fab)');
+  if (frisch) wurzel.classList.add('bw-tropfen-frisch');
+  try {
+    aktualisieren();
+  } catch (fehler) {
+    wurzel?.classList.remove('bw-tropfen-frisch');
+    throw fehler;
+  }
+  if (frisch) fenster.requestAnimationFrame?.(() => fenster.requestAnimationFrame?.(() => wurzel.classList.remove('bw-tropfen-frisch')));
+  if (!effekteAn(dokument)) return;
+  if (wurzel.classList.contains('bw-tabwechsel')) {
+    // lief das Einblenden vom letzten Wechsel noch: neu starten. Nur dann ein erzwungenes Layout – sonst zöge es die ganze neue Seite
+    // in die Aufgabe des Tipps (auf langsamen Telefonen eine lange Aufgabe mehr)
+    wurzel.classList.remove('bw-tabwechsel');
+    void wurzel.offsetWidth;
+  }
   wurzel.classList.add('bw-tabwechsel');
   fenster.clearTimeout(tabZeitgeber);
   tabZeitgeber = fenster.setTimeout(
@@ -109,6 +124,7 @@ const anteile = new Map(); // data-bw-schluessel → gezeigter Anteil (das Ziel 
 const angezeigteZahl = new WeakMap(); // Element → gerade gezeigte Cents
 const angezeigterAnteil = new WeakMap(); // Element → gerade gezeigter Anteil
 const zaehler = new WeakMap(); // Element → { fenster, id } des geplanten Bildwechsels
+const zaehlendes = new Map(); // data-bw-schluessel → Element, das zuletzt für diesen Schlüssel zu zählen begann
 
 /**
  * Ein neuer Besuch beginnt (die Shell ruft das, wenn eine andere Seite betreten wird): Einblenden und Hochzählen dürfen wieder
@@ -119,6 +135,7 @@ export function neuerBesuch() {
   ersteAnzeige = null;
   zahlen.clear();
   anteile.clear();
+  zaehlendes.clear();
 }
 
 const schluesselVon = (el) => el?.getAttribute?.('data-bw-schluessel') || null;
@@ -176,7 +193,9 @@ function anhalten(el) {
  * des Zählens steht die Zahl in einem `aria-hidden`-Span, der Endwert unsichtbar daneben (`.bw-nur-vorlesen`). Elemente,
  * die neu gezeichnet werden, brauchen den Schlüssel: er merkt sich den GEZEIGTEN Wert. Ein Neuzeichnen mitten im Zählen (auch eines
  * vor dem ersten Bild) zählt deshalb an derselben Stelle weiter, eines danach mit demselben Wert zählt nicht noch einmal.
- * Der letzte Text ist immer genau `format(nachCents)`; das ersetzte Element hört auf (kein Zeitgeber bleibt).
+ * Verschwindet das Element mitten im Zählen und übernimmt bis zum nächsten Bild keines mit demselben Schlüssel (andere Ansicht), gilt
+ * der Endwert als gezeigt: kommt man zurück, steht er gleich da. Der letzte Text ist immer genau `format(nachCents)`; das ersetzte
+ * Element hört auf (kein Zeitgeber bleibt).
  * Klassisch/reduziert: sofort der Endwert.
  */
 export function hochzaehlen(el, nachCents, format, { von } = {}) {
@@ -189,6 +208,7 @@ export function hochzaehlen(el, nachCents, format, { von } = {}) {
   const merke = (cents) => {
     if (schluessel !== null) zahlen.set(schluessel, cents);
   };
+  if (schluessel !== null) zaehlendes.set(schluessel, el);
   const abschliessen = () => {
     zaehler.delete(el);
     el.textContent = format(nachCents);
@@ -197,6 +217,7 @@ export function hochzaehlen(el, nachCents, format, { von } = {}) {
   const ende = () => {
     abschliessen();
     merke(nachCents);
+    if (schluessel !== null && zaehlendes.get(schluessel) === el) zaehlendes.delete(schluessel);
   };
   if (!effekteAn(dokument) || !Number.isFinite(start) || !Number.isFinite(nachCents) || start === nachCents || typeof fenster.requestAnimationFrame !== 'function') {
     ende();
@@ -221,7 +242,13 @@ export function hochzaehlen(el, nachCents, format, { von } = {}) {
   let vorher = null;
   const schritt = (t) => {
     if (!el.isConnected) {
-      abschliessen(); // ersetzt (Neuzeichnen): das neue Element zählt mit demselben Schlüssel weiter, hier wird nichts mehr gemerkt
+      abschliessen();
+      // ersetzt (Neuzeichnen): das neue Element zählt mit demselben Schlüssel weiter, hier wird nichts gemerkt. Hat bis zu diesem Bild
+      // niemand übernommen (andere Ansicht, z. B. Fixkosten → Sparziele), gilt das Zählen als beendet: zurück steht der Betrag gleich.
+      if (schluessel !== null && zaehlendes.get(schluessel) === el) {
+        zaehlendes.delete(schluessel);
+        merke(nachCents);
+      }
       return;
     }
     t0 ??= t;

@@ -41,11 +41,12 @@ function tropfenJetzt() {
  * `--kt-seit` die Zeit seit dem ersten GEMALTEN Bild (negativ): daran gleitet er in Glas/Bento (themes/konto.css). Neuzeichnen vor dem
  * ersten Bild (z. B. die Fixkosten/Sparziele laden gleich nach dem Öffnen) beginnt das Gleiten deshalb ganz von vorn, eines danach
  * setzt es an derselben Stelle fort; nach GLEITEN_MS, beim Betreten der Seite und bei jedem späteren Neuzeichnen gibt es kein data-von.
- * In Klassisch ohne Wirkung. `jetzt`, `bild` (erstes gemaltes Bild) und `tropfenX` lassen sich für Tests ersetzen.
+ * In Klassisch und bei „Reduziert“ läuft nichts (kein Bildwechsel, kein data-von). `jetzt`, `bild` (erstes gemaltes Bild), `tropfenX`
+ * und `effekte` (Glas/Bento mit Bewegung?) lassen sich für Tests ersetzen.
  */
-export function kontoUmschalter(ui, { jetzt = jetztMs(), bild = naechstesBild, tropfenX = tropfenJetzt } = {}) {
+export function kontoUmschalter(ui, { jetzt = jetztMs(), bild = naechstesBild, tropfenX = tropfenJetzt, effekte = () => effekteAn(globalThis.document) } = {}) {
   const aktuell = ui.kontoAnsicht ?? 'kontostand';
-  if (ui.seiteBetreten) wechsel = null;
+  if (ui.seiteBetreten || !effekte()) wechsel = null;
   else if (gezeichneteAnsicht !== null && gezeichneteAnsicht !== aktuell) {
     const neu = { von: gezeichneteAnsicht, nach: aktuell, x: tropfenX(), erstellt: jetzt, zeit: null };
     wechsel = neu;

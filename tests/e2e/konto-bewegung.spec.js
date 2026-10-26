@@ -187,8 +187,12 @@ test('„Bewegung: Reduziert“: kein Konfetti, kein Gleiten, Zahlen und Balken 
 });
 
 test.describe('Öffnen von Fixkosten und Sparziele: alles spielt einmal – auch wenn sie gleich nach dem Öffnen neu zeichnen (Laden)', () => {
-  test.beforeEach(async ({ page, aussehen }) => {
+  test.beforeEach(async ({ page, aussehen, browserName }) => {
     test.skip(!aussehen, 'nur Glas und Bento');
+    // Safari/WebKit (nur lokal, npm run test:webkit): der WebKit-Port für Windows malt deutlich seltener (oft > 80 ms je Bild), und das
+    // erste Bild kommt schon vor dem Neuzeichnen nach dem Laden – die Proben je Bild hier sind dafür zu grob. Das Gleiten selbst ist
+    // dort per Bildschirmfoto mit verlangsamter Wiedergabe geprüft (Bericht Task 10).
+    test.skip(browserName === 'webkit', 'WebKit (Windows): zu wenige Bilder für die Proben je Bild');
     await page.addInitScript(bilderMessen);
   });
 
@@ -243,7 +247,8 @@ test.describe('Öffnen von Fixkosten und Sparziele: alles spielt einmal – auch
     });
   }
 
-  test('auch mit 4× langsamerer CPU: Tropfen unterwegs, Betrag zählt, Balken wachsen beim Öffnen der Sparziele', async ({ page }) => {
+  test('auch mit 4× langsamerer CPU: Tropfen unterwegs, Betrag zählt, Balken wachsen beim Öffnen der Sparziele', async ({ page, browserName }) => {
+    test.skip(browserName !== 'chromium', 'CPU-Drossel nur über das Chrome DevTools Protocol');
     await starteDemoEchteUhr(page, '#/konto/kontostand');
     await ausklingen(page);
     const cdp = await page.context().newCDPSession(page);

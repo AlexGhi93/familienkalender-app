@@ -113,3 +113,20 @@ test('Termin bearbeiten zeigt die vorhandene Notiz im Feld', async ({ page }) =>
   await page.getByRole('dialog').locator('.zeile').filter({ hasText: 'Finanzamt' }).getByRole('button', { name: 'Ändern' }).click();
   await expect(page.getByRole('textbox', { name: 'Notiz' })).toHaveValue('Arbeitnehmerveranlagung, 2. Stock');
 });
+
+test('Wahl-Chips sagen Bildschirmlesern, was gewählt ist (aria-pressed): Wiederholen und Termin „Für“', async ({ page }) => {
+  await starteDemo(page, { route: '#/neu' });
+  await page.locator('.kacheln .kachel').filter({ has: page.locator('b', { hasText: /^Sachen für Krabbelstube$/ }) }).click();
+  const wahl = page.locator('.serie-wahl');
+  await expect(wahl.getByRole('button', { name: 'Einmalig' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(wahl.getByRole('button', { name: /Jede Woche/ })).toHaveAttribute('aria-pressed', 'false');
+  await wahl.getByRole('button', { name: /Jede Woche/ }).click();
+  await expect(page.locator('.serie-wahl').getByRole('button', { name: /Jede Woche/ })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.serie-wahl').getByRole('button', { name: 'Einmalig' })).toHaveAttribute('aria-pressed', 'false');
+  // Knöpfe, die etwas tun statt zu wählen (Vorschläge zum Mitnehmen setzen ihren Zustand selbst), behalten ihre Bedeutung
+  await page.getByRole('button', { name: '‹ Zurück' }).click();
+  await page.locator('.kachel').filter({ hasText: /^📌Termin$/ }).click();
+  const gewaehlt = page.locator('.fuer-chip[aria-pressed="true"]');
+  await expect(gewaehlt).toHaveCount(1);
+  await expect(page.locator('.fuer-chip:not([aria-pressed])')).toHaveCount(0);
+});

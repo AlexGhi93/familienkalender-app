@@ -5,8 +5,14 @@ import { fuelle, h, svg } from './dom.js';
 /** Farbe eines Typs als CSS-Variable `--c`; die Tönung kommt aus dem Stylesheet (color-mix). */
 export const farbe = (hex) => ({ '--c': hex });
 
-export function chip(text, { art = '', farbeHex = null, onClick = null } = {}) {
-  return h(onClick ? 'button' : 'span', { class: `chip ${art}`.trim(), type: onClick ? 'button' : null, style: farbeHex ? farbe(farbeHex) : null, onClick }, text);
+/**
+ * Chip: mit `onClick` ein Knopf, sonst eine Marke. Ein Knopf, dem `art` mitgegeben wird, ist eine Wahl (gewählt = Klasse `aktiv`):
+ * er sagt Bildschirmlesern über `aria-pressed`, ob er gewählt ist. Knöpfe ohne `art` tun etwas (z. B. „＋ Milch“) und bekommen nichts.
+ */
+export function chip(text, { art, farbeHex = null, onClick = null } = {}) {
+  const klasse = `chip ${art ?? ''}`.trim();
+  const gewaehlt = onClick && art !== undefined ? String(/(^|\s)aktiv(\s|$)/.test(art)) : null;
+  return h(onClick ? 'button' : 'span', { class: klasse, type: onClick ? 'button' : null, 'aria-pressed': gewaehlt, style: farbeHex ? farbe(farbeHex) : null, onClick }, text);
 }
 
 export function abschnitt(titel, ...inhalt) {

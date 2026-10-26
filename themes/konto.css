@@ -260,7 +260,7 @@
 
 :root[data-aussehen='glas'] .diag-wert,
 :root[data-aussehen='bento'] .diag-wert {
-  font-size: 10.5px;
+  font-size: 11px; /* kleinste Schrift der Aussehen: Werte und Achsen im Diagramm (Apple „Caption 2“) */
   transform: translateY(var(--wert-hoch, 0px)); /* unter einem Minus-Balken: über die Nulllinie, weg vom Monatsnamen */
 }
 
@@ -462,7 +462,22 @@
 :root[data-aussehen='bento'] .fk-person {
   padding: 1px 6px;
   border-radius: 7px;
-  font-size: 0.75rem;
+  font-size: 0.8125rem; /* 13 px: Mindestmaß für Nebenzeilen und Marken (Apple „Footnote“) */
+}
+
+/* Mindestmaße in Glas und Bento: Sätze ≥ 15 px, Nebenzeilen und Marken ≥ 13 px, Kürzel in Diagrammen ≥ 11 px (Klassisch bleibt) */
+:root[data-aussehen='glas'] .fk-b small,
+:root[data-aussehen='bento'] .fk-b small {
+  font-size: 0.8125rem;
+}
+
+:root[data-aussehen='glas'] .fk-hinweis,
+:root[data-aussehen='glas'] .sz-hinweis,
+:root[data-aussehen='glas'] .fk-tipp,
+:root[data-aussehen='bento'] .fk-hinweis,
+:root[data-aussehen='bento'] .sz-hinweis,
+:root[data-aussehen='bento'] .fk-tipp {
+  font-size: 0.9375rem;
 }
 
 :root[data-aussehen='glas'] .fk-abzeichen {

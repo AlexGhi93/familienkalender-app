@@ -18,7 +18,7 @@
   --monat-tint-rand: 50%;
   --monat-karte-schatten: 0 1px 1px rgba(40, 28, 96, 0.04), 0 12px 32px -10px rgba(56, 36, 140, 0.22);
   --monat-heute-leuchten: 0 6px 18px -4px color-mix(in srgb, var(--akzent) 70%, transparent);
-  --monat-punkt-schein: none;
+  --monat-punkt-grund: transparent;
 }
 
 :root[data-aussehen='bento'] {
@@ -33,7 +33,7 @@
     --monat-tint-rand: 62%;
     --monat-karte-schatten: 0 1px 1px rgba(0, 0, 0, 0.3), 0 14px 36px -12px rgba(0, 0, 0, 0.6);
     --monat-heute-leuchten: 0 6px 20px -4px color-mix(in srgb, var(--akzent) 60%, transparent);
-    --monat-punkt-schein: drop-shadow(0 0 1.5px rgb(255 255 255 / 0.8)); /* 🩺 (lila) bleibt auf dunklem Glas sichtbar */
+    --monat-punkt-grund: rgb(255 255 255 / 0.9); /* 🩺 (lila) auf einer kleinen hellen Scheibe: klar statt blass (vorher weißer Schein) */
   }
 
   :root[data-aussehen='bento']:not([data-theme='light']) {
@@ -48,7 +48,7 @@
   --monat-tint-rand: 62%;
   --monat-karte-schatten: 0 1px 1px rgba(0, 0, 0, 0.3), 0 14px 36px -12px rgba(0, 0, 0, 0.6);
   --monat-heute-leuchten: 0 6px 20px -4px color-mix(in srgb, var(--akzent) 60%, transparent);
-  --monat-punkt-schein: drop-shadow(0 0 1.5px rgb(255 255 255 / 0.8));
+  --monat-punkt-grund: rgb(255 255 255 / 0.9);
 }
 
 :root[data-aussehen='bento'][data-theme='dark'] {
@@ -134,7 +134,12 @@
   right: 3px;
   bottom: 3px;
   font-size: 0.75rem;
-  filter: var(--monat-punkt-schein);
+}
+
+:root[data-aussehen='glas'] .monat-seite .zelle .punkt:not(.links):not(.mitte) {
+  padding: 1px;
+  border-radius: 999px;
+  background: var(--monat-punkt-grund);
 }
 
 :root[data-aussehen='glas'] .monat-seite .zelle .punkt.links {
@@ -650,5 +655,21 @@
   :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .monat-seite > .monat-kopf .rund:active {
     transform: scale(0.9);
     transition-duration: 0.08s;
+  }
+}
+
+/* Schmale Telefone (< 370 px, z. B. 360 px mit größerer Anzeige): Zellen ≥ 44 px breit – weniger Rand und Abstand (siehe auch
+   .screen in glas.css/bento.css: 10 px Seitenrand). 360 px: Glas 45,1 px, Bento 44,3 px. */
+@media (max-width: 369px) {
+  :root[data-aussehen='glas'] .monat-seite > .wochentage {
+    gap: 3px;
+    padding-left: 2px;
+    padding-right: 2px;
+  }
+
+  :root[data-aussehen='glas'] .monat-seite > .raster {
+    gap: 3px;
+    padding-left: 2px;
+    padding-right: 2px;
   }
 }

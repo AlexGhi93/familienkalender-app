@@ -13,8 +13,15 @@ test.use({ contextOptions: { reducedMotion: 'no-preference' } });
  * Tipp (pointerdown/touchstart), ob #inhalt da gerade noch einblendete und welches Element ihn bekam.
  */
 function bewegungBeobachten() {
-  const bw = { klassen: [], eingeblendet: 0, zahlen: [], uebergaenge: 0, tipps: [] };
+  const bw = { klassen: [], eingeblendet: 0, einblendBilder: [], zahlen: [], uebergaenge: 0, tipps: [] };
   Object.defineProperty(window, '__bw', { value: bw });
+  // Nummer des Bildes (rAF): Einblenden, die im selben Bild gesetzt werden, sieht man als EIN Hereinkommen
+  let bildNr = 0;
+  const naechstes = () => {
+    bildNr += 1;
+    requestAnimationFrame(naechstes);
+  };
+  requestAnimationFrame(naechstes);
   const merke = (el) => {
     for (const k of el.classList ?? []) if (k.startsWith('bw-') && !bw.klassen.includes(k)) bw.klassen.push(k);
   };
@@ -22,7 +29,10 @@ function bewegungBeobachten() {
     for (const m of liste) {
       if (m.type === 'attributes') {
         merke(m.target);
-        if (m.target.classList.contains('bw-einblenden') && !(m.oldValue ?? '').includes('bw-einblenden')) bw.eingeblendet += 1;
+        if (m.target.classList.contains('bw-einblenden') && !(m.oldValue ?? '').includes('bw-einblenden')) {
+          bw.eingeblendet += 1;
+          bw.einblendBilder.push({ bild: bildNr, klasse: m.target.className });
+        }
       }
       for (const n of m.addedNodes) if (n.nodeType === 1) merke(n);
       const zahl = (m.target.nodeType === 1 ? m.target : m.target.parentElement)?.closest?.('[data-bw-schluessel]');
@@ -59,6 +69,20 @@ test.describe('Glas und Bento mit Bewegung', () => {
   test.beforeEach(async ({ page, aussehen }) => {
     test.skip(!aussehen, 'nur in den Projekten telefon-glas und telefon-bento');
     await page.addInitScript(bewegungBeobachten);
+  });
+
+  test('Glas: das Licht setzt sich nur beim Tabwechsel – Neuzeichnen (visibilitychange) auf jeder Seite spielt es nicht erneut', async ({ page, aussehen }) => {
+    test.skip(aussehen !== 'glas', 'das Licht gibt es nur in Glas');
+    const licht = () => page.evaluate(() => document.getAnimations().filter((a) => /^glas-licht-/.test(a.animationName) && a.playState === 'running').map((a) => a.animationName));
+    await starteDemo(page);
+    for (const route of ['#/heute', '#/schicht', '#/app', '#/verlauf']) {
+      await page.evaluate((r) => (location.hash = r), route);
+      await expect.poll(licht, { message: `${route}: das Licht hat sich gesetzt`, timeout: 6000 }).toEqual([]);
+      const vorher = await page.locator('#inhalt > *').first().elementHandle();
+      await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+      await expect.poll(() => vorher.evaluate((el) => el.isConnected), `${route}: wirklich neu gezeichnet`).toBe(false);
+      expect(await licht(), `${route}: kein neues Licht`).toEqual([]);
+    }
   });
 
   test('erstes Zeichnen blendet ein; Tab-Wechsel zeichnen sofort, Tipps gleich danach (noch im Einblenden) treffen die neue Seite', async ({ page }) => {
@@ -154,8 +178,11 @@ test.describe('Glas und Bento mit Bewegung', () => {
       await page.getByRole('button', { name: 'Mit Google anmelden' }).click();
       await expect(page.locator('.sp-zelle')).toHaveCount(31);
       await expect.poll(() => google.anfragen.some((a) => a.includes('/events/fksch202612')), 'Vorladen wartet am Dezember').toBe(false);
-      // ≥ 1: zeichnet der Schichtplan vor dem ersten Bild noch einmal (Laden), blendet auch der neue Behälter ein (ui/bewegung.js)
+      // zeichnet der Schichtplan vor dem ersten Bild noch einmal (Laden), blendet auch der neue Behälter ein (ui/bewegung.js) – aber im
+      // selben Bild: man sieht genau EIN Hereinkommen
       await expect.poll(async () => (await bw(page)).eingeblendet, 'der Schichtplan kam beim ersten Zeichnen herein').toBeGreaterThanOrEqual(1);
+      const bilder = (await bw(page)).einblendBilder;
+      expect(new Set(bilder.map((b) => b.bild)).size, `alle Einblenden in einem Bild: ${JSON.stringify(bilder)}`).toBe(1);
 
       await page.locator('.sp-zelle[data-datum="2026-10-21"]').click();
       const notiz = page.locator('.sp-tag-karte[data-person="papa"]').getByRole('textbox', { name: 'Notiz (optional)' });

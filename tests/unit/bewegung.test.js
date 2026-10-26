@@ -358,6 +358,23 @@ describe('hochzaehlen', () => {
     assert.equal(sichtbar(danach), euro(7000));
   });
 
+  test('Ansicht mitten im Zählen verlassen (kein Nachfolger bis zum nächsten Bild): später steht derselbe Schlüssel gleich am Ziel', () => {
+    // Fixkosten → Sparziele → Fixkosten innerhalb von 0,7 s: der Kopf zählt nicht noch einmal ein Stück hoch
+    const t = neuesDokument({ aussehen: 'glas' });
+    const alt = betrag(t, 'fk-monatlich');
+    hochzaehlen(alt, 300000, euro);
+    t.bild(0);
+    t.bild(200);
+    assert.notEqual(sichtbar(alt), euro(300000));
+    alt.remove(); // andere Ansicht: kein neues Element mit diesem Schlüssel
+    t.bild(250);
+    assert.equal(t.bilder.size, 0, 'nichts zählt mehr');
+    const zurueck = betrag(t, 'fk-monatlich');
+    hochzaehlen(zurueck, 300000, euro);
+    assert.equal(zurueck.textContent, euro(300000), 'gleich am Ziel, kein Teil-Hochzählen');
+    assert.equal(t.bilder.size, 0);
+  });
+
   test('langsames Telefon: ein langes Bild (z. B. 2 s Zeichnen) frisst das Zählen nicht auf – es läuft danach sichtbar weiter', () => {
     const t = neuesDokument({ aussehen: 'glas' });
     const el = t.el('b');
@@ -591,6 +608,47 @@ describe('tabWechsel', () => {
     const lang = neuesDokument({ aussehen: 'glas', css: { '--dauer-tab': '2s' } });
     tabWechsel(() => {}, { dokument: lang.dok });
     assert.ok([...lang.zeitgeber.values()][0].ms >= 2000, 'längere Dauer (z. B. im Test): Klasse bleibt bis zum Ende');
+  });
+
+  test('Glas/Bento: kommt man von einer Seite ohne aktive Karte (Neu, Konto & App), entsteht der Tropfen ohne Gleiten (Safari)', () => {
+    // WebKit startet für ein neu entstehendes ::before einen Übergang von translateX(0): der Tropfen fegte vom linken Rand herein.
+    // Die Klasse bw-tropfen-frisch schaltet den Übergang ab, bis das neue Bild steht (zwei Bilder), dann gleitet er wieder.
+    const t = neuesDokument({ aussehen: 'glas' });
+    let aktiveKarte = false;
+    t.dok.querySelector = (sel) => (sel.includes('.aktiv') && aktiveKarte ? {} : null);
+    const wurzel = t.dok.documentElement;
+    let beimZeichnen = null;
+    tabWechsel(() => (beimZeichnen = wurzel.classList.contains('bw-tropfen-frisch')), { dokument: t.dok });
+    assert.equal(beimZeichnen, true, 'schon beim Zeichnen der neuen Seite');
+    t.bild(16);
+    assert.equal(wurzel.classList.contains('bw-tropfen-frisch'), true, 'nach dem ersten Bild noch');
+    t.bild(32);
+    assert.equal(wurzel.classList.contains('bw-tropfen-frisch'), false, 'danach wieder mit Gleiten');
+    // von einer Karte zur anderen: gleiten, keine Klasse
+    aktiveKarte = true;
+    tabWechsel(() => (beimZeichnen = wurzel.classList.contains('bw-tropfen-frisch')), { dokument: t.dok });
+    assert.equal(beimZeichnen, false);
+    assert.equal(t.bilder.size, 0, 'kein Bildwechsel geplant');
+    // Klassisch: nichts
+    const k = neuesDokument({});
+    k.dok.querySelector = () => null;
+    tabWechsel(() => {}, { dokument: k.dok });
+    assert.equal(k.dok.documentElement.classList.contains('bw-tropfen-frisch'), false);
+    assert.equal(k.bilder.size, 0);
+  });
+
+  test('ein gewöhnlicher Wechsel erzwingt kein Layout (offsetWidth) – nur ein Neustart mitten im Einblenden', () => {
+    // Leistung (4× langsamere CPU): das erzwungene Layout zog sonst die ganze neue Seite in die Aufgabe des Tipps
+    const t = neuesDokument({ aussehen: 'glas' });
+    let gelesen = 0;
+    Object.defineProperty(t.dok.documentElement, 'offsetWidth', { get: () => (gelesen += 1) });
+    tabWechsel(() => {}, { dokument: t.dok });
+    assert.equal(gelesen, 0, 'erster Wechsel: nur die Klasse');
+    tabWechsel(() => {}, { dokument: t.dok });
+    assert.equal(gelesen, 1, 'zweiter Wechsel, während die Klasse noch steht: einmal neu starten');
+    t.zeitAblaufen();
+    tabWechsel(() => {}, { dokument: t.dok });
+    assert.equal(gelesen, 1, 'nach dem Einblenden wieder ohne');
   });
 
   test('ein Fehler beim Zeichnen kommt sofort beim Aufrufer an', () => {

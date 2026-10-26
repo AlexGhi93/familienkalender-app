@@ -78,13 +78,29 @@ export const test = basis.extend({
   erlaubteFehler: [null, { option: true }],
   fehlerWache: [
     async ({ page, erlaubteFehler }, use) => {
+      // Jede Meldung mit Zeitpunkt (ms seit Testbeginn), Seite (Hash) und Herkunft (Datei:Zeile bzw. erste Stack-Zeile): so lässt sich
+      // ein Fehler unter Last (z. B. abgebrochene Anfrage beim Testende) von einem echten Fehler der App unterscheiden.
       const fehler = [];
-      page.on('pageerror', (e) => fehler.push(`pageerror: ${e.message}`));
+      const beginn = Date.now();
+      const wo = () => {
+        try {
+          return new URL(page.url()).hash || '/';
+        } catch {
+          return page.url();
+        }
+      };
+      page.on('pageerror', (e) => {
+        const stelle = (e.stack ?? '').split('\n').find((z) => /^\s+at /.test(z))?.trim() ?? '';
+        fehler.push(`pageerror +${Date.now() - beginn} ms ${wo()}: ${e.message}${stelle ? ` (${stelle})` : ''}`);
+      });
       page.on('console', (m) => {
-        if (m.type() === 'error' && !erlaubteFehler?.test(m.text())) fehler.push(`console.error: ${m.text()}`);
+        if (m.type() !== 'error' || erlaubteFehler?.test(m.text())) return;
+        const { url = '', lineNumber = 0 } = m.location() ?? {};
+        const herkunft = url ? ` (${url.replace(/^https?:\/\/[^/]+/, '')}:${lineNumber + 1})` : '';
+        fehler.push(`console.error +${Date.now() - beginn} ms ${wo()}: ${m.text()}${herkunft}`);
       });
       await use(fehler);
-      expect(fehler, 'Fehler im Browser').toEqual([]);
+      expect(fehler, 'Fehler im Browser (Zeit seit Testbeginn, Seite, Meldung, Herkunft)').toEqual([]);
     },
     { auto: true },
   ],
