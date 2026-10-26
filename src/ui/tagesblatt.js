@@ -105,12 +105,12 @@ export function oeffneTagesblatt(ctx, date) {
       return [
         m.konflikt ? h('div', { class: 'konflikt-hinweis', role: 'alert' }, h('b', {}, '⚠️ Konflikt'), h('p', {}, m.konflikt.hinweis)) : null,
         m.eintraege.length > 0
-          ? h('div', { class: 'liste' }, m.eintraege.map((e) => eintragZeile(e, ctx, schliessen)))
+          ? h('div', { class: 'liste tb-eintraege' }, m.eintraege.map((e) => eintragZeile(e, ctx, schliessen)))
           : h('p', { class: 'leise' }, 'Noch nichts eingetragen.'),
         h('h3', {}, 'Eintragen'),
         h(
           'div',
-          { class: 'chip-reihe' },
+          { class: 'chip-reihe tb-eintragen' },
           m.aktionen.map((a) => chip(`${a.emoji} ${a.text}`, { art: a.aktiv ? 'aktiv' : '', farbeHex: a.farbe, onClick: () => setze(a.typ) })),
         ),
         m.imUrlaub ? h('p', { class: 'leise' }, 'Dieser Tag liegt im Urlaub; der Urlaub hat Vorrang.') : null,
@@ -137,7 +137,7 @@ export function oeffneTagesblatt(ctx, date) {
         h('h3', {}, 'Neu an diesem Tag'),
         h(
           'div',
-          { class: 'chip-reihe' },
+          { class: 'chip-reihe tb-neu' },
           m.neu.map((n) =>
             chip(`${n.emoji} ${n.text}`, {
               farbeHex: n.farbe,
