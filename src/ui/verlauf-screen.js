@@ -25,10 +25,14 @@ export function verlaufScreen({ store, ui }) {
     v.von = fruehereGrenze(bis);
     v.laedt = true;
     ui.rendern();
-    const ok = await store.sichereBereich(v.von, bis);
-    if (!ok) v.von = alt; // nicht geklappt: der Hinweis nennt weiter den wirklich geladenen Beginn (die Meldung kommt vom Store)
-    v.laedt = false;
-    ui.rendern();
+    let ok = false;
+    try {
+      ok = await store.sichereBereich(v.von, bis);
+    } finally {
+      if (!ok) v.von = alt; // nicht geklappt (auch bei einem Wurf): der Hinweis nennt weiter den wirklich geladenen Beginn (die Meldung kommt vom Store)
+      v.laedt = false; // sonst bliebe „Lade …“ stehen und verlaufLaden gesperrt
+      ui.rendern();
+    }
   }
 
   const suche = h('input', { type: 'search', class: 'verlauf-suche', placeholder: 'Suchen …', 'aria-label': 'Im Verlauf suchen', value: v.text, maxlength: '40', autocomplete: 'off', enterkeyhint: 'search' });
