@@ -136,8 +136,10 @@
 
 :root[data-aussehen='glas'] .menue-inhalt .gruppen summary,
 :root[data-aussehen='bento'] .menue-inhalt .gruppen summary,
-:root[data-aussehen='glas'] .anleitung summary,
-:root[data-aussehen='bento'] .anleitung summary {
+:root[data-aussehen='glas'] .app-seite .anleitung summary,
+:root[data-aussehen='glas'] .einrichtung .anleitung summary,
+:root[data-aussehen='bento'] .app-seite .anleitung summary ,
+:root[data-aussehen='bento'] .einrichtung .anleitung summary {
   justify-content: space-between;
   gap: 10px;
   min-height: 48px;
@@ -146,15 +148,19 @@
 
 :root[data-aussehen='glas'] .menue-inhalt .gruppen summary::-webkit-details-marker,
 :root[data-aussehen='bento'] .menue-inhalt .gruppen summary::-webkit-details-marker,
-:root[data-aussehen='glas'] .anleitung summary::-webkit-details-marker,
-:root[data-aussehen='bento'] .anleitung summary::-webkit-details-marker {
+:root[data-aussehen='glas'] .app-seite .anleitung summary::-webkit-details-marker,
+:root[data-aussehen='glas'] .einrichtung .anleitung summary::-webkit-details-marker,
+:root[data-aussehen='bento'] .app-seite .anleitung summary::-webkit-details-marker ,
+:root[data-aussehen='bento'] .einrichtung .anleitung summary::-webkit-details-marker {
   display: none;
 }
 
 :root[data-aussehen='glas'] .menue-inhalt .gruppen summary::after,
 :root[data-aussehen='bento'] .menue-inhalt .gruppen summary::after,
-:root[data-aussehen='glas'] .anleitung summary::after,
-:root[data-aussehen='bento'] .anleitung summary::after {
+:root[data-aussehen='glas'] .app-seite .anleitung summary::after,
+:root[data-aussehen='glas'] .einrichtung .anleitung summary::after,
+:root[data-aussehen='bento'] .app-seite .anleitung summary::after ,
+:root[data-aussehen='bento'] .einrichtung .anleitung summary::after {
   content: '›';
   content: '›' / '';
   flex: none;
@@ -171,22 +177,11 @@
 
 :root[data-aussehen='glas'] .menue-inhalt .gruppen details[open] > summary::after,
 :root[data-aussehen='bento'] .menue-inhalt .gruppen details[open] > summary::after,
-:root[data-aussehen='glas'] .anleitung[open] > summary::after,
-:root[data-aussehen='bento'] .anleitung[open] > summary::after {
+:root[data-aussehen='glas'] .app-seite .anleitung[open] > summary::after,
+:root[data-aussehen='glas'] .einrichtung .anleitung[open] > summary::after,
+:root[data-aussehen='bento'] .app-seite .anleitung[open] > summary::after ,
+:root[data-aussehen='bento'] .einrichtung .anleitung[open] > summary::after {
   transform: rotate(-90deg);
-}
-
-:root[data-aussehen='glas'] .menue-inhalt .chip.entfernbar .x,
-:root[data-aussehen='bento'] .menue-inhalt .chip.entfernbar .x {
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  margin-left: 8px;
-  margin-right: -4px;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--ink) 9%, transparent);
-  font-size: 0.75rem;
 }
 
 /* Schrift in den eigenen Seiten ≥ 16 px: Hinweise, Beschriftungen und Chips (Klassisch: 14–15 px). Die Umschalter und die
@@ -302,19 +297,16 @@
 :root[data-aussehen='glas'] .segment-wahl:has(> .chip.aktiv:nth-child(1)),
 :root[data-aussehen='bento'] .segment-wahl:has(> .chip.aktiv:nth-child(1)) {
   --i: 0;
-  --wahl-anim: mehr-wahl-1;
 }
 
 :root[data-aussehen='glas'] .segment-wahl:has(> .chip.aktiv:nth-child(2)),
 :root[data-aussehen='bento'] .segment-wahl:has(> .chip.aktiv:nth-child(2)) {
   --i: 1;
-  --wahl-anim: mehr-wahl-2;
 }
 
 :root[data-aussehen='glas'] .segment-wahl:has(> .chip.aktiv:nth-child(3)),
 :root[data-aussehen='bento'] .segment-wahl:has(> .chip.aktiv:nth-child(3)) {
   --i: 2;
-  --wahl-anim: mehr-wahl-3;
 }
 
 :root[data-aussehen='glas'] .segment-wahl > .chip,
@@ -337,6 +329,15 @@
   border-color: transparent;
   background: transparent;
   box-shadow: none;
+}
+
+/* Schmale Telefone (unter 360 px): Schrift der Umschalter schrumpft mit, „Automatisch“ bleibt in seiner Fläche */
+@media (max-width: 359px) {
+  :root[data-aussehen='glas'] .segment-wahl > .chip,
+  :root[data-aussehen='bento'] .segment-wahl > .chip {
+    padding: 0 2px;
+    font-size: clamp(0.75rem, 3.8vw, 0.9375rem);
+  }
 }
 
 /* Aussehen: drei Kacheln mit einer kleinen Vorschau des Aussehens (Fläche + drei Tupfen in seiner Art) und dem Namen darunter;
@@ -644,20 +645,27 @@
   padding: 12px 14px;
 }
 
-/* Anleitungen (Freigabe, „Wenn nichts klingelt“): nummerierte Schritte in runden Marken */
-:root[data-aussehen='glas'] .anleitung,
-:root[data-aussehen='bento'] .anleitung {
+/* Anleitungen (Freigabe, „Wenn nichts klingelt“) in Konto & App und Einrichtung: nummerierte Schritte in runden Marken. Nur dort:
+   andere details.anleitung (z. B. „Was sind Sonderbeträge?“ in Konto) gestaltet ihr eigener Bereich. */
+:root[data-aussehen='glas'] .app-seite .anleitung,
+:root[data-aussehen='glas'] .einrichtung .anleitung,
+:root[data-aussehen='bento'] .app-seite .anleitung ,
+:root[data-aussehen='bento'] .einrichtung .anleitung {
   padding: 2px 14px;
   border-radius: 18px;
 }
 
-:root[data-aussehen='glas'] .anleitung[open],
-:root[data-aussehen='bento'] .anleitung[open] {
+:root[data-aussehen='glas'] .app-seite .anleitung[open],
+:root[data-aussehen='glas'] .einrichtung .anleitung[open],
+:root[data-aussehen='bento'] .app-seite .anleitung[open] ,
+:root[data-aussehen='bento'] .einrichtung .anleitung[open] {
   padding-bottom: 14px;
 }
 
-:root[data-aussehen='glas'] .anleitung ol,
-:root[data-aussehen='bento'] .anleitung ol {
+:root[data-aussehen='glas'] .app-seite .anleitung ol,
+:root[data-aussehen='glas'] .einrichtung .anleitung ol,
+:root[data-aussehen='bento'] .app-seite .anleitung ol ,
+:root[data-aussehen='bento'] .einrichtung .anleitung ol {
   counter-reset: schritt;
   list-style: none;
   gap: 10px;
@@ -665,18 +673,21 @@
   padding-left: 0;
 }
 
-:root[data-aussehen='glas'] .anleitung li,
-:root[data-aussehen='bento'] .anleitung li {
+:root[data-aussehen='glas'] .app-seite .anleitung li,
+:root[data-aussehen='glas'] .einrichtung .anleitung li,
+:root[data-aussehen='bento'] .app-seite .anleitung li ,
+:root[data-aussehen='bento'] .einrichtung .anleitung li {
   position: relative;
   min-height: 28px;
   padding-left: 40px;
   counter-increment: schritt;
 }
 
-:root[data-aussehen='glas'] .anleitung li::before,
-:root[data-aussehen='bento'] .anleitung li::before {
-  content: counter(schritt);
-  content: counter(schritt) / '';
+:root[data-aussehen='glas'] .app-seite .anleitung li::before,
+:root[data-aussehen='glas'] .einrichtung .anleitung li::before,
+:root[data-aussehen='bento'] .app-seite .anleitung li::before ,
+:root[data-aussehen='bento'] .einrichtung .anleitung li::before {
+  content: counter(schritt); /* ohne Alternativtext: die Nummer bleibt vorlesbar (list-style: none nimmt sonst die Zählung) */
   position: absolute;
   top: -1px;
   left: 0;
@@ -690,8 +701,10 @@
   font-variant-numeric: tabular-nums;
 }
 
-:root[data-aussehen='glas'] .anleitung h4,
-:root[data-aussehen='bento'] .anleitung h4,
+:root[data-aussehen='glas'] .app-seite .anleitung h4,
+:root[data-aussehen='glas'] .einrichtung .anleitung h4,
+:root[data-aussehen='bento'] .app-seite .anleitung h4,
+:root[data-aussehen='bento'] .einrichtung .anleitung h4,
 :root[data-aussehen='glas'] .push-abschnitt h4,
 :root[data-aussehen='bento'] .push-abschnitt h4 {
   font-family: var(--font-titel);
@@ -787,7 +800,7 @@
 
 :root[data-aussehen='glas'] .banner .banner-fehler,
 :root[data-aussehen='bento'] .banner .banner-fehler {
-  font-size: 0.9375rem;
+  font-size: 1rem;
 }
 
 :root[data-aussehen='glas'] .fortschritt .balken,
@@ -851,22 +864,26 @@
 }
 
 :root[data-aussehen='glas'] .menue-inhalt .gruppen details,
-:root[data-aussehen='glas'] .anleitung {
+:root[data-aussehen='glas'] .app-seite .anleitung ,
+:root[data-aussehen='glas'] .einrichtung .anleitung {
   border: 1px solid var(--glas-kante);
   background: var(--glas-stark);
   box-shadow: inset 0 1px 0 var(--glas-kante);
 }
 
 :root[data-aussehen='glas'] .menue-inhalt .gruppen summary::after,
-:root[data-aussehen='glas'] .anleitung summary::after {
+:root[data-aussehen='glas'] .app-seite .anleitung summary::after ,
+:root[data-aussehen='glas'] .einrichtung .anleitung summary::after {
   background: color-mix(in srgb, var(--ink) 7%, transparent);
 }
 
-:root[data-aussehen='glas'] .anleitung summary {
+:root[data-aussehen='glas'] .app-seite .anleitung summary ,
+:root[data-aussehen='glas'] .einrichtung .anleitung summary {
   font-weight: 700;
 }
 
-:root[data-aussehen='glas'] .anleitung li::before {
+:root[data-aussehen='glas'] .app-seite .anleitung li::before ,
+:root[data-aussehen='glas'] .einrichtung .anleitung li::before {
   background: color-mix(in srgb, var(--akzent) 14%, var(--glas-stark));
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--akzent) 30%, transparent);
   color: var(--akzent-text);
@@ -879,8 +896,18 @@
 }
 
 :root[data-aussehen='glas'] .segment-wahl::before {
-  background: var(--tropfen);
-  box-shadow: 0 4px 14px -4px rgb(30 20 80 / 0.3), inset 0 1px 0 var(--glas-kante);
+  background: color-mix(in srgb, var(--akzent) 12%, var(--tropfen));
+  box-shadow: 0 4px 14px -4px rgb(30 20 80 / 0.3), inset 0 1px 0 var(--glas-kante), inset 0 0 0 1px color-mix(in srgb, var(--akzent) 30%, transparent);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-aussehen='glas']:not([data-theme='light']) .segment-wahl::before {
+    background: color-mix(in srgb, var(--akzent) 18%, var(--tropfen));
+  }
+}
+
+:root[data-aussehen='glas'][data-theme='dark'] .segment-wahl::before {
+  background: color-mix(in srgb, var(--akzent) 18%, var(--tropfen));
 }
 
 :root[data-aussehen='glas'] .segment-wahl > .chip.aktiv {
@@ -1098,40 +1125,41 @@
 }
 
 :root[data-aussehen='bento'] .menue-inhalt .gruppen details,
-:root[data-aussehen='bento'] .anleitung {
+:root[data-aussehen='bento'] .app-seite .anleitung ,
+:root[data-aussehen='bento'] .einrichtung .anleitung {
   border: 0;
   background: var(--karte-2);
   box-shadow: var(--lippe);
 }
 
 :root[data-aussehen='bento'] .menue-inhalt .gruppen summary,
-:root[data-aussehen='bento'] .anleitung summary {
+:root[data-aussehen='bento'] .app-seite .anleitung summary ,
+:root[data-aussehen='bento'] .einrichtung .anleitung summary {
   font-family: var(--font-titel);
   font-size: 1.0625rem;
   font-weight: 600;
 }
 
 :root[data-aussehen='bento'] .menue-inhalt .gruppen summary::after,
-:root[data-aussehen='bento'] .anleitung summary::after {
+:root[data-aussehen='bento'] .app-seite .anleitung summary::after ,
+:root[data-aussehen='bento'] .einrichtung .anleitung summary::after {
   background: var(--karte);
   color: var(--ink);
   font-family: var(--font-text);
   font-weight: 900;
 }
 
-:root[data-aussehen='bento'] .anleitung li::before {
+:root[data-aussehen='bento'] .app-seite .anleitung li::before ,
+:root[data-aussehen='bento'] .einrichtung .anleitung li::before {
   background: var(--akzent);
   color: var(--akzent-ink);
   box-shadow: inset 0 -2px 0 rgb(0 0 0 / 0.18);
   font-weight: 900;
 }
 
-:root[data-aussehen='bento'] .menue-inhalt .chip.entfernbar .x {
-  font-weight: 900;
-}
-
 :root[data-aussehen='bento'] .darstellung-titel,
-:root[data-aussehen='bento'] .anleitung h4,
+:root[data-aussehen='bento'] .app-seite .anleitung h4,
+:root[data-aussehen='bento'] .einrichtung .anleitung h4,
 :root[data-aussehen='bento'] .push-abschnitt h4 {
   font-size: 1.0625rem;
   font-weight: 600;
@@ -1327,16 +1355,13 @@
 
 /* ---------- 5. Bewegung (nur ohne „Reduziert“ und ohne prefers-reduced-motion) ---------- */
 
-@keyframes mehr-wahl-1 { 0%, 100% { scale: 1; } 40% { scale: 1.12 0.9; } 75% { scale: 0.97 1.03; } }
-@keyframes mehr-wahl-2 { 0%, 100% { scale: 1; } 40% { scale: 1.12 0.9; } 75% { scale: 0.97 1.03; } }
-@keyframes mehr-wahl-3 { 0%, 100% { scale: 1; } 40% { scale: 1.12 0.9; } 75% { scale: 0.97 1.03; } }
-
 @media (prefers-reduced-motion: no-preference) {
-  /* Umschalter: die Fläche gleitet mit Überschwingen und dehnt sich kurz (neuer Animationsname je Stelle = Neustart) */
+  /* Umschalter: die Fläche gleitet mit Überschwingen – nur ein Übergang, keine Keyframes: ein neu gezeichneter Umschalter (Hintergrund,
+     Speichern, anderes Telefon) steht sofort an seiner Stelle und spielt nichts. Im Nachricht-Blatt wird der Ton-Umschalter bei jeder
+     Wahl neu gebaut: dort springt die Fläche (ohne Bewegung), nur in der Darstellung gleitet sie (dieselben Knöpfe). */
   :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .segment-wahl::before,
   :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .segment-wahl::before {
     transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
-    animation: var(--wahl-anim, none) 0.5s cubic-bezier(0.3, 0.7, 0.3, 1);
   }
 
   /* Menü: die Zeilen kommen beim Betreten einzeln herein (statt der ganzen Karte), höchstens acht gestaffelt; die Symbole spielen wie bisher */
@@ -1401,8 +1426,10 @@
   :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .menue-pfeil,
   :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .menue-inhalt .gruppen summary::after,
   :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .menue-inhalt .gruppen summary::after,
-  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .anleitung summary::after,
-  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .anleitung summary::after {
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .app-seite .anleitung summary::after,
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .einrichtung .anleitung summary::after,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .app-seite .anleitung summary::after ,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .einrichtung .anleitung summary::after {
     transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
   }
 

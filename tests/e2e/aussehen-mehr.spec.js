@@ -124,3 +124,26 @@ test('Zeichen aus CSS (✓, ›) gehören nicht zum Namen: Knöpfe und Aufklappe
   await page.locator('.menue-eintrag[data-id="mitnehmen"] .menue-zeile').click();
   await expect(page.locator('#menue-mitnehmen summary').first()).toHaveAccessibleName(/Kinderarzt$/);
 });
+
+test.describe('Neuzeichnen im Hintergrund', () => {
+  test.use({ contextOptions: { reducedMotion: 'no-preference' } });
+
+  test('Konto & App: nach visibilitychange startet keine Animation neu (Umschalter, Kacheln)', async ({ page }) => {
+    await starteDemo(page, { route: '#/app' });
+    await expect(page.getByRole('group', { name: 'Hell oder Dunkel' })).toBeVisible();
+    await expect.poll(() => page.evaluate(() => document.getAnimations().filter((a) => a.playState === 'running').length), { timeout: 5000 }).toBe(0);
+    const vorher = await page.locator('.darstellung-karte').elementHandle();
+    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    await expect.poll(() => vorher.evaluate((el) => el.isConnected)).toBe(false); // wirklich neu gezeichnet
+    // das Licht der Seite (glas-licht-*, Fundament glas.css) ist nicht Teil dieses Bereichs; alles andere darf nicht neu laufen
+    const laufend = await page.evaluate(() => document.getAnimations().map((a) => a.animationName ?? a.transitionProperty ?? 'x').filter((n) => !/^glas-licht-/.test(n)));
+    expect(laufend).toEqual([]);
+  });
+});
+
+test('320 px: die Texte der Umschalter bleiben in ihrer Fläche', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 700 });
+  await starteDemo(page, { route: '#/app' });
+  const ueber = await page.locator('.segment-wahl > .chip').evaluateAll((els) => els.filter((el) => el.scrollWidth > el.clientWidth + 1).map((el) => el.textContent));
+  expect(ueber).toEqual([]);
+});

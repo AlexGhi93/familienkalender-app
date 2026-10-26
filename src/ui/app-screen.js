@@ -17,7 +17,7 @@ const BEWEGUNG_TEXTE = [['an', 'An'], ['reduziert', 'Reduziert']];
  * auch wenn der Speicher gesperrt ist und die Wahl deshalb nur bis zum Neuladen hält). Die Knöpfe bleiben dieselben, nur ihr Zustand
  * ändert sich – so behält die Tastatur nach der Wahl den Fokus.
  */
-function wahlReihe(name, texte, { lese, wendeAn, inhalt = (wahl, text) => text, klasse }) {
+function wahlReihe(name, texte, { lese, wendeAn, inhalt = (wahl, text) => text, klasse = '' }) {
   let aktuell = lese();
   const knoepfe = texte.map(([wahl, text]) =>
     chip(inhalt(wahl, text), {
@@ -34,7 +34,7 @@ function wahlReihe(name, texte, { lese, wendeAn, inhalt = (wahl, text) => text, 
     });
   }
   markiere();
-  return h('div', { class: `chip-reihe ${klasse}`, role: 'group', 'aria-label': name }, ...knoepfe);
+  return h('div', { class: `chip-reihe ${klasse}`.trim(), role: 'group', 'aria-label': name }, ...knoepfe);
 }
 
 const aussehenVorschau = (wahl) =>
