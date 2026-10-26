@@ -65,6 +65,7 @@ describe('fixkostenModel: Kopf und Filter', () => {
     const m = fixkostenModel(mit(ALLE), HEUTE);
     // Ø: 1050 + 74 + 89 + 15,30 + 59 + 29,90 + 45 = 1.362,20 €
     assert.equal(m.kopf.monatlich, '1.362,20 €');
+    assert.equal(m.kopf.monatlichCents, 136_220); // für das Hochzählen in Glas/Bento
     assert.equal(m.kopf.jahrText, '= 16.346,40 € im Jahr · 7 Posten');
     // Oktober: Miete 1050, Strom 74, Fernwärme 178, Kfz 59, Fitness 29,90, Schwimmkurs 45 (ORF erst im Jänner)
     assert.equal(m.kopf.faellig, '1.435,90 €');

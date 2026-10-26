@@ -1,1 +1,1304 @@
-/* Glas & Licht und Bento bunt: konto (nur unter :root[data-aussehen="glas"] bzw. [data-aussehen="bento"]; Klassisch unberührt). */
+/* Glas & Licht und Bento bunt: konto (nur unter :root[data-aussehen="glas"] bzw. [data-aussehen="bento"]; Klassisch unberührt).
+   Bereich Konto: Umschalter „Kontostand · Fixkosten · Sparziele“ (Tropfen/Blob gleitet von der vorigen Ansicht, Haken data-von),
+   Kontostand (Eintragen, Demo-Leiste, Nachtragen, Zeitraum, Kacheln, Diagramme, Sonderbeträge, Sparen pro Monat), Fixkosten (Kopf,
+   Filter je Person, Diesen Monat fällig, Kategorien, Vertrags-Abzeichen, Diagramm, Archiv, Formular) und Sparziele (Kopf, Ziele mit
+   Balken, Frei verfügbar, Verlauf, Formular, Verschieben).
+   Aufbau: 1. Tokens je Aussehen × Hell/Dunkel  2. Glas  3. Bento  4. Bewegung (nur ohne „Reduziert“ und ohne prefers-reduced-motion).
+   Diagrammfarben (--kt-*) mit dataviz/validate_palette.js geprüft: je Aussehen × Modus alle Prüfungen bestanden (Papa/Mama ΔE ≥ 25 auch
+   bei Farbschwäche, Plus/Minus ΔE ≥ 10,5), jede Reihe ≥ 3:1 gegen ihre Diagrammfläche. Plus/Minus behalten ihre Bedeutung (grün/rot),
+   sind aber so gestuft, dass sie auch bei Rot-Grün-Schwäche unterscheidbar bleiben; dazu zeigen die Balken nach oben bzw. unten. */
+
+/* ---------- 1. Tokens ---------- */
+
+:root[data-aussehen='glas'] {
+  --kt-papa: #2a78d6;
+  --kt-mama: #d9581f; /* dunkler als Klassisch (#eb6834 hätte über dem Grünlicht nur 2,95:1) */
+  --kt-plus: #2a9d8f;
+  --kt-minus: #e5484d;
+  --kt-punkt-rand: var(--karte-voll);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-aussehen='glas']:not([data-theme='light']) {
+    --kt-papa: #3987e5;
+    --kt-mama: #d95926;
+  }
+}
+
+:root[data-aussehen='glas'][data-theme='dark'] {
+  --kt-papa: #3987e5;
+  --kt-mama: #d95926;
+}
+
+:root[data-aussehen='bento'] {
+  --kt-papa: #2b66f0; /* = Papa der Personenfarben */
+  --kt-mama: #e8572a; /* Mama, eine Stufe kräftiger (≥ 3:1 auf Weiß) */
+  --kt-plus: #2a9d8f;
+  --kt-minus: #e5484d;
+  --kt-punkt-rand: var(--karte);
+  --kt-ok: #0b7a52;
+  --kt-ok-ink: #ffffff;
+  --kt-warn: #c2410c;
+  --kt-warn-ink: #ffffff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-aussehen='bento']:not([data-theme='light']) {
+    --kt-papa: #4f86f0;
+    --kt-mama: #e2622a;
+    --kt-ok: #3fd39b;
+    --kt-ok-ink: #032a1b;
+    --kt-warn: #ff8d66;
+    --kt-warn-ink: #2a0d03;
+  }
+}
+
+:root[data-aussehen='bento'][data-theme='dark'] {
+  --kt-papa: #4f86f0;
+  --kt-mama: #e2622a;
+  --kt-ok: #3fd39b;
+  --kt-ok-ink: #032a1b;
+  --kt-warn: #ff8d66;
+  --kt-warn-ink: #2a0d03;
+}
+
+/* Im Konto-Tab tragen die Reihen Papa/Mama (Diagramm, Personen-Kürzel, Balken der Sparziele) die geprüften Farben dieses Aussehens */
+:root[data-aussehen='glas'] .konto,
+:root[data-aussehen='bento'] .konto {
+  --serie-papa: var(--kt-papa);
+  --serie-mama: var(--kt-mama);
+}
+
+/* ---------- 2. Glas ---------- */
+
+/* Umschalter: Rinne mit Glastropfen (::before) unter der Wahl; nach dem Umschalten gleitet er von --kt-von herüber: der Stelle, an der
+   er gerade stand (px, aus src/ui/fixkosten-screen.js), sonst der Stelle der vorigen Ansicht (data-von). --kt-seit (≤ 0) lässt ein
+   Neuzeichnen mitten im Gleiten an derselben Stelle weiterlaufen. Die drei Knöpfe sind gleich breit (flex: 1, 4 px Abstand):
+   Stelle = Index × (eigene Breite + 4 px). */
+:root[data-aussehen='glas'] .konto-segment {
+  position: relative;
+  isolation: isolate;
+  overflow: clip; /* das Überschwingen des Tropfens bleibt in der Rinne */
+  overflow-clip-margin: 3px; /* der Fokusring (3 px + 2 px Abstand) bleibt ganz */
+  --kt-seg-rand: 4px;
+}
+
+:root[data-aussehen='glas'] .konto-segment::before,
+:root[data-aussehen='bento'] .konto-segment::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  top: var(--kt-seg-rand);
+  bottom: var(--kt-seg-rand);
+  left: var(--kt-seg-rand);
+  width: calc((100% - 2 * var(--kt-seg-rand) - 8px) / 3);
+  border-radius: var(--r-chip);
+  pointer-events: none;
+  transform: translateX(var(--kt-nach, 0px));
+}
+
+:root[data-aussehen='glas'] .konto-segment::before {
+  background: var(--tropfen);
+  box-shadow: 0 2px 6px -2px rgba(30, 20, 80, 0.32), inset 0 1px 0 var(--glas-kante);
+}
+
+:root[data-aussehen='glas'] .konto-segment:has(> .konto-segment-knopf.aktiv:nth-child(2)),
+:root[data-aussehen='bento'] .konto-segment:has(> .konto-segment-knopf.aktiv:nth-child(2)) {
+  --kt-nach: calc(100% + 4px);
+}
+
+:root[data-aussehen='glas'] .konto-segment:has(> .konto-segment-knopf.aktiv:nth-child(3)),
+:root[data-aussehen='bento'] .konto-segment:has(> .konto-segment-knopf.aktiv:nth-child(3)) {
+  --kt-nach: calc(200% + 8px);
+}
+
+:root[data-aussehen='glas'] .konto-segment[data-von='fixkosten'],
+:root[data-aussehen='bento'] .konto-segment[data-von='fixkosten'] {
+  --kt-von: calc(100% + 4px);
+}
+
+:root[data-aussehen='glas'] .konto-segment[data-von='sparziele'],
+:root[data-aussehen='bento'] .konto-segment[data-von='sparziele'] {
+  --kt-von: calc(200% + 8px);
+}
+
+:root[data-aussehen='glas'] .konto-segment-knopf.aktiv,
+:root[data-aussehen='bento'] .konto-segment-knopf.aktiv {
+  background: transparent;
+  box-shadow: none;
+}
+
+:root[data-aussehen='glas'] .konto-segment-knopf.aktiv {
+  color: var(--ink);
+  font-weight: 750;
+}
+
+/* Kopf-Karten (Fixkosten, Sparziele) und die große Kachel des Kontostands: die große Zahl der Seite */
+:root[data-aussehen='glas'] .fk-kopf {
+  gap: 4px;
+  padding: 18px 18px 14px;
+  border-radius: 28px;
+}
+
+:root[data-aussehen='glas'] .fk-klein {
+  font-weight: 600;
+}
+
+:root[data-aussehen='glas'] .fk-kopf > .fk-klein:first-child,
+:root[data-aussehen='glas'] .konto-kachel-titel {
+  font-size: 0.94rem;
+  font-weight: 650;
+  color: var(--ink-2);
+}
+
+:root[data-aussehen='glas'] .fk-gross,
+:root[data-aussehen='glas'] .konto-kachel:first-child .konto-kachel-wert {
+  font-size: 2.6rem;
+  font-weight: 780;
+  line-height: 1.05;
+  letter-spacing: -0.035em;
+}
+
+:root[data-aussehen='glas'] .fk-kopf-zeile {
+  margin-top: 0;
+  padding: 10px 0 2px;
+  border-top: 1px solid var(--linie);
+  font-size: 1rem;
+}
+
+:root[data-aussehen='glas'] .fk-kopf > .fk-klein + .fk-kopf-zeile,
+:root[data-aussehen='glas'] .fk-kopf > .fk-gross + .fk-kopf-zeile {
+  margin-top: 8px;
+}
+
+:root[data-aussehen='glas'] .fk-kopf-zeile b {
+  font-size: 1.0625rem;
+  font-weight: 750;
+}
+
+:root[data-aussehen='glas'] .sz-stand {
+  margin-top: 4px;
+}
+
+/* Kontostand: Eintragen-Karte mit der Demo-Leiste als heller Glaseinsatz; Personen mit Feld + „Im Minus“ */
+:root[data-aussehen='glas'] .konto-demo {
+  padding: 12px;
+  border-radius: var(--r-zeile);
+  border: 1px solid var(--glas-kante);
+  background: color-mix(in srgb, var(--glas-hoch) 70%, transparent);
+}
+
+:root[data-aussehen='glas'] .konto-person:not(.fertig) {
+  padding-top: 12px;
+  border-top: 1px solid var(--linie);
+}
+
+:root[data-aussehen='glas'] .konto-person.fertig {
+  padding: 10px 12px;
+  border-radius: var(--r-zeile);
+  background: color-mix(in srgb, var(--glas-hoch) 70%, transparent);
+}
+
+:root[data-aussehen='glas'] .konto-eingabe {
+  font-weight: 500;
+}
+
+:root[data-aussehen='glas'] .konto-bereich .chip-reihe {
+  gap: 8px;
+}
+
+/* Kacheln: Fake-Glas wie die Karten */
+:root[data-aussehen='glas'] .konto-kacheln {
+  gap: 10px;
+}
+
+:root[data-aussehen='glas'] .konto-kachel {
+  gap: 4px;
+  padding: 14px 16px 12px;
+  border: 1px solid var(--glas-kante);
+  border-radius: var(--r-zeile);
+  background: linear-gradient(165deg, var(--glas-hoch), var(--karte) 70%);
+}
+
+:root[data-aussehen='glas'] .konto-kachel:first-child {
+  padding: 18px 18px 14px;
+  border-radius: var(--r-karte);
+}
+
+:root[data-aussehen='glas'] .konto-kachel-wert {
+  font-size: 1.3rem;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+}
+
+:root[data-aussehen='glas'] .konto-kachel small {
+  font-size: 0.8125rem;
+  font-weight: 550;
+}
+
+/* Diagramme: deckenderes Glas (gleichmäßiger Grund für die Farben), Gitter zart, Punkte mit Ring in der Fläche */
+:root[data-aussehen='glas'] figure.diagramm {
+  padding: 16px 12px 12px;
+  border: 1px solid var(--glas-kante);
+  background: linear-gradient(165deg, var(--glas-hoch), var(--glas-stark));
+}
+
+:root[data-aussehen='glas'] .diag-gitter {
+  stroke: color-mix(in srgb, var(--ink) 9%, transparent);
+}
+
+:root[data-aussehen='glas'] .diag-achse,
+:root[data-aussehen='glas'] .diag-wert,
+:root[data-aussehen='glas'] .diag-schnitt-text,
+:root[data-aussehen='bento'] .diag-achse,
+:root[data-aussehen='bento'] .diag-wert,
+:root[data-aussehen='bento'] .diag-schnitt-text {
+  font-family: var(--font-zahl);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+:root[data-aussehen='glas'] .diag-wert,
+:root[data-aussehen='bento'] .diag-wert {
+  font-size: 10.5px;
+  transform: translateY(var(--wert-hoch, 0px)); /* unter einem Minus-Balken: über die Nulllinie, weg vom Monatsnamen */
+}
+
+/* die Achsenbeschriftung ist in dieser Schrift etwas breiter: sie darf in den Innenabstand der Karte ragen statt abgeschnitten zu werden */
+:root[data-aussehen='glas'] .diagramm .konto-diagramm,
+:root[data-aussehen='bento'] .diagramm .konto-diagramm {
+  overflow: visible;
+}
+
+/* Tooltip: lesbare Größe */
+:root[data-aussehen='glas'] .diag-tip,
+:root[data-aussehen='bento'] .diag-tip {
+  font-size: 0.9375rem;
+}
+
+:root[data-aussehen='glas'] .diag-tip-zeile small,
+:root[data-aussehen='bento'] .diag-tip-zeile small {
+  font-size: 0.8125rem;
+  opacity: 1;
+}
+
+:root[data-aussehen='glas'] .diag-punkt,
+:root[data-aussehen='bento'] .diag-punkt {
+  stroke: var(--kt-punkt-rand);
+}
+
+:root[data-aussehen='glas'] .konto-balken.plus,
+:root[data-aussehen='bento'] .konto-balken.plus {
+  fill: var(--kt-plus);
+}
+
+:root[data-aussehen='glas'] .konto-balken.minus,
+:root[data-aussehen='bento'] .konto-balken.minus {
+  fill: var(--kt-minus);
+}
+
+:root[data-aussehen='glas'] .diag-schluessel.plus,
+:root[data-aussehen='bento'] .diag-schluessel.plus {
+  background: var(--kt-plus);
+  border-radius: 3px;
+}
+
+:root[data-aussehen='glas'] .diag-schluessel.minus,
+:root[data-aussehen='bento'] .diag-schluessel.minus {
+  background: var(--kt-minus);
+  border-radius: 3px;
+}
+
+:root[data-aussehen='glas'] .diag-legende,
+:root[data-aussehen='bento'] .diag-legende {
+  gap: 6px 16px;
+  font-size: 0.9375rem;
+}
+
+:root[data-aussehen='glas'] .diag-tip {
+  border: 1px solid var(--glas-kante);
+  border-radius: 16px;
+  background: var(--toast-bg);
+  color: var(--toast-ink);
+  box-shadow: inset 0 1px 0 var(--glas-kante), var(--schatten-hoch);
+}
+
+:root[data-aussehen='glas'] .diag-tip .diag-schluessel {
+  box-shadow: none;
+}
+
+:root[data-aussehen='glas'] .diag-tabelle summary,
+:root[data-aussehen='bento'] .diag-tabelle summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: 0.9375rem;
+}
+
+:root[data-aussehen='glas'] .diag-tabelle summary {
+  color: var(--akzent-text);
+}
+
+/* Veränderung als Glas-Pille, getönt nach Plus/Minus (Text bleibt Schriftfarbe) */
+:root[data-aussehen='glas'] .konto-delta {
+  border-width: 1px;
+  font-weight: 750;
+}
+
+:root[data-aussehen='glas'] .konto-delta.plus {
+  border-color: color-mix(in srgb, var(--kt-plus) 55%, transparent);
+  background: color-mix(in srgb, var(--kt-plus) 16%, var(--glas-hoch));
+}
+
+:root[data-aussehen='glas'] .konto-delta.minus {
+  border-color: color-mix(in srgb, var(--kt-minus) 55%, transparent);
+  background: color-mix(in srgb, var(--kt-minus) 14%, var(--glas-hoch));
+}
+
+:root[data-aussehen='glas'] .konto-zeile {
+  gap: 10px;
+}
+
+:root[data-aussehen='glas'] .konto-monat-titel {
+  font-size: 1.0625rem;
+  font-weight: 750;
+}
+
+:root[data-aussehen='glas'] .konto-reihe.zusammen {
+  padding-top: 8px;
+  border-top: 1px solid var(--linie);
+  font-weight: 750;
+}
+
+:root[data-aussehen='glas'] .konto-hinweis {
+  font-weight: 550;
+}
+
+/* Sonderbeträge: Einträge als helle Glaszeilen; ✕ mit voller Tippfläche (≥ 44 px) */
+:root[data-aussehen='glas'] .extra-zeile {
+  border: 1px solid var(--glas-kante);
+  background: color-mix(in srgb, var(--glas-hoch) 80%, transparent);
+}
+
+:root[data-aussehen='glas'] .extra-zeile .karte-text b,
+:root[data-aussehen='bento'] .extra-zeile .karte-text b {
+  overflow-wrap: break-word;
+  hyphens: auto; /* lange Bezeichnungen (z. B. „Steuerrückzahlung“): Safari trennt mit Bindestrich, Chrome unter Windows ohne */
+}
+
+:root[data-aussehen='glas'] .extra-zeile .ek-weg,
+:root[data-aussehen='bento'] .extra-zeile .ek-weg {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  min-height: 44px;
+  border-radius: 50%;
+  color: var(--ink-2);
+}
+
+:root[data-aussehen='glas'] .extra-zeile .ek-weg {
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+}
+
+:root[data-aussehen='glas'] .konto .anleitung > summary,
+:root[data-aussehen='bento'] .konto .anleitung > summary {
+  min-height: 44px;
+}
+
+/* Fixkosten: Filter je Person (Pillen), Liste mit Tag als kleinem Glaswürfel, Personen-Kürzel und Vertrags-Abzeichen */
+:root[data-aussehen='glas'] .fk-filter .chip {
+  min-height: 48px;
+  padding: 0 16px;
+}
+
+:root[data-aussehen='glas'] .fk-chip-betrag {
+  font-size: 0.875rem;
+  font-weight: 650;
+  color: var(--ink-2);
+}
+
+:root[data-aussehen='glas'] .fk-karte-titel {
+  font-size: 1.125rem;
+  font-weight: 750;
+}
+
+:root[data-aussehen='glas'] .fk-karte-titel small {
+  font-size: 0.9375rem;
+  font-weight: 650;
+}
+
+:root[data-aussehen='glas'] .fk-pos {
+  min-height: 56px;
+  padding: 10px 0;
+  gap: 12px;
+}
+
+:root[data-aussehen='glas'] .fk-tag {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 1px solid var(--glas-kante);
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--akzent) 8%, var(--glas-stark));
+  color: var(--akzent-text);
+  font-weight: 750;
+}
+
+:root[data-aussehen='glas'] .fk-n b {
+  font-weight: 650;
+}
+
+:root[data-aussehen='glas'] .fk-n small {
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+:root[data-aussehen='glas'] .fk-b {
+  font-weight: 750;
+}
+
+:root[data-aussehen='glas'] .fk-person,
+:root[data-aussehen='bento'] .fk-person {
+  padding: 1px 6px;
+  border-radius: 7px;
+  font-size: 0.75rem;
+}
+
+:root[data-aussehen='glas'] .fk-abzeichen {
+  margin-top: 4px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border-color: color-mix(in srgb, var(--familie) 70%, transparent);
+  background: color-mix(in srgb, var(--familie) 22%, var(--glas-hoch));
+  font-size: 0.8125rem;
+  font-weight: 650;
+}
+
+:root[data-aussehen='glas'] .fk-abzeichen.warn {
+  border-color: color-mix(in srgb, var(--gefahr) 70%, transparent);
+  background: color-mix(in srgb, var(--gefahr) 14%, var(--glas-hoch));
+}
+
+:root[data-aussehen='glas'] .fk-balken,
+:root[data-aussehen='bento'] .fk-balken {
+  gap: 2px;
+  height: 14px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink) 9%, transparent);
+}
+
+:root[data-aussehen='glas'] .fk-balken > span,
+:root[data-aussehen='bento'] .fk-balken > span {
+  border-radius: 999px;
+}
+
+:root[data-aussehen='glas'] .fk-legende,
+:root[data-aussehen='bento'] .fk-legende {
+  font-size: 0.875rem;
+}
+
+:root[data-aussehen='glas'] .fk-archiv .fk-n b {
+  color: var(--ink-2);
+}
+
+/* Formulare der Fixkosten/Sparziele (im Blatt): Vorlagen als Glas-Pillen, Kästen als Glaseinsatz, Auswahl wie ein Feld */
+:root[data-aussehen='glas'] .fk-vorlage {
+  border: 1px solid color-mix(in srgb, var(--ink) 14%, transparent);
+  background: var(--glas-stark);
+  font-weight: 650;
+}
+
+:root[data-aussehen='glas'] .fk-vorlage.aktiv {
+  border: 2px solid var(--akzent);
+  background: color-mix(in srgb, var(--akzent) 20%, var(--glas-stark));
+}
+
+:root[data-aussehen='glas'] .fk-box {
+  border: 1px solid var(--glas-kante);
+  background: color-mix(in srgb, var(--akzent) 6%, var(--glas-stark));
+}
+
+:root[data-aussehen='glas'] .fk-auswahl,
+:root[data-aussehen='bento'] .fk-auswahl {
+  min-height: 48px;
+  padding: 8px 12px;
+  border-radius: var(--r-feld);
+  border: var(--feld-rand);
+  background: var(--feld-bg);
+  font-family: var(--font-feld);
+  font-size: 1rem;
+}
+
+:root[data-aussehen='glas'] .sz-wahl {
+  min-height: 60px;
+  padding: 10px 16px;
+  border-radius: 20px;
+}
+
+/* Sparziele: Ziel-Karten mit Glas-Balken (Bahn zart, Füllung in der Farbe des Ziels mit Lichtkante), Status als getönte Pille */
+:root[data-aussehen='glas'] .sz-ziel-titel {
+  font-size: 1.125rem;
+  font-weight: 750;
+}
+
+:root[data-aussehen='glas'] .sz-ziel-titel small {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+:root[data-aussehen='glas'] .sz-aendern {
+  border: 1px solid var(--glas-kante);
+  background: var(--glas-stark);
+  box-shadow: var(--schatten-knopf);
+}
+
+:root[data-aussehen='glas'] .sz-balken {
+  position: relative;
+  height: 14px;
+  margin-top: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink) 9%, transparent);
+  box-shadow: inset 0 1px 2px rgba(20, 10, 60, 0.12);
+}
+
+:root[data-aussehen='glas'] .sz-balken > span,
+:root[data-aussehen='bento'] .sz-balken > span {
+  position: relative;
+  border-radius: 0;
+}
+
+/* fortschritt(): die Füllung ist voll breit und wächst über scaleX (Klassisch behält width in %) */
+:root[data-aussehen='glas'] .sz-balken > span.bw-fortschritt,
+:root[data-aussehen='bento'] .sz-balken > span.bw-fortschritt {
+  width: 100% !important;
+}
+
+/* Runde Kappe am Ende der Füllung: scaleX staucht jede Rundung der Füllung, deshalb trägt die Bahn eine eigene Kappe (::before), die
+   über --bw-anteil (fortschritt()) an das Ende der Füllung rückt und mit ihr gleitet (ragt eine halbe Höhe darüber hinaus, wie die runde
+   Füllung in Klassisch); Bento mit hellem Punkt wie in der Demo */
+:root[data-aussehen='glas'] .sz-balken:has(> .bw-fortschritt),
+:root[data-aussehen='bento'] .sz-balken:has(> .bw-fortschritt) {
+  position: relative;
+  container-type: inline-size;
+}
+
+:root[data-aussehen='glas'] .sz-balken:has(> .bw-fortschritt)::before,
+:root[data-aussehen='bento'] .sz-balken:has(> .bw-fortschritt)::before {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  left: 0;
+  width: var(--kt-kappe);
+  height: 100%;
+  border-radius: 999px;
+  pointer-events: none;
+  opacity: min(1, calc(var(--bw-anteil, 0) * 1000));
+  /* Mitte der Kappe auf dem Ende der Füllung: der Kreis deckt deren eckige Ecken (nicht weiter als bis zum Ende der Bahn) */
+  transform: translateX(clamp(0px, calc(var(--bw-anteil, 0) * 100cqw - var(--kt-kappe) / 2), calc(100cqw - var(--kt-kappe))));
+}
+
+:root[data-aussehen='glas'] .sz-balken:has(> .bw-fortschritt)::before {
+  --kt-kappe: 14px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0) 70%), var(--sz-farbe, var(--akzent));
+}
+
+:root[data-aussehen='bento'] .sz-balken:has(> .bw-fortschritt)::before {
+  --kt-kappe: 18px;
+  background: radial-gradient(circle at calc(100% - 9px) 50%, rgb(255 255 255 / 0.85) 0 3.5px, rgb(255 255 255 / 0) 4.5px), var(--sz-farbe, var(--akzent));
+}
+
+:root[data-aussehen='glas'] .sz-balken > span::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0) 70%);
+}
+
+:root[data-aussehen='glas'] .sz-stand-text {
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+:root[data-aussehen='glas'] .sz-raster {
+  gap: 4px 10px;
+  font-size: 1rem;
+}
+
+:root[data-aussehen='glas'] .sz-raster b {
+  font-weight: 750;
+}
+
+:root[data-aussehen='glas'] .sz-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border-color: color-mix(in srgb, var(--c, var(--linie)) 45%, transparent);
+  background: color-mix(in srgb, var(--c, var(--linie)) 16%, var(--glas-hoch));
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+:root[data-aussehen='glas'] .sz-frei {
+  border: 1.5px dashed color-mix(in srgb, var(--akzent) 45%, transparent);
+  background: linear-gradient(165deg, color-mix(in srgb, var(--akzent) 10%, var(--glas-hoch)), color-mix(in srgb, var(--akzent) 6%, var(--karte)) 70%);
+}
+
+:root[data-aussehen='glas'] .sz-frei-betrag {
+  font-size: 1.75rem;
+  font-weight: 780;
+  letter-spacing: -0.03em;
+}
+
+:root[data-aussehen='glas'] .sz-monat-titel {
+  font-size: 1.0625rem;
+  font-weight: 750;
+}
+
+:root[data-aussehen='glas'] .sz-monat {
+  padding: 14px 16px;
+  font-size: 0.9375rem;
+}
+
+:root[data-aussehen='glas'] .sz-zeile {
+  padding: 6px 0;
+}
+
+:root[data-aussehen='glas'] .sz-box {
+  border: 1px solid var(--glas-kante);
+}
+
+/* ---------- 3. Bento ---------- */
+
+/* Umschalter: weiße Rinne, die Wahl ist ein lila Blob mit Bonbon-Kante, der hinüberspringt */
+:root[data-aussehen='bento'] .konto-segment {
+  position: relative;
+  isolation: isolate;
+  overflow: clip; /* der Blob springt über, bleibt aber in der Rinne */
+  overflow-clip-margin: 3px; /* der Fokusring (3 px + 2 px Abstand) bleibt ganz */
+  --kt-seg-rand: 5px;
+}
+
+:root[data-aussehen='bento'] .konto-segment::before {
+  background: var(--akzent);
+  box-shadow: inset 0 -3px 0 rgb(0 0 0 / 0.16);
+}
+
+:root[data-aussehen='bento'] .konto-segment-knopf {
+  color: var(--ink-2);
+}
+
+:root[data-aussehen='bento'] .konto-segment-knopf.aktiv {
+  color: var(--akzent-ink);
+}
+
+/* Kopf-Karten: Traubenlila getönt (Fixkosten, Sparziele); Kontostand: die große Kachel mint (= Gemeinsam: die ganze Familie) */
+:root[data-aussehen='bento'] .fk-kopf {
+  gap: 4px;
+  padding: 18px 18px 14px;
+  border-radius: 30px;
+  background: color-mix(in srgb, var(--akzent) 16%, var(--karte));
+  box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--akzent) 30%, transparent);
+}
+
+:root[data-aussehen='bento'] .fk-klein {
+  font-weight: 700;
+}
+
+:root[data-aussehen='bento'] .fk-kopf > .fk-klein:first-child {
+  font-family: var(--font-titel);
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+:root[data-aussehen='bento'] .fk-gross,
+:root[data-aussehen='bento'] .konto-kachel:first-child .konto-kachel-wert {
+  font-size: 2.6rem;
+  font-weight: 900;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+}
+
+:root[data-aussehen='bento'] .fk-kopf-zeile {
+  margin-top: 0;
+  padding-top: 10px;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+:root[data-aussehen='bento'] .fk-kopf > .fk-klein + .fk-kopf-zeile,
+:root[data-aussehen='bento'] .fk-kopf > .fk-gross + .fk-kopf-zeile {
+  margin-top: 10px;
+  border-top: 2px solid color-mix(in srgb, var(--akzent) 22%, transparent);
+}
+
+:root[data-aussehen='bento'] .fk-kopf-zeile b {
+  font-size: 1.0625rem;
+  font-weight: 900;
+}
+
+/* Kontostand: Eintragen-Karte (getönt) mit halb durchsichtig weißer Demo-Leiste; eingetragene Personen ebenso */
+:root[data-aussehen='bento'] .konto-demo {
+  padding: 12px;
+  border-radius: var(--r-zeile);
+  background: var(--knopf-auf-tint);
+}
+
+:root[data-aussehen='bento'] .konto-person:not(.fertig) {
+  padding-top: 12px;
+}
+
+:root[data-aussehen='bento'] .konto-person.fertig {
+  padding: 10px 12px;
+  border-radius: var(--r-zeile);
+  background: var(--knopf-auf-tint);
+}
+
+:root[data-aussehen='bento'] .konto-eingabe {
+  font-weight: 700;
+}
+
+:root[data-aussehen='bento'] .konto-bereich .chip-reihe {
+  gap: 8px;
+}
+
+/* Kacheln: die erste groß und mint, die anderen weiß mit Bonbon-Kante */
+:root[data-aussehen='bento'] .konto-kacheln {
+  gap: 10px;
+}
+
+:root[data-aussehen='bento'] .konto-kachel {
+  gap: 4px;
+  padding: 14px 16px 12px;
+  border: 0;
+  border-radius: var(--r-karte);
+  background: var(--karte);
+  box-shadow: var(--lippe);
+}
+
+:root[data-aussehen='bento'] .konto-kachel:first-child {
+  padding: 18px 18px 16px;
+  border-radius: 30px;
+  background: var(--person-gemeinsam-tint);
+  color: var(--person-gemeinsam-ink);
+  box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--person-gemeinsam) 34%, transparent);
+}
+
+:root[data-aussehen='bento'] .konto-kachel:first-child .konto-kachel-titel,
+:root[data-aussehen='bento'] .konto-kachel:first-child small {
+  color: var(--person-gemeinsam-ink);
+}
+
+:root[data-aussehen='bento'] .konto-kachel-titel {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+:root[data-aussehen='bento'] .konto-kachel-wert {
+  font-size: 1.3rem;
+  font-weight: 900;
+}
+
+:root[data-aussehen='bento'] .konto-kachel small {
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+
+/* Diagramme: weiße Kachel mit Bonbon-Kante, kräftige Personenfarben, runde Säulen */
+:root[data-aussehen='bento'] figure.diagramm {
+  padding: 16px 12px 12px;
+  border: 0;
+  background: var(--karte);
+  box-shadow: var(--lippe);
+}
+
+:root[data-aussehen='bento'] .diag-gitter {
+  stroke: var(--linie);
+  stroke-dasharray: 2 4;
+}
+
+:root[data-aussehen='bento'] .diag-linie {
+  stroke-width: 2.5;
+}
+
+:root[data-aussehen='bento'] .diag-reihe.zusammen .diag-linie {
+  stroke-width: 3.5;
+}
+
+:root[data-aussehen='bento'] .diag-legende {
+  font-weight: 700;
+}
+
+/* Tooltip hell wie eine Kachel (auf der dunklen Standardfläche verschwände der Schlüssel „Zusammen“ in Schriftfarbe) */
+:root[data-aussehen='bento'] .diag-tip {
+  border-radius: 16px;
+  background: var(--karte-2);
+  color: var(--ink);
+  box-shadow: var(--lippe), 0 12px 30px rgb(20 10 60 / 0.25);
+  font-weight: 700;
+}
+
+:root[data-aussehen='bento'] .diag-tip .diag-schluessel {
+  box-shadow: none;
+}
+
+:root[data-aussehen='bento'] .diag-tabelle summary {
+  color: var(--akzent);
+  font-weight: 900;
+}
+
+/* Veränderung: Pille ohne Rand, getönt nach Plus/Minus, mit Kante */
+:root[data-aussehen='bento'] .konto-delta {
+  border: 0;
+  font-weight: 900;
+  box-shadow: var(--lippe);
+}
+
+:root[data-aussehen='bento'] .konto-delta.plus {
+  background: color-mix(in srgb, var(--kt-plus) 22%, var(--karte));
+}
+
+:root[data-aussehen='bento'] .konto-delta.minus {
+  background: color-mix(in srgb, var(--kt-minus) 20%, var(--karte));
+}
+
+:root[data-aussehen='bento'] .konto-monat-titel {
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+:root[data-aussehen='bento'] .konto-reihe {
+  font-weight: 700;
+}
+
+:root[data-aussehen='bento'] .konto-reihe.zusammen {
+  padding-top: 8px;
+  border-top: 2px dashed var(--linie);
+  font-weight: 900;
+}
+
+:root[data-aussehen='bento'] .konto-hinweis {
+  font-weight: 700;
+}
+
+/* Sonderbeträge: Einträge als getönte Zeilen; ✕ rund mit voller Tippfläche */
+:root[data-aussehen='bento'] .extra-zeile {
+  border: 0;
+  background: var(--karte-2);
+  box-shadow: var(--lippe);
+}
+
+:root[data-aussehen='bento'] .extra-zeile .ek-weg {
+  background: var(--karte);
+  font-weight: 900;
+}
+
+/* Fixkosten: Filter in den Personenfarben (Name + Emoji stehen immer dabei); Liste mit Tag als Kachel */
+:root[data-aussehen='bento'] .fk-filter .chip {
+  min-height: 48px;
+  padding: 0 16px;
+  box-shadow: var(--lippe);
+}
+
+:root[data-aussehen='bento'] .fk-filter .chip.aktiv {
+  border-color: var(--akzent);
+}
+
+:root[data-aussehen='bento'] .fk-filter-papa { background: var(--person-papa-tint); color: var(--person-papa-ink); }
+:root[data-aussehen='bento'] .fk-filter-mama { background: var(--person-mama-tint); color: var(--person-mama-ink); }
+:root[data-aussehen='bento'] .fk-filter-kind { background: var(--person-kind-tint); color: var(--person-kind-ink); }
+:root[data-aussehen='bento'] .fk-filter-gemeinsam { background: var(--person-gemeinsam-tint); color: var(--person-gemeinsam-ink); }
+
+:root[data-aussehen='bento'] .fk-chip-betrag {
+  font-weight: 800;
+}
+
+:root[data-aussehen='bento'] .fk-karte-titel {
+  font-family: var(--font-titel);
+  font-size: 1.1875rem;
+  font-weight: 600;
+}
+
+:root[data-aussehen='bento'] .fk-karte-titel small {
+  font-size: 0.9375rem;
+  font-weight: 800;
+}
+
+:root[data-aussehen='bento'] .fk-pos {
+  min-height: 60px;
+  padding: 10px 0;
+  gap: 12px;
+  border-top: 2px solid var(--karte-2);
+}
+
+:root[data-aussehen='bento'] .fk-pos:first-child {
+  border-top: 0;
+}
+
+:root[data-aussehen='bento'] .fk-tag {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: var(--karte-2);
+  color: var(--ink);
+  box-shadow: var(--lippe);
+}
+
+:root[data-aussehen='bento'] .fk-n b {
+  font-weight: 800;
+}
+
+:root[data-aussehen='bento'] .fk-n small {
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+:root[data-aussehen='bento'] .fk-b {
+  font-weight: 900;
+}
+
+/* Personen-Kürzel in Tönung und Tinte der Person (das Kürzel steht als Text da: nie nur Farbe) */
+:root[data-aussehen='bento'] .fk-person {
+  border: 0;
+  background: var(--karte-2);
+  color: var(--ink);
+  font-weight: 900;
+}
+
+:root[data-aussehen='bento'] .fk-person-papa { background: var(--person-papa-tint); color: var(--person-papa-ink); }
+:root[data-aussehen='bento'] .fk-person-mama { background: var(--person-mama-tint); color: var(--person-mama-ink); }
+:root[data-aussehen='bento'] .fk-person-kind { background: var(--person-kind-tint); color: var(--person-kind-ink); }
+:root[data-aussehen='bento'] .fk-person-gemeinsam { background: var(--person-gemeinsam-tint); color: var(--person-gemeinsam-ink); }
+
+:root[data-aussehen='bento'] .fk-abzeichen {
+  margin-top: 4px;
+  padding: 2px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--person-kind-tint);
+  color: var(--person-kind-ink);
+  font-size: 0.8125rem;
+  font-weight: 900;
+}
+
+:root[data-aussehen='bento'] .fk-abzeichen.warn {
+  background: var(--kt-warn);
+  color: var(--kt-warn-ink);
+}
+
+:root[data-aussehen='bento'] .fk-balken {
+  height: 16px;
+  background: var(--karte-2);
+}
+
+:root[data-aussehen='bento'] .fk-meldung {
+  border: 0;
+}
+
+:root[data-aussehen='bento'] .fk-archiv .fk-n b {
+  color: var(--ink-2);
+}
+
+/* Formulare: Vorlagen als Bonbon-Pillen, Kästen als getönte Einsätze */
+:root[data-aussehen='bento'] .fk-vorlage {
+  border: 2px solid transparent;
+  background: var(--karte);
+  box-shadow: var(--lippe);
+  font-weight: 800;
+}
+
+:root[data-aussehen='bento'] .fk-vorlage.aktiv {
+  border-color: var(--akzent);
+  background: color-mix(in srgb, var(--akzent) 18%, var(--karte));
+}
+
+:root[data-aussehen='bento'] .fk-box {
+  border: 0;
+  border-radius: var(--r-karte);
+  background: color-mix(in srgb, var(--akzent) 8%, var(--karte));
+  box-shadow: var(--lippe);
+}
+
+:root[data-aussehen='bento'] .fk-auswahl {
+  font-weight: 700;
+}
+
+:root[data-aussehen='bento'] .sz-wahl {
+  min-height: 60px;
+  padding: 10px 16px;
+  border-radius: 22px;
+}
+
+/* Sparziele: jede Ziel-Kachel getönt in der Farbe ihres Balkens (--sz-farbe), dicke runde Bahn, Raster als zwei kleine Kacheln */
+:root[data-aussehen='bento'] .sz-ziel {
+  gap: 8px;
+  border-radius: 28px;
+  background: color-mix(in srgb, var(--sz-farbe, var(--akzent)) 14%, var(--karte));
+  box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--sz-farbe, var(--akzent)) 32%, transparent);
+}
+
+:root[data-aussehen='bento'] .sz-ziel-titel {
+  font-family: var(--font-titel);
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+:root[data-aussehen='bento'] .sz-ziel-titel small {
+  font-family: var(--font-text);
+  font-size: 0.875rem;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+:root[data-aussehen='bento'] .sz-aendern {
+  background: var(--knopf-auf-tint);
+  box-shadow: var(--lippe);
+}
+
+:root[data-aussehen='bento'] .sz-balken {
+  height: 18px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--sz-farbe, var(--akzent)) 20%, var(--karte));
+  box-shadow: inset 0 2px 0 rgb(0 0 0 / 0.06);
+}
+
+:root[data-aussehen='bento'] .sz-stand-text {
+  font-size: 0.9375rem;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+:root[data-aussehen='bento'] .sz-ziel .fk-klein {
+  color: var(--ink);
+}
+
+:root[data-aussehen='bento'] .sz-raster {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  grid-auto-flow: column;
+  gap: 0 8px;
+  font-size: 0.9375rem;
+}
+
+:root[data-aussehen='bento'] .sz-raster > span,
+:root[data-aussehen='bento'] .sz-raster > b {
+  padding: 0 12px;
+  background: var(--knopf-auf-tint);
+}
+
+:root[data-aussehen='bento'] .sz-raster > span {
+  padding-top: 10px;
+  border-radius: 16px 16px 0 0;
+  font-weight: 700;
+}
+
+:root[data-aussehen='bento'] .sz-raster > b {
+  padding-bottom: 10px;
+  border-radius: 0 0 16px 16px;
+  text-align: left;
+  font-size: 1.0625rem;
+  font-weight: 900;
+}
+
+:root[data-aussehen='bento'] .sz-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--akzent);
+  color: var(--akzent-ink);
+  box-shadow: inset 0 -3px 0 rgb(0 0 0 / 0.14);
+  font-size: 0.9375rem;
+}
+
+:root[data-aussehen='bento'] .sz-status.ok { background: var(--kt-ok); color: var(--kt-ok-ink); }
+:root[data-aussehen='bento'] .sz-status.warn { background: var(--kt-warn); color: var(--kt-warn-ink); }
+:root[data-aussehen='bento'] .sz-status.fertig { background: var(--person-kind); color: var(--person-kind-auf); }
+
+:root[data-aussehen='bento'] .sz-frei {
+  border: 0;
+  outline: 2.5px dashed color-mix(in srgb, var(--akzent) 45%, transparent);
+  outline-offset: -6px;
+  border-radius: 28px;
+  background: color-mix(in srgb, var(--akzent) 10%, var(--karte));
+}
+
+:root[data-aussehen='bento'] .sz-frei-betrag {
+  font-size: 1.875rem;
+  font-weight: 900;
+}
+
+:root[data-aussehen='bento'] .sz-monat {
+  padding: 14px 16px;
+  font-size: 0.9375rem;
+}
+
+:root[data-aussehen='bento'] .sz-monat-titel {
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+:root[data-aussehen='bento'] .sz-zeile {
+  padding: 6px 0;
+  border-top: 2px solid var(--karte-2);
+  font-weight: 700;
+}
+
+/* ---------- 4. Bewegung (nur ohne „Reduziert“ und ohne prefers-reduced-motion) ---------- */
+
+/* Beim Umschalten im Konto-Tab bleiben Überschrift und Umschalter stehen; nur der Inhalt darunter kommt herein */
+:root[data-aussehen='glas'] .bw-einblenden > .konto-segment[data-von],
+:root[data-aussehen='glas'] .bw-einblenden:has(> .konto-segment[data-von]) > .gruss,
+:root[data-aussehen='bento'] .bw-einblenden > .konto-segment[data-von],
+:root[data-aussehen='bento'] .bw-einblenden:has(> .konto-segment[data-von]) > .gruss {
+  animation: none;
+}
+
+@keyframes kt-tropfen {
+  from {
+    transform: translateX(var(--kt-von, 0px));
+  }
+  45% {
+    scale: 1.18 0.86;
+  }
+  75% {
+    scale: 0.96 1.04;
+  }
+}
+
+@keyframes kt-blob {
+  from {
+    transform: translateX(var(--kt-von, 0px));
+  }
+  40% {
+    scale: 1.32 0.8;
+  }
+  70% {
+    scale: 0.9 1.08;
+  }
+}
+
+@keyframes kt-wahl-rein {
+  0%,
+  45% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+/* Bento: Warnungen wackeln dreimal und sind dann still */
+@keyframes kt-wackeln {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(-3deg);
+  }
+  75% {
+    transform: rotate(3deg);
+  }
+}
+
+/* Glas: einmal streicht Licht über die Balken */
+@keyframes kt-glanz {
+  from {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+  30% {
+    opacity: 1;
+  }
+  to {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}
+
+/* Säulen wachsen aus der Nulllinie */
+@keyframes kt-saeule {
+  from {
+    transform: scaleY(0);
+  }
+}
+
+/* Säulen, Glanz und Wackeln nur beim ersten Zeigen eines Bildschirms (solange .bw-einblenden am Behälter steht, ≤ 1,4 s; auch nach
+   einem Neuzeichnen vor dem ersten Bild, siehe einblenden() in src/ui/bewegung.js): späteres Neuzeichnen spielt nichts erneut */
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .konto-segment[data-von]::before {
+    animation: kt-tropfen 0.48s cubic-bezier(0.34, 1.56, 0.64, 1);
+    animation-delay: var(--kt-seit, 0ms); /* neu gezeichnet während des Gleitens: an derselben Stelle weiter */
+  }
+
+  /* Bento: die Schrift der neuen Wahl ist hell und stünde auf der weißen Rinne unsichtbar, bis der Blob da ist: sie blendet mit ihm ein */
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .konto-segment[data-von] > .konto-segment-knopf.aktiv {
+    animation: kt-wahl-rein 0.5s ease-out both;
+    animation-delay: var(--kt-seit, 0ms);
+  }
+
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .sz-balken:has(> .bw-fortschritt)::before,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .sz-balken:has(> .bw-fortschritt)::before {
+    transition: transform var(--dauer-fortschritt) var(--kurve-feder);
+  }
+
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .konto-segment[data-von]::before {
+    animation: kt-blob 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+    animation-delay: var(--kt-seit, 0ms); /* neu gezeichnet während des Gleitens: an derselben Stelle weiter */
+  }
+
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .bw-einblenden .konto-balken,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .bw-einblenden .konto-balken {
+    transform-box: fill-box;
+    transform-origin: 50% 100%;
+    animation: kt-saeule 0.7s var(--kurve-feder) 0.25s backwards;
+  }
+
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .bw-einblenden .konto-balken.minus,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .bw-einblenden .konto-balken.minus {
+    transform-origin: 50% 0%;
+  }
+
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .bw-einblenden .sz-balken::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, 0.55) 50%, transparent 70%);
+    animation: kt-glanz 0.8s cubic-bezier(0.22, 1, 0.36, 1) 0.5s backwards; /* endet vor dem Aufräumen von .bw-einblenden (1,4 s) */
+    pointer-events: none;
+  }
+
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .bw-einblenden .sz-status.warn,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .bw-einblenden .fk-abzeichen.warn {
+    animation: kt-wackeln 0.3s ease-in-out 0.35s 3; /* dreimal, fertig vor dem Aufräumen von .bw-einblenden (1,4 s) */
+  }
+
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .sz-aendern,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .fk-pos,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .konto-zeile,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .konto-segment-knopf {
+    transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .sz-aendern:active,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .konto-segment-knopf:active {
+    transform: scale(0.92);
+    transition-duration: 0.08s;
+  }
+
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .fk-pos:active,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .konto-zeile:active {
+    transform: scale(0.98);
+    transition-duration: 0.08s;
+  }
+}

@@ -16,6 +16,9 @@ export const MAX_GESTAFFELT = 8;
 const EINBLENDEN_AUFRAEUMEN_MS = 1400;
 /** Dauer des Hochzählens (rAF, ease-out). */
 const ZAEHLEN_MS = 700;
+/** Ein Bild, das länger dauert, gilt beim Zählen nur als ein gewöhnliches Bild (BILD_MS). */
+const LANGES_BILD_MS = 100;
+const BILD_MS = 16;
 /** Tabwechsel: `bw-tabwechsel` bleibt so lange wie --dauer-tab (Standard 220 ms) plus diese Reserve an <html>. */
 const TAB_STANDARD_MS = 220;
 const TAB_RESERVE_MS = 60;
@@ -100,8 +103,9 @@ export function tabWechsel(aktualisieren, { dokument = globalThis.document } = {
 // ---------- Erinnerung je Besuch ----------
 
 const gesehen = new Set(); // Bildschirm-Schlüssel, die in diesem Besuch schon eingeblendet wurden
-const zahlen = new Map(); // data-bw-schluessel → zuletzt gezeigte Cents
-const anteile = new Map(); // data-bw-schluessel → zuletzt gezeigter Anteil
+let ersteAnzeige = null; // { schluessel, gemalt }: der Bildschirm, der gerade zum ersten Mal einblendet (gemalt = erstes Bild ist da)
+const zahlen = new Map(); // data-bw-schluessel → gerade gezeigte Cents (während des Zählens der Zwischenwert)
+const anteile = new Map(); // data-bw-schluessel → gezeigter Anteil (das Ziel erst, wenn der Übergang dorthin begonnen hat)
 const angezeigteZahl = new WeakMap(); // Element → gerade gezeigte Cents
 const angezeigterAnteil = new WeakMap(); // Element → gerade gezeigter Anteil
 const zaehler = new WeakMap(); // Element → { fenster, id } des geplanten Bildwechsels
@@ -112,6 +116,7 @@ const zaehler = new WeakMap(); // Element → { fenster, id } des geplanten Bild
  */
 export function neuerBesuch() {
   gesehen.clear();
+  ersteAnzeige = null;
   zahlen.clear();
   anteile.clear();
 }
@@ -121,15 +126,32 @@ const schluesselVon = (el) => el?.getAttribute?.('data-bw-schluessel') || null;
 // ---------- Einblenden ----------
 
 /**
- * Gestaffeltes Hereinkommen der Kinder von `container` (Karten, Listen) beim ERSTEN Zeichnen des Bildschirms `schluessel` in diesem
+ * Gestaffeltes Hereinkommen der Kinder von `container` (Karten, Listen) beim ERSTEN Zeigen des Bildschirms `schluessel` in diesem
  * Besuch: Klasse `bw-einblenden` am Behälter, `--bw-i` (0…8) an jedem Kind; beides ist danach wieder weg. Gibt true zurück, wenn
  * eingeblendet wurde (z. B. um beim ersten Mal von 0 hochzuzählen). Klassisch/reduziert: nichts, false.
+ * Ersetzt ein Neuzeichnen den Behälter, BEVOR das erste Bild gemalt ist (z. B. die Fixkosten/Sparziele laden gleich nach dem Öffnen
+ * und zeichnen sofort noch einmal), ist das noch das erste Zeigen: der neue Behälter blendet ein. Jedes spätere Neuzeichnen nicht.
  */
 export function einblenden(container, schluessel) {
-  if (!container || gesehen.has(schluessel)) return false;
-  gesehen.add(schluessel);
+  if (!container) return false;
   const dokument = dokumentVon(container);
+  if (gesehen.has(schluessel)) {
+    if (ersteAnzeige?.schluessel !== schluessel || ersteAnzeige.gemalt || !effekteAn(dokument)) return false;
+    staffeln(container, dokument);
+    return true;
+  }
+  gesehen.add(schluessel);
   if (!effekteAn(dokument)) return false;
+  const anzeige = { schluessel, gemalt: false };
+  ersteAnzeige = anzeige;
+  fensterVon(dokument).requestAnimationFrame?.(() => {
+    anzeige.gemalt = true;
+  });
+  staffeln(container, dokument);
+  return true;
+}
+
+function staffeln(container, dokument) {
   const kinder = [...(container.children ?? [])];
   kinder.forEach((kind, i) => kind.style?.setProperty('--bw-i', String(Math.min(i, MAX_GESTAFFELT))));
   container.classList.add(EINBLENDEN_KLASSE);
@@ -137,7 +159,6 @@ export function einblenden(container, schluessel) {
     container.classList.remove(EINBLENDEN_KLASSE);
     for (const kind of kinder) kind.style?.removeProperty('--bw-i');
   }, EINBLENDEN_AUFRAEUMEN_MS);
-  return true;
 }
 
 // ---------- Hochzählen ----------
@@ -151,10 +172,11 @@ function anhalten(el) {
 
 /**
  * Zählt den Text von `el` auf `format(nachCents)` hoch (rAF, ease-out, ~0,7 s; Zwischenwerte auf ganze Euro). Beginnt bei `von`, sonst
- * beim zuletzt gezeigten Wert dieses Elements bzw. – mit `data-bw-schluessel` – dieses Schlüssels im Besuch, sonst bei 0. Während
+ * beim gerade gezeigten Wert dieses Elements bzw. – mit `data-bw-schluessel` – dieses Schlüssels im Besuch, sonst bei 0. Während
  * des Zählens steht die Zahl in einem `aria-hidden`-Span, der Endwert unsichtbar daneben (`.bw-nur-vorlesen`). Elemente,
- * die neu gezeichnet werden, brauchen den Schlüssel, damit ein Neuzeichnen mit demselben Wert nicht noch einmal zählt.
- * Der letzte Text ist immer genau `format(nachCents)`; wird das Element mitten im Zählen ersetzt, hört es auf (kein Zeitgeber bleibt).
+ * die neu gezeichnet werden, brauchen den Schlüssel: er merkt sich den GEZEIGTEN Wert. Ein Neuzeichnen mitten im Zählen (auch eines
+ * vor dem ersten Bild) zählt deshalb an derselben Stelle weiter, eines danach mit demselben Wert zählt nicht noch einmal.
+ * Der letzte Text ist immer genau `format(nachCents)`; das ersetzte Element hört auf (kein Zeitgeber bleibt).
  * Klassisch/reduziert: sofort der Endwert.
  */
 export function hochzaehlen(el, nachCents, format, { von } = {}) {
@@ -164,11 +186,17 @@ export function hochzaehlen(el, nachCents, format, { von } = {}) {
   anhalten(el);
   const schluessel = schluesselVon(el);
   const start = von ?? (angezeigteZahl.has(el) ? angezeigteZahl.get(el) : schluessel !== null && zahlen.has(schluessel) ? zahlen.get(schluessel) : 0);
-  if (schluessel !== null) zahlen.set(schluessel, nachCents);
-  const ende = () => {
+  const merke = (cents) => {
+    if (schluessel !== null) zahlen.set(schluessel, cents);
+  };
+  const abschliessen = () => {
     zaehler.delete(el);
     el.textContent = format(nachCents);
     angezeigteZahl.set(el, nachCents);
+  };
+  const ende = () => {
+    abschliessen();
+    merke(nachCents);
   };
   if (!effekteAn(dokument) || !Number.isFinite(start) || !Number.isFinite(nachCents) || start === nachCents || typeof fenster.requestAnimationFrame !== 'function') {
     ende();
@@ -185,16 +213,21 @@ export function hochzaehlen(el, nachCents, format, { von } = {}) {
   const zeige = (cents) => {
     anzeige.textContent = format(cents);
     angezeigteZahl.set(el, cents);
+    merke(cents);
   };
   zeige(start);
   const ganzeEuro = Math.abs(nachCents - start) >= 100;
   let t0 = null;
+  let vorher = null;
   const schritt = (t) => {
     if (!el.isConnected) {
-      ende();
+      abschliessen(); // ersetzt (Neuzeichnen): das neue Element zählt mit demselben Schlüssel weiter, hier wird nichts mehr gemerkt
       return;
     }
     t0 ??= t;
+    // ein langes Bild (langsames Telefon, langes Zeichnen) zählt nur wie ein gewöhnliches: sonst wäre das Zählen schon vorbei, bevor man es sieht
+    if (vorher !== null && t - vorher > LANGES_BILD_MS) t0 += t - vorher - BILD_MS;
+    vorher = t;
     const p = (t - t0) / ZAEHLEN_MS;
     if (p >= 1) {
       ende();
@@ -213,6 +246,9 @@ export function hochzaehlen(el, nachCents, format, { von } = {}) {
  * Füllt einen Balken über `transform: scaleX(anteil)` (0…1, begrenzt; Klasse `bw-fortschritt` setzt transform-origin links). Das
  * Element ist die volle Breite der Füllung (nicht `width`). Mit Bewegung gleitet es vom zuletzt gezeigten Anteil (Element bzw.
  * `data-bw-schluessel`, sonst `von` oder 0) zum neuen; reduziert gleich am Ziel. Klassisch: tut nichts (dort bleibt `width`).
+ * Der Schlüssel merkt sich das Ziel erst, wenn der Übergang an einem Element in der Seite begonnen hat: ein Neuzeichnen vorher (z. B.
+ * gleich nach dem Öffnen) gleitet deshalb noch vom alten Stand. Der Elternknoten (die Bahn) trägt den Anteil als `--bw-anteil`
+ * (z. B. für eine runde Kappe am Ende der Füllung); er wechselt im selben Moment wie das transform.
  */
 export function fortschritt(el, anteil, { von } = {}) {
   if (!el || !MIT_EFFEKTEN.has(aussehenVon(dokumentVon(el)))) return;
@@ -222,17 +258,29 @@ export function fortschritt(el, anteil, { von } = {}) {
   const fenster = fensterVon(dokument);
   const schluessel = schluesselVon(el);
   const start = von ?? (angezeigterAnteil.has(el) ? angezeigterAnteil.get(el) : schluessel !== null && anteile.has(schluessel) ? anteile.get(schluessel) : 0);
-  if (schluessel !== null) anteile.set(schluessel, ziel);
+  const merke = (w) => {
+    if (schluessel !== null) anteile.set(schluessel, w);
+  };
   angezeigterAnteil.set(el, ziel);
   el.classList.add('bw-fortschritt');
-  const setze = (w) => el.style.setProperty('transform', `scaleX(${w})`);
+  const setze = (w) => {
+    el.style.setProperty('transform', `scaleX(${w})`);
+    el.parentElement?.style?.setProperty('--bw-anteil', String(w));
+  };
   if (!effekteAn(dokument) || start === ziel || typeof fenster.requestAnimationFrame !== 'function') {
     setze(ziel);
+    merke(ziel);
     return;
   }
   setze(start);
+  merke(start);
   // zwei Bilder: erst ist der Startwert gezeichnet, dann gleitet die CSS-Transition zum Ziel
-  fenster.requestAnimationFrame(() => fenster.requestAnimationFrame(() => setze(ziel)));
+  fenster.requestAnimationFrame(() =>
+    fenster.requestAnimationFrame(() => {
+      setze(ziel);
+      if (el.isConnected) merke(ziel);
+    }),
+  );
 }
 
 // ---------- Konfetti ----------

@@ -5,6 +5,8 @@
 import { h } from './dom.js';
 import { fixkostenModel } from '../app/views/fixkosten-model.js';
 import { oeffneFixArchiviert, oeffneFixFormular } from './fixkosten-formular.js';
+import { betragText } from '../domain/konto.js';
+import { effekteAn, hochzaehlen } from './bewegung.js';
 
 const ANSICHTEN = [
   ['kontostand', 'Kontostand'],
@@ -12,12 +14,59 @@ const ANSICHTEN = [
   ['sparziele', 'Sparziele'],
 ];
 
-/** Umschalter oben im Konto-Tab; die Wahl wird auf diesem Telefon gemerkt (ui.setzeKontoAnsicht). */
-export function kontoUmschalter(ui) {
+let gezeichneteAnsicht = null; // zuletzt gezeichnete Ansicht im Konto-Tab (für data-von)
+let wechsel = null; // letzter Wechsel { von, nach, x, erstellt, zeit } (für data-von)
+/** So lange nach dem ersten gemalten Bild gleitet der Tropfen/Blob noch (themes/konto.css: ≤ 0,5 s). */
+export const GLEITEN_MS = 600;
+/** Wird nie ein Bild gemalt (Seite im Hintergrund), gilt das Gleiten nach dieser Zeit als vorbei (großzügig: ein langsames Telefon
+ *  braucht für das erste Zeichnen samt Laden der Sparziele über 2 s). */
+export const OHNE_BILD_MS = 5000;
+
+const jetztMs = () => globalThis.performance?.now?.() ?? Date.now();
+const naechstesBild = (fn) => globalThis.requestAnimationFrame?.(fn);
+
+/** Wo der Tropfen/Blob gerade steht (px, auch mitten im Gleiten) – nur in Glas/Bento mit Bewegung, sonst null. */
+function tropfenJetzt() {
+  const dokument = globalThis.document;
+  if (!effekteAn(dokument)) return null;
+  const segment = dokument.querySelector?.('.konto-segment');
+  const transform = segment ? globalThis.getComputedStyle?.(segment, '::before')?.transform : null;
+  if (!transform || transform === 'none' || typeof globalThis.DOMMatrixReadOnly !== 'function') return null;
+  return Math.round(new globalThis.DOMMatrixReadOnly(transform).m41 * 100) / 100;
+}
+
+/**
+ * Umschalter oben im Konto-Tab; die Wahl wird auf diesem Telefon gemerkt (ui.setzeKontoAnsicht). Nach dem Umschalten nennt
+ * `data-von` die vorige Ansicht, `--kt-von` die Stelle, an der der Tropfen/Blob gerade stand (px; auch mitten in einem Gleiten), und
+ * `--kt-seit` die Zeit seit dem ersten GEMALTEN Bild (negativ): daran gleitet er in Glas/Bento (themes/konto.css). Neuzeichnen vor dem
+ * ersten Bild (z. B. die Fixkosten/Sparziele laden gleich nach dem Öffnen) beginnt das Gleiten deshalb ganz von vorn, eines danach
+ * setzt es an derselben Stelle fort; nach GLEITEN_MS, beim Betreten der Seite und bei jedem späteren Neuzeichnen gibt es kein data-von.
+ * In Klassisch ohne Wirkung. `jetzt`, `bild` (erstes gemaltes Bild) und `tropfenX` lassen sich für Tests ersetzen.
+ */
+export function kontoUmschalter(ui, { jetzt = jetztMs(), bild = naechstesBild, tropfenX = tropfenJetzt } = {}) {
   const aktuell = ui.kontoAnsicht ?? 'kontostand';
+  if (ui.seiteBetreten) wechsel = null;
+  else if (gezeichneteAnsicht !== null && gezeichneteAnsicht !== aktuell) {
+    const neu = { von: gezeichneteAnsicht, nach: aktuell, x: tropfenX(), erstellt: jetzt, zeit: null };
+    wechsel = neu;
+    bild((t) => {
+      neu.zeit ??= Number.isFinite(t) ? t : jetztMs();
+    });
+  }
+  gezeichneteAnsicht = aktuell;
+  const laeuft =
+    wechsel && wechsel.nach === aktuell && (wechsel.zeit === null ? jetzt - wechsel.erstellt < OHNE_BILD_MS : jetzt - wechsel.zeit < GLEITEN_MS) ? wechsel : null;
+  const seit = laeuft && laeuft.zeit !== null ? Math.max(0, jetzt - laeuft.zeit) : 0;
+  const stil = laeuft ? { '--kt-seit': `${-Math.round(seit)}ms`, ...(laeuft.x === null ? {} : { '--kt-von': `${laeuft.x}px` }) } : null;
   return h(
     'div',
-    { class: 'konto-segment', role: 'group', 'aria-label': 'Ansicht im Konto' },
+    {
+      class: 'konto-segment',
+      role: 'group',
+      'aria-label': 'Ansicht im Konto',
+      'data-von': laeuft?.von,
+      style: stil,
+    },
     ANSICHTEN.map(([wert, text]) =>
       h('button', { class: `konto-segment-knopf${aktuell === wert ? ' aktiv' : ''}`, type: 'button', 'aria-pressed': aktuell === wert ? 'true' : 'false', onClick: () => aktuell !== wert && ui.setzeKontoAnsicht?.(wert) }, text),
     ),
@@ -39,11 +88,14 @@ function karte(titel, rechts, klasse, ...inhalt) {
 
 function kopfKarte(m) {
   const k = m.kopf;
+  // Glas/Bento mit Bewegung: der Betrag zählt beim ersten Zeigen bzw. nach einem anderen Filter hoch (Klassisch: gleich der Text)
+  const gross = h('b', { class: 'fk-gross', 'data-bw-schluessel': 'fk-monatlich' });
+  hochzaehlen(gross, k.monatlichCents, betragText);
   return h(
     'article',
     { class: 'karte fk-kopf' },
     h('span', { class: 'fk-klein' }, k.titel),
-    h('b', { class: 'fk-gross' }, k.monatlich),
+    gross,
     h('span', { class: 'fk-klein' }, k.jahrText),
     h('div', { class: 'fk-kopf-zeile' }, h('span', {}, 'Diesen Monat fällig'), h('b', {}, k.faellig)),
     h('div', { class: 'fk-kopf-zeile' }, h('span', {}, 'Ø Ersparnis (6 Monate, aus Kontostand)'), h('b', {}, k.ersparnis ?? '—')),
@@ -57,7 +109,7 @@ function filterLeiste(m, ui) {
     m.filter.map((f) =>
       h(
         'button',
-        { class: `chip${f.aktiv ? ' aktiv' : ''}`, type: 'button', 'aria-pressed': f.aktiv ? 'true' : 'false', onClick: () => ui.setzeFixFilter?.(f.id) },
+        { class: `chip fk-filter-${f.id}${f.aktiv ? ' aktiv' : ''}`, type: 'button', 'aria-pressed': f.aktiv ? 'true' : 'false', onClick: () => ui.setzeFixFilter?.(f.id) },
         `${f.text} `,
         h('span', { class: 'fk-chip-betrag' }, f.betrag),
       ),

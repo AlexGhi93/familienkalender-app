@@ -6,10 +6,45 @@ import { h } from './dom.js';
 import { abschnitt } from './components.js';
 import { sparzieleModel } from '../app/views/sparziele-model.js';
 import { erledigt, oeffneVerschieben, oeffneZielFormular, sicher, verschiebungRueckgaengigFragen, zielLoeschenFragen, zurueckZuFreiFragen } from './sparziele-formular.js';
+import { betragText } from '../domain/konto.js';
+import { bewegungAn, fortschritt, hochzaehlen, konfetti } from './bewegung.js';
 
 const MONATE_SICHTBAR = 4; // „Verlauf pro Monat“ zeigt zuerst nur die neuesten Monate
 let ausgeblendeteZeigen = false; // abgeschlossene, ausgeblendete Ziele im Verlauf zeigen
 let aeltereOffen = false; // ältere Monate im Verlauf aufgeklappt
+const gefeiert = new Set(); // Ziele, für die in diesem Besuch der Konto-Seite schon Konfetti flog (Bento)
+const KONFETTI_NACH_MS = 380; // erst wenn die Karten eingeblendet sind
+const KONFETTI_ABSTAND_MS = 650; // mehrere erreichte Ziele nacheinander
+
+/** Die Konto-Seite wurde neu betreten (kontoScreen, ui.seiteBetreten): erreichte Ziele dürfen wieder gefeiert werden. */
+export function kontoBesuchBeginnt() {
+  gefeiert.clear();
+}
+
+/**
+ * Welche erreichten Ziele jetzt Konfetti bekommen: jedes höchstens einmal je Besuch (`gemerkt` merkt sie). Neuzeichnen im Hintergrund
+ * und Umschalten innerhalb des Konto-Tabs feiern also nichts erneut; ein Ziel, das gerade erst erreicht wurde, schon.
+ */
+export function zuFeiern(ziele, gemerkt) {
+  const neu = ziele.filter((z) => z.status?.art === 'fertig' && !gemerkt.has(z.id)).map((z) => z.id);
+  for (const id of neu) gemerkt.add(id);
+  return neu;
+}
+
+/**
+ * Bento mit Bewegung: Konfetti aus dem Balken jedes neu erreichten Ziels (nach dem Zeichnen, nacheinander). Der Balken wird erst dann
+ * gesucht – die Seite kann inzwischen neu gezeichnet sein (z. B. nach dem Laden im Hintergrund). Sonst nichts.
+ */
+function konfettiPlanen(ids) {
+  const dokument = globalThis.document;
+  if (ids.length === 0 || dokument?.documentElement?.getAttribute('data-aussehen') !== 'bento' || !bewegungAn(dokument)) return;
+  ids.forEach((id, i) =>
+    globalThis.setTimeout(() => {
+      const balken = [...dokument.querySelectorAll('.sz-ziel')].find((k) => k.getAttribute('data-id') === id)?.querySelector('.sz-balken');
+      if (balken) konfetti(balken);
+    }, KONFETTI_NACH_MS + i * KONFETTI_ABSTAND_MS),
+  );
+}
 
 /** Knopf „Nochmal versuchen“: liest nur die Sparziele neu (store.zieleLaden); das Neuzeichnen ersetzt ihn. */
 function nochmalKnopf(store) {
@@ -39,13 +74,20 @@ function meldungen(m, store) {
   ];
 }
 
+/** Ein Betrag, der in Glas/Bento mit Bewegung hochzählt (Klassisch: gleich der Text `betragText(cents)`). */
+function zahl(klasse, schluessel, cents) {
+  const el = h('b', { class: klasse, 'data-bw-schluessel': schluessel });
+  hochzaehlen(el, cents, betragText);
+  return el;
+}
+
 function kopfKarte(m) {
   const k = m.kopf;
   return h(
     'article',
     { class: 'karte fk-kopf sz-kopf' },
     h('span', { class: 'fk-klein' }, 'Für Ziele zurückgelegt'),
-    h('b', { class: 'fk-gross' }, k.zurueckgelegt),
+    zahl('fk-gross', 'sz-zurueckgelegt', k.zurueckgelegtCents),
     h('div', { class: 'fk-kopf-zeile' }, h('span', {}, 'Nötig pro Monat (alle Ziele)'), h('b', {}, k.noetig)),
     h('div', { class: 'fk-kopf-zeile' }, h('span', {}, 'Frei verfügbar'), h('b', {}, k.frei)),
     h('span', { class: 'fk-klein sz-stand' }, k.stand),
@@ -53,20 +95,24 @@ function kopfKarte(m) {
 }
 
 function zielKarte(z, { store, ui }, gesperrt) {
+  // Glas/Bento: die Füllung ist voll breit und wächst über transform: scaleX (fortschritt); Klassisch behält die Breite in %
+  const fuellung = h('span', { style: { width: `${z.breite}%`, background: z.farbe }, 'data-bw-schluessel': `sz-balken-${z.id}` });
+  const balken = h(
+    'div',
+    { class: 'sz-balken', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': String(z.breite), 'aria-valuetext': z.stand, 'aria-label': `Fortschritt ${z.titel}` },
+    fuellung,
+  );
+  fortschritt(fuellung, z.breite / 100); // nach dem Bau der Bahn: sie trägt den Anteil als --bw-anteil (runde Kappe, themes/konto.css)
   return h(
     'article',
-    { class: 'karte sz-ziel', 'aria-label': z.beschriftung, 'data-id': z.id },
+    { class: 'karte sz-ziel', 'aria-label': z.beschriftung, 'data-id': z.id, style: { '--sz-farbe': z.farbe } },
     h(
       'div',
       { class: 'sz-ziel-kopf' },
       h('h3', { class: 'sz-ziel-titel' }, h('span', {}, z.titel), h('small', {}, z.bis)),
       h('button', { class: 'sz-aendern', type: 'button', 'aria-label': `${z.name} ändern`, disabled: Boolean(gesperrt), onClick: () => oeffneZielFormular({ store, ui }, z.id) }, '✎'),
     ),
-    h(
-      'div',
-      { class: 'sz-balken', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': String(z.breite), 'aria-valuetext': z.stand, 'aria-label': `Fortschritt ${z.titel}` },
-      h('span', { style: { width: `${z.breite}%`, background: z.farbe } }),
-    ),
+    balken,
     h('span', { class: 'fk-klein sz-stand-text' }, z.stand),
     z.hinweis ? h('span', { class: 'fk-klein' }, z.hinweis) : null,
     h('div', { class: 'sz-raster' }, h('span', {}, 'Noch offen'), h('b', {}, z.offen), h('span', {}, z.monate), h('b', {}, z.proMonat)),
@@ -79,7 +125,7 @@ function freiKarte(m, ctx) {
     'article',
     { class: 'karte sz-frei', 'aria-label': `Frei verfügbar: ${m.frei.betrag}` },
     h('h3', { class: 'sz-ziel-titel' }, h('span', {}, '💜 Frei verfügbar'), h('small', {}, 'Rücklage')),
-    h('b', { class: 'sz-frei-betrag' }, m.frei.betrag),
+    zahl('sz-frei-betrag', 'sz-frei', m.frei.cents),
     h('span', { class: 'fk-klein' }, 'Überschuss über den Zielen landet hier und gleicht schlechte Monate zuerst aus.'),
     h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein', type: 'button', disabled: !m.frei.kannVerschieben, onClick: () => oeffneVerschieben(ctx) }, 'Zu Ziel verschieben')),
   );
@@ -216,6 +262,7 @@ export function sparzieleInhalt({ store, ui }) {
   if (m.zustand === 'nichtGeladen') {
     return [h('article', { class: 'karte hinweis sz-nicht-geladen' }, h('p', {}, 'Die Sparziele sind noch nicht geladen.'), h('div', { class: 'knopfzeile' }, nochmalKnopf(store)))];
   }
+  konfettiPlanen(zuFeiern(m.ziele, gefeiert));
   return [
     ...meldungen(m, store),
     kopfKarte(m),

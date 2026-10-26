@@ -78,6 +78,9 @@ class El {
     this.parent.children = this.parent.children.filter((c) => c !== this);
     this.parent = null;
   }
+  get parentElement() {
+    return this.parent;
+  }
   get isConnected() {
     let e = this;
     while (e.parent) e = e.parent;
@@ -206,6 +209,7 @@ describe('einblenden', () => {
       ['0', '1', '2', '3', '4', '5', '6', '7', '8', '8', '8'],
     );
 
+    t.bild(16); // das erste Bild ist gemalt
     // Neuzeichnen (z. B. Vorladen im Hintergrund fertig): neuer Behälter, gleicher Schlüssel → keine Klasse
     const neu = t.el();
     t.el('article', neu);
@@ -216,6 +220,31 @@ describe('einblenden', () => {
     // ein anderer Bildschirm (z. B. Konto · Fixkosten) blendet sein erstes Mal ein
     const andere = t.el();
     assert.equal(einblenden(andere, 'konto-fixkosten'), true);
+  });
+
+  test('Neuzeichnen VOR dem ersten Bild (z. B. Laden gleich nach dem Öffnen) ist noch das erste Zeigen: der neue Behälter blendet ein', () => {
+    const t = neuesDokument({ aussehen: 'bento' });
+    const alt = t.el();
+    t.el('article', alt);
+    assert.equal(einblenden(alt, 'konto-sparziele'), true);
+    alt.remove();
+    const neu = t.el();
+    t.el('article', neu);
+    t.el('article', neu);
+    assert.equal(einblenden(neu, 'konto-sparziele'), true);
+    assert.ok(neu.classList.contains(EINBLENDEN_KLASSE));
+    assert.deepEqual(
+      neu.children.map((k) => k.stil['--bw-i']),
+      ['0', '1'],
+    );
+    t.bild(16);
+    const spaeter = t.el();
+    t.el('article', spaeter);
+    assert.equal(einblenden(spaeter, 'konto-sparziele'), false, 'nach dem ersten Bild: kein zweites Einblenden');
+    assert.equal(spaeter.classList.contains(EINBLENDEN_KLASSE), false);
+    // ein anderer Bildschirm vor dessen erstem Bild ändert daran nichts: der alte Schlüssel blendet nicht noch einmal ein
+    assert.equal(einblenden(t.el(), 'konto-fixkosten'), true);
+    assert.equal(einblenden(t.el(), 'konto-sparziele'), false);
   });
 
   test('die Klasse wird nach dem Einblenden wieder entfernt (ein Zeitgeber, auch wenn der Behälter schon ersetzt ist)', () => {
@@ -234,6 +263,7 @@ describe('einblenden', () => {
   test('neuer Besuch (Seite wieder betreten): derselbe Schlüssel blendet wieder ein', () => {
     const t = neuesDokument({ aussehen: 'glas' });
     assert.equal(einblenden(t.el(), 'heute'), true);
+    t.bild(16);
     assert.equal(einblenden(t.el(), 'heute'), false);
     neuerBesuch();
     assert.equal(einblenden(t.el(), 'heute'), true);
@@ -290,26 +320,75 @@ describe('hochzaehlen', () => {
     assert.equal(el.textContent, euro(900));
   });
 
-  test('Schlüssel (data-bw-schluessel): ein neu gezeichnetes Element mit demselben Wert zeigt ihn sofort, ohne neu zu zählen', () => {
+  /** Ein Betrag mit Schlüssel, wie ihn ein Bildschirm bei jedem Zeichnen neu anlegt. */
+  const betrag = (t, schluessel = 'konto-seit-beginn') => {
+    const el = t.el('b');
+    el.setAttribute('data-bw-schluessel', schluessel);
+    return el;
+  };
+
+  test('Schlüssel: Neuzeichnen mitten im Zählen zählt an derselben Stelle weiter; danach mit demselben Wert sofort, ohne Zählen', () => {
     const t = neuesDokument({ aussehen: 'glas' });
-    const alt = t.el('b');
-    alt.setAttribute('data-bw-schluessel', 'konto-seit-beginn');
+    const alt = betrag(t);
     hochzaehlen(alt, 7000, euro);
     t.bild(0);
+    t.bild(200);
+    const zwischen = sichtbar(alt);
+    assert.notEqual(zwischen, euro(0));
+    assert.notEqual(zwischen, euro(7000));
     // mitten im Zählen ersetzt ein Neuzeichnen das Element
     alt.remove();
-    const neu = t.el('b');
-    neu.setAttribute('data-bw-schluessel', 'konto-seit-beginn');
+    const neu = betrag(t);
     hochzaehlen(neu, 7000, euro);
-    assert.equal(neu.textContent, euro(7000));
-    t.bild(100); // das alte Element bemerkt, dass es weg ist: hört auf, setzt den Endwert, plant nichts mehr
+    assert.equal(sichtbar(neu), zwischen, 'weiter an derselben Stelle, nicht von vorn und nicht sprunghaft am Ziel');
+    t.bild(300); // das alte Element bemerkt, dass es weg ist: hört auf, setzt den Endwert, plant nichts mehr
     assert.equal(alt.textContent, euro(7000));
+    assert.equal(t.bilder.size, 1, 'nur das neue Element zählt noch');
+    for (let ms = 400; ms <= 3000; ms += 100) t.bild(ms);
+    assert.equal(neu.textContent, euro(7000));
     assert.equal(t.bilder.size, 0, 'keine verwaisten Bildwechsel');
+    // Neuzeichnen danach mit demselben Wert: sofort, kein Zählen
+    const gleich = betrag(t);
+    hochzaehlen(gleich, 7000, euro);
+    assert.equal(gleich.textContent, euro(7000));
+    assert.equal(t.bilder.size, 0);
     // ein neuer Wert zählt vom zuletzt angezeigten weiter
-    const danach = t.el('b');
-    danach.setAttribute('data-bw-schluessel', 'konto-seit-beginn');
+    const danach = betrag(t);
     hochzaehlen(danach, 8000, euro);
     assert.equal(sichtbar(danach), euro(7000));
+  });
+
+  test('langsames Telefon: ein langes Bild (z. B. 2 s Zeichnen) frisst das Zählen nicht auf – es läuft danach sichtbar weiter', () => {
+    const t = neuesDokument({ aussehen: 'glas' });
+    const el = t.el('b');
+    hochzaehlen(el, 284524, euro, { von: 0 });
+    t.bild(0); // der Zeitstempel des ersten Bildes stammt noch von vor dem langen Zeichnen
+    t.bild(2300);
+    const nachPause = sichtbar(el);
+    assert.notEqual(nachPause, euro(284524), 'nicht gleich am Ziel');
+    t.bild(2500);
+    const weiter = sichtbar(el);
+    assert.notEqual(weiter, nachPause);
+    assert.notEqual(weiter, euro(284524));
+    for (let ms = 2600; ms <= 4000; ms += 50) t.bild(ms);
+    assert.equal(el.textContent, euro(284524));
+  });
+
+  test('Neuzeichnen VOR dem ersten Bild (Laden gleich nach dem Öffnen): das neue Element zählt von vorn und endet genau', () => {
+    const t = neuesDokument({ aussehen: 'bento' });
+    const alt = betrag(t, 'fk-monatlich');
+    hochzaehlen(alt, 145939, euro);
+    alt.remove();
+    const neu = betrag(t, 'fk-monatlich');
+    hochzaehlen(neu, 145939, euro);
+    assert.equal(sichtbar(neu), euro(0));
+    t.bild(0);
+    t.bild(250);
+    assert.notEqual(sichtbar(neu), euro(0));
+    assert.notEqual(sichtbar(neu), euro(145939));
+    for (let ms = 300; ms <= 3000; ms += 100) t.bild(ms);
+    assert.equal(neu.textContent, euro(145939));
+    assert.equal(t.bilder.size, 0);
   });
 
   test('Bildschirmleser hören nie einen Zwischenwert: gezählt wird in einer versteckten Anzeige, daneben steht (unsichtbar) der Endwert', () => {
@@ -367,12 +446,48 @@ describe('fortschritt', () => {
     assert.equal(balken.stil.transform, 'scaleX(1)');
   });
 
+  test('Schlüssel: ein Neuzeichnen, bevor der Übergang begonnen hat, gleitet noch vom alten Stand; danach steht es gleich am Ziel', () => {
+    const t = neuesDokument({ aussehen: 'glas' });
+    const fuellung = () => {
+      const el = t.el('span', t.el());
+      el.setAttribute('data-bw-schluessel', 'sz-balken-a');
+      return el;
+    };
+    const alt = fuellung();
+    fortschritt(alt, 0.5);
+    assert.equal(alt.stil.transform, 'scaleX(0)');
+    alt.parent.remove(); // Neuzeichnen vor dem ersten Bild
+    const neu = fuellung();
+    fortschritt(neu, 0.5);
+    assert.equal(neu.stil.transform, 'scaleX(0)', 'noch vom alten Stand');
+    t.bild(0);
+    t.bild(16);
+    assert.equal(neu.stil.transform, 'scaleX(0.5)');
+    const spaeter = fuellung();
+    fortschritt(spaeter, 0.5);
+    assert.equal(spaeter.stil.transform, 'scaleX(0.5)', 'späteres Neuzeichnen: gleich am Ziel');
+    assert.equal(t.bilder.size, 0);
+  });
+
+  test('die Bahn (Elternknoten) trägt den Anteil als --bw-anteil, im selben Moment wie das transform', () => {
+    const t = neuesDokument({ aussehen: 'bento' });
+    const bahn = t.el();
+    const balken = t.el('span', bahn);
+    fortschritt(balken, 0.3);
+    assert.equal(bahn.stil['--bw-anteil'], '0');
+    t.bild(0);
+    t.bild(16);
+    assert.equal(bahn.stil['--bw-anteil'], '0.3');
+  });
+
   test('Klassisch: rührt den Balken nicht an (dort bleibt die Breite wie bisher)', () => {
     const t = neuesDokument();
-    const balken = t.el('span');
+    const bahn = t.el();
+    const balken = t.el('span', bahn);
     fortschritt(balken, 0.4);
     assert.equal(balken.classList.contains('bw-fortschritt'), false);
     assert.equal(balken.stil.transform, undefined);
+    assert.equal(bahn.stil['--bw-anteil'], undefined);
     assert.equal(t.bilder.size, 0);
   });
 

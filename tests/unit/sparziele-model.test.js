@@ -55,6 +55,7 @@ describe('sparzieleModel: Kopf und Zielkarten (Demo)', () => {
     assert.equal(m.gesperrt, null);
     assert.deepEqual(m.kopf, {
       zurueckgelegt: betragText(v.summeZiele),
+      zurueckgelegtCents: v.summeZiele,
       noetig: betragText(v.noetigGesamt),
       frei: betragText(v.frei),
       stand: `Stand: Kontostand ${monatText(v.standMonat)} (beide)`,

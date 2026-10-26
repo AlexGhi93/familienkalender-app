@@ -9,7 +9,7 @@ import { kontoModel } from '../app/views/konto-model.js';
 import { balkenDiagramm, bereichLeiste, kacheln, verlaufDiagramm } from './konto-diagramm.js';
 import { MAX_EXTRA_TEXT, betragText, centsAusText } from '../domain/konto.js';
 import { fixkostenInhalt, kontoUmschalter } from './fixkosten-screen.js';
-import { sparzieleInhalt } from './sparziele-screen.js';
+import { kontoBesuchBeginnt, sparzieleInhalt } from './sparziele-screen.js';
 import { geloeschtMelden, sicherLoeschen } from './fortschritt.js';
 
 const GRUEN = '#2F9E5B';
@@ -429,6 +429,7 @@ function sonderbetraegeKarte(m, ctx) {
 }
 
 export function kontoScreen({ store, ui }) {
+  if (ui.seiteBetreten) kontoBesuchBeginnt(); // Konfetti der Sparziele (Bento) gilt je Besuch der Konto-Seite
   if (ui.kontoAnsicht === 'fixkosten') {
     return h('section', { class: 'screen konto fixkosten' }, h('h1', { class: 'gruss' }, 'Fixkosten 💶'), kontoUmschalter(ui), fixkostenInhalt({ store, ui }));
   }
