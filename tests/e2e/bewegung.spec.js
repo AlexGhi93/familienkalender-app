@@ -9,7 +9,7 @@ test.use({ contextOptions: { reducedMotion: 'no-preference' } });
 
 /**
  * Läuft vor den Skripten der Seite: merkt sich jede Klasse „bw-…“, die irgendwo auftaucht, wie oft `bw-einblenden` gesetzt wurde,
- * jeden sichtbaren Text eines Elements mit data-bw-schluessel (Hochzählen), jede View Transition (es darf keine geben) und für jeden
+ * jeden sichtbaren Text der Ersparnis im Kontostand (data-bw-schluessel „konto-seit-beginn“, Hochzählen), jede View Transition (es darf keine geben) und für jeden
  * Tipp (pointerdown/touchstart), ob #inhalt da gerade noch einblendete und welches Element ihn bekam.
  */
 function bewegungBeobachten() {
@@ -26,7 +26,8 @@ function bewegungBeobachten() {
       }
       for (const n of m.addedNodes) if (n.nodeType === 1) merke(n);
       const zahl = (m.target.nodeType === 1 ? m.target : m.target.parentElement)?.closest?.('[data-bw-schluessel]');
-      if (zahl && m.type !== 'attributes') bw.zahlen.push((zahl.querySelector('[aria-hidden="true"]') ?? zahl).textContent);
+      // nur die Ersparnis im Kontostand (die Köpfe der Fixkosten und Sparziele zählen beim Öffnen ihren eigenen Betrag hoch)
+      if (zahl?.getAttribute('data-bw-schluessel') === 'konto-seit-beginn' && m.type !== 'attributes') bw.zahlen.push((zahl.querySelector('[aria-hidden="true"]') ?? zahl).textContent);
     }
   }).observe(document, { subtree: true, attributes: true, attributeFilter: ['class'], attributeOldValue: true, childList: true, characterData: true });
   const tipp = (e) => {
@@ -153,7 +154,8 @@ test.describe('Glas und Bento mit Bewegung', () => {
       await page.getByRole('button', { name: 'Mit Google anmelden' }).click();
       await expect(page.locator('.sp-zelle')).toHaveCount(31);
       await expect.poll(() => google.anfragen.some((a) => a.includes('/events/fksch202612')), 'Vorladen wartet am Dezember').toBe(false);
-      await expect.poll(async () => (await bw(page)).eingeblendet, 'der Schichtplan kam beim ersten Zeichnen herein').toBe(1);
+      // ≥ 1: zeichnet der Schichtplan vor dem ersten Bild noch einmal (Laden), blendet auch der neue Behälter ein (ui/bewegung.js)
+      await expect.poll(async () => (await bw(page)).eingeblendet, 'der Schichtplan kam beim ersten Zeichnen herein').toBeGreaterThanOrEqual(1);
 
       await page.locator('.sp-zelle[data-datum="2026-10-21"]').click();
       const notiz = page.locator('.sp-tag-karte[data-person="papa"]').getByRole('textbox', { name: 'Notiz (optional)' });

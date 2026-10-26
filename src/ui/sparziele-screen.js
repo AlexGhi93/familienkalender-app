@@ -97,7 +97,12 @@ function kopfKarte(m) {
 function zielKarte(z, { store, ui }, gesperrt) {
   // Glas/Bento: die Füllung ist voll breit und wächst über transform: scaleX (fortschritt); Klassisch behält die Breite in %
   const fuellung = h('span', { style: { width: `${z.breite}%`, background: z.farbe }, 'data-bw-schluessel': `sz-balken-${z.id}` });
-  fortschritt(fuellung, z.breite / 100);
+  const balken = h(
+    'div',
+    { class: 'sz-balken', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': String(z.breite), 'aria-valuetext': z.stand, 'aria-label': `Fortschritt ${z.titel}` },
+    fuellung,
+  );
+  fortschritt(fuellung, z.breite / 100); // nach dem Bau der Bahn: sie trägt den Anteil als --bw-anteil (runde Kappe, themes/konto.css)
   return h(
     'article',
     { class: 'karte sz-ziel', 'aria-label': z.beschriftung, 'data-id': z.id, style: { '--sz-farbe': z.farbe } },
@@ -107,11 +112,7 @@ function zielKarte(z, { store, ui }, gesperrt) {
       h('h3', { class: 'sz-ziel-titel' }, h('span', {}, z.titel), h('small', {}, z.bis)),
       h('button', { class: 'sz-aendern', type: 'button', 'aria-label': `${z.name} ändern`, disabled: Boolean(gesperrt), onClick: () => oeffneZielFormular({ store, ui }, z.id) }, '✎'),
     ),
-    h(
-      'div',
-      { class: 'sz-balken', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': String(z.breite), 'aria-valuetext': z.stand, 'aria-label': `Fortschritt ${z.titel}` },
-      fuellung,
-    ),
+    balken,
     h('span', { class: 'fk-klein sz-stand-text' }, z.stand),
     z.hinweis ? h('span', { class: 'fk-klein' }, z.hinweis) : null,
     h('div', { class: 'sz-raster' }, h('span', {}, 'Noch offen'), h('b', {}, z.offen), h('span', {}, z.monate), h('b', {}, z.proMonat)),

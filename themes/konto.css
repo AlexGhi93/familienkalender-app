@@ -71,13 +71,15 @@
 
 /* ---------- 2. Glas ---------- */
 
-/* Umschalter: Rinne mit Glastropfen (::before) unter der Wahl; der Tropfen gleitet von data-von (vorige Ansicht) herüber.
-   Die drei Knöpfe sind gleich breit (flex: 1, 4 px Abstand): Stelle = Index × (eigene Breite + 4 px). */
+/* Umschalter: Rinne mit Glastropfen (::before) unter der Wahl; nach dem Umschalten gleitet er von --kt-von herüber: der Stelle, an der
+   er gerade stand (px, aus src/ui/fixkosten-screen.js), sonst der Stelle der vorigen Ansicht (data-von). --kt-seit (≤ 0) lässt ein
+   Neuzeichnen mitten im Gleiten an derselben Stelle weiterlaufen. Die drei Knöpfe sind gleich breit (flex: 1, 4 px Abstand):
+   Stelle = Index × (eigene Breite + 4 px). */
 :root[data-aussehen='glas'] .konto-segment {
   position: relative;
   isolation: isolate;
   overflow: clip; /* das Überschwingen des Tropfens bleibt in der Rinne */
-  overflow-clip-margin: 2px;
+  overflow-clip-margin: 3px; /* der Fokusring (3 px + 2 px Abstand) bleibt ganz */
   --kt-seg-rand: 4px;
 }
 
@@ -259,6 +261,7 @@
 :root[data-aussehen='glas'] .diag-wert,
 :root[data-aussehen='bento'] .diag-wert {
   font-size: 10.5px;
+  transform: translateY(var(--wert-hoch, 0px)); /* unter einem Minus-Balken: über die Nulllinie, weg vom Monatsnamen */
 }
 
 /* die Achsenbeschriftung ist in dieser Schrift etwas breiter: sie darf in den Innenabstand der Karte ragen statt abgeschnitten zu werden */
@@ -380,7 +383,7 @@
 :root[data-aussehen='glas'] .extra-zeile .karte-text b,
 :root[data-aussehen='bento'] .extra-zeile .karte-text b {
   overflow-wrap: break-word;
-  hyphens: auto; /* lange Bezeichnungen (z. B. „Steuerrückzahlung“) trennen an der Silbe statt mitten im Wort */
+  hyphens: auto; /* lange Bezeichnungen (z. B. „Steuerrückzahlung“): Safari trennt mit Bindestrich, Chrome unter Windows ohne */
 }
 
 :root[data-aussehen='glas'] .extra-zeile .ek-weg,
@@ -571,6 +574,41 @@
   width: 100% !important;
 }
 
+/* Runde Kappe am Ende der Füllung: scaleX staucht jede Rundung der Füllung, deshalb trägt die Bahn eine eigene Kappe (::before), die
+   über --bw-anteil (fortschritt()) an das Ende der Füllung rückt und mit ihr gleitet (ragt eine halbe Höhe darüber hinaus, wie die runde
+   Füllung in Klassisch); Bento mit hellem Punkt wie in der Demo */
+:root[data-aussehen='glas'] .sz-balken:has(> .bw-fortschritt),
+:root[data-aussehen='bento'] .sz-balken:has(> .bw-fortschritt) {
+  position: relative;
+  container-type: inline-size;
+}
+
+:root[data-aussehen='glas'] .sz-balken:has(> .bw-fortschritt)::before,
+:root[data-aussehen='bento'] .sz-balken:has(> .bw-fortschritt)::before {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  left: 0;
+  width: var(--kt-kappe);
+  height: 100%;
+  border-radius: 999px;
+  pointer-events: none;
+  opacity: min(1, calc(var(--bw-anteil, 0) * 1000));
+  /* Mitte der Kappe auf dem Ende der Füllung: der Kreis deckt deren eckige Ecken (nicht weiter als bis zum Ende der Bahn) */
+  transform: translateX(clamp(0px, calc(var(--bw-anteil, 0) * 100cqw - var(--kt-kappe) / 2), calc(100cqw - var(--kt-kappe))));
+}
+
+:root[data-aussehen='glas'] .sz-balken:has(> .bw-fortschritt)::before {
+  --kt-kappe: 14px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0) 70%), var(--sz-farbe, var(--akzent));
+}
+
+:root[data-aussehen='bento'] .sz-balken:has(> .bw-fortschritt)::before {
+  --kt-kappe: 18px;
+  background: radial-gradient(circle at calc(100% - 9px) 50%, rgb(255 255 255 / 0.85) 0 3.5px, rgb(255 255 255 / 0) 4.5px), var(--sz-farbe, var(--akzent));
+}
+
 :root[data-aussehen='glas'] .sz-balken > span::before {
   content: '';
   position: absolute;
@@ -640,7 +678,7 @@
   position: relative;
   isolation: isolate;
   overflow: clip; /* der Blob springt über, bleibt aber in der Rinne */
-  overflow-clip-margin: 2px;
+  overflow-clip-margin: 3px; /* der Fokusring (3 px + 2 px Abstand) bleibt ganz */
   --kt-seg-rand: 5px;
 }
 
@@ -1149,6 +1187,16 @@
   }
 }
 
+@keyframes kt-wahl-rein {
+  0%,
+  45% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
 /* Bento: Warnungen wackeln dreimal und sind dann still */
 @keyframes kt-wackeln {
   0%,
@@ -1185,12 +1233,23 @@
   }
 }
 
-/* Säulen, Glanz und Wackeln nur beim ersten Zeichnen eines Bildschirms (solange .bw-einblenden am Behälter steht): Neuzeichnen im
-   Hintergrund spielt nichts erneut */
+/* Säulen, Glanz und Wackeln nur beim ersten Zeigen eines Bildschirms (solange .bw-einblenden am Behälter steht, ≤ 1,4 s; auch nach
+   einem Neuzeichnen vor dem ersten Bild, siehe einblenden() in src/ui/bewegung.js): späteres Neuzeichnen spielt nichts erneut */
 @media (prefers-reduced-motion: no-preference) {
   :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .konto-segment[data-von]::before {
     animation: kt-tropfen 0.48s cubic-bezier(0.34, 1.56, 0.64, 1);
     animation-delay: var(--kt-seit, 0ms); /* neu gezeichnet während des Gleitens: an derselben Stelle weiter */
+  }
+
+  /* Bento: die Schrift der neuen Wahl ist hell und stünde auf der weißen Rinne unsichtbar, bis der Blob da ist: sie blendet mit ihm ein */
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .konto-segment[data-von] > .konto-segment-knopf.aktiv {
+    animation: kt-wahl-rein 0.5s ease-out both;
+    animation-delay: var(--kt-seit, 0ms);
+  }
+
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .sz-balken:has(> .bw-fortschritt)::before,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .sz-balken:has(> .bw-fortschritt)::before {
+    transition: transform var(--dauer-fortschritt) var(--kurve-feder);
   }
 
   :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .konto-segment[data-von]::before {
@@ -1215,13 +1274,13 @@
     position: absolute;
     inset: 0;
     background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, 0.55) 50%, transparent 70%);
-    animation: kt-glanz 1.4s cubic-bezier(0.22, 1, 0.36, 1) 0.9s backwards;
+    animation: kt-glanz 0.8s cubic-bezier(0.22, 1, 0.36, 1) 0.5s backwards; /* endet vor dem Aufräumen von .bw-einblenden (1,4 s) */
     pointer-events: none;
   }
 
   :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .bw-einblenden .sz-status.warn,
   :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .bw-einblenden .fk-abzeichen.warn {
-    animation: kt-wackeln 0.42s ease-in-out 0.6s 3;
+    animation: kt-wackeln 0.3s ease-in-out 0.35s 3; /* dreimal, fertig vor dem Aufräumen von .bw-einblenden (1,4 s) */
   }
 
   :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .sz-aendern,

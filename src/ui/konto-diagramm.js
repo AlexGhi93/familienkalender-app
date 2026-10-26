@@ -214,7 +214,13 @@ export function balkenDiagramm(m) {
     const gruppe = svg('g', { class: 'diag-balken-gruppe', 'data-monat': b.monat });
     gruppe.append(svg('path', { class: `konto-balken ${b.art}`, d: balkenPfad(b.x, b.y, b.breite, b.hoehe, b.wert >= 0) }));
     if (b.extraBereich) gruppe.append(svg('rect', { class: 'konto-extra', x: b.x, y: b.extraBereich.y, width: b.breite, height: b.extraBereich.hoehe, rx: 3 }));
-    if (beschriftet.has(i)) gruppe.append(svg('text', { class: 'diag-wert', x: b.mitteX, y: b.labelY, 'text-anchor': 'middle' }, deltaText(balken[i].wert)));
+    if (beschriftet.has(i)) {
+      // Haken für Glas/Bento (themes/konto.css): eine Beschriftung unter einem Minus-Balken darf über die Nulllinie rücken (--wert-hoch),
+      // damit sie nicht auf den Monatsnamen trifft; in Klassisch ohne Wirkung
+      const unten = b.labelY > L.nullLinieY;
+      const hoch = unten ? Math.round(Math.min(L.nullLinieY, b.extraBereich?.y ?? Infinity) - 4 - b.labelY) : 0;
+      gruppe.append(svg('text', { class: 'diag-wert', x: b.mitteX, y: b.labelY, 'text-anchor': 'middle', style: unten ? { '--wert-hoch': `${hoch}px` } : null }, deltaText(balken[i].wert)));
+    }
     if (i % schritt === 0 || i === balken.length - 1) gruppe.append(svg('text', { class: 'diag-achse', x: b.mitteX, y: hoehe - 8, 'text-anchor': 'middle' }, balken[i].kurz));
     return gruppe;
   });

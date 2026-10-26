@@ -18,6 +18,59 @@ function konfettiZaehlen() {
   }).observe(document, { subtree: true, childList: true });
 }
 
+/**
+ * Läuft vor den Skripten der Seite: `__messen(n)` nimmt n Bilder lang (rAF) je Bild auf, was man sieht – den Betrag im Kopf (während
+ * des Zählens die sichtbare Anzeige), das scaleX des ersten Sparziel-Balkens, ob der Bildschirm einblendet, wo der Tropfen/Blob steht
+ * (px) und data-von. `__umschalten(i, n)` drückt den Knopf i des Umschalters und misst ab dem ersten Bild danach.
+ */
+function bilderMessen() {
+  const messen = (anzahl) =>
+    new Promise((fertig) => {
+      const liste = [];
+      const schritt = () => {
+        const seg = document.querySelector('.konto-segment');
+        const tr = seg ? getComputedStyle(seg, '::before').transform : 'none';
+        const zahl = document.querySelector('.fk-kopf .fk-gross');
+        const fuellung = document.querySelector('.sz-ziel .sz-balken > span');
+        liste.push({
+          text: zahl ? (zahl.querySelector('[aria-hidden="true"]') ?? zahl).textContent : null,
+          balken: fuellung ? new DOMMatrixReadOnly(getComputedStyle(fuellung).transform === 'none' ? undefined : getComputedStyle(fuellung).transform).a : null,
+          einblenden: Boolean(document.querySelector('#inhalt > .screen.bw-einblenden')),
+          x: tr && tr !== 'none' ? new DOMMatrixReadOnly(tr).m41 : 0,
+          von: seg?.getAttribute('data-von') ?? null,
+        });
+        if (liste.length >= anzahl) fertig(liste);
+        else requestAnimationFrame(schritt);
+      };
+      requestAnimationFrame(schritt);
+    });
+  Object.defineProperty(window, '__messen', { value: messen });
+  Object.defineProperty(window, '__umschalten', {
+    value: (i, anzahl) => {
+      const bilder = messen(anzahl);
+      document.querySelectorAll('.konto-segment-knopf')[i].click();
+      return bilder;
+    },
+  });
+}
+
+/**
+ * Demo mit der echten Uhr: die Messungen je Bild brauchen echte Bildwechsel (requestAnimationFrame, performance.now); die feste Uhr
+ * von starteDemo ersetzt die Zeitgeber der Seite. Die Prüfungen hängen nicht vom Datum ab (sie lesen das Ziel aus der Seite).
+ */
+async function starteDemoEchteUhr(page, route) {
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem('fk.test.vorbelegt')) return;
+    sessionStorage.setItem('fk.test.vorbelegt', '1');
+    localStorage.setItem('fk.config.v1', JSON.stringify({ v: 1, modus: 'demo' }));
+  });
+  await page.goto(`/${route}`);
+  await expect(page.locator('nav.tabs')).toBeVisible();
+}
+
+/** Alle Bewegungen der ersten Anzeige sind vorbei (Einblenden ≤ 1,4 s, Zählen 0,7 s, Balken ≤ 1,3 s). */
+const ausklingen = (page) => page.waitForTimeout(1800);
+
 /** Animationen des ::before am Umschalter (Tropfen/Blob). */
 const tropfenAnimationen = (page) =>
   page.evaluate(() =>
@@ -131,4 +184,93 @@ test('„Bewegung: Reduziert“: kein Konfetti, kein Gleiten, Zahlen und Balken 
   await expect(page.locator('.sz-kopf .fk-gross [aria-hidden="true"]')).toHaveCount(0);
   const balken = page.locator('.sz-ziel').first().locator('.sz-balken > span');
   expect(await balken.evaluate((el) => getComputedStyle(el).transitionDuration)).toBe('0s');
+});
+
+test.describe('Öffnen von Fixkosten und Sparziele: alles spielt einmal – auch wenn sie gleich nach dem Öffnen neu zeichnen (Laden)', () => {
+  test.beforeEach(async ({ page, aussehen }) => {
+    test.skip(!aussehen, 'nur Glas und Bento');
+    await page.addInitScript(bilderMessen);
+  });
+
+  /** Prüft die gemessenen Bilder eines Öffnens: Tropfen unterwegs, Betrag zählt, Bildschirm blendet ein, Balken wachsen. */
+  async function pruefeOeffnen(page, bilder, { balken, frueh = 12 }) {
+    const ende = bilder.at(-1);
+    const zielText = await page.locator('.fk-kopf .fk-gross').textContent();
+    // Tropfen/Blob: in einem frühen Bild zwischen Start (Kontostand, 0) und Ziel
+    expect(ende.x, 'der Tropfen steht am Ende unter der neuen Wahl').toBeGreaterThan(20);
+    const unterwegs = (b) => b.x > 2 && b.x < ende.x - 2;
+    const wege = `${bilder.slice(0, 20).map((b) => Math.round(b.x)).join(', ')} … → ${Math.round(ende.x)}`;
+    expect(bilder.slice(0, frueh).some(unterwegs), `früh unterwegs: ${wege}`).toBe(true);
+    expect(bilder.filter(unterwegs).length, `sichtbar unterwegs (mehrere Bilder): ${wege}`).toBeGreaterThanOrEqual(3);
+    // Betrag: Zwischenwerte, am Ende genau
+    const texte = bilder.map((b) => b.text).filter(Boolean);
+    expect(texte.at(-1)).toBe(zielText);
+    expect(new Set(texte).size, `Zwischenwerte: ${[...new Set(texte)].slice(0, 5).join(' | ')}`).toBeGreaterThan(3);
+    expect(texte.slice(0, 3).some((t) => t !== zielText), 'zu Beginn noch nicht am Ziel').toBe(true);
+    // Einblenden
+    expect(bilder.some((b) => b.einblenden), 'der Bildschirm bekommt .bw-einblenden').toBe(true);
+    // Balken: beginnen unter ihrem Endstand
+    if (balken) {
+      const endstand = Number(await page.locator('.sz-ziel').first().locator('.sz-balken').getAttribute('aria-valuenow')) / 100;
+      expect(ende.balken).toBeCloseTo(endstand, 2);
+      expect(bilder[0].balken, 'der Balken beginnt unter dem Endstand').toBeLessThan(endstand - 0.02);
+    }
+  }
+
+  for (const [name, index, balken] of [
+    ['Fixkosten', 1, false],
+    ['Sparziele', 2, true],
+  ]) {
+    test(`${name}: Tropfen gleitet, Betrag zählt, Karten kommen herein${balken ? ', Balken wachsen' : ''}; späteres Neuzeichnen spielt nichts erneut`, async ({ page }) => {
+      await starteDemoEchteUhr(page, '#/konto/kontostand');
+      await ausklingen(page);
+      const bilder = await page.evaluate(([i]) => window.__umschalten(i, 75), [index]);
+      await pruefeOeffnen(page, bilder, { balken });
+
+      // ein späteres Neuzeichnen im Hintergrund (Rückkehr in die App): nichts zählt, gleitet, wächst oder blendet erneut ein
+      await ausklingen(page);
+      const zielText = await page.locator('.fk-kopf .fk-gross').textContent();
+      const danach = await page.evaluate(() => {
+        const bilder = window.__messen(30);
+        document.dispatchEvent(new Event('visibilitychange'));
+        return bilder;
+      });
+      expect(danach.every((b) => b.text === zielText), 'kein Zählen').toBe(true);
+      expect(danach.every((b) => !b.einblenden), 'kein Einblenden').toBe(true);
+      expect(danach.every((b) => b.von === null), 'kein Gleiten').toBe(true);
+      expect(new Set(danach.map((b) => Math.round(b.x))).size, 'der Tropfen steht').toBe(1);
+      if (balken) expect(new Set(danach.map((b) => b.balken.toFixed(4))).size, 'die Balken stehen').toBe(1);
+    });
+  }
+
+  test('auch mit 4× langsamerer CPU: Tropfen unterwegs, Betrag zählt, Balken wachsen beim Öffnen der Sparziele', async ({ page }) => {
+    await starteDemoEchteUhr(page, '#/konto/kontostand');
+    await ausklingen(page);
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+    try {
+      const bilder = await page.evaluate(() => window.__umschalten(2, 60));
+      await pruefeOeffnen(page, bilder, { balken: true, frueh: 8 });
+    } finally {
+      await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 });
+    }
+  });
+
+  test('schnell zweimal umschalten: der zweite Weg beginnt dort, wo der Tropfen gerade ist (kein Sprung)', async ({ page }) => {
+    await starteDemoEchteUhr(page, '#/konto/kontostand');
+    await ausklingen(page);
+    const bilder = await page.evaluate(async () => {
+      const erste = await window.__umschalten(2, 5); // unterwegs nach „Sparziele“
+      const zweite = await window.__umschalten(1, 40); // gleich weiter zu „Fixkosten“
+      return { erste, zweite };
+    });
+    const vorher = bilder.erste.at(-1).x;
+    const nachher = bilder.zweite[0].x;
+    expect(Math.abs(nachher - vorher), `vorher ${Math.round(vorher)} px, erstes Bild danach ${Math.round(nachher)} px`).toBeLessThan(25);
+    const ziel = await page.evaluate(() => {
+      const knopf = document.querySelectorAll('.konto-segment-knopf')[1];
+      return knopf.offsetLeft - parseFloat(getComputedStyle(knopf.parentElement).paddingLeft);
+    });
+    expect(Math.abs(bilder.zweite.at(-1).x - ziel), 'am Ende genau unter „Fixkosten“').toBeLessThan(2);
+  });
 });
