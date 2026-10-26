@@ -52,13 +52,8 @@
   --chip-aktiv-anteil: 26%;
   --tint-grund: var(--glas-hoch);
   --tint-anteil: 15%;
-  --seite-bild: radial-gradient(circle min(85vw, 368px) at 22% 6%, var(--licht-1) 0%, color-mix(in srgb, var(--licht-1) 45%, transparent) 38%, transparent 68%),
-    radial-gradient(circle min(85vw, 368px) at 88% 46%, var(--licht-2) 0%, color-mix(in srgb, var(--licht-2) 45%, transparent) 38%, transparent 68%),
-    radial-gradient(circle min(85vw, 368px) at 42% 98%, var(--licht-3) 0%, color-mix(in srgb, var(--licht-3) 45%, transparent) 38%, transparent 68%);
-  --licht-1: var(--licht-rest-1);
-  --licht-2: var(--licht-rest-2);
-  --licht-3: var(--licht-rest-3);
-  --licht-anim: glas-licht-rest;
+  /* --seite-bild bleibt none: die Aurora malt body::before (Abschnitt 2) – ihre Farben je Tab stehen nur dort, damit ein Tabwechsel
+     nicht jedes Element der Seite neu berechnet (geerbte Variablen an :root) */
   --r-karte: 24px;
   --r-knopf: 999px;
   --r-zeile: 18px;
@@ -251,31 +246,31 @@
 
 /* ---------- 2. Licht je Tab ----------
    Die aktive Karte der Tableiste bestimmt das Licht (Heute, Monat, Schicht, Konto, sonst „Rest“). Die Fläche liegt fest hinter der
-   Seite (body::before, --seite-bild). Beim Wechsel blendet das neue Licht ein und „setzt sich“ einmal (2,6 s), danach steht es still:
+   Seite (body::before; die Farben je Tab stehen nur am Pseudo-Element: ein Wechsel berechnet nicht die ganze Seite neu). Beim Wechsel blendet das neue Licht ein und „setzt sich“ einmal (2,6 s), danach steht es still:
    kein Endlos-Driften unter dem Glas. Neuzeichnen auf derselben Seite ändert den Namen der Animation nicht und spielt nichts erneut. */
 
-:root[data-aussehen='glas']:has(> body > #app > .tabs > .tab.aktiv[href='#/heute']) {
+:root[data-aussehen='glas']:has(> body > #app > .tabs > .tab.aktiv[href='#/heute']) body::before {
   --licht-1: var(--licht-heute-1);
   --licht-2: var(--licht-heute-2);
   --licht-3: var(--licht-heute-3);
   --licht-anim: glas-licht-heute;
 }
 
-:root[data-aussehen='glas']:has(> body > #app > .tabs > .tab.aktiv[href='#/monat']) {
+:root[data-aussehen='glas']:has(> body > #app > .tabs > .tab.aktiv[href='#/monat']) body::before {
   --licht-1: var(--licht-monat-1);
   --licht-2: var(--licht-monat-2);
   --licht-3: var(--licht-monat-3);
   --licht-anim: glas-licht-monat;
 }
 
-:root[data-aussehen='glas']:has(> body > #app > .tabs > .tab.aktiv[href='#/schicht']) {
+:root[data-aussehen='glas']:has(> body > #app > .tabs > .tab.aktiv[href='#/schicht']) body::before {
   --licht-1: var(--licht-schicht-1);
   --licht-2: var(--licht-schicht-2);
   --licht-3: var(--licht-schicht-3);
   --licht-anim: glas-licht-schicht;
 }
 
-:root[data-aussehen='glas']:has(> body > #app > .tabs > .tab.aktiv[href='#/konto']) {
+:root[data-aussehen='glas']:has(> body > #app > .tabs > .tab.aktiv[href='#/konto']) body::before {
   --licht-1: var(--licht-konto-1);
   --licht-2: var(--licht-konto-2);
   --licht-3: var(--licht-konto-3);
@@ -293,12 +288,18 @@
 }
 
 :root[data-aussehen='glas'] body::before {
+  --licht-1: var(--licht-rest-1);
+  --licht-2: var(--licht-rest-2);
+  --licht-3: var(--licht-rest-3);
+  --licht-anim: glas-licht-rest;
   content: '';
   position: fixed;
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background-image: var(--seite-bild);
+  background-image: radial-gradient(circle min(85vw, 368px) at 22% 6%, var(--licht-1) 0%, color-mix(in srgb, var(--licht-1) 45%, transparent) 38%, transparent 68%),
+    radial-gradient(circle min(85vw, 368px) at 88% 46%, var(--licht-2) 0%, color-mix(in srgb, var(--licht-2) 45%, transparent) 38%, transparent 68%),
+    radial-gradient(circle min(85vw, 368px) at 42% 98%, var(--licht-3) 0%, color-mix(in srgb, var(--licht-3) 45%, transparent) 38%, transparent 68%);
   opacity: var(--licht-deckung);
   transform-origin: 40% 20%;
 }

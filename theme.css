@@ -9,7 +9,7 @@
    nur in einem Teilbaum (z. B. im Blatt) ändert, muss die abgeleiteten Tokens dort ebenfalls setzen.
 
    Flächen      --bg            Hintergrund der Seite (auch Schriftfarbe auf --ink: nie ein Verlauf)
-                --seite-bild    Bild/Verlauf über --bg auf body (Klassisch: none), z. B. die Aurora in Glas
+                --seite-bild    Bild/Verlauf über --bg auf body (Klassisch, Glas, Bento: none; die Aurora in Glas malt body::before)
                 --karte         Karten
                 --karte-2       Flächen in und neben Karten: Zeilen, Knöpfe, runde Knöpfe (Klassisch = --karte)
                 --feld-bg       Eingabefelder (Klassisch = --karte-2)
