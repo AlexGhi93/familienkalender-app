@@ -1,1 +1,1458 @@
-/* Glas & Licht und Bento bunt: mehr (nur unter :root[data-aussehen="glas"] bzw. [data-aussehen="bento"]; Klassisch unberührt). */
+/* Glas & Licht und Bento bunt: mehr (nur unter :root[data-aussehen="glas"] bzw. [data-aussehen="bento"]; Klassisch unberührt).
+   Bereich: „Mehr“ (Menü mit den animierten Symbolen und allen aufklappbaren Einstellungen), „Konto & App“ (Verbindung, Erinnerungen,
+   Push, Darstellung mit Aussehen-Kacheln, Sicherung, Abmelden), Verlauf, Blatt „Nachricht an …“, Willkommen, Einrichtung und Code,
+   Verbinden-Karte, Banner (Verbindung, Login-Dienst, neue Version), Fortschritt, Anleitungen und Fehlertexte.
+   Aufbau: 1. eigene Tokens (je Aussehen Hell, Dunkel System, Dunkel gewählt)  2. Gemeinsames  3. Glas  4. Bento  5. Bewegung.
+   Haken (in Klassisch ohne sichtbare Wirkung): .mehr-seite, .app-seite, .verbinden-seite, .darstellung-karte, .segment-wahl
+   (Hell/Dunkel, Bewegung, Ton der Nachricht), .darstellung-wahl, .bewegung-wahl, .aussehen-wahl mit .aussehen-name,
+   .nachricht-gruppe[data-gruppe]. Die Bewegung der Menü-Symbole (theme.css, anim-…) bleibt unverändert; sie und alles hier Bewegte
+   stehen bei „Reduziert“ und prefers-reduced-motion still. */
+
+/* ---------- 1. Tokens ---------- */
+
+:root[data-aussehen='glas'] {
+  --lupe: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233f3958' stroke-width='2.2' stroke-linecap='round'%3E%3Ccircle cx='10.5' cy='10.5' r='6.5'/%3E%3Cpath d='m15.5 15.5 5 5'/%3E%3C/svg%3E");
+  --rinne: rgb(27 24 48 / 0.07);
+  --vorschau-rand: rgb(27 24 48 / 0.12);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-aussehen='glas']:not([data-theme='light']) {
+    --lupe: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23cbc4e6' stroke-width='2.2' stroke-linecap='round'%3E%3Ccircle cx='10.5' cy='10.5' r='6.5'/%3E%3Cpath d='m15.5 15.5 5 5'/%3E%3C/svg%3E");
+    --rinne: rgb(255 255 255 / 0.07);
+    --vorschau-rand: rgb(255 255 255 / 0.14);
+  }
+}
+
+:root[data-aussehen='glas'][data-theme='dark'] {
+  --lupe: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23cbc4e6' stroke-width='2.2' stroke-linecap='round'%3E%3Ccircle cx='10.5' cy='10.5' r='6.5'/%3E%3Cpath d='m15.5 15.5 5 5'/%3E%3C/svg%3E");
+  --rinne: rgb(255 255 255 / 0.07);
+  --vorschau-rand: rgb(255 255 255 / 0.14);
+}
+
+:root[data-aussehen='bento'] {
+  --lupe: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23575170' stroke-width='2.6' stroke-linecap='round'%3E%3Ccircle cx='10.5' cy='10.5' r='6.5'/%3E%3Cpath d='m15.5 15.5 5 5'/%3E%3C/svg%3E");
+  --vorschau-rand: rgb(29 24 48 / 0.1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-aussehen='bento']:not([data-theme='light']) {
+    --lupe: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23c9c3e0' stroke-width='2.6' stroke-linecap='round'%3E%3Ccircle cx='10.5' cy='10.5' r='6.5'/%3E%3Cpath d='m15.5 15.5 5 5'/%3E%3C/svg%3E");
+    --vorschau-rand: rgb(255 255 255 / 0.12);
+  }
+}
+
+:root[data-aussehen='bento'][data-theme='dark'] {
+  --lupe: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23c9c3e0' stroke-width='2.6' stroke-linecap='round'%3E%3Ccircle cx='10.5' cy='10.5' r='6.5'/%3E%3Cpath d='m15.5 15.5 5 5'/%3E%3C/svg%3E");
+  --vorschau-rand: rgb(255 255 255 / 0.12);
+}
+
+/* ---------- 2. Gemeinsam (beide Aussehen) ---------- */
+
+/* Menü: statt einer Karte mit Trennlinien eine Spalte einzelner Zeilen (Glas: Glasflächen, Bento: Kacheln) */
+:root[data-aussehen='glas'] .karte.menue,
+:root[data-aussehen='bento'] .karte.menue {
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+:root[data-aussehen='glas'] .menue-eintrag,
+:root[data-aussehen='bento'] .menue-eintrag {
+  position: relative;
+  border-top: 0;
+  border-radius: var(--r-karte);
+  scroll-margin-top: 16px;
+}
+
+:root[data-aussehen='glas'] .menue-zeile,
+:root[data-aussehen='bento'] .menue-zeile {
+  gap: 14px;
+  min-height: 72px;
+  padding: 12px 14px;
+  border-radius: var(--r-karte);
+}
+
+:root[data-aussehen='glas'] .menue-kachel,
+:root[data-aussehen='bento'] .menue-kachel {
+  width: 50px;
+  height: 50px;
+  border-radius: 17px;
+}
+
+:root[data-aussehen='glas'] .menue-symbol,
+:root[data-aussehen='bento'] .menue-symbol {
+  font-size: 1.6rem;
+}
+
+:root[data-aussehen='glas'] .menue-text,
+:root[data-aussehen='bento'] .menue-text {
+  gap: 1px;
+}
+
+:root[data-aussehen='glas'] .menue-text b,
+:root[data-aussehen='bento'] .menue-text b {
+  font-size: 1.0625rem;
+}
+
+:root[data-aussehen='glas'] .menue-text small,
+:root[data-aussehen='bento'] .menue-text small {
+  font-size: 1rem;
+  line-height: 1.3;
+}
+
+/* Pfeil in einer kleinen runden Fläche (dreht sich beim Aufklappen wie bisher) */
+:root[data-aussehen='glas'] .menue-pfeil,
+:root[data-aussehen='bento'] .menue-pfeil {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+:root[data-aussehen='glas'] .menue-inhalt,
+:root[data-aussehen='bento'] .menue-inhalt {
+  gap: 14px;
+  padding: 4px 16px 18px;
+}
+
+/* Mitnehmen beim Arzt: aufklappbare Gruppen als Zeilen mit eigenem Pfeil, Ziel ≥ 44 px */
+:root[data-aussehen='glas'] .menue-inhalt .gruppen details,
+:root[data-aussehen='bento'] .menue-inhalt .gruppen details {
+  padding: 2px 14px;
+  border-radius: 18px;
+}
+
+:root[data-aussehen='glas'] .menue-inhalt .gruppen details[open],
+:root[data-aussehen='bento'] .menue-inhalt .gruppen details[open] {
+  padding-bottom: 14px;
+}
+
+:root[data-aussehen='glas'] .menue-inhalt .gruppen summary,
+:root[data-aussehen='bento'] .menue-inhalt .gruppen summary,
+:root[data-aussehen='glas'] .app-seite .anleitung summary,
+:root[data-aussehen='glas'] .einrichtung .anleitung summary,
+:root[data-aussehen='bento'] .app-seite .anleitung summary ,
+:root[data-aussehen='bento'] .einrichtung .anleitung summary {
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 48px;
+  list-style: none;
+}
+
+:root[data-aussehen='glas'] .menue-inhalt .gruppen summary::-webkit-details-marker,
+:root[data-aussehen='bento'] .menue-inhalt .gruppen summary::-webkit-details-marker,
+:root[data-aussehen='glas'] .app-seite .anleitung summary::-webkit-details-marker,
+:root[data-aussehen='glas'] .einrichtung .anleitung summary::-webkit-details-marker,
+:root[data-aussehen='bento'] .app-seite .anleitung summary::-webkit-details-marker ,
+:root[data-aussehen='bento'] .einrichtung .anleitung summary::-webkit-details-marker {
+  display: none;
+}
+
+:root[data-aussehen='glas'] .menue-inhalt .gruppen summary::after,
+:root[data-aussehen='bento'] .menue-inhalt .gruppen summary::after,
+:root[data-aussehen='glas'] .app-seite .anleitung summary::after,
+:root[data-aussehen='glas'] .einrichtung .anleitung summary::after,
+:root[data-aussehen='bento'] .app-seite .anleitung summary::after ,
+:root[data-aussehen='bento'] .einrichtung .anleitung summary::after {
+  content: '›';
+  content: '›' / '';
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: var(--ink-2);
+  font-size: 1.25rem;
+  line-height: 1;
+  transform: rotate(90deg);
+}
+
+:root[data-aussehen='glas'] .menue-inhalt .gruppen details[open] > summary::after,
+:root[data-aussehen='bento'] .menue-inhalt .gruppen details[open] > summary::after,
+:root[data-aussehen='glas'] .app-seite .anleitung[open] > summary::after,
+:root[data-aussehen='glas'] .einrichtung .anleitung[open] > summary::after,
+:root[data-aussehen='bento'] .app-seite .anleitung[open] > summary::after ,
+:root[data-aussehen='bento'] .einrichtung .anleitung[open] > summary::after {
+  transform: rotate(-90deg);
+}
+
+/* Schrift in den eigenen Seiten ≥ 16 px: Hinweise, Beschriftungen und Chips (Klassisch: 14–15 px). Die Umschalter und die
+   Aussehen-Kacheln bleiben bei 15 px (drei nebeneinander, kein Umbruch). */
+:root[data-aussehen='glas'] .mehr-seite .leise,
+:root[data-aussehen='bento'] .mehr-seite .leise,
+:root[data-aussehen='glas'] .app-seite .leise,
+:root[data-aussehen='bento'] .app-seite .leise,
+:root[data-aussehen='glas'] .verlauf .leise,
+:root[data-aussehen='bento'] .verlauf .leise,
+:root[data-aussehen='glas'] .einrichtung .leise,
+:root[data-aussehen='bento'] .einrichtung .leise,
+:root[data-aussehen='glas'] .willkommen .leise,
+:root[data-aussehen='bento'] .willkommen .leise,
+:root[data-aussehen='glas'] .verbinden-seite .leise,
+:root[data-aussehen='bento'] .verbinden-seite .leise,
+:root[data-aussehen='glas'] .verlauf-zeile .karte-text small,
+:root[data-aussehen='bento'] .verlauf-zeile .karte-text small,
+:root[data-aussehen='glas'] .blatt .nachricht-details .leise,
+:root[data-aussehen='bento'] .blatt .nachricht-details .leise,
+:root[data-aussehen='glas'] .mehr-seite .feld > span,
+:root[data-aussehen='bento'] .mehr-seite .feld > span,
+:root[data-aussehen='glas'] .app-seite .feld > span,
+:root[data-aussehen='bento'] .app-seite .feld > span,
+:root[data-aussehen='glas'] .einrichtung .feld > span,
+:root[data-aussehen='bento'] .einrichtung .feld > span,
+:root[data-aussehen='glas'] .blatt .nachricht-details .feld > span,
+:root[data-aussehen='bento'] .blatt .nachricht-details .feld > span,
+:root[data-aussehen='glas'] .menue-inhalt .chip,
+:root[data-aussehen='bento'] .menue-inhalt .chip,
+:root[data-aussehen='glas'] .app-seite .push-person .chip,
+:root[data-aussehen='bento'] .app-seite .push-person .chip,
+:root[data-aussehen='glas'] .blatt .nachricht-gruppe .chip,
+:root[data-aussehen='bento'] .blatt .nachricht-gruppe .chip,
+:root[data-aussehen='glas'] .blatt .nachricht-details .chip-reihe:not(.segment-wahl) > .chip,
+:root[data-aussehen='bento'] .blatt .nachricht-details .chip-reihe:not(.segment-wahl) > .chip,
+:root[data-aussehen='glas'] .verlauf-filter .chip,
+:root[data-aussehen='bento'] .verlauf-filter .chip,
+:root[data-aussehen='glas'] .nachricht-kontakt p,
+:root[data-aussehen='bento'] .nachricht-kontakt p,
+:root[data-aussehen='glas'] .fortschritt,
+:root[data-aussehen='bento'] .fortschritt {
+  font-size: 1rem;
+}
+
+/* Ziele ≥ 44 px: kurze Chips (Mo, Di, Ja …), Auswahl-Knöpfe neben Datum/Uhrzeit, große Knöpfe der Einrichtung */
+:root[data-aussehen='glas'] .menue-inhalt button.chip,
+:root[data-aussehen='bento'] .menue-inhalt button.chip {
+  min-width: 44px;
+  justify-content: center;
+}
+
+:root[data-aussehen='glas'] .menue-inhalt .picker-knopf,
+:root[data-aussehen='bento'] .menue-inhalt .picker-knopf {
+  flex: none;
+  min-width: 44px;
+}
+
+:root[data-aussehen='glas'] .einrichtung .knopf,
+:root[data-aussehen='bento'] .einrichtung .knopf {
+  min-height: 48px;
+}
+
+/* Bringen & Abholen: „Bringt“/„Holt“ lesbar groß */
+:root[data-aussehen='glas'] .dienst-plan,
+:root[data-aussehen='bento'] .dienst-plan {
+  gap: 8px;
+}
+
+:root[data-aussehen='glas'] .dienst-plan-rolle,
+:root[data-aussehen='bento'] .dienst-plan-rolle {
+  font-size: 1rem;
+}
+
+/* Umschalter mit einer Fläche, die zur Wahl gleitet (Hell/Dunkel, Bewegung, Ton der Nachricht). Die Knöpfe der Darstellung bleiben
+   beim Wählen dieselben (app-screen.js), deshalb gleitet die Fläche dort wirklich; ihre Stelle kommt aus dem aktiven Chip. */
+:root[data-aussehen='glas'] .segment-wahl,
+:root[data-aussehen='bento'] .segment-wahl {
+  --n: 3;
+  --i: 0;
+  position: relative;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+}
+
+:root[data-aussehen='glas'] .segment-wahl.bewegung-wahl,
+:root[data-aussehen='bento'] .segment-wahl.bewegung-wahl {
+  --n: 2;
+}
+
+:root[data-aussehen='glas'] .segment-wahl::before,
+:root[data-aussehen='bento'] .segment-wahl::before {
+  content: none;
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 4px;
+  width: calc((100% - 8px - (var(--n) - 1) * 4px) / var(--n));
+  border-radius: 999px;
+  pointer-events: none;
+  transform: translateX(calc(var(--i) * (100% + 4px)));
+}
+
+:root[data-aussehen='glas'] .segment-wahl:has(> .chip.aktiv)::before,
+:root[data-aussehen='bento'] .segment-wahl:has(> .chip.aktiv)::before {
+  content: '';
+}
+
+:root[data-aussehen='glas'] .segment-wahl:has(> .chip.aktiv:nth-child(1)),
+:root[data-aussehen='bento'] .segment-wahl:has(> .chip.aktiv:nth-child(1)) {
+  --i: 0;
+}
+
+:root[data-aussehen='glas'] .segment-wahl:has(> .chip.aktiv:nth-child(2)),
+:root[data-aussehen='bento'] .segment-wahl:has(> .chip.aktiv:nth-child(2)) {
+  --i: 1;
+}
+
+:root[data-aussehen='glas'] .segment-wahl:has(> .chip.aktiv:nth-child(3)),
+:root[data-aussehen='bento'] .segment-wahl:has(> .chip.aktiv:nth-child(3)) {
+  --i: 2;
+}
+
+:root[data-aussehen='glas'] .segment-wahl > .chip,
+:root[data-aussehen='bento'] .segment-wahl > .chip {
+  position: relative;
+  z-index: 1;
+  justify-content: center;
+  min-width: 0;
+  padding: 0 6px;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: var(--ink-2);
+  font-size: 0.9375rem;
+  white-space: nowrap;
+}
+
+:root[data-aussehen='glas'] .segment-wahl > .chip.aktiv,
+:root[data-aussehen='bento'] .segment-wahl > .chip.aktiv {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* Schmale Telefone (unter 360 px): Schrift der Umschalter schrumpft mit, „Automatisch“ bleibt in seiner Fläche */
+@media (max-width: 359px) {
+  :root[data-aussehen='glas'] .segment-wahl > .chip,
+  :root[data-aussehen='bento'] .segment-wahl > .chip {
+    padding: 0 2px;
+    font-size: clamp(0.75rem, 3.8vw, 0.9375rem);
+  }
+}
+
+/* Aussehen: drei Kacheln mit einer kleinen Vorschau des Aussehens (Fläche + drei Tupfen in seiner Art) und dem Namen darunter;
+   die gewählte trägt einen Ring und ein ✓ (nicht nur Farbe). In Dunkel zeigen die Vorschauen ihre dunkle Fassung. */
+:root[data-aussehen='glas'] .aussehen-wahl,
+:root[data-aussehen='bento'] .aussehen-wahl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+:root[data-aussehen='glas'] .aussehen-wahl > .chip,
+:root[data-aussehen='bento'] .aussehen-wahl > .chip {
+  position: relative;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 6px 10px;
+  border-radius: 22px;
+  text-align: center;
+}
+
+:root[data-aussehen='glas'] .aussehen-wahl .aussehen-vorschau,
+:root[data-aussehen='bento'] .aussehen-wahl .aussehen-vorschau {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 56px;
+  margin: 0;
+  overflow: hidden;
+  border-radius: 16px;
+  box-shadow: inset 0 0 0 1px var(--vorschau-rand);
+}
+
+:root[data-aussehen='glas'] .aussehen-wahl .aussehen-name,
+:root[data-aussehen='bento'] .aussehen-wahl .aussehen-name {
+  font-size: 0.9375rem;
+  line-height: 1.2;
+}
+
+:root[data-aussehen='glas'] .aussehen-wahl > .chip.aktiv::after,
+:root[data-aussehen='bento'] .aussehen-wahl > .chip.aktiv::after {
+  content: '✓'; /* ohne Alternativtext-Syntax (alte Browser) */
+  content: '✓' / ''; /* nur Zeichen: der Name des Knopfs bleibt „Bento bunt“ (aria-pressed sagt die Wahl) */
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--akzent);
+  color: var(--akzent-ink);
+  box-shadow: 0 0 0 2px var(--karte-voll, var(--karte));
+  font-size: 0.8rem;
+  font-weight: 900;
+}
+
+/* Vorschau Klassisch: cremefarbene Seite, drei schlichte Tupfen */
+:root[data-aussehen='glas'] .aussehen-vorschau.klassisch,
+:root[data-aussehen='bento'] .aussehen-vorschau.klassisch {
+  background: #fff7ec;
+}
+
+:root[data-aussehen='glas'] .aussehen-vorschau.klassisch .aussehen-pille,
+:root[data-aussehen='bento'] .aussehen-vorschau.klassisch .aussehen-pille {
+  width: 12px;
+  height: 24px;
+  border-radius: 6px;
+}
+
+/* Vorschau Glas: Licht in drei Flecken, darauf helle Glastropfen mit Lichtkante */
+:root[data-aussehen='glas'] .aussehen-vorschau.glas,
+:root[data-aussehen='bento'] .aussehen-vorschau.glas {
+  background: radial-gradient(circle at 15% 15%, #ffb08a, transparent 60%), radial-gradient(circle at 90% 40%, #ff9cc2, transparent 60%), radial-gradient(circle at 45% 110%, #b9a6ff, transparent 65%), #f1eefa;
+}
+
+:root[data-aussehen='glas'] .aussehen-vorschau.glas .aussehen-pille,
+:root[data-aussehen='bento'] .aussehen-vorschau.glas .aussehen-pille {
+  width: 13px;
+  height: 26px;
+  background: color-mix(in srgb, var(--pille) 45%, #ffffff);
+  box-shadow: inset 0 1px 0 #ffffff, 0 3px 8px -2px rgb(46 28 120 / 0.35);
+}
+
+/* Vorschau Bento: lila Seite, drei bunte Bonbon-Kacheln mit Kante */
+:root[data-aussehen='glas'] .aussehen-vorschau.bento,
+:root[data-aussehen='bento'] .aussehen-vorschau.bento {
+  gap: 4px;
+  background: #f1effa;
+}
+
+:root[data-aussehen='glas'] .aussehen-vorschau.bento .aussehen-pille,
+:root[data-aussehen='bento'] .aussehen-vorschau.bento .aussehen-pille {
+  width: 16px;
+  height: 22px;
+  border-radius: 6px;
+  box-shadow: inset 0 -3px 0 rgb(0 0 0 / 0.18);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-aussehen='glas']:not([data-theme='light']) .aussehen-vorschau.klassisch,
+  :root[data-aussehen='bento']:not([data-theme='light']) .aussehen-vorschau.klassisch {
+    background: #1f1b2e;
+  }
+
+  :root[data-aussehen='glas']:not([data-theme='light']) .aussehen-vorschau.glas,
+  :root[data-aussehen='bento']:not([data-theme='light']) .aussehen-vorschau.glas {
+    background: radial-gradient(circle at 15% 15%, #c2410c, transparent 62%), radial-gradient(circle at 90% 40%, #a21caf, transparent 62%), radial-gradient(circle at 45% 110%, #5b3df0, transparent 66%), #0d0b19;
+  }
+
+  :root[data-aussehen='glas']:not([data-theme='light']) .aussehen-vorschau.glas .aussehen-pille,
+  :root[data-aussehen='bento']:not([data-theme='light']) .aussehen-vorschau.glas .aussehen-pille {
+    background: color-mix(in srgb, var(--pille) 55%, rgb(255 255 255 / 0.35));
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.5), 0 3px 8px -2px rgb(0 0 0 / 0.5);
+  }
+
+  :root[data-aussehen='glas']:not([data-theme='light']) .aussehen-vorschau.bento,
+  :root[data-aussehen='bento']:not([data-theme='light']) .aussehen-vorschau.bento {
+    background: #14111d;
+  }
+}
+
+:root[data-aussehen='glas'][data-theme='dark'] .aussehen-vorschau.klassisch,
+:root[data-aussehen='bento'][data-theme='dark'] .aussehen-vorschau.klassisch {
+  background: #1f1b2e;
+}
+
+:root[data-aussehen='glas'][data-theme='dark'] .aussehen-vorschau.glas,
+:root[data-aussehen='bento'][data-theme='dark'] .aussehen-vorschau.glas {
+  background: radial-gradient(circle at 15% 15%, #c2410c, transparent 62%), radial-gradient(circle at 90% 40%, #a21caf, transparent 62%), radial-gradient(circle at 45% 110%, #5b3df0, transparent 66%), #0d0b19;
+}
+
+:root[data-aussehen='glas'][data-theme='dark'] .aussehen-vorschau.glas .aussehen-pille,
+:root[data-aussehen='bento'][data-theme='dark'] .aussehen-vorschau.glas .aussehen-pille {
+  background: color-mix(in srgb, var(--pille) 55%, rgb(255 255 255 / 0.35));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.5), 0 3px 8px -2px rgb(0 0 0 / 0.5);
+}
+
+:root[data-aussehen='glas'][data-theme='dark'] .aussehen-vorschau.bento,
+:root[data-aussehen='bento'][data-theme='dark'] .aussehen-vorschau.bento {
+  background: #14111d;
+}
+
+/* Zwischentitel der Darstellung etwas abgesetzt */
+:root[data-aussehen='glas'] .darstellung-titel,
+:root[data-aussehen='bento'] .darstellung-titel {
+  margin-top: 6px;
+  font-size: 1rem;
+}
+
+/* Verlauf: Suche als Pille mit Lupe, Filter etwas größer, „Ältere laden“ als breite Pille */
+:root[data-aussehen='glas'] .verlauf-suche,
+:root[data-aussehen='bento'] .verlauf-suche {
+  min-height: 52px;
+  padding: 8px 18px 8px 48px;
+  border-radius: 999px;
+  background-image: var(--lupe);
+  background-repeat: no-repeat;
+  background-position: 17px 50%;
+  background-size: 20px 20px;
+}
+
+:root[data-aussehen='glas'] .verlauf-filter,
+:root[data-aussehen='bento'] .verlauf-filter {
+  gap: 10px;
+}
+
+:root[data-aussehen='glas'] .verlauf-zeile,
+:root[data-aussehen='bento'] .verlauf-zeile {
+  gap: 12px;
+  min-height: 64px;
+  padding: 10px 12px 10px 14px;
+  border-radius: 20px;
+}
+
+:root[data-aussehen='glas'] .verlauf-zeile .karte-text b,
+:root[data-aussehen='bento'] .verlauf-zeile .karte-text b {
+  font-size: 1.0625rem;
+}
+
+:root[data-aussehen='glas'] .verlauf-zeile .pfeil,
+:root[data-aussehen='bento'] .verlauf-zeile .pfeil {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  font-size: 1.3rem;
+  line-height: 1;
+}
+
+:root[data-aussehen='glas'] .verlauf-aeltere .knopf,
+:root[data-aussehen='bento'] .verlauf-aeltere .knopf {
+  min-width: 210px;
+  min-height: 50px;
+}
+
+:root[data-aussehen='glas'] .verlauf-liste > p.leise,
+:root[data-aussehen='bento'] .verlauf-liste > p.leise {
+  padding: 22px 18px;
+  border-radius: var(--r-karte);
+  text-align: center;
+  font-size: 1rem;
+}
+
+/* Nachricht an die Krabbelstube: jede der vier Gruppen hat ihre Farbe (Punkt am Titel, Tönung der Chips; immer mit Emoji und Text) */
+:root[data-aussehen='glas'] .nachricht-gruppe[data-gruppe='krank'],
+:root[data-aussehen='bento'] .nachricht-gruppe[data-gruppe='krank'] {
+  --c: var(--krank);
+}
+
+:root[data-aussehen='glas'] .nachricht-gruppe[data-gruppe='zuhause'],
+:root[data-aussehen='bento'] .nachricht-gruppe[data-gruppe='zuhause'] {
+  --c: var(--familie);
+}
+
+:root[data-aussehen='glas'] .nachricht-gruppe[data-gruppe='zeit'],
+:root[data-aussehen='bento'] .nachricht-gruppe[data-gruppe='zeit'] {
+  --c: var(--urlaub);
+}
+
+:root[data-aussehen='glas'] .nachricht-gruppe[data-gruppe='sonst'],
+:root[data-aussehen='bento'] .nachricht-gruppe[data-gruppe='sonst'] {
+  --c: var(--arzt);
+}
+
+:root[data-aussehen='glas'] .nachricht-gruppe,
+:root[data-aussehen='bento'] .nachricht-gruppe {
+  gap: 8px;
+}
+
+:root[data-aussehen='glas'] .nachricht-gruppe-titel,
+:root[data-aussehen='bento'] .nachricht-gruppe-titel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1rem;
+}
+
+:root[data-aussehen='glas'] .nachricht-gruppe-titel::before,
+:root[data-aussehen='bento'] .nachricht-gruppe-titel::before {
+  content: '';
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--c);
+}
+
+:root[data-aussehen='glas'] .feld textarea.nachricht-text,
+:root[data-aussehen='bento'] .feld textarea.nachricht-text {
+  min-height: 160px;
+  padding: 14px 16px;
+  border-radius: 20px;
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+:root[data-aussehen='glas'] .nachricht-senden .knopf.senden,
+:root[data-aussehen='bento'] .nachricht-senden .knopf.senden {
+  min-height: 52px;
+}
+
+/* Fehlertexte: eine Hinweisfläche mit roter Kante links (Schrift in --ink: ≥ 4,5:1 auf jeder Fläche, Rot trägt die Bedeutung) */
+:root[data-aussehen='glas'] .fehlertext,
+:root[data-aussehen='bento'] .fehlertext {
+  padding: 10px 14px 10px 18px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--gefahr) 12%, transparent);
+  box-shadow: inset 4px 0 0 var(--gefahr);
+  color: var(--ink);
+}
+
+:root[data-aussehen='glas'] .karte .banner-fehler,
+:root[data-aussehen='bento'] .karte .banner-fehler {
+  padding: 10px 14px 10px 18px;
+  border: 0;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--gefahr) 12%, transparent);
+  box-shadow: inset 4px 0 0 var(--gefahr);
+  font-size: 1rem;
+}
+
+/* Code (Einrichtung, Konto & App) */
+:root[data-aussehen='glas'] .einrichtung .code,
+:root[data-aussehen='bento'] .einrichtung .code,
+:root[data-aussehen='glas'] .code-box .code,
+:root[data-aussehen='bento'] .code-box .code {
+  padding: 14px 16px;
+  border-radius: 16px;
+  font-size: 1rem;
+}
+
+:root[data-aussehen='glas'] .einrichtung textarea,
+:root[data-aussehen='bento'] .einrichtung textarea {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 1rem;
+  padding: 12px 14px;
+}
+
+/* Anleitungen (Freigabe, „Wenn nichts klingelt“) in Konto & App und Einrichtung: nummerierte Schritte in runden Marken. Nur dort:
+   andere details.anleitung (z. B. „Was sind Sonderbeträge?“ in Konto) gestaltet ihr eigener Bereich. */
+:root[data-aussehen='glas'] .app-seite .anleitung,
+:root[data-aussehen='glas'] .einrichtung .anleitung,
+:root[data-aussehen='bento'] .app-seite .anleitung ,
+:root[data-aussehen='bento'] .einrichtung .anleitung {
+  padding: 2px 14px;
+  border-radius: 18px;
+}
+
+:root[data-aussehen='glas'] .app-seite .anleitung[open],
+:root[data-aussehen='glas'] .einrichtung .anleitung[open],
+:root[data-aussehen='bento'] .app-seite .anleitung[open] ,
+:root[data-aussehen='bento'] .einrichtung .anleitung[open] {
+  padding-bottom: 14px;
+}
+
+:root[data-aussehen='glas'] .app-seite .anleitung ol,
+:root[data-aussehen='glas'] .einrichtung .anleitung ol,
+:root[data-aussehen='bento'] .app-seite .anleitung ol ,
+:root[data-aussehen='bento'] .einrichtung .anleitung ol {
+  counter-reset: schritt;
+  list-style: none;
+  gap: 10px;
+  margin: 8px 0 10px;
+  padding-left: 0;
+}
+
+:root[data-aussehen='glas'] .app-seite .anleitung li,
+:root[data-aussehen='glas'] .einrichtung .anleitung li,
+:root[data-aussehen='bento'] .app-seite .anleitung li ,
+:root[data-aussehen='bento'] .einrichtung .anleitung li {
+  position: relative;
+  min-height: 28px;
+  padding-left: 40px;
+  counter-increment: schritt;
+}
+
+:root[data-aussehen='glas'] .app-seite .anleitung li::before,
+:root[data-aussehen='glas'] .einrichtung .anleitung li::before,
+:root[data-aussehen='bento'] .app-seite .anleitung li::before ,
+:root[data-aussehen='bento'] .einrichtung .anleitung li::before {
+  content: counter(schritt); /* ohne Alternativtext: die Nummer bleibt vorlesbar (list-style: none nimmt sonst die Zählung) */
+  position: absolute;
+  top: -1px;
+  left: 0;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  font-size: 0.875rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+:root[data-aussehen='glas'] .app-seite .anleitung h4,
+:root[data-aussehen='glas'] .einrichtung .anleitung h4,
+:root[data-aussehen='bento'] .app-seite .anleitung h4,
+:root[data-aussehen='bento'] .einrichtung .anleitung h4,
+:root[data-aussehen='glas'] .push-abschnitt h4,
+:root[data-aussehen='bento'] .push-abschnitt h4 {
+  font-family: var(--font-titel);
+  font-size: 1rem;
+}
+
+:root[data-aussehen='glas'] .pruefliste,
+:root[data-aussehen='bento'] .pruefliste {
+  gap: 8px;
+}
+
+/* Willkommen: großes Logo, drei Wege als große Flächen mit dem Emoji in einer eigenen Kachel */
+:root[data-aussehen='glas'] .willkommen,
+:root[data-aussehen='bento'] .willkommen {
+  gap: 16px;
+}
+
+:root[data-aussehen='glas'] .willkommen .logo,
+:root[data-aussehen='bento'] .willkommen .logo {
+  display: grid;
+  place-items: center;
+  width: 112px;
+  height: 112px;
+  margin: 0 auto 6px;
+  font-size: 3.6rem;
+  line-height: 1;
+}
+
+:root[data-aussehen='glas'] .willkommen .gruss,
+:root[data-aussehen='bento'] .willkommen .gruss {
+  letter-spacing: -0.02em;
+}
+
+:root[data-aussehen='glas'] .willkommen > .datum,
+:root[data-aussehen='bento'] .willkommen > .datum {
+  margin: -4px 8px 6px;
+  font-size: 1.0625rem;
+}
+
+:root[data-aussehen='glas'] .willkommen-knopf,
+:root[data-aussehen='bento'] .willkommen-knopf {
+  column-gap: 16px;
+  min-height: 92px;
+  padding: 16px 18px 16px 16px;
+  color: var(--ink);
+}
+
+:root[data-aussehen='glas'] .willkommen-knopf .e,
+:root[data-aussehen='bento'] .willkommen-knopf .e {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  border-radius: 20px;
+  font-size: 1.9rem;
+  line-height: 1;
+}
+
+:root[data-aussehen='glas'] .willkommen-knopf b,
+:root[data-aussehen='bento'] .willkommen-knopf b {
+  font-family: var(--font-titel);
+  font-size: 1.125rem;
+}
+
+:root[data-aussehen='glas'] .willkommen-knopf small,
+:root[data-aussehen='bento'] .willkommen-knopf small {
+  font-size: 1rem;
+  line-height: 1.35;
+}
+
+/* Verbinden-Karte: großer Knopf über die ganze Breite */
+:root[data-aussehen='glas'] .verbinden-seite .knopfzeile .knopf,
+:root[data-aussehen='bento'] .verbinden-seite .knopfzeile .knopf {
+  flex: 1;
+  min-height: 52px;
+}
+
+/* Banner oben (Verbindung, Login-Dienst, neue Version) und Fortschritt: eine schwebende Insel unter dem Rand */
+:root[data-aussehen='glas'] .banner,
+:root[data-aussehen='bento'] .banner,
+:root[data-aussehen='glas'] .fortschritt,
+:root[data-aussehen='bento'] .fortschritt {
+  margin: 0 8px;
+  padding: calc(env(safe-area-inset-top, 0px) + 12px) 14px 12px 16px;
+  border-bottom: 0;
+  border-radius: 0 0 24px 24px;
+}
+
+:root[data-aussehen='glas'] .banner p,
+:root[data-aussehen='bento'] .banner p {
+  font-size: 1rem;
+}
+
+:root[data-aussehen='glas'] .banner .banner-fehler,
+:root[data-aussehen='bento'] .banner .banner-fehler {
+  font-size: 1rem;
+}
+
+:root[data-aussehen='glas'] .fortschritt .balken,
+:root[data-aussehen='bento'] .fortschritt .balken {
+  height: 10px;
+}
+
+:root[data-aussehen='glas'] .fortschritt .fuellung,
+:root[data-aussehen='bento'] .fortschritt .fuellung {
+  border-radius: 999px;
+}
+
+:root[data-aussehen='glas'] .version,
+:root[data-aussehen='bento'] .version {
+  margin-top: 4px;
+  font-size: 0.875rem;
+}
+
+/* ---------- 3. Glas ---------- */
+
+:root[data-aussehen='glas'] .menue-eintrag {
+  border: 1px solid var(--glas-kante);
+  background: linear-gradient(165deg, var(--glas-hoch), var(--karte) 70%);
+  box-shadow: var(--schatten-karte);
+}
+
+:root[data-aussehen='glas'] .menue-eintrag.offen {
+  border-color: color-mix(in srgb, var(--c) 34%, var(--glas-kante));
+  background: linear-gradient(165deg, color-mix(in srgb, var(--c) 12%, var(--glas-hoch)), color-mix(in srgb, var(--c) 16%, var(--karte)) 60%);
+}
+
+/* Konto & App: zart im Akzent, damit der Weg zu Konto und Darstellung sofort auffällt */
+:root[data-aussehen='glas'] .menue-eintrag[data-id='app'] {
+  border-color: color-mix(in srgb, var(--akzent) 28%, var(--glas-kante));
+  background: linear-gradient(165deg, color-mix(in srgb, var(--akzent) 12%, var(--glas-hoch)), color-mix(in srgb, var(--akzent) 16%, var(--karte)) 70%);
+}
+
+:root[data-aussehen='glas'] .menue-kachel {
+  border: 1px solid color-mix(in srgb, var(--c) 40%, var(--glas-kante));
+  background: radial-gradient(circle at 30% 20%, color-mix(in srgb, var(--c) 18%, var(--glas-hoch)), color-mix(in srgb, var(--c) 34%, var(--glas-stark)));
+  box-shadow: inset 0 1px 0 var(--glas-kante), 0 8px 16px -8px color-mix(in srgb, var(--c) 70%, transparent);
+}
+
+/* 👤 ist eine dunkle Figur: seine Kachel bleibt auch in Dunkel hell, sonst verschwände sie */
+:root[data-aussehen='glas'] .menue-eintrag[data-id='app'] .menue-kachel {
+  background: radial-gradient(circle at 30% 20%, #ffffff, color-mix(in srgb, var(--akzent) 30%, #ffffff));
+}
+
+:root[data-aussehen='glas'] .menue-text b {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+:root[data-aussehen='glas'] .menue-pfeil {
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+}
+
+:root[data-aussehen='glas'] .menue-eintrag.offen .menue-pfeil {
+  background: color-mix(in srgb, var(--c) 22%, transparent);
+  color: var(--ink);
+}
+
+:root[data-aussehen='glas'] .menue-inhalt .gruppen details,
+:root[data-aussehen='glas'] .app-seite .anleitung ,
+:root[data-aussehen='glas'] .einrichtung .anleitung {
+  border: 1px solid var(--glas-kante);
+  background: var(--glas-stark);
+  box-shadow: inset 0 1px 0 var(--glas-kante);
+}
+
+:root[data-aussehen='glas'] .menue-inhalt .gruppen summary::after,
+:root[data-aussehen='glas'] .app-seite .anleitung summary::after ,
+:root[data-aussehen='glas'] .einrichtung .anleitung summary::after {
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+}
+
+:root[data-aussehen='glas'] .app-seite .anleitung summary ,
+:root[data-aussehen='glas'] .einrichtung .anleitung summary {
+  font-weight: 700;
+}
+
+:root[data-aussehen='glas'] .app-seite .anleitung li::before ,
+:root[data-aussehen='glas'] .einrichtung .anleitung li::before {
+  background: color-mix(in srgb, var(--akzent) 14%, var(--glas-stark));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--akzent) 30%, transparent);
+  color: var(--akzent-text);
+}
+
+/* Umschalter: zarte Rinne, die Wahl ist ein heller Glastropfen (wie Konto) */
+:root[data-aussehen='glas'] .segment-wahl {
+  background: var(--rinne);
+  box-shadow: inset 0 1px 2px rgb(20 10 60 / 0.08);
+}
+
+:root[data-aussehen='glas'] .segment-wahl::before {
+  background: color-mix(in srgb, var(--akzent) 12%, var(--tropfen));
+  box-shadow: 0 4px 14px -4px rgb(30 20 80 / 0.3), inset 0 1px 0 var(--glas-kante), inset 0 0 0 1px color-mix(in srgb, var(--akzent) 30%, transparent);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-aussehen='glas']:not([data-theme='light']) .segment-wahl::before {
+    background: color-mix(in srgb, var(--akzent) 18%, var(--tropfen));
+  }
+}
+
+:root[data-aussehen='glas'][data-theme='dark'] .segment-wahl::before {
+  background: color-mix(in srgb, var(--akzent) 18%, var(--tropfen));
+}
+
+:root[data-aussehen='glas'] .segment-wahl > .chip.aktiv {
+  color: var(--ink);
+}
+
+/* Aussehen-Kacheln */
+:root[data-aussehen='glas'] .aussehen-wahl > .chip {
+  border: 1px solid var(--glas-kante);
+  background: var(--glas-stark);
+  box-shadow: var(--schatten-karte);
+}
+
+:root[data-aussehen='glas'] .aussehen-wahl > .chip.aktiv {
+  border-color: var(--akzent);
+  background: color-mix(in srgb, var(--akzent) 12%, var(--glas-stark));
+  box-shadow: inset 0 0 0 1px var(--akzent), 0 10px 24px -10px color-mix(in srgb, var(--akzent) 70%, transparent);
+}
+
+/* Verlauf */
+:root[data-aussehen='glas'] .verlauf-suche {
+  border: 1px solid var(--glas-kante);
+  background-color: var(--glas-stark);
+  box-shadow: var(--schatten-karte);
+  font-weight: 500;
+}
+
+:root[data-aussehen='glas'] .verlauf-zeile .pfeil {
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+}
+
+:root[data-aussehen='glas'] .verlauf-aeltere .knopf {
+  border: 1px solid var(--glas-kante);
+  background: linear-gradient(165deg, var(--glas-hoch), var(--glas-stark));
+  box-shadow: var(--schatten-karte);
+  color: var(--akzent-text);
+}
+
+:root[data-aussehen='glas'] .verlauf-liste > p.leise {
+  border: 1px dashed color-mix(in srgb, var(--ink) 25%, transparent);
+  background: var(--karte);
+}
+
+/* Nachricht: Chips je Gruppe zart getönt */
+:root[data-aussehen='glas'] .nachricht-gruppe .chip {
+  border-color: color-mix(in srgb, var(--c) 34%, transparent);
+  background: color-mix(in srgb, var(--c) 12%, var(--glas-stark));
+}
+
+:root[data-aussehen='glas'] .nachricht-gruppe .chip.aktiv {
+  border-color: var(--c);
+  background: color-mix(in srgb, var(--c) 28%, var(--glas-stark));
+}
+
+:root[data-aussehen='glas'] .nachricht-gruppe-titel::before {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 25%, transparent);
+}
+
+/* Code */
+:root[data-aussehen='glas'] .einrichtung .code,
+:root[data-aussehen='glas'] .code-box .code {
+  border: 1.5px dashed color-mix(in srgb, var(--akzent) 55%, transparent);
+  background: color-mix(in srgb, var(--akzent) 8%, var(--glas-stark));
+}
+
+:root[data-aussehen='glas'] .einrichtung .vorschau {
+  border: 1px dashed color-mix(in srgb, var(--ink) 25%, transparent);
+  border-radius: 18px;
+  background: var(--glas-stark);
+}
+
+/* Abmelden: getönte Glasfläche in Rot */
+:root[data-aussehen='glas'] .karte.gefahrenzone {
+  border-color: color-mix(in srgb, var(--gefahr) 35%, var(--glas-kante));
+  background: linear-gradient(165deg, color-mix(in srgb, var(--gefahr) 8%, var(--glas-hoch)), color-mix(in srgb, var(--gefahr) 12%, var(--karte)) 70%);
+}
+
+:root[data-aussehen='glas'] .push-abschnitt {
+  border-top: 1px solid var(--linie);
+}
+
+/* Willkommen: Logo als leuchtende Glasblase, Wege als Glasflächen; „Neu einrichten“ leuchtet im Akzent */
+:root[data-aussehen='glas'] .willkommen .logo {
+  border: 1px solid var(--glas-kante);
+  border-radius: 50%;
+  background: radial-gradient(circle at 32% 24%, var(--glas-kante), var(--glas-hoch) 45%, var(--karte) 100%);
+  box-shadow: inset 0 1px 0 var(--glas-kante), var(--schatten-hoch);
+}
+
+:root[data-aussehen='glas'] .willkommen-knopf {
+  border: 1px solid var(--glas-kante);
+  border-radius: 26px;
+  background: linear-gradient(165deg, var(--glas-hoch), var(--karte) 70%);
+  box-shadow: var(--schatten-karte);
+}
+
+:root[data-aussehen='glas'] .willkommen-knopf .e {
+  border: 1px solid var(--glas-kante);
+  background: var(--glas-stark);
+  box-shadow: inset 0 1px 0 var(--glas-kante), 0 8px 16px -10px rgb(30 20 80 / 0.4);
+}
+
+:root[data-aussehen='glas'] .willkommen-knopf.primaer {
+  border-color: color-mix(in srgb, var(--akzent) 45%, var(--glas-kante));
+  background: linear-gradient(165deg, color-mix(in srgb, var(--akzent) 14%, var(--glas-hoch)), color-mix(in srgb, var(--akzent) 22%, var(--karte)) 70%);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--akzent) 12%, transparent), var(--schatten-karte);
+}
+
+:root[data-aussehen='glas'] .willkommen-knopf.primaer .e {
+  background: color-mix(in srgb, var(--akzent) 18%, var(--glas-stark));
+}
+
+:root[data-aussehen='glas'] .willkommen-knopf b {
+  font-weight: 700;
+}
+
+/* Banner und Fortschritt: deckende Glasinsel (der Inhalt läuft darunter durch) */
+:root[data-aussehen='glas'] .banner,
+:root[data-aussehen='glas'] .fortschritt {
+  border: 1px solid var(--glas-kante);
+  border-top: 0;
+  box-shadow: inset 0 -1px 0 var(--glas-kante), 0 14px 30px -14px rgb(30 20 80 / 0.45);
+}
+
+:root[data-aussehen='glas'] .fortschritt .balken {
+  background: color-mix(in srgb, var(--akzent) 16%, transparent);
+}
+
+:root[data-aussehen='glas'] .fortschritt .fuellung {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--akzent) 70%, #ffffff), var(--akzent));
+}
+
+/* ---------- 4. Bento ---------- */
+
+:root[data-aussehen='bento'] .menue-eintrag {
+  background: var(--karte);
+  box-shadow: var(--lippe);
+}
+
+:root[data-aussehen='bento'] .menue-eintrag.offen {
+  background: color-mix(in srgb, var(--c) 9%, var(--karte));
+  box-shadow: inset 0 0 0 2.5px color-mix(in srgb, var(--c) 55%, transparent), inset 0 -3px 0 color-mix(in srgb, var(--c) 40%, transparent);
+}
+
+:root[data-aussehen='bento'] .menue-kachel {
+  border: 0;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--c) 24%, var(--karte));
+  box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--c) 45%, transparent);
+}
+
+:root[data-aussehen='bento'] .menue-text b {
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+:root[data-aussehen='bento'] .menue-text small {
+  font-weight: 700;
+}
+
+:root[data-aussehen='bento'] .menue-pfeil {
+  background: var(--flaeche-2);
+  color: var(--ink);
+  font-weight: 900;
+}
+
+:root[data-aussehen='bento'] .menue-eintrag.offen .menue-pfeil {
+  background: color-mix(in srgb, var(--c) 28%, var(--karte));
+}
+
+/* Konto & App als Hero-Kachel in Traubenlila mit hellem Kreis (wie das Datum auf Heute) */
+:root[data-aussehen='bento'] .menue-eintrag[data-id='app'] {
+  overflow: hidden;
+  background: var(--akzent);
+  color: var(--akzent-ink);
+  box-shadow: inset 0 -3px 0 rgb(0 0 0 / 0.16);
+}
+
+:root[data-aussehen='bento'] .menue-eintrag[data-id='app']::after {
+  content: '';
+  position: absolute;
+  right: -30px;
+  top: -34px;
+  width: 104px;
+  height: 104px;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 0.14);
+  pointer-events: none;
+}
+
+:root[data-aussehen='bento'] .menue-eintrag[data-id='app'] .menue-zeile {
+  min-height: 84px;
+  color: inherit;
+}
+
+:root[data-aussehen='bento'] .menue-eintrag[data-id='app'] .menue-kachel {
+  background: rgb(255 255 255 / 0.9);
+  box-shadow: inset 0 -3px 0 rgb(0 0 0 / 0.12);
+}
+
+:root[data-aussehen='bento'] .menue-eintrag[data-id='app'] .menue-text b {
+  font-size: 1.25rem;
+}
+
+:root[data-aussehen='bento'] .menue-eintrag[data-id='app'] .menue-text small,
+:root[data-aussehen='bento'] .menue-eintrag[data-id='app'] .menue-text .menue-status.warnung {
+  color: inherit;
+}
+
+:root[data-aussehen='bento'] .menue-eintrag[data-id='app'] .menue-pfeil {
+  position: relative;
+  z-index: 1;
+  background: rgb(0 0 0 / 0.2);
+  color: inherit;
+}
+
+:root[data-aussehen='bento'] .menue-inhalt .gruppen details,
+:root[data-aussehen='bento'] .app-seite .anleitung ,
+:root[data-aussehen='bento'] .einrichtung .anleitung {
+  border: 0;
+  background: var(--karte-2);
+  box-shadow: var(--lippe);
+}
+
+:root[data-aussehen='bento'] .menue-inhalt .gruppen summary,
+:root[data-aussehen='bento'] .app-seite .anleitung summary ,
+:root[data-aussehen='bento'] .einrichtung .anleitung summary {
+  font-family: var(--font-titel);
+  font-size: 1.0625rem;
+  font-weight: 600;
+}
+
+:root[data-aussehen='bento'] .menue-inhalt .gruppen summary::after,
+:root[data-aussehen='bento'] .app-seite .anleitung summary::after ,
+:root[data-aussehen='bento'] .einrichtung .anleitung summary::after {
+  background: var(--karte);
+  color: var(--ink);
+  font-family: var(--font-text);
+  font-weight: 900;
+}
+
+:root[data-aussehen='bento'] .app-seite .anleitung li::before ,
+:root[data-aussehen='bento'] .einrichtung .anleitung li::before {
+  background: var(--akzent);
+  color: var(--akzent-ink);
+  box-shadow: inset 0 -2px 0 rgb(0 0 0 / 0.18);
+  font-weight: 900;
+}
+
+:root[data-aussehen='bento'] .darstellung-titel,
+:root[data-aussehen='bento'] .app-seite .anleitung h4,
+:root[data-aussehen='bento'] .einrichtung .anleitung h4,
+:root[data-aussehen='bento'] .push-abschnitt h4 {
+  font-size: 1.0625rem;
+  font-weight: 600;
+}
+
+/* Umschalter: Rinne in der zweiten Fläche, die Wahl ist ein traubenlila Knopf mit Kante */
+:root[data-aussehen='bento'] .segment-wahl {
+  padding: 5px;
+  background: var(--flaeche-2);
+  box-shadow: inset 0 2px 0 rgb(0 0 0 / 0.04);
+}
+
+:root[data-aussehen='bento'] .segment-wahl::before {
+  top: 5px;
+  bottom: 5px;
+  left: 5px;
+  width: calc((100% - 10px - (var(--n) - 1) * 4px) / var(--n));
+  background: var(--akzent);
+  box-shadow: inset 0 -3px 0 rgb(0 0 0 / 0.18), 0 4px 10px -4px color-mix(in srgb, var(--akzent) 70%, transparent);
+}
+
+:root[data-aussehen='bento'] .segment-wahl > .chip {
+  color: var(--ink);
+}
+
+:root[data-aussehen='bento'] .segment-wahl > .chip.aktiv {
+  color: var(--akzent-ink);
+}
+
+/* Aussehen-Kacheln */
+:root[data-aussehen='bento'] .aussehen-wahl > .chip {
+  background: var(--karte-2);
+  box-shadow: var(--lippe);
+}
+
+:root[data-aussehen='bento'] .aussehen-wahl > .chip.aktiv {
+  background: color-mix(in srgb, var(--akzent) 16%, var(--karte));
+  box-shadow: inset 0 0 0 3px var(--akzent), inset 0 -3px 0 color-mix(in srgb, var(--akzent) 45%, transparent);
+}
+
+/* Verlauf */
+:root[data-aussehen='bento'] .verlauf-suche {
+  border: 2px solid var(--linie);
+  background-color: var(--karte);
+  box-shadow: var(--lippe);
+  font-weight: 700;
+}
+
+:root[data-aussehen='bento'] .verlauf-zeile .karte-text b {
+  font-weight: 800;
+}
+
+:root[data-aussehen='bento'] .verlauf-zeile .pfeil {
+  background: var(--knopf-auf-tint);
+  color: var(--ink);
+  font-weight: 900;
+}
+
+:root[data-aussehen='bento'] .verlauf-aeltere .knopf {
+  background: var(--karte);
+  color: var(--akzent);
+}
+
+:root[data-aussehen='bento'] .verlauf-liste > p.leise {
+  background: var(--karte);
+  outline: 2px dashed var(--linie);
+  outline-offset: -6px;
+  box-shadow: var(--lippe);
+}
+
+/* Nachricht: Chips je Gruppe in ihrer Tönung */
+:root[data-aussehen='bento'] .nachricht-gruppe .chip {
+  background: color-mix(in srgb, var(--c) 18%, var(--karte));
+  box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--c) 30%, transparent);
+}
+
+:root[data-aussehen='bento'] .nachricht-gruppe .chip.aktiv {
+  background: color-mix(in srgb, var(--c) 36%, var(--karte));
+  box-shadow: inset 0 0 0 2px var(--c), inset 0 -3px 0 color-mix(in srgb, var(--c) 45%, transparent);
+}
+
+:root[data-aussehen='bento'] .nachricht-gruppe-titel {
+  font-family: var(--font-titel);
+  font-size: 1.0625rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+:root[data-aussehen='bento'] .feld textarea.nachricht-text {
+  font-weight: 600;
+}
+
+/* Code */
+:root[data-aussehen='bento'] .einrichtung .code,
+:root[data-aussehen='bento'] .code-box .code {
+  border: 2px dashed color-mix(in srgb, var(--akzent) 55%, transparent);
+  background: color-mix(in srgb, var(--akzent) 10%, var(--karte));
+}
+
+:root[data-aussehen='bento'] .einrichtung .vorschau {
+  border: 0;
+  border-radius: 18px;
+  outline: 2px dashed var(--linie);
+  outline-offset: -5px;
+}
+
+:root[data-aussehen='bento'] .karte.gefahrenzone {
+  background: color-mix(in srgb, var(--gefahr) 9%, var(--karte));
+  box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--gefahr) 35%, transparent);
+}
+
+:root[data-aussehen='bento'] .push-abschnitt {
+  border-top: 2px dashed var(--linie);
+}
+
+/* Willkommen: Logo in einer Bonbon-Kachel, „Neu einrichten“ als lila Hero-Kachel, die anderen weiß mit bunter Emoji-Kachel */
+:root[data-aussehen='bento'] .willkommen .logo {
+  border-radius: 34px;
+  background: var(--person-mama-tint);
+  box-shadow: inset 0 -4px 0 color-mix(in srgb, var(--person-mama) 35%, transparent);
+}
+
+:root[data-aussehen='bento'] .willkommen-knopf {
+  position: relative;
+  overflow: hidden;
+  border: 0;
+  border-radius: 26px;
+  background: var(--karte);
+  box-shadow: var(--lippe);
+}
+
+:root[data-aussehen='bento'] .willkommen-knopf .e {
+  background: var(--person-papa-tint);
+  box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--person-papa) 30%, transparent);
+}
+
+:root[data-aussehen='bento'] .willkommen-knopf:nth-of-type(2) .e {
+  background: var(--person-kind-tint);
+  box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--person-kind) 40%, transparent);
+}
+
+:root[data-aussehen='bento'] .willkommen-knopf b {
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+:root[data-aussehen='bento'] .willkommen-knopf.primaer {
+  background: var(--akzent);
+  color: var(--akzent-ink);
+  box-shadow: inset 0 -3px 0 rgb(0 0 0 / 0.18);
+}
+
+:root[data-aussehen='bento'] .willkommen-knopf.primaer::after {
+  content: '';
+  position: absolute;
+  right: -28px;
+  top: -30px;
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 0.14);
+  pointer-events: none;
+}
+
+:root[data-aussehen='bento'] .willkommen-knopf.primaer small {
+  color: inherit;
+}
+
+:root[data-aussehen='bento'] .willkommen-knopf.primaer .e {
+  background: rgb(255 255 255 / 0.9);
+  box-shadow: inset 0 -3px 0 rgb(0 0 0 / 0.12);
+}
+
+/* Banner: gelbe Kachel (Hinweis), Fortschritt weiß; beide mit Kante */
+:root[data-aussehen='bento'] .banner {
+  background: var(--person-kind-tint);
+  color: var(--person-kind-ink);
+  box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--person-kind) 45%, transparent), 0 12px 26px -12px rgb(20 10 60 / 0.35);
+}
+
+:root[data-aussehen='bento'] .banner .banner-fehler {
+  color: inherit;
+}
+
+:root[data-aussehen='bento'] .fortschritt {
+  background: var(--karte);
+  box-shadow: var(--lippe), 0 12px 26px -12px rgb(20 10 60 / 0.35);
+}
+
+:root[data-aussehen='bento'] .fortschritt .balken {
+  background: var(--flaeche-2);
+}
+
+/* ---------- 5. Bewegung (nur ohne „Reduziert“ und ohne prefers-reduced-motion) ---------- */
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Umschalter: die Fläche gleitet mit Überschwingen – nur ein Übergang, keine Keyframes: ein neu gezeichneter Umschalter (Hintergrund,
+     Speichern, anderes Telefon) steht sofort an seiner Stelle und spielt nichts. Im Nachricht-Blatt wird der Ton-Umschalter bei jeder
+     Wahl neu gebaut: dort springt die Fläche (ohne Bewegung), nur in der Darstellung gleitet sie (dieselben Knöpfe). */
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .segment-wahl::before,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .segment-wahl::before {
+    transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  /* Menü: die Zeilen kommen beim Betreten einzeln herein (statt der ganzen Karte), höchstens acht gestaffelt; die Symbole spielen wie bisher */
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .mehr-seite.bw-einblenden > .menue,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .mehr-seite.bw-einblenden > .menue {
+    animation: none;
+  }
+
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .mehr-seite.bw-einblenden .menue-eintrag,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .mehr-seite.bw-einblenden .menue-eintrag {
+    --mi: 8;
+    animation: bw-rein var(--dauer-einblenden) var(--kurve-feder) backwards;
+    animation-delay: calc(var(--mi) * var(--staffel));
+  }
+
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .mehr-seite.bw-einblenden > .menue:first-of-type .menue-eintrag,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .mehr-seite.bw-einblenden > .menue:first-of-type .menue-eintrag {
+    --mi: 1;
+  }
+
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .mehr-seite.bw-einblenden > .menue + .menue .menue-eintrag:nth-child(1),
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .mehr-seite.bw-einblenden > .menue + .menue .menue-eintrag:nth-child(1) {
+    --mi: 2;
+  }
+
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .mehr-seite.bw-einblenden > .menue + .menue .menue-eintrag:nth-child(2),
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .mehr-seite.bw-einblenden > .menue + .menue .menue-eintrag:nth-child(2) {
+    --mi: 3;
+  }
+
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .mehr-seite.bw-einblenden > .menue + .menue .menue-eintrag:nth-child(3),
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .mehr-seite.bw-einblenden > .menue + .menue .menue-eintrag:nth-child(3) {
+    --mi: 4;
+  }
+
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .mehr-seite.bw-einblenden > .menue + .menue .menue-eintrag:nth-child(4),
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .mehr-seite.bw-einblenden > .menue + .menue .menue-eintrag:nth-child(4) {
+    --mi: 5;
+  }
+
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .mehr-seite.bw-einblenden > .menue + .menue .menue-eintrag:nth-child(5),
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .mehr-seite.bw-einblenden > .menue + .menue .menue-eintrag:nth-child(5) {
+    --mi: 6;
+  }
+
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .mehr-seite.bw-einblenden > .menue + .menue .menue-eintrag:nth-child(6),
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .mehr-seite.bw-einblenden > .menue + .menue .menue-eintrag:nth-child(6) {
+    --mi: 7;
+  }
+
+  /* Aufklappen mit Feder (gleicher Name menue-auf wie in Klassisch, nur Dauer und Kurve des Aussehens) */
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .menue-inhalt.aufgehend,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .menue-inhalt.aufgehend {
+    animation-duration: 0.42s;
+    animation-timing-function: var(--kurve-feder);
+  }
+
+  /* Tipp: Symbolkachel federt, Pfeile drehen mit Überschwingen */
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .menue-kachel,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .menue-kachel,
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .menue-pfeil,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .menue-pfeil,
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .menue-inhalt .gruppen summary::after,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .menue-inhalt .gruppen summary::after,
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .app-seite .anleitung summary::after,
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .einrichtung .anleitung summary::after,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .app-seite .anleitung summary::after ,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .einrichtung .anleitung summary::after {
+    transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .menue-zeile:active .menue-kachel,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .menue-zeile:active .menue-kachel {
+    transform: scale(0.88);
+    transition-duration: 0.1s;
+  }
+
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .menue-zeile,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .willkommen-knopf,
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .willkommen-knopf,
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .aussehen-wahl > .chip,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .aussehen-wahl > .chip {
+    transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .menue-zeile:active,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .willkommen-knopf:active,
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .willkommen-knopf:active,
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .aussehen-wahl > .chip:active,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .aussehen-wahl > .chip:active {
+    transform: scale(0.96);
+    transition-duration: 0.08s;
+  }
+}

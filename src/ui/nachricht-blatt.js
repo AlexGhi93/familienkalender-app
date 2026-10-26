@@ -284,7 +284,7 @@ export function oeffneNachricht({ store, ui }, optionen = {}) {
     const situationen = GRUPPEN.map(([gruppe, gruppenTitel]) =>
       h(
         'div',
-        { class: 'nachricht-gruppe' },
+        { class: 'nachricht-gruppe', 'data-gruppe': gruppe },
         h('span', { class: 'nachricht-gruppe-titel' }, gruppenTitel),
         h(
           'div',
@@ -324,7 +324,7 @@ export function oeffneNachricht({ store, ui }, optionen = {}) {
         'div',
         { class: 'feld nachricht-ton' },
         h('span', {}, 'Ton'),
-        h('div', { class: 'chip-reihe' }, TONARTEN.map(([id, text]) => chip(text, { art: z.ton === id ? 'aktiv' : '', onClick: () => waehle({ ton: id }) }))),
+        h('div', { class: 'chip-reihe segment-wahl' }, TONARTEN.map(([id, text]) => chip(text, { art: z.ton === id ? 'aktiv' : '', onClick: () => waehle({ ton: id }) }))),
       ),
       h('div', { class: 'feld' }, textfeld, h('small', { class: 'leise' }, 'Du kannst den Text vor dem Senden noch ändern.')),
       h('h3', {}, 'Senden'),

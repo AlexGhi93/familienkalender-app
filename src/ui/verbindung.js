@@ -28,7 +28,7 @@ export function verbindenKarte({ verbinden, verbindung = { laeuft: false, fehler
   const still = login?.still === true && !verbindung.laeuft;
   return h(
     'section',
-    { class: 'screen' },
+    { class: 'screen verbinden-seite' },
     h('h1', { class: 'gruss' }, 'Schön, dass du da bist! 🌸'),
     h(
       'article',
