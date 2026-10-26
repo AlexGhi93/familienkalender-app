@@ -170,23 +170,32 @@ export function createPush({ store, adapter, config, fetch, navigator, Notificat
     nachholen = null;
   }
 
+  /**
+   * Plant den nächsten Versuch des Nachholens (wachsende Wartezeit, NACHHOLEN_MS). Wirft dieser Versuch (z. B. das Netz ist kurz weg
+   * beim Lesen des Registers), geht das Nachholen mit der nächsten Wartezeit weiter – sonst warteten neue Erinnerungen bis zum
+   * nächsten Anstoß von außen, bei offener App womöglich Stunden.
+   */
+  function nachholenPlanen() {
+    const ms = NACHHOLEN_MS[Math.min(nachholVersuche, NACHHOLEN_MS.length - 1)];
+    nachholVersuche += 1;
+    nachholenAbbrechen();
+    nachholen = zeitgeber.setze(async () => {
+      nachholen = null;
+      try {
+        await abgleichen({});
+      } catch (fehler) {
+        letzterFehler = fehler?.message || 'Unbekannter Fehler beim Abgleich.';
+        if (nachholen === null) nachholenPlanen(); // inzwischen neu angestoßen: dessen Zeitgeber gilt
+      }
+    }, ms);
+  }
+
   /** Führt einen Abgleich aus und plant bei 'wartet' das Nachholen (wachsende Wartezeit); jedes andere Ergebnis beendet es. */
   async function abgleichen(optionen) {
     nachholenAbbrechen();
     const r = await syncEinmal(optionen);
-    if (r.art === 'wartet') {
-      const ms = NACHHOLEN_MS[Math.min(nachholVersuche, NACHHOLEN_MS.length - 1)];
-      nachholVersuche += 1;
-      nachholenAbbrechen();
-      nachholen = zeitgeber.setze(async () => {
-        nachholen = null;
-        try {
-          await abgleichen({});
-        } catch (fehler) {
-          letzterFehler = fehler?.message || 'Unbekannter Fehler beim Abgleich.';
-        }
-      }, ms);
-    } else nachholVersuche = 0;
+    if (r.art === 'wartet') nachholenPlanen();
+    else nachholVersuche = 0;
     return r;
   }
 

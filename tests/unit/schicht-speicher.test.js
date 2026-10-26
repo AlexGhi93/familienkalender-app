@@ -129,6 +129,7 @@ describe('Beispieldaten: Schichtplan', () => {
 function apiAttrappe() {
   const kalender = new Map();
   const von = (k) => (kalender.has(k) || kalender.set(k, new Map()), kalender.get(k));
+  const patches = []; // jede wirklich geschriebene Änderung: Ereignis-ID
   const ereignisse = {
     async holen(k, id) {
       const e = von(k).get(id);
@@ -144,10 +145,13 @@ function apiAttrappe() {
     },
     async aendere(k, id, aenderung) {
       const patch = aenderung(await ereignisse.holen(k, id));
-      if (patch) von(k).set(id, { ...von(k).get(id), ...patch });
+      if (patch) {
+        patches.push(id);
+        von(k).set(id, { ...von(k).get(id), ...patch });
+      }
     },
   };
-  return { api: { ereignisse }, roh: (k, id) => von(k).get(id) };
+  return { api: { ereignisse }, roh: (k, id) => von(k).get(id), patches };
 }
 
 describe('Google-Adapter: Schichtplan', () => {
@@ -172,6 +176,20 @@ describe('Google-Adapter: Schichtplan', () => {
     assert.deepEqual(gesehen, standardKatalog());
     assert.equal(roh('kan', 'fkschichtarten').summary, '🗓️ fk Schichtarten (nicht löschen)');
     assert.deepEqual(await adapter.leseSchichtarten(), { katalog, warnungen: [] });
+  });
+
+  test('Änderung ohne Wirkung (gleicher Inhalt): nur gelesen, nichts geschrieben; das Ergebnis kommt trotzdem zurück', async () => {
+    const { api, patches } = apiAttrappe();
+    const adapter = createGoogleAdapter({ api, kalender, jetzt: JETZT });
+    await adapter.aendereSchichtMonat('2026-10', mitSchicht); // legt an (kein PATCH)
+    await adapter.aendereSchichtarten((alt) => alt);
+    const monat = await adapter.aendereSchichtMonat('2026-10', (alt) => setzeNotiz(alt, { person: 'mama', tag: 13, text: 'Dienst 12' }));
+    assert.deepEqual(patches, ['fksch202610']);
+    const gleich = await adapter.aendereSchichtMonat('2026-10', (alt) => setzeNotiz(alt, { person: 'mama', tag: 13, text: 'Dienst 12' }));
+    const katalog = await adapter.aendereSchichtarten((alt) => structuredClone(alt));
+    assert.deepEqual(patches, ['fksch202610'], 'kein PATCH für einen unveränderten Monat oder Katalog');
+    assert.deepEqual(gleich, monat);
+    assert.deepEqual(katalog, (await adapter.leseSchichtarten()).katalog);
   });
 
   test('von Hand gelöschte Ereignisse gelten als fehlend', async () => {

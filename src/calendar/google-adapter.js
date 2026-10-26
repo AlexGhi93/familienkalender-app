@@ -76,7 +76,8 @@ export function createGoogleAdapter({ api, kalender, jetzt = () => new Date(), a
   /**
    * Gemeinsames Muster für versteckte Ereignisse (Geräte, Einkauf): gibt es das Ereignis noch nicht, wird es angelegt (bei gleichzeitigem Anlegen
    * gewinnt eines per 409, das andere liest und ergänzt); sonst Lesen–Ändern–Schreiben mit If-Match, bei 412 einmal wiederholt.
-   * `aenderung(alt | null)` muss rein sein (sie kann zweimal laufen) und gibt den neuen Wert zurück, oder null = nichts tun.
+   * `aenderung(alt | null)` muss rein sein (sie kann zweimal laufen) und gibt den neuen Wert zurück, oder null = nichts tun. Ergibt der
+   * neue Wert dieselbe Beschreibung wie die gespeicherte, wird nichts geschrieben (nur gelesen); zurück kommt der Wert trotzdem.
    */
   async function aendereVersteckt({ id, lesen, bauen, fehler, leer = () => null }, aenderung) {
     for (let versuch = 0; versuch < 3; versuch += 1) {
@@ -96,7 +97,10 @@ export function createGoogleAdapter({ api, kalender, jetzt = () => new Date(), a
       let ergebnis = null;
       await api.ereignisse.aendere(kalender.anwesenheit, id, (aktuell) => {
         ergebnis = aenderung(lesen(aktuell));
-        return ergebnis ? { description: bauen(ergebnis).body.description } : null;
+        if (!ergebnis) return null;
+        const description = bauen(ergebnis).body.description;
+        // Ohne Wirkung (gleicher Inhalt): nichts schreiben – spart den PATCH und macht ein 412 auf dem anderen Telefon seltener
+        return description === aktuell.description ? null : { description };
       }, { versuche: 8 }); // mehrere Telefone können gleichzeitig schreiben: jede Änderung wird auf die neueste Fassung neu angewendet
       return ergebnis;
     }

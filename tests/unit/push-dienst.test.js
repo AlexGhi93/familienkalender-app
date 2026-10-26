@@ -161,7 +161,7 @@ test('personenMitTelefon: wem mindestens ein Telefon im Register gehört; Telefo
 });
 
 /** createPush mit nachgebauten Teilen: Speicher, Abonnement, Register im „Kalender“ und Push-Dienst (merkt sich die PUTs). */
-async function aufbau({ person = '', eigenePerson, state = zustand({ dienstErinnerung: 'dienst' }), store, vorbereiten, zeitgeber } = {}) {
+async function aufbau({ person = '', eigenePerson, state = zustand({ dienstErinnerung: 'dienst' }), store, vorbereiten, zeitgeber, geraeteFehler = () => false } = {}) {
   const daten = new Map([['fk.push.geraet.v1', 'eigenTel1'], ['fk.push.aktiv.v1', '1']]);
   if (person) daten.set('fk.push.person.v1', person);
   const speicher = { getItem: (k) => daten.get(k) ?? null, setItem: (k, v) => daten.set(k, String(v)), removeItem: (k) => daten.delete(k) };
@@ -170,7 +170,10 @@ async function aufbau({ person = '', eigenePerson, state = zustand({ dienstErinn
   let register = { ...neuesRegister(), geraete: [eigen, anderes] };
   const schreiben = [];
   const adapter = {
-    leseGeraete: async () => ({ register: normalisiereRegister(structuredClone(register)) }),
+    leseGeraete: async () => {
+      if (geraeteFehler()) throw new TypeError('Failed to fetch'); // Netz kurz weg
+      return { register: normalisiereRegister(structuredClone(register)) };
+    },
     aendereGeraete: async (aenderung) => {
       const neu = aenderung(normalisiereRegister(structuredClone(register)));
       schreiben.push(neu);
@@ -459,6 +462,28 @@ test('wartet wegen Lesefehlern: 30 s, 2 min, 10 min, dann alle 10 min – immer 
   ok = false; // ein neues Warten beginnt wieder bei 30 s
   assert.equal((await t.push.sync({ erzwingen: true })).art, 'wartet');
   assert.deepEqual(uhr.offen(), [30_000]);
+});
+
+test('ein Netzfehler beim Nachholen beendet es nicht: weiter mit wachsender Wartezeit, bis der Plan hinausgeht', async () => {
+  let ok = false;
+  let netzWeg = false;
+  const uhr = uhrAttrappe();
+  const t = await aufbau({ vorbereiten: async () => ok, zeitgeber: uhr.zeitgeber, geraeteFehler: () => netzWeg });
+  assert.equal((await t.push.sync()).art, 'wartet');
+  assert.deepEqual(uhr.offen(), [30_000]);
+  netzWeg = true;
+  await uhr.vor(30_000); // der Versuch wirft (Register nicht lesbar)
+  assert.deepEqual(uhr.offen(), [120_000], 'nächster Versuch geplant');
+  assert.equal((await t.push.status()).letzterFehler, 'Failed to fetch');
+  await uhr.vor(120_000);
+  assert.deepEqual(uhr.offen(), [600_000]);
+  await uhr.vor(600_000);
+  assert.deepEqual(uhr.offen(), [600_000], 'dann alle 10 min, immer nur ein Zeitgeber');
+  netzWeg = false;
+  ok = true;
+  await uhr.vor(600_000);
+  assert.equal(t.anfragen.length, 1, 'der Plan ging hinaus');
+  assert.deepEqual(uhr.offen(), []);
 });
 
 test('ein neuer Anstoß setzt die Wartezeit zurück; ohne Push (ausgeschaltet) hört das Nachholen auf', async () => {

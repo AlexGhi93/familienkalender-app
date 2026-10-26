@@ -18,6 +18,7 @@ const fehlerText = (fehler) => (fehler?.name === 'AuthAbgelaufen' ? MELDUNG_ANME
  */
 export function pushAbschnitt({ push, store = null }) {
   const box = h('div', { class: 'push-abschnitt' });
+  let neuZeichnen = null; // der eine Zeitgeber fürs Neuzeichnen, solange der Abgleich wartet
 
   async function ausfuehren(arbeit, erfolg) {
     try {
@@ -99,8 +100,15 @@ export function pushAbschnitt({ push, store = null }) {
     const teile = inhalt(status);
     box.hidden = teile === null;
     fuelle(box, ...(teile ?? []));
-    // wartet der Abgleich auf den Schichtplan, kurz danach noch einmal nachsehen (der Abgleich folgt von selbst, die Anzeige nicht)
-    if (status.wartet) setTimeout(() => box.isConnected && zeichne(), WARTET_NEU_ZEICHNEN_MS);
+    // wartet der Abgleich auf den Schichtplan, kurz danach noch einmal nachsehen (der Abgleich folgt von selbst, die Anzeige nicht);
+    // jedes Neuzeichnen (auch durch Tippen) ersetzt den Zeitgeber, so läuft nie mehr als einer
+    clearTimeout(neuZeichnen);
+    neuZeichnen = status.wartet
+      ? setTimeout(() => {
+          neuZeichnen = null;
+          if (box.isConnected) zeichne();
+        }, WARTET_NEU_ZEICHNEN_MS)
+      : null;
   }
 
   zeichne();
