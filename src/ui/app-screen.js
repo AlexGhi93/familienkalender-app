@@ -4,22 +4,29 @@ import { bestaetigen, chip, toast } from './components.js';
 import { VERSION } from '../app/version.js';
 import { kontoKarten } from './konto-karte.js';
 import { erinnerungenKarte } from './erinnerungen-karte.js';
-import { leseDarstellung, wendeDarstellungAn } from './darstellung.js';
+import { leseAussehen, leseBewegung, leseDarstellung, wendeAussehenAn, wendeBewegungAn, wendeDarstellungAn } from './darstellung.js';
 import { sichernKarte } from './sichern-karte.js';
 
 const DARSTELLUNG_TEXTE = [['auto', 'Automatisch'], ['hell', '☀️ Hell'], ['dunkel', '🌙 Dunkel']];
+/** Aussehen mit Namen und drei Farbtupfen als kleine Vorschau (die Farben stehen in theme.css unter .aussehen-vorschau). */
+const AUSSEHEN_TEXTE = [['klassisch', 'Klassisch'], ['glas', 'Glas & Licht'], ['bento', 'Bento bunt']];
+const BEWEGUNG_TEXTE = [['an', 'An'], ['reduziert', 'Reduziert']];
 
-function darstellungKarte() {
-  const box = h('div', { class: 'chip-reihe' });
+/**
+ * Eine Reihe Chips für eine Wahl dieses Telefons; tippen wendet sofort an und zeichnet nur die Reihe neu. Markiert ist, was gerade gilt
+ * (auch wenn der Speicher gesperrt ist und die Wahl deshalb nur bis zum Neuladen hält).
+ */
+function wahlReihe(name, texte, { lese, wendeAn, inhalt = (wahl, text) => text }) {
+  const box = h('div', { class: 'chip-reihe', role: 'group', 'aria-label': name });
+  let aktuell = lese();
   function zeichne() {
-    const aktuell = leseDarstellung();
     fuelle(
       box,
-      ...DARSTELLUNG_TEXTE.map(([wahl, text]) =>
-        chip(text, {
+      ...texte.map(([wahl, text]) =>
+        chip(inhalt(wahl, text), {
           art: aktuell === wahl ? 'aktiv' : '',
           onClick: () => {
-            wendeDarstellungAn(wahl);
+            aktuell = wendeAn(wahl);
             zeichne();
           },
         }),
@@ -27,7 +34,24 @@ function darstellungKarte() {
     );
   }
   zeichne();
-  return h('article', { class: 'karte' }, h('h3', {}, 'Darstellung'), h('p', { class: 'leise' }, 'Automatisch folgt dem Telefon. Die Wahl gilt nur für dieses Telefon.'), box);
+  return box;
+}
+
+const aussehenVorschau = (wahl) =>
+  h('span', { class: `aussehen-vorschau ${wahl}`, 'aria-hidden': 'true' }, h('span', { class: 'aussehen-pille' }), h('span', { class: 'aussehen-pille' }), h('span', { class: 'aussehen-pille' }));
+
+function darstellungKarte() {
+  return h(
+    'article',
+    { class: 'karte' },
+    h('h3', {}, 'Darstellung'),
+    h('p', { class: 'leise' }, 'Automatisch folgt dem Telefon. Die Wahl gilt nur für dieses Telefon.'),
+    wahlReihe('Hell oder Dunkel', DARSTELLUNG_TEXTE, { lese: leseDarstellung, wendeAn: wendeDarstellungAn }),
+    h('h4', { class: 'darstellung-titel' }, 'Aussehen'),
+    wahlReihe('Aussehen', AUSSEHEN_TEXTE, { lese: leseAussehen, wendeAn: wendeAussehenAn, inhalt: (wahl, text) => [aussehenVorschau(wahl), text] }),
+    h('h4', { class: 'darstellung-titel' }, 'Bewegung'),
+    wahlReihe('Bewegung', BEWEGUNG_TEXTE, { lese: leseBewegung, wendeAn: wendeBewegungAn }),
+  );
 }
 
 function demoKarte({ store }) {

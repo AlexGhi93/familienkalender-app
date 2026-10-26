@@ -1,8 +1,16 @@
-// End-to-End-Tests (Playwright): ein Projekt, Chromium im Telefonformat. Der Server ist tests/server.mjs (ohne Abhängigkeiten).
+// End-to-End-Tests (Playwright): Chromium im Telefonformat, ein Projekt je Aussehen (Klassisch, Glas, Bento). Der Server ist tests/server.mjs (ohne Abhängigkeiten).
 import { defineConfig, devices } from '@playwright/test';
 
 const PORT = 8141;
 const CI = Boolean(process.env.CI);
+/** Chromium im Telefonformat; `reducedMotion` kommt für alle Projekte aus `use.contextOptions` unten. */
+const TELEFON = {
+  ...devices['Desktop Chrome'],
+  viewport: { width: 390, height: 844 },
+  deviceScaleFactor: 3,
+  hasTouch: true,
+  isMobile: true,
+};
 
 export default defineConfig({
   testDir: 'tests/e2e',
@@ -24,17 +32,12 @@ export default defineConfig({
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
+  // Dieselbe Suite in jedem Aussehen: Klassisch (wie bisher, ohne Wahl), Glas & Licht und Bento bunt (Option `aussehen` aus
+  // tests/e2e/hilfen.js legt fk.aussehen.v1 vor dem Laden ab). aussehen.spec.js prüft die Wahl selbst und läuft nur in Klassisch.
   projects: [
-    {
-      name: 'telefon-chromium',
-      use: {
-        ...devices['Desktop Chrome'],
-        viewport: { width: 390, height: 844 },
-        deviceScaleFactor: 3,
-        hasTouch: true,
-        isMobile: true,
-      },
-    },
+    { name: 'telefon-chromium', use: { ...TELEFON } },
+    { name: 'telefon-glas', use: { ...TELEFON, aussehen: 'glas' }, testIgnore: /aussehen\.spec\.js$/ },
+    { name: 'telefon-bento', use: { ...TELEFON, aussehen: 'bento' }, testIgnore: /aussehen\.spec\.js$/ },
   ],
   webServer: {
     command: `node tests/server.mjs ${PORT}`,

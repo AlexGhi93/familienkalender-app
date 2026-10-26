@@ -368,6 +368,36 @@ button.chip {
   font-weight: 800;
 }
 
+/* Konto & App → Darstellung: Zwischentitel und die kleine Vorschau jedes Aussehens (drei Farbtupfen im Chip) */
+.darstellung-titel {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.aussehen-vorschau {
+  display: inline-flex;
+  gap: 3px;
+  margin-right: 8px;
+}
+
+.aussehen-pille {
+  width: 10px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--pille);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.14);
+}
+
+.aussehen-vorschau.klassisch .aussehen-pille:nth-child(1) { --pille: #7a5ce0; }
+.aussehen-vorschau.klassisch .aussehen-pille:nth-child(2) { --pille: #2f9e5b; }
+.aussehen-vorschau.klassisch .aussehen-pille:nth-child(3) { --pille: #f4c842; }
+.aussehen-vorschau.glas .aussehen-pille:nth-child(1) { --pille: #ffb08a; }
+.aussehen-vorschau.glas .aussehen-pille:nth-child(2) { --pille: #ff9cc2; }
+.aussehen-vorschau.glas .aussehen-pille:nth-child(3) { --pille: #8c6dff; }
+.aussehen-vorschau.bento .aussehen-pille:nth-child(1) { --pille: #2b66f0; }
+.aussehen-vorschau.bento .aussehen-pille:nth-child(2) { --pille: #f2602f; }
+.aussehen-vorschau.bento .aussehen-pille:nth-child(3) { --pille: #f5b400; }
+
 /* ---------- Knöpfe ---------- */
 
 .knopf {

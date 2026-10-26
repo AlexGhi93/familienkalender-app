@@ -11,6 +11,7 @@ import { planUmwandlung } from '../../src/domain/umwandlung.js';
 import { MAX_NOTIZ, bereinigeNotiz, notizAusBeschreibung } from '../../src/domain/notiz.js';
 import { datumAnzeige, datumAusEingabe, datumWaehrendTippen, zeitAusEingabe, zeitWaehrendTippen } from '../../src/domain/eingabe.js';
 import { DARSTELLUNGEN, DARSTELLUNG_SCHLUESSEL, gueltigeDarstellung, istDunkel, themeAttribut, themeFarben } from '../../src/domain/darstellung.js';
+import { AUSSEHEN_SCHLUESSEL, BEWEGUNG_SCHLUESSEL, aussehenAttribut, aussehenThemeFarben, bewegungAttribut, gueltigeBewegung, gueltigesAussehen } from '../../src/domain/aussehen.js';
 import { normalizeSettings } from '../../src/domain/settings.js';
 
 describe('Konflikte am selben Tag', () => {
@@ -221,7 +222,7 @@ describe('Eingabe von Uhrzeit und Datum mit der Zifferntastatur', () => {
   });
 });
 
-describe('Darstellung (Hell/Dunkel)', () => {
+describe('Darstellung (Hell/Dunkel), Aussehen und Bewegung', () => {
   test('Regeln', () => {
     assert.deepEqual(DARSTELLUNGEN, ['auto', 'hell', 'dunkel']);
     assert.equal(gueltigeDarstellung('dunkel'), 'dunkel');
@@ -236,10 +237,11 @@ describe('Darstellung (Hell/Dunkel)', () => {
     assert.equal(themeFarben('auto').length, 2);
   });
 
-  // src/theme-init.js läuft vor allen Modulen als klassisches Skript und wiederholt dieselben Regeln: beide müssen übereinstimmen.
+  // src/theme-init.js läuft vor allen Modulen als klassisches Skript und wiederholt dieselben Regeln (Darstellung, Aussehen, Bewegung):
+  // beide müssen für jede Kombination dieselben Attribute am <html> und dieselben theme-color-Metas ergeben.
   const skript = readFileSync(new URL('../../src/theme-init.js', import.meta.url), 'utf8');
 
-  function themeInitAusfuehren(gespeichert, { speicherKaputt = false } = {}) {
+  function themeInitAusfuehren({ darstellung = null, aussehen = null, bewegung = null } = {}, { speicherKaputt = false } = {}) {
     const attribute = new Map();
     const metas = [{ name: 'theme-color', content: '#FFF7EC', media: '(prefers-color-scheme: light)', entfernt: false }, { name: 'theme-color', content: '#1F1B2E', media: '(prefers-color-scheme: dark)', entfernt: false }];
     const neu = [];
@@ -252,25 +254,56 @@ describe('Darstellung (Hell/Dunkel)', () => {
       },
       head: { append: (el) => neu.push(el.attrs) },
     };
+    const gespeichert = { [DARSTELLUNG_SCHLUESSEL]: darstellung, [AUSSEHEN_SCHLUESSEL]: aussehen, [BEWEGUNG_SCHLUESSEL]: bewegung };
     const localStorage = {
       getItem: (k) => {
         if (speicherKaputt) throw new Error('gesperrt');
-        return k === DARSTELLUNG_SCHLUESSEL ? gespeichert : null;
+        return gespeichert[k] ?? null;
       },
     };
     vm.runInNewContext(skript, { document, localStorage });
     const uebrig = metas.filter((m) => !m.entfernt).map(({ content, media }) => ({ farbe: content, media }));
-    return { theme: attribute.get('data-theme') ?? null, farben: [...uebrig, ...neu.map((a) => ({ farbe: a.content, media: a.media ?? null }))] };
+    return {
+      theme: attribute.get('data-theme') ?? null,
+      aussehen: attribute.get('data-aussehen') ?? null,
+      bewegung: attribute.get('data-bewegung') ?? null,
+      farben: [...uebrig, ...neu.map((a) => ({ farbe: a.content, media: a.media ?? null }))],
+    };
   }
 
-  for (const gespeichert of [null, 'auto', 'hell', 'dunkel', 'lila']) {
-    test(`theme-init.js stimmt mit domain/darstellung.js überein (gespeichert: ${gespeichert})`, () => {
-      const wahl = gueltigeDarstellung(gespeichert);
-      assert.deepEqual(themeInitAusfuehren(gespeichert), { theme: themeAttribut(wahl), farben: themeFarben(wahl) });
+  const erwartet = ({ darstellung = null, aussehen = null, bewegung = null } = {}) => {
+    const d = gueltigeDarstellung(darstellung);
+    const a = gueltigesAussehen(aussehen);
+    return { theme: themeAttribut(d), aussehen: aussehenAttribut(a), bewegung: bewegungAttribut(gueltigeBewegung(bewegung)), farben: aussehenThemeFarben(a, d) };
+  };
+
+  for (const darstellung of [null, 'auto', 'hell', 'dunkel', 'lila']) {
+    test(`theme-init.js stimmt mit domain/darstellung.js überein (gespeichert: ${darstellung})`, () => {
+      assert.deepEqual(themeInitAusfuehren({ darstellung }), { theme: themeAttribut(gueltigeDarstellung(darstellung)), aussehen: null, bewegung: null, farben: themeFarben(gueltigeDarstellung(darstellung)) });
     });
   }
 
-  test('theme-init.js folgt bei gesperrtem Speicher dem Telefon', () => {
-    assert.deepEqual(themeInitAusfuehren('dunkel', { speicherKaputt: true }), { theme: null, farben: themeFarben('auto') });
+  for (const aussehen of [null, 'klassisch', 'glas', 'bento', 'xyz']) {
+    test(`theme-init.js stimmt mit domain/aussehen.js überein – Aussehen ${aussehen} × jede Darstellung × jede Bewegung`, () => {
+      for (const darstellung of [null, 'auto', 'hell', 'dunkel', 'lila']) {
+        for (const bewegung of [null, 'an', 'reduziert', 'xyz']) {
+          const werte = { darstellung, aussehen, bewegung };
+          assert.deepEqual(themeInitAusfuehren(werte), erwartet(werte), JSON.stringify(werte));
+        }
+      }
+    });
+  }
+
+  test('theme-init.js: Klassisch, Automatisch und Bewegung „an“ setzen kein Attribut und lassen die zwei Metas aus dem HTML stehen', () => {
+    assert.deepEqual(themeInitAusfuehren(), { theme: null, aussehen: null, bewegung: null, farben: themeFarben('auto') });
+  });
+
+  test('theme-init.js folgt bei gesperrtem Speicher dem Telefon, Klassisch und Bewegung „an“', () => {
+    assert.deepEqual(themeInitAusfuehren({ darstellung: 'dunkel', aussehen: 'glas', bewegung: 'reduziert' }, { speicherKaputt: true }), {
+      theme: null,
+      aussehen: null,
+      bewegung: null,
+      farben: themeFarben('auto'),
+    });
   });
 });

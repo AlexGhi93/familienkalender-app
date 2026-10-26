@@ -35,9 +35,10 @@ jobs:
           npm test
 
   e2e:
-    name: End-to-End-Tests (Playwright, Chromium)
+    name: End-to-End-Tests (Playwright, Chromium, drei Aussehen)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # die Suite läuft dreimal (Klassisch, Glas, Bento; siehe playwright.config.js)
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v6

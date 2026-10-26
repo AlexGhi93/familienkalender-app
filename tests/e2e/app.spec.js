@@ -2,6 +2,7 @@
 import { readFile } from 'node:fs/promises';
 import { test, expect, starteDemo, erwarteToast } from './hilfen.js';
 import { VERSION } from '../../src/app/version.js';
+import { aussehenThemeFarben } from '../../src/domain/aussehen.js';
 
 const karten = (page) => page.locator('section.screen > article.karte > h3');
 
@@ -14,37 +15,40 @@ test('Karten in der Demo und Version', async ({ page }) => {
   await expect(page.locator('p.version')).toHaveText(/^Familienkalender \d+\.\d+\.\d+$/);
 });
 
-test('Darstellung: Dunkel, Hell, Automatisch – mit data-theme, theme-color und nach dem Neuladen', async ({ page }) => {
+test('Darstellung: Dunkel, Hell, Automatisch – mit data-theme, theme-color und nach dem Neuladen', async ({ page, aussehen }) => {
   await starteDemo(page, { route: '#/app' });
   const html = page.locator('html');
   const karte = page.locator('article.karte').filter({ has: page.getByRole('heading', { name: 'Darstellung' }) });
   const farben = () => page.locator('meta[name="theme-color"]').evaluateAll((m) => m.map((x) => [x.content, x.media || null]));
+  // die Farbe der Leiste hängt auch vom Aussehen des Projekts ab (Klassisch: #FFF7EC / #1F1B2E)
+  const soll = (darstellung) => aussehenThemeFarben(aussehen, darstellung).map(({ farbe, media }) => [farbe, media]);
+  const hellDunkel = karte.getByRole('group', { name: 'Hell oder Dunkel' });
   // wirksam ist das erste theme-color-Meta, dessen media passt (oder das keins hat)
   const wirksameFarbe = () => page.evaluate(() => [...document.querySelectorAll('meta[name="theme-color"]')].find((m) => !m.media || matchMedia(m.media).matches)?.content);
-  await expect(karte.locator('.chip')).toHaveText(['Automatisch', '☀️ Hell', '🌙 Dunkel']);
-  await expect(karte.locator('.chip.aktiv')).toHaveText('Automatisch');
+  await expect(hellDunkel.locator('.chip')).toHaveText(['Automatisch', '☀️ Hell', '🌙 Dunkel']);
+  await expect(hellDunkel.locator('.chip.aktiv')).toHaveText('Automatisch');
   await expect(html).not.toHaveAttribute('data-theme');
 
-  await karte.getByRole('button', { name: '🌙 Dunkel' }).click();
+  await hellDunkel.getByRole('button', { name: '🌙 Dunkel' }).click();
   await expect(html).toHaveAttribute('data-theme', 'dark');
-  await expect(karte.locator('.chip.aktiv')).toHaveText('🌙 Dunkel');
-  expect(await farben()).toEqual([['#1F1B2E', null]]);
+  await expect(hellDunkel.locator('.chip.aktiv')).toHaveText('🌙 Dunkel');
+  expect(await farben()).toEqual(soll('dunkel'));
   expect(await page.evaluate(() => localStorage.getItem('fk.darstellung.v1'))).toBe('dunkel');
   const hintergrund = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
 
   await page.reload();
   await expect(html).toHaveAttribute('data-theme', 'dark'); // theme-init.js setzt es vor dem ersten Zeichnen
   // theme-init.js läuft vor den beiden Metas im HTML: sein Meta steht zuerst und gilt
-  expect(await wirksameFarbe()).toBe('#1F1B2E');
+  expect(await wirksameFarbe()).toBe(soll('dunkel')[0][0]);
 
-  await karte.getByRole('button', { name: '☀️ Hell' }).click();
+  await hellDunkel.getByRole('button', { name: '☀️ Hell' }).click();
   await expect(html).toHaveAttribute('data-theme', 'light');
   expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).not.toBe(hintergrund);
 
-  await karte.getByRole('button', { name: 'Automatisch' }).click();
+  await hellDunkel.getByRole('button', { name: 'Automatisch' }).click();
   await expect(html).not.toHaveAttribute('data-theme');
-  expect(await farben()).toEqual([['#FFF7EC', '(prefers-color-scheme: light)'], ['#1F1B2E', '(prefers-color-scheme: dark)']]);
-  expect(await wirksameFarbe()).toBe('#FFF7EC'); // das Telefon (hier) ist hell
+  expect(await farben()).toEqual(soll('auto'));
+  expect(await wirksameFarbe()).toBe(soll('hell')[0][0]); // das Telefon (hier) ist hell
   expect(await page.evaluate(() => localStorage.getItem('fk.darstellung.v1'))).toBeNull();
 });
 

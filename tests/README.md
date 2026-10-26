@@ -25,7 +25,7 @@ npx playwright install chromium
 
 ```sh
 npm test               # Unit-Tests (dauert etwa 2 Sekunden)
-npm run test:e2e       # End-to-End-Tests (startet den Server selbst, etwa 2 Minuten)
+npm run test:e2e       # End-to-End-Tests in allen drei Aussehen (startet den Server selbst, etwa 4 Minuten)
 npm run test:alle      # beides nacheinander
 ```
 
@@ -35,6 +35,7 @@ Einzelne Dateien oder Tests:
 node --test tests/unit/titles.test.js
 node --test --test-name-pattern="Mutter-Kind-Pass" tests/unit/classify.test.js
 npx playwright test tests/e2e/mehr.spec.js
+npx playwright test --project=telefon-chromium   # nur Klassisch (telefon-glas, telefon-bento: die anderen Aussehen)
 npx playwright test -g "Intro beim Betreten"
 npx playwright test --headed          # mit sichtbarem Browser
 npx playwright test --ui              # interaktiv, mit Zeitreise durch jeden Schritt
@@ -63,7 +64,8 @@ $env:CI=1; npm run test:e2e
 | `unit/settings.test.js` | Standardwerte, jede ungültige Einstellung, Mitnehmen-Listen |
 | `unit/types.test.js` | Stammdaten stimmig, Standard-Arzttermine passen in 60 Zeichen |
 | `unit/konto.test.js`, `unit/einkauf.test.js` | Kontostand (Cent, Monatsende, Nachtragen, Sonderbeträge) und Einkaufsliste |
-| `unit/domain-regeln.test.js` | Konflikte, IDs, Urlaubsstand, offene Tage, Notiz, Eingabe von Zeit/Datum, Hell/Dunkel (inkl. `theme-init.js`) |
+| `unit/domain-regeln.test.js` | Konflikte, IDs, Urlaubsstand, offene Tage, Notiz, Eingabe von Zeit/Datum, Hell/Dunkel (inkl. `theme-init.js` gegen die Regeln, jede Kombination mit Aussehen und Bewegung) |
+| `unit/aussehen.test.js`, `unit/darstellung.test.js` | Aussehen (Klassisch/Glas/Bento) und Bewegung: gültige Werte, theme-color je Aussehen × Hell/Dunkel; Anwenden zur Laufzeit (Attribute, Metas, Speicher, gesperrter Speicher) |
 | `unit/termin.test.js`, `unit/serie.test.js` | Termin-Formular (Prüfung, Entwurf, Vorschau mit Zeichenzahl) und Serien für Sachen |
 | `unit/nachrichten.test.js` | Jeder Anlass ergibt einen Text, „in die Krabbelstube“/„in den Kindergarten“, sie/er/Name, WhatsApp/SMS/E-Mail |
 | `unit/app-hilfen.test.js` | Sicherung als Datei, Listen, Urlaub-Checks, Versionsprüfung, deutsche Datumstexte |
@@ -94,6 +96,7 @@ $env:CI=1; npm run test:e2e
 | `e2e/schichtplan-google.spec.js` | Schichtplan mit der Google-Attrappe: erst die Seite liest `fkschichtarten` und drei Monate, der Pinsel schreibt `fksch202610` (Titel ohne Inhalt, JSON ≤ 6000 Zeichen, versteckt), nichts davon in Heute/Monat/Verlauf, ohne Netz nach dem Neuladen: besuchter Monat aus der Offline-Kopie, unbesuchter „Noch nicht geladen“; Hinweis unter „＋ Dienstbesprechung“ je nach Geräte-Register (Telefon von Mama da / fehlt / hier nicht zu sehen) |
 | `e2e/blatt-wischen.spec.js` | Blätter nach unten wischen (echte Touch-Ereignisse): am Griff, an der Überschrift oder im Inhalt ganz oben schließt (Tagesblatt in Schicht und Monat, Notiz gespeichert), 40 px langsam springt zurück, kurzer Wurf schließt, gescrollter Inhalt scrollt, seitlich und aus Eingabefeldern kein Zug; am Griff auch nach dem Antippen eines Uhrzeit-Felds (markierter Wert) und nach langem Drücken, Neuzeichnen mitten im Zug hängt nicht fest, Wischen verlässt das Eingabefeld; ✕/Escape/Hintergrund/Wischen rufen `beimSchliessen` genau einmal; mit und ohne Bewegung; kein Neuladen durch Herunterziehen (html/body `overscroll-behavior-y: none`, auch zwei Blätter, Einkaufsliste danach wieder `contain`) |
 | `e2e/app.spec.js` | Konto & App: Karten, Hell/Dunkel, Sicherung als Download, Demo zurücksetzen, Version |
+| `e2e/aussehen.spec.js` | Aussehen und Bewegung in „Darstellung“ (nur Projekt Klassisch): sofort und nach dem Neuladen, zurück zu Klassisch ohne Attribut, Wechsel bei offenem Blatt, kaputte Werte → Klassisch, offline mit Service Worker (`themes/glas.css` aus dem Zwischenspeicher) |
 | `e2e/google.spec.js` | Google-Modus ohne Netz aus dem gespeicherten Stand: Banner, Status in Mehr, fünf Karten, „Dieses Telefon gehört“; Login-Dienst aus: Verhalten wie bisher (Token-Weg, „gilt eine Stunde“, keine Sitzung, keine Anfrage an den Dienst) |
 
 Vermutete Fehler in `src/` sind als offene Tests markiert (`{ todo: … }` bei den Unit-Tests, `test.fixme` bei Playwright)
@@ -125,6 +128,8 @@ und stehen dort mit Datei und Zeile im Kommentar. Wird ein Fehler behoben, die M
 - Wischen und Ziehen: echte Touch-Ereignisse über das DevTools-Protokoll (`Input.dispatchTouchEvent`, siehe `einkauf-aktuell.spec.js`).
 - Stabile Selektoren: Rollen und sichtbarer Text (`getByRole('button', { name: 'Speichern' })`), vorhandene IDs und Klassen
   (`#menue-betreuung`, `.menue-eintrag[data-id="familie"]`). Keine festen Wartezeiten – auf Zustände warten (`expect(…).toBeVisible()`).
+- Drei Projekte, dieselbe Suite: `telefon-chromium` (Klassisch), `telefon-glas`, `telefon-bento`. Die Option `aussehen` (in `hilfen.js`)
+  legt `fk.aussehen.v1` vor dem Laden ab; im Test steht sie als Fixture `aussehen` bereit (null = Klassisch).
 - Standard ist „reduzierte Bewegung“ (siehe `playwright.config.js`). Wer Animationen prüft, schaltet sie im Test wieder ein:
   `test.use({ contextOptions: { reducedMotion: 'no-preference' } })`. Achtung: die Option wirkt nur über `contextOptions`.
 

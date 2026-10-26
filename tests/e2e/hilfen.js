@@ -49,13 +49,30 @@ function browserAttrappen() {
 export const kopierteTexte = (page) => page.evaluate(() => [...window.__kopiert]);
 
 /**
+ * Legt das Aussehen des Projekts (`aussehen`: 'glas' | 'bento') in localStorage, bevor theme-init.js läuft – einmal je Tab, damit ein
+ * Neuladen eine Wahl behält, die der Test in der App getroffen hat.
+ */
+function aussehenVorbelegen(wert) {
+  try {
+    if (sessionStorage.getItem('fk.test.aussehen')) return;
+    sessionStorage.setItem('fk.test.aussehen', '1');
+    localStorage.setItem('fk.aussehen.v1', wert);
+  } catch {
+    // Seite ohne Speicher (about:blank): nichts zu tun
+  }
+}
+
+/**
  * `test` mit Wache: jeder `pageerror` und jedes `console.error` lässt den Test scheitern.
  * Ein Test kann erwartete Meldungen erlauben: `test.use({ erlaubteFehler: /Muster/ })`.
  * Jede Seite bekommt dazu `browserAttrappen` (Zwischenablage nur im Test, kein Teilen).
+ * `aussehen` (Option je Projekt, siehe playwright.config.js): null = Klassisch (nichts im Speicher), sonst 'glas' oder 'bento'.
  */
 export const test = basis.extend({
-  context: async ({ context }, use) => {
+  aussehen: [null, { option: true }],
+  context: async ({ context, aussehen }, use) => {
     await context.addInitScript(browserAttrappen);
+    if (aussehen) await context.addInitScript(aussehenVorbelegen, aussehen);
     await use(context);
   },
   erlaubteFehler: [null, { option: true }],
