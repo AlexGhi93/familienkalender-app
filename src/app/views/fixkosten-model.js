@@ -179,6 +179,7 @@ export function fixkostenModel(state, heute, { filter: filterWunsch = 'alle' } =
   const kopf = {
     titel: personWahl ? `Fixkosten pro Monat (Ø) · ${personWahl.emoji} ${personWahl.name}` : 'Fixkosten pro Monat (Ø)',
     monatlich: betragText(s.monatlich),
+    monatlichCents: s.monatlich, // für das Hochzählen in Glas/Bento (ui/bewegung.js)
     jahrText: `= ${betragText(s.jaehrlich)} im Jahr · ${s.anzahl} Posten`,
     faellig: betragText(s.faellig),
     ersparnis: konto.zusammenfassung?.durchschnitt ?? null,

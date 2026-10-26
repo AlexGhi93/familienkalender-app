@@ -5,6 +5,8 @@
 import { h } from './dom.js';
 import { fixkostenModel } from '../app/views/fixkosten-model.js';
 import { oeffneFixArchiviert, oeffneFixFormular } from './fixkosten-formular.js';
+import { betragText } from '../domain/konto.js';
+import { hochzaehlen } from './bewegung.js';
 
 const ANSICHTEN = [
   ['kontostand', 'Kontostand'],
@@ -12,12 +14,33 @@ const ANSICHTEN = [
   ['sparziele', 'Sparziele'],
 ];
 
-/** Umschalter oben im Konto-Tab; die Wahl wird auf diesem Telefon gemerkt (ui.setzeKontoAnsicht). */
-export function kontoUmschalter(ui) {
+let gezeichneteAnsicht = null; // zuletzt gezeichnete Ansicht im Konto-Tab (für data-von)
+let wechsel = null; // letzter Wechsel { von, nach, zeit } (für data-von)
+/** So lange nach dem Umschalten gleitet der Tropfen/Blob noch (themes/konto.css: ≤ 0,5 s). */
+export const GLEITEN_MS = 600;
+
+/**
+ * Umschalter oben im Konto-Tab; die Wahl wird auf diesem Telefon gemerkt (ui.setzeKontoAnsicht). Kurz nach dem Umschalten nennt
+ * `data-von` die vorige Ansicht und `--kt-seit` die schon vergangene Zeit (negativ): daran gleitet in Glas/Bento der Tropfen bzw. Blob
+ * (themes/konto.css). Wird die Seite währenddessen neu gezeichnet (z. B. nach dem Laden der Sparziele), läuft das Gleiten an derselben
+ * Stelle weiter statt neu zu beginnen; danach, beim Betreten der Seite und beim späteren Neuzeichnen gibt es kein data-von.
+ * In Klassisch ohne Wirkung.
+ */
+export function kontoUmschalter(ui, { jetzt = globalThis.performance?.now?.() ?? Date.now() } = {}) {
   const aktuell = ui.kontoAnsicht ?? 'kontostand';
+  if (ui.seiteBetreten) wechsel = null;
+  else if (gezeichneteAnsicht !== null && gezeichneteAnsicht !== aktuell) wechsel = { von: gezeichneteAnsicht, nach: aktuell, zeit: jetzt };
+  gezeichneteAnsicht = aktuell;
+  const laeuft = wechsel && wechsel.nach === aktuell && jetzt - wechsel.zeit < GLEITEN_MS ? wechsel : null;
   return h(
     'div',
-    { class: 'konto-segment', role: 'group', 'aria-label': 'Ansicht im Konto' },
+    {
+      class: 'konto-segment',
+      role: 'group',
+      'aria-label': 'Ansicht im Konto',
+      'data-von': laeuft?.von,
+      style: laeuft ? { '--kt-seit': `${-Math.round(jetzt - laeuft.zeit)}ms` } : null,
+    },
     ANSICHTEN.map(([wert, text]) =>
       h('button', { class: `konto-segment-knopf${aktuell === wert ? ' aktiv' : ''}`, type: 'button', 'aria-pressed': aktuell === wert ? 'true' : 'false', onClick: () => aktuell !== wert && ui.setzeKontoAnsicht?.(wert) }, text),
     ),
@@ -39,11 +62,14 @@ function karte(titel, rechts, klasse, ...inhalt) {
 
 function kopfKarte(m) {
   const k = m.kopf;
+  // Glas/Bento mit Bewegung: der Betrag zählt beim ersten Zeigen bzw. nach einem anderen Filter hoch (Klassisch: gleich der Text)
+  const gross = h('b', { class: 'fk-gross', 'data-bw-schluessel': 'fk-monatlich' });
+  hochzaehlen(gross, k.monatlichCents, betragText);
   return h(
     'article',
     { class: 'karte fk-kopf' },
     h('span', { class: 'fk-klein' }, k.titel),
-    h('b', { class: 'fk-gross' }, k.monatlich),
+    gross,
     h('span', { class: 'fk-klein' }, k.jahrText),
     h('div', { class: 'fk-kopf-zeile' }, h('span', {}, 'Diesen Monat fällig'), h('b', {}, k.faellig)),
     h('div', { class: 'fk-kopf-zeile' }, h('span', {}, 'Ø Ersparnis (6 Monate, aus Kontostand)'), h('b', {}, k.ersparnis ?? '—')),
@@ -57,7 +83,7 @@ function filterLeiste(m, ui) {
     m.filter.map((f) =>
       h(
         'button',
-        { class: `chip${f.aktiv ? ' aktiv' : ''}`, type: 'button', 'aria-pressed': f.aktiv ? 'true' : 'false', onClick: () => ui.setzeFixFilter?.(f.id) },
+        { class: `chip fk-filter-${f.id}${f.aktiv ? ' aktiv' : ''}`, type: 'button', 'aria-pressed': f.aktiv ? 'true' : 'false', onClick: () => ui.setzeFixFilter?.(f.id) },
         `${f.text} `,
         h('span', { class: 'fk-chip-betrag' }, f.betrag),
       ),

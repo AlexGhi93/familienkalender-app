@@ -128,7 +128,7 @@ export function zieleSperre(zs) {
  * Die Seite „Sparziele“ am Tag `heute` → {
  *   zustand: 'ok' | 'nichtGeladen' (noch nie gelesen), gesperrt (Grund, warum nichts geändert werden kann, oder null),
  *   nichtGeladen (Meldung, wenn das letzte Lesen scheiterte – alter Stand bleibt sichtbar), unlesbar (Meldung) , warnungen,
- *   kopf: { zurueckgelegt, noetig, frei, stand }, ohneKontostand, leer, ziele (Karten der laufenden), frei: { betrag, cents,
+ *   kopf: { zurueckgelegt, zurueckgelegtCents, noetig, frei, stand }, ohneKontostand, leer, ziele (Karten der laufenden), frei: { betrag, cents,
  *   kannVerschieben, ziele: [{ id, text, offen }] }, verlauf (Monate, neueste zuerst), abgeschlossen, ausgeblendet (Zahl), symbole
  * }
  */
@@ -156,6 +156,7 @@ export function sparzieleModel(state, heute, { ausgeblendeteZeigen = false } = {
     warnungen: zs.unlesbar || zs.status === 'fehler' ? [] : (zs.warnungen ?? []),
     kopf: {
       zurueckgelegt: betragText(v.summeZiele),
+      zurueckgelegtCents: v.summeZiele, // für das Hochzählen in Glas/Bento (ui/bewegung.js)
       noetig: betragText(v.noetigGesamt),
       frei: betragText(v.frei),
       stand: v.standMonat ? `Stand: Kontostand ${monatText(v.standMonat)} (beide)` : 'Stand: noch kein Kontostand von beiden',
