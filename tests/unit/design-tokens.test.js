@@ -25,6 +25,7 @@ const DUNKEL_MEDIA = variablen(block("@media (prefers-color-scheme: dark) {\n  :
 const DUNKEL_ATTR = variablen(block(":root[data-theme='dark'] {"));
 const KOPF = css.slice(0, css.indexOf('*/') + 2);
 const OHNE_KOMMENTARE = css.replace(/\/\*[\s\S]*?\*\//g, '');
+const THEMEN_DATEIEN = ['themes/glas.css', 'themes/bento.css', 'themes/monat.css', 'themes/schicht.css', 'themes/konto.css', 'themes/formulare.css', 'themes/mehr.css'];
 
 /** Inhalt der Regel, deren Selektor genau `selektor` ist (am Zeilenanfang, erste Fundstelle). */
 function regelVon(selektor) {
@@ -204,9 +205,28 @@ describe('Design-Tokens in theme.css', () => {
   });
 
   test('kein Aussehen setzt --font-zahl auf Fredoka (proportionale Ziffern, kein tnum)', () => {
-    for (const datei of ['themes/glas.css', 'themes/bento.css']) {
+    for (const datei of THEMEN_DATEIEN) {
       const text = readFileSync(new URL(datei, wurzel), 'utf8');
       assert.doesNotMatch(text, /--font-zahl\s*:[^;]*Fredoka/, datei);
+    }
+  });
+
+  test('jede Themen-Datei ist in index.html eingebunden, nach theme.css, und wirkt nur unter [data-aussehen]', () => {
+    const html = readFileSync(new URL('index.html', wurzel), 'utf8');
+    const basis = html.indexOf('href="theme.css"');
+    assert.ok(basis > 0, 'theme.css eingebunden');
+    for (const datei of THEMEN_DATEIEN) {
+      const stelle = html.indexOf(`href="${datei}"`);
+      assert.ok(stelle > basis, `${datei} nach theme.css eingebunden`);
+      // jede Regel (außer @-Regeln und Keyframe-Schritten) muss an [data-aussehen=…] hängen, sonst änderte sie Klassisch
+      const ohneKommentare = readFileSync(new URL(datei, wurzel), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+      const ohneKeyframes = ohneKommentare.replace(/@keyframes[^{]*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/g, '');
+      // Text zwischen einer Klammer und dem nächsten „{“ ist ein Selektor oder der Kopf einer @-Regel
+      for (const [, kopf] of ohneKeyframes.matchAll(/([^{}]+)\{/g)) {
+        const selektoren = kopf.trim();
+        if (selektoren.startsWith('@')) continue;
+        for (const s of selektoren.split(',')) assert.match(s, /data-aussehen=/, `${datei}: „${s.trim()}“ ohne [data-aussehen]`);
+      }
     }
   });
 });

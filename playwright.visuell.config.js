@@ -5,7 +5,7 @@
 // soll, hier 0 Unterschiede zeigen. Die Fotos hängen von den Schriften und der Kantenglättung des Rechners ab – deshalb keine Basis im Repo.
 import { defineConfig, devices } from '@playwright/test';
 
-const PORT = 8142; // eigener Port, damit dieser Lauf neben den End-to-End-Tests (8141) laufen kann
+const PORT = Number(process.env.PW_VISUELL_PORT) || 8142; // eigener Port, damit dieser Lauf neben den End-to-End-Tests (8141) laufen kann; PW_VISUELL_PORT für parallele Läufe
 
 const TELEFON = {
   ...devices['Desktop Chrome'],

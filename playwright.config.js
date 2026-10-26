@@ -6,7 +6,7 @@ import { defineConfig, devices } from '@playwright/test';
 // `serviceWorkers: 'block'`, für sie ändert sich nichts. Gilt auch auf dem CI-Server (die Worker erben die Umgebung).
 process.env.PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS ??= '1';
 
-const PORT = 8141;
+const PORT = Number(process.env.PW_PORT) || 8141; // PW_PORT: eigener Port für parallele Läufe (z. B. in einem git worktree)
 const CI = Boolean(process.env.CI);
 /** Chromium im Telefonformat; `reducedMotion` kommt für alle Projekte aus `use.contextOptions` unten. */
 const TELEFON = {
