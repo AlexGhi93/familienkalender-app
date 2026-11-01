@@ -301,9 +301,9 @@ describe('Pille und Text widersprechen sich nie (Ruling I1 nach dem Review T4)',
     if (z.status === 'unbekannt') return /^unbekannt – /.test(t) ? null : 'unbekannt ohne „unbekannt“';
     if (z.status === 'ueberfaellig') return /überfällig|zu spät/.test(t) ? null : '⚠ ohne „überfällig“';
     if (/überfällig|zu spät/.test(t)) return `${z.status} mit „überfällig“`;
-    if (z.status === 'ok' && /in d+ Tagen|(morgen)|(heute)/.test(t)) return '✓ ok mit Countdown';
+    if (z.status === 'ok' && /in \d+ Tagen|\bmorgen\b|\bheute\b/.test(t)) return '✓ ok mit Countdown';
     if (z.status === 'bald' && /spätestens/.test(t)) return '⏳ bald mit „ab …, spätestens“';
-    if (z.status === 'bald' && /in ca. d+ (Monaten|Jahren)/.test(t) && !/noch ca./.test(t)) return '⏳ bald mit fernem Termin ohne km-Grund';
+    if (z.status === 'bald' && /in ca\. \d+ (Monaten|Jahren)/.test(t) && !/noch ca./.test(t)) return '⏳ bald mit fernem Termin ohne km-Grund';
     return null;
   }
 
