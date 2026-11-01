@@ -47,9 +47,24 @@ function zieleSicherung(ziele) {
   return { beginn: d.beginn ?? null, ziele: d.z ?? [], verschiebungen: d.m ?? [], ...fremd, ...unlesbar };
 }
 
+/**
+ * Autos: Fahrzeuge, Regeln und Reifensätze (wie im Zustand, in ihrer Reihenfolge) und der Verlauf als Liste je Auto und Jahr (sortiert).
+ * `autos` = { daten, historie, rohtexte? } wie aus store.sicherungsDaten; ohne → leer. Was diese Version nicht versteht, fehlt nicht
+ * unbemerkt: `fremd` = solche Einträge roh (Hauptteil), je Verlauf-Teil `fremd`, `unlesbar` = [{ id, text }] Rohtexte unlesbarer Teile.
+ */
+function autosSicherung(autos) {
+  const d = autos?.daten ?? {};
+  const verlauf = Object.entries(autos?.historie ?? {})
+    .flatMap(([auto, jahre]) => Object.values(jahre ?? {}).map((h) => ({ auto, jahr: h.jahr, arbeiten: h.arbeiten ?? [], kilometer: h.km ?? [], ...(h.fremd ? { fremd: h.fremd } : {}) })))
+    .sort((a, b) => a.auto.localeCompare(b.auto) || a.jahr - b.jahr);
+  const fremd = d.fremd && (d.fremd.a?.length > 0 || d.fremd.r?.length > 0 || d.fremd.s?.length > 0) ? { fremd: d.fremd } : {};
+  const unlesbar = Array.isArray(autos?.rohtexte) && autos.rohtexte.length > 0 ? { unlesbar: autos.rohtexte.map(({ id, text }) => ({ id, text })) } : {};
+  return { autos: d.autos ?? [], regeln: d.regeln ?? [], reifensaetze: d.saetze ?? [], verlauf, ...fremd, ...unlesbar };
+}
+
 const nachDatum = (a, b) => a.date.localeCompare(b.date) || (a.time ?? '').localeCompare(b.time ?? '');
 
-/** Sicherung aus dem Zustand (`tage`, `urlaub`, `termine`, `settings`, `einkauf`, `konto`, `schicht`, `fixkosten`, `ziele`); flüchtige Felder (Fehler, Fortschritt …) fehlen bewusst. */
+/** Sicherung aus dem Zustand (`tage`, `urlaub`, `termine`, `settings`, `einkauf`, `konto`, `schicht`, `fixkosten`, `ziele`, `autos`); flüchtige Felder (Fehler, Fortschritt …) fehlen bewusst. */
 export function sicherungErstellen({ state, appVersion, jetzt = new Date() }) {
   return {
     app: 'familienkalender',
@@ -69,6 +84,7 @@ export function sicherungErstellen({ state, appVersion, jetzt = new Date() }) {
     schicht: schichtSicherung(state.schicht),
     fixkosten: fixSicherung(state.fixkosten),
     ziele: zieleSicherung(state.ziele),
+    autos: autosSicherung(state.autos),
   };
 }
 
@@ -80,7 +96,7 @@ const zahl = (n, einzahl, mehrzahl) => `${n} ${n === 1 ? einzahl : mehrzahl}`;
 
 /**
  * „12 Tage · 3 Urlaube · 5 Termine · 4 Artikel auf der Einkaufsliste · 6 Kontostände · 4 Monate Schichtplan · 9 Fixkosten-Posten · 3 Sparziele“
- * (Schichtplan, Fixkosten und Sparziele nur, wenn es welche gibt)
+ * (Schichtplan, Fixkosten, Sparziele und Autos nur, wenn es welche gibt)
  */
 export function sicherungAnzahlText(s) {
   const kontoEintraege = Object.values(s.konto.p).reduce((summe, monate) => summe + Object.keys(monate).length, 0);
@@ -94,5 +110,8 @@ export function sicherungAnzahlText(s) {
   const ziele = (s.ziele?.ziele?.length ?? 0) + (s.ziele?.fremd?.z?.length ?? 0);
   if (ziele > 0) teile.push(zahl(ziele, 'Sparziel', 'Sparziele'));
   if (s.ziele?.unlesbar !== undefined) teile.push('Sparziele unlesbar (als Text gesichert)');
+  const autos = (s.autos?.autos?.length ?? 0) + (s.autos?.fremd?.a?.length ?? 0);
+  if (autos > 0) teile.push(zahl(autos, 'Auto', 'Autos'));
+  if (s.autos?.unlesbar?.length > 0) teile.push('Autos teilweise unlesbar (als Text gesichert)');
   return teile.join(' · ');
 }

@@ -13,6 +13,7 @@ import { kontoAusText, kontoText } from '../domain/konto.js';
 import { katalogAusText, katalogText, monatAusText, monatText } from '../domain/schicht.js';
 import { FIX_SHARDS, shardLesen, shardText } from '../domain/fixkosten.js';
 import { zieleLesen, zieleText, zieleWarnungen } from '../domain/sparziele.js';
+import { autosLesen, autosText, autosWarnungen, historieLesen, historieText, historieWarnungen, leereHistorie } from '../domain/autos.js';
 import { classifyEvent } from '../domain/classify.js';
 import { zeitAusDateTime } from '../domain/format.js';
 import { DEFAULT_SETTINGS, normalizeSettings } from '../domain/settings.js';
@@ -25,6 +26,7 @@ export const EINKAUF_ID = 'fkeinkauf'; // gemeinsame Einkaufsliste (siehe domain
 export const KONTO_ID = 'fkkonto'; // monatliche Kontostände von Papa und Mama (siehe domain/konto.js)
 export const SCHICHTARTEN_ID = 'fkschichtarten'; // Schichtarten von Papa und Mama (siehe domain/schicht.js)
 export const ZIELE_ID = 'fksparen'; // Sparziele und Verschiebungen aus „Frei“ (siehe domain/sparziele.js); nicht „fkziele“: z liegt außerhalb von 0-9 und a-v
+export const AUTOS_ID = 'fkautos'; // Autos, Regeln, Reifensätze und Jahres-Index (siehe domain/autos.js); der Verlauf liegt in „fkah<auto><JJJJ>“
 export const TEST_ID = 'fktest'; // „🔔 Test-Erinnerung“ aus Konto & App → Erinnerungen: für die App unsichtbar
 export const MAX_EINSTELLUNGEN_ZEICHEN = 6000; // Google kürzt `description` still bei 8192 Zeichen (Vertragsprobe C11b)
 const TERMIN_MINUTEN = 30;
@@ -311,6 +313,80 @@ export function zieleAusEreignis(event) {
   return { daten, unlesbar, warnungen: zieleWarnungen({ daten, unlesbar }) };
 }
 
+/** Hauptteil der Autos als verstecktes Ereignis „fkautos“ (wie die Sparziele); der Titel nennt weder Autos noch Kennzeichen, zu volle Daten werden abgelehnt. */
+export function autosZuEreignis(daten) {
+  return schichtEreignis(AUTOS_ID, '🚗 fk Autos (nicht löschen)', autosText(daten), 'autos');
+}
+
+/**
+ * Liest den Hauptteil → { daten, unlesbar, warnungen } (siehe autosLesen): fehlender Text → leere Daten; unlesbarer Text → leere,
+ * gesperrte Daten (nie überschreiben); was diese Version nicht versteht, bleibt als `fremd` erhalten.
+ */
+export function autosAusEreignis(event) {
+  const { daten, unlesbar } = autosLesen(event?.description);
+  return { daten, unlesbar, warnungen: autosWarnungen({ daten, unlesbar }) };
+}
+
+const AUTO_KENNUNG = /^[0-9a-v]{4,16}$/;
+
+/** ID des Verlauf-Teils eines Autos in einem Jahr: `fkah<auto><JJJJ>` (z. B. fkah0123abcv2026; nur 0-9 und a-v). */
+export function historieId(auto, jahr) {
+  if (typeof auto !== 'string' || !AUTO_KENNUNG.test(auto)) throw new Error(`Ungültiges Auto: ${auto}`);
+  if (!Number.isInteger(jahr) || jahr < 2000 || jahr > 2100) throw new Error(`Ungültiges Jahr: ${jahr}`);
+  return `fkah${auto}${jahr}`;
+}
+
+/** „fkautos“ und alle Verlauf-Teile „fkah…“ sind für die übrige App unsichtbar. */
+export const istAutosId = (id) => typeof id === 'string' && (id === AUTOS_ID || id.startsWith('fkah'));
+
+/** Ein Verlauf-Teil ({ auto, jahr, arbeiten, km }) als verstecktes Ereignis „fkah<auto><JJJJ>“; ein zu voller Teil wird abgelehnt. */
+export function historieZuEreignis(historie) {
+  return schichtEreignis(historieId(historie?.auto, historie?.jahr), '🚗 fk Auto-Verlauf (nicht löschen)', historieText(historie), 'autoverlauf');
+}
+
+/** Liest den Verlauf-Teil von `auto` im Jahr `jahr` → { historie, unlesbar, warnungen } (siehe historieLesen). */
+export function historieAusEreignis(event, auto, jahr) {
+  const { historie, unlesbar } = historieLesen(event?.description, { auto, jahr });
+  return { historie, unlesbar, warnungen: historieWarnungen({ historie, unlesbar }) };
+}
+
+/** Alle Paare { auto, jahr } aus dem Jahres-Index (Reihenfolge: Autos wie im Index, Jahre aufsteigend). */
+export const autosTeile = (daten) => Object.entries(daten?.jahre ?? {}).flatMap(([auto, jahre]) => jahre.map((jahr) => ({ auto, jahr })));
+
+/**
+ * Autos aus den Texten im Kalender (Google und Demo gleich): `hauptText` = Beschreibung von „fkautos“ (null = fehlt), `teilText(auto,
+ * jahr)` = Beschreibung des Verlauf-Teils oder null, wenn es ihn nicht gibt. → { daten, historie: { [auto]: { [jahr]: Historie } },
+ * warnungen, unlesbar: { main?: true, shards: [{ auto, jahr }] }, rohtexte: [{ id, text }] }. Gefragt werden nur die Teile aus dem
+ * Jahres-Index; ein fehlender zählt leer (mit Hinweis). Ist der Hauptteil unlesbar, kennt man keinen Index: alles leer und gesperrt.
+ * `rohtexte` = die Texte der unlesbaren Teile (für die Sicherung).
+ */
+export function autosAusTexten(hauptText, teilText) {
+  const haupt = autosAusEreignis(hauptText == null ? null : { description: hauptText });
+  if (haupt.unlesbar) return { daten: haupt.daten, historie: {}, warnungen: haupt.warnungen, unlesbar: { main: true, shards: [] }, rohtexte: [{ id: AUTOS_ID, text: hauptText }] };
+  const historie = {};
+  const warnungen = [...haupt.warnungen];
+  const shards = [];
+  const rohtexte = [];
+  for (const { auto, jahr } of autosTeile(haupt.daten)) {
+    const text = teilText(auto, jahr);
+    const name = haupt.daten.autos.find((a) => a.id === auto)?.name;
+    historie[auto] ??= {};
+    if (text == null) {
+      historie[auto][jahr] = leereHistorie(auto, jahr);
+      warnungen.push(`Der Verlauf ${jahr}${name ? ` von „${name}“` : ''} wurde im Kalender nicht gefunden (wohl von Hand gelöscht); er wird leer gezeigt.`);
+      continue;
+    }
+    const g = historieAusEreignis({ description: text }, auto, jahr);
+    historie[auto][jahr] = g.historie;
+    warnungen.push(...g.warnungen.map((w) => (name ? `${name}: ${w}` : w)));
+    if (g.unlesbar) {
+      shards.push({ auto, jahr });
+      rohtexte.push({ id: historieId(auto, jahr), text });
+    }
+  }
+  return { daten: haupt.daten, historie, warnungen, unlesbar: { shards }, rohtexte };
+}
+
 /** Liest das Register; unbrauchbares JSON ergibt `register: null` (nichts wird gelöscht oder erraten). */
 export function geraeteAusEreignis(event) {
   const text = event?.description;
@@ -361,7 +437,7 @@ export function einstellungenAusEreignis(event) {
 export function ereignisZuEintrag(event, kalender, settings) {
   if (event.status === 'cancelled' || !event.start) return { art: 'ignorieren' };
   if (event.id === EINSTELLUNGEN_ID) return { art: 'einstellungen', ...einstellungenAusEreignis(event) };
-  if (event.id === TEST_ID || event.id === GERAETE_ID || event.id === EINKAUF_ID || event.id === KONTO_ID || event.id === ZIELE_ID || istSchichtId(event.id) || istFixId(event.id)) return { art: 'ignorieren' };
+  if (event.id === TEST_ID || event.id === GERAETE_ID || event.id === EINKAUF_ID || event.id === KONTO_ID || event.id === ZIELE_ID || istSchichtId(event.id) || istFixId(event.id) || istAutosId(event.id)) return { art: 'ignorieren' };
 
   const { typ, subtyp, quelle } = classifyEvent(event, kalender);
   if (TAGES_TYPEN.includes(typ)) return { art: 'tag', id: event.id, typ, tage: spanDays(eventSpan(event)), quelle };

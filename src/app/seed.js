@@ -5,6 +5,7 @@ import { ARZT_SUBTYPEN } from '../domain/types.js';
 import { leererMonat, setzeNotiz, setzeSchicht, standardKatalog, tageImMonat, zusatzHinzufuegen } from '../domain/schicht.js';
 import { FIX_SHARDS, leererShard, postenSetzen, shardFuer } from '../domain/fixkosten.js';
 import { ZIEL_EMOJIS } from '../domain/sparziele.js';
+import { arbeitSetzen, autoAnlegen, autoAusVorlage, historieJahrEintragen, kmEintragen, leereAutos, leereHistorie, monatPlus } from '../domain/autos.js';
 import { naechsterKitaTag, wochenSerie } from './serie.js';
 
 const MUSTER = ['kita_essen', 'kita_essen', 'kita_essen', 'kita_ohne', 'kita_essen', 'kita_essen', 'kita_essen', 'kita_essen'];
@@ -124,7 +125,8 @@ export function seedDemo(heute) {
   const schicht = schichtDemo([monatVor(1), monatVor(0), monatVor(-1)]);
   const fixkosten = fixkostenDemo(monatVor);
   const ziele = zieleDemo(monatVor);
-  return { settings, tage, urlaub, termine: [...termine, ...sachenDemo({ settings, tage, urlaub }, heute)], einkauf, konto, schicht, fixkosten, ziele };
+  const autos = autosDemo(heute);
+  return { settings, tage, urlaub, termine: [...termine, ...sachenDemo({ settings, tage, urlaub }, heute)], einkauf, konto, schicht, fixkosten, ziele, autos };
 }
 
 // Papa: Blöcke aus 4 Diensten, dann 2 Tage frei (fortlaufend über Monatsgrenzen); jeder Block mit anderen Arten.
@@ -228,4 +230,67 @@ function sachenDemo(state, heute) {
   }
   sachen.push({ id: 'demo-s3', typ: 'kita_sache', richtung: 'hin', date: naechsterKitaTag(state, addDays(heute, 11)), time: state.settings.bringzeit, mitnehmen: ['Windeln', 'Socken'], kosten: null });
   return sachen;
+}
+
+/** Gleiche Kennungen bei jedem Erzeugen (die Demo soll stabil aussehen): einfacher Zahlengenerator statt Math.random. */
+function festerZufall(start) {
+  let x = start;
+  return () => {
+    x = (x * 1103515245 + 12345) % 2147483648;
+    return x / 2147483648;
+  };
+}
+
+/**
+ * Zwei erfundene Autos (keine echten Kennzeichen, FIN oder Namen), relativ zu `heute`, aus den Vorlagen: ein neu gekauftes Elektroauto
+ * (Kennzeichen „W-12345“, erfundene FIN, Sommer- und Winterreifen, Reifenwechsel, Vignette, Wischer, Kilometerstand) und ein gebrauchter
+ * kleiner Benziner (Ölwechsel, Pickerl, Vignette, Kilometerstand; Zündkerzen, Filter usw. bleiben „unbekannt“). → { daten, historie }
+ * im Zustandsformat (lange Schlüssel); der Demo-Adapter speichert es als Kalendertext.
+ */
+function autosDemo(heute) {
+  const jahr = Number(heute.slice(0, 4));
+  const tag = (n) => addDays(heute, -n);
+  const ez = tag(480);
+  const elektro = autoAusVorlage('tesla3', { kennzeichen: 'W-12345', fin: 'XDEMN12345AB67890', ezDatum: ez, zulassungDatum: ez, haltung: 'Leasing', leasingEnde: addDays(ez, 4 * 365) }, { zufall: festerZufall(11) });
+  elektro.regeln = elektro.regeln.map((r) => (r.typ === 'pickerl' ? { ...r, fixMonat: monatPlus(ez.slice(0, 7), 36) } : r));
+  const gebraucht = autoAusVorlage('fiat500', { ezDatum: tag(9 * 365 + 40), zulassungDatum: tag(400), haltung: 'Eigentum' }, { zufall: festerZufall(23) });
+  const pickerlAm = tag(300);
+  const naechstesPickerl = monatPlus(pickerlAm.slice(0, 7), 12);
+  gebraucht.regeln = gebraucht.regeln.map((r) => (r.typ === 'pickerl' ? { ...r, fixMonat: naechstesPickerl } : r));
+  let daten = autoAnlegen(autoAnlegen(leereAutos(), elektro), gebraucht);
+
+  const [sommer, winter] = elektro.saetze;
+  const vignetteAm = `${jahr - 1}-12-03`;
+  const arbeiten = [
+    { auto: elektro.auto.id, typ: 'reifenwechsel', datum: tag(380), km: 5200, kosten: 6000, details: { montiert: winter.id, rotiert: false } },
+    { auto: elektro.auto.id, typ: 'vignette', datum: vignetteAm, kosten: 10340, details: { jahr, art: 'digital', gekauftAm: vignetteAm } },
+    { auto: elektro.auto.id, typ: 'reifenwechsel', datum: tag(200), km: 11800, kosten: 6000, details: { montiert: sommer.id, rotiert: false } },
+    { auto: elektro.auto.id, typ: 'wischer', datum: tag(95), kosten: 4990, notiz: 'Selbst getauscht' },
+    { auto: gebraucht.auto.id, typ: 'pickerl', datum: pickerlAm, km: 93400, kosten: 8500, details: { naechsterMonat: naechstesPickerl } },
+    { auto: gebraucht.auto.id, typ: 'vignette', datum: vignetteAm, kosten: 10340, details: { jahr, art: 'Klebe', gekauftAm: vignetteAm } },
+    { auto: gebraucht.auto.id, typ: 'oelwechsel', datum: tag(160), km: 96500, kosten: 14900, notiz: 'Werkstatt ums Eck', details: { oelSorte: 'SAE 0W-30', menge: 3.2, filter: true } },
+  ];
+  const stande = [
+    { auto: elektro.auto.id, datum: tag(12), km: 18400 },
+    { auto: gebraucht.auto.id, datum: tag(8), km: 99800 },
+  ];
+  const historie = {};
+  const teil = (auto, datum) => {
+    const j = Number(datum.slice(0, 4));
+    daten = historieJahrEintragen(daten, auto, j);
+    historie[auto] ??= {};
+    historie[auto][j] ??= leereHistorie(auto, j);
+    return j;
+  };
+  const ids = festerZufall(37);
+  arbeiten.forEach((a, i) => {
+    const j = teil(a.auto, a.datum);
+    const id = `demo${String(i).padStart(2, '0')}${Math.floor(ids() * 32).toString(32)}${Math.floor(ids() * 32).toString(32)}`;
+    historie[a.auto][j] = arbeitSetzen(historie[a.auto][j], { ...a, id }, { heute });
+  });
+  for (const s of stande) {
+    const j = teil(s.auto, s.datum);
+    historie[s.auto][j] = kmEintragen(historie[s.auto][j], s, { heute });
+  }
+  return { daten, historie };
 }

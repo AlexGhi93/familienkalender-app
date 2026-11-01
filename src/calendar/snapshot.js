@@ -7,6 +7,7 @@ import { normalisiereKonto } from '../domain/konto.js';
 import { normalisiereKatalog, normalisiereMonat } from '../domain/schicht.js';
 import { FIX_SHARDS, normalisiereShard } from '../domain/fixkosten.js';
 import { zieleLesen, zieleText } from '../domain/sparziele.js';
+import { autosLesen, autosText, historieLesen, historieText } from '../domain/autos.js';
 import { TAGES_TYPEN, TYPES } from '../domain/types.js';
 
 export const SNAPSHOT_KEY = 'fk.snapshot.v1';
@@ -85,6 +86,43 @@ function zieleFuerSnapshot(ziele) {
   }
 }
 
+/**
+ * Autos nachsichtig lesen (nur eine Kopie; das Vorladen holt sie neu): gespeichert sind die Kalendertexte { text, historie: { [auto]:
+ * { [jahr]: Text } }, unlesbar }, gelesen wie aus dem Kalender. Fehlt das (alter Schnappschuss) oder ist der Hauptteil unbrauchbar →
+ * null (= noch nicht gelesen), ohne den Rest zu verwerfen; ein unbrauchbarer Verlauf-Teil fällt weg. `unlesbar` = beim letzten Lesen
+ * Unlesbares (nur zur Anzeige: auch offline gesperrt).
+ */
+function pruefeAutos(roh) {
+  if (!istObjekt(roh) || typeof roh.text !== 'string') return null;
+  const haupt = autosLesen(roh.text);
+  if (haupt.unlesbar) return null;
+  const historie = {};
+  for (const [auto, jahre] of Object.entries(istObjekt(roh.historie) ? roh.historie : {})) {
+    for (const [jahr, text] of Object.entries(istObjekt(jahre) ? jahre : {})) {
+      const g = typeof text === 'string' ? historieLesen(text, { auto, jahr: Number(jahr) }) : { unlesbar: true };
+      if (!g.unlesbar) (historie[auto] ??= {})[jahr] = g.historie;
+    }
+  }
+  const u = istObjekt(roh.unlesbar) ? roh.unlesbar : {};
+  const shards = (Array.isArray(u.shards) ? u.shards : []).filter((x) => typeof x?.auto === 'string' && Number.isInteger(x?.jahr)).map(({ auto, jahr }) => ({ auto, jahr }));
+  return { daten: haupt.daten, historie, unlesbar: { ...(u.main === true ? { main: true } : {}), shards } };
+}
+
+/**
+ * Autos für den Schnappschuss: als Kalendertexte (kurz, mit fremden Einträgen); nur gelesene (Status 'geladen' oder 'gespeichert') –
+ * sonst (noch nie gelesen, gerade am Lesen, gescheitert) null: dann behält speichern() die Autos des bisherigen Schnappschusses.
+ */
+function autosFuerSnapshot(autos) {
+  if (autos?.status !== 'geladen' && autos?.status !== 'gespeichert') return null;
+  try {
+    const historie = {};
+    for (const [auto, jahre] of Object.entries(autos.historie ?? {})) for (const [jahr, h] of Object.entries(jahre ?? {})) (historie[auto] ??= {})[jahr] = historieText(h);
+    return { text: autosText(autos.daten), historie, unlesbar: autos.unlesbar ?? { shards: [] } };
+  } catch {
+    return null;
+  }
+}
+
 /** Prüft die gelesene Struktur streng; liefert die bereinigten Daten oder null. */
 function pruefe(roh) {
   if (!istObjekt(roh) || roh.v !== 1 || typeof roh.gespeichertAm !== 'string' || Number.isNaN(Date.parse(roh.gespeichertAm))) return null;
@@ -105,14 +143,14 @@ function pruefe(roh) {
     if (!istObjekt(t) || typeof t.id !== 'string' || !TERMIN_TYPEN.includes(t.typ) || !TYPES[t.typ] || !gueltigesDatum(t.date) || !Array.isArray(t.mitnehmen ?? [])) return null;
   }
   const fenster = istObjekt(roh.fenster) && gueltigesDatum(roh.fenster.von) && gueltigesDatum(roh.fenster.bis) ? { von: roh.fenster.von, bis: roh.fenster.bis } : null;
-  return { daten: { settings, tage: roh.tage, urlaub: roh.urlaub, termine: roh.termine, fenster, einkauf: normalisiereListe(roh.einkauf), konto: normalisiereKonto(roh.konto), schicht: pruefeSchicht(roh.schicht, new Date(roh.gespeichertAm).toISOString()), fixkosten: pruefeFixkosten(roh.fixkosten), ziele: pruefeZiele(roh.ziele) }, gespeichertAm: roh.gespeichertAm };
+  return { daten: { settings, tage: roh.tage, urlaub: roh.urlaub, termine: roh.termine, fenster, einkauf: normalisiereListe(roh.einkauf), konto: normalisiereKonto(roh.konto), schicht: pruefeSchicht(roh.schicht, new Date(roh.gespeichertAm).toISOString()), fixkosten: pruefeFixkosten(roh.fixkosten), ziele: pruefeZiele(roh.ziele), autos: pruefeAutos(roh.autos) }, gespeichertAm: roh.gespeichertAm };
 }
 
 export function createSnapshot({ speicher = globalThis.localStorage ?? null, jetzt = () => new Date() } = {}) {
   return {
     /**
      * Speichert Tage, Urlaub, Termine und Einstellungen der letzten zwölf Monate, dazu die Schichtarten und von den geladenen Monaten
-     * des Schichtplans die sechs am nächsten zu `heute`, die vier Teile der Fixkosten und die Sparziele (jeweils falls schon gelesen).
+     * des Schichtplans die sechs am nächsten zu `heute`, die vier Teile der Fixkosten, die Sparziele und die Autos (jeweils falls schon gelesen).
      * Gibt true zurück, wenn gespeichert wurde.
      */
     speichern(state, heute) {
@@ -122,6 +160,15 @@ export function createSnapshot({ speicher = globalThis.localStorage ?? null, jet
         try {
           const alt = JSON.parse(speicher.getItem(SNAPSHOT_KEY))?.ziele;
           return pruefeZiele(alt) ? alt : null;
+        } catch {
+          return null;
+        }
+      };
+      /** Die Autos des bisherigen Schnappschusses (roh, nur wenn brauchbar): solange keine frisch gelesenen da sind, bleiben sie. */
+      const letzteAutos = () => {
+        try {
+          const alt = JSON.parse(speicher.getItem(SNAPSHOT_KEY))?.autos;
+          return pruefeAutos(alt) ? alt : null;
         } catch {
           return null;
         }
@@ -141,6 +188,7 @@ export function createSnapshot({ speicher = globalThis.localStorage ?? null, jet
         // im Zustandsformat (lange Schlüssel): etwa 1,5-mal der Kalendertext, also höchstens rund 4 × 9000 Zeichen
         fixkosten: state.fixkosten?.shards ? { shards: state.fixkosten.shards, unlesbar: state.fixkosten.unlesbar ?? [] } : null,
         ziele: zieleFuerSnapshot(state.ziele) ?? (state.ziele?.status === 'fehler' ? letzteZiele() : null), // höchstens ~6000 Zeichen (Kalendertext)
+        autos: autosFuerSnapshot(state.autos) ?? letzteAutos(), // Kalendertexte: Hauptteil + je Auto und Jahr ein Teil (je ≤ 6000 Zeichen)
       });
       if (text.length > MAX_SNAPSHOT_ZEICHEN) return false;
       try {

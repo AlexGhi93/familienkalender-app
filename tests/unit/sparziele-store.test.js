@@ -546,7 +546,7 @@ describe('Schnappschuss (offline), Sicherung, Beispieldaten entfernen, Zurückse
     assert.deepEqual(d.ziele, { daten: vorher.ziele.daten, unlesbar: false, text: null });
     const s = sicherungErstellen({ state: d, appVersion: '1.1.0', jetzt: JETZT });
     assert.deepEqual(s.ziele, { beginn: vorher.ziele.daten.beginn, ziele: vorher.ziele.daten.z, verschiebungen: vorher.ziele.daten.m });
-    assert.match(sicherungAnzahlText(s), /3 Sparziele$/);
+    assert.match(sicherungAnzahlText(s), /· 3 Sparziele( · |$)/);
   });
 
   test('Sicherung: unlesbare Sparziele als Rohtext, fremde Einträge roh dabei (nichts fehlt unbemerkt)', async () => {

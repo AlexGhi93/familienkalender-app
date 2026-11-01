@@ -1,4 +1,4 @@
-// Was im Hintergrund vorgeladen oder nachgelesen wird (Schichtplan, Fixkosten, Sparziele), zeichnet nur die Ansicht neu, die es zeigt.
+// Was im Hintergrund vorgeladen oder nachgelesen wird (Schichtplan, Fixkosten, Sparziele, Autos), zeichnet nur die Ansicht neu, die es zeigt.
 // Sonst ginge z. B. beim Eintippen des Kontostands die Tastatur zu, sobald das Vorladen der Fixkosten oder das Nachlesen der Sparziele
 // fertig ist (Neuzeichnen nimmt den Fokus).
 
@@ -7,6 +7,8 @@ const SICHTBAR = {
   schicht: ({ seite }) => seite === 'schicht',
   fixkosten: ({ seite, kontoAnsicht }) => seite === 'konto' && kontoAnsicht === 'fixkosten',
   ziele: ({ seite, kontoAnsicht }) => seite === 'konto' && kontoAnsicht === 'sparziele',
+  // Autos: bisher zeigt sie keine Seite; Task 3/4 (Karte auf Heute, Mehr → Autos) ergänzen hier, wo sie sichtbar sind
+  autos: ({ seite }) => seite === 'autos',
 };
 
 /** Unterscheiden sich zwei Zustände nur in vorgeladenen Teilen, die gerade nicht zu sehen sind? (Dann nicht neu zeichnen.) */

@@ -4,11 +4,12 @@ import { addDays, todayVienna } from '../domain/dates.js';
 import { kindergartenjahr } from '../domain/urlaub.js';
 import { normalizeSettings } from '../domain/settings.js';
 import { beendeTestErinnerung, pruefeErinnerungen, repariereErinnerungen, starteTestErinnerung } from './erinnerungen.js';
-import { EINKAUF_ID, EINSTELLUNGEN_ID, FIX_IDS, GERAETE_ID, KONTO_ID, SCHICHTARTEN_ID, ZIELE_ID, einkaufAusEreignis, einkaufZuEreignis, kontoAusEreignis, kontoZuEreignis, einstellungenAusEreignis, einstellungenZuEreignis, fixShardAusEreignis, fixShardId, fixShardZuEreignis, geraeteAusEreignis, geraeteZuEreignis, schichtartenAusEreignis, schichtartenZuEreignis, schichtMonatAusEreignis, schichtMonatId, schichtMonatZuEreignis, tagZuEreignis, terminZuEreignis, urlaubCheckZuEreignis, urlaubZuEreignis, zieleAusEreignis, zieleZuEreignis } from './mapping.js';
+import { AUTOS_ID, autosAusTexten, autosTeile, autosZuEreignis, historieAusEreignis, historieId, historieZuEreignis, EINKAUF_ID, EINSTELLUNGEN_ID, FIX_IDS, GERAETE_ID, KONTO_ID, SCHICHTARTEN_ID, ZIELE_ID, einkaufAusEreignis, einkaufZuEreignis, kontoAusEreignis, kontoZuEreignis, einstellungenAusEreignis, einstellungenZuEreignis, fixShardAusEreignis, fixShardId, fixShardZuEreignis, geraeteAusEreignis, geraeteZuEreignis, schichtartenAusEreignis, schichtartenZuEreignis, schichtMonatAusEreignis, schichtMonatId, schichtMonatZuEreignis, tagZuEreignis, terminZuEreignis, urlaubCheckZuEreignis, urlaubZuEreignis, zieleAusEreignis, zieleZuEreignis } from './mapping.js';
 import { leererMonat, standardKatalog } from '../domain/schicht.js';
 import { leererShard, teilGesperrtFehler } from '../domain/fixkosten.js';
 import { leereZiele, zieleGesperrtFehler } from '../domain/sparziele.js';
 import { istUrlaubCheckId } from '../domain/ids.js';
+import { autosGesperrtFehler, autosLesen, historieGesperrtFehler, leereAutos, leereHistorie } from '../domain/autos.js';
 import { ereignisseZuZustand } from './zustand.js';
 
 const TAGE_ZURUECK = 31;
@@ -311,6 +312,56 @@ export function createGoogleAdapter({ api, kalender, jetzt = () => new Date(), a
         return g.shard;
       };
       return aendereVersteckt({ id: fixShardId(nr), lesen, bauen: (shard) => fixShardZuEreignis(nr, shard), fehler: 'Die Fixkosten konnten nicht gespeichert werden. Bitte noch einmal versuchen.', leer: leererShard }, aenderung);
+    },
+
+    /**
+     * Autos (verstecktes Ereignis „fkautos“) und ihr Verlauf („fkah<auto><JJJJ>“ je Auto und Jahr): erst der Hauptteil, dann alle Teile
+     * aus seinem Jahres-Index gleichzeitig. → { daten, historie, warnungen, unlesbar: { main?, shards }, rohtexte } (siehe
+     * autosAusTexten). Nicht beim Start geladen (im Hintergrund, siehe store.schichtVorladen).
+     */
+    async leseAutos() {
+      const e = await api.ereignisse.holen(kalender.anwesenheit, AUTOS_ID);
+      const hauptText = !e || e.status === 'cancelled' ? null : (e.description ?? '');
+      const vorab = autosLesen(hauptText);
+      const teile = vorab.unlesbar ? [] : autosTeile(vorab.daten);
+      const ereignisse = await Promise.all(teile.map(({ auto, jahr }) => api.ereignisse.holen(kalender.anwesenheit, historieId(auto, jahr))));
+      const texte = new Map(teile.map(({ auto, jahr }, i) => [historieId(auto, jahr), !ereignisse[i] || ereignisse[i].status === 'cancelled' ? null : (ereignisse[i].description ?? '')]));
+      return autosAusTexten(hauptText, (auto, jahr) => texte.get(historieId(auto, jahr)) ?? null);
+    },
+
+    /** Ein Verlauf-Teil allein (nach einem Speicherfehler): { historie, unlesbar, warnungen, text (Rohtext, nur wenn unlesbar), fehlt }. */
+    async leseHistorie(auto, jahr) {
+      const e = await api.ereignisse.holen(kalender.anwesenheit, historieId(auto, jahr));
+      const fehlt = !e || e.status === 'cancelled';
+      const g = historieAusEreignis(fehlt ? null : e, auto, jahr);
+      return { ...g, text: g.unlesbar ? e.description : null, fehlt };
+    },
+
+    /**
+     * Ändert den Hauptteil: `aenderung(daten)` → neue Daten, angewendet auf die NEUESTE Fassung (fehlt sie: leere Daten); gibt die
+     * gespeicherten zurück. Ist die neueste Fassung unlesbar, wird nichts geschrieben (Fehler „AutosGesperrt“).
+     */
+    aendereAutos(aenderung) {
+      const lesen = (e) => {
+        const g = autosLesen(e.description);
+        if (g.unlesbar) throw autosGesperrtFehler();
+        return g.daten;
+      };
+      return aendereVersteckt({ id: AUTOS_ID, lesen, bauen: autosZuEreignis, fehler: 'Die Autos konnten nicht gespeichert werden. Bitte noch einmal versuchen.', leer: leereAutos }, aenderung);
+    },
+
+    /**
+     * Ändert NUR den Verlauf-Teil von `auto` im Jahr `jahr` (wie aendereAutos; fehlt er: leerer Teil). Unlesbar → nichts geschrieben
+     * (Fehler „HistorieGesperrt“). Ungültiges Auto/Jahr → abgelehntes Versprechen.
+     */
+    async aendereHistorie(auto, jahr, aenderung) {
+      const id = historieId(auto, jahr);
+      const lesen = (e) => {
+        const g = historieAusEreignis(e, auto, jahr);
+        if (g.unlesbar) throw historieGesperrtFehler();
+        return g.historie;
+      };
+      return aendereVersteckt({ id, lesen, bauen: historieZuEreignis, fehler: 'Der Verlauf konnte nicht gespeichert werden. Bitte noch einmal versuchen.', leer: () => leereHistorie(auto, jahr) }, aenderung);
     },
 
     /** Erinnerungen dieses Kontos prüfen/reparieren und eine Test-Erinnerung auslösen (siehe erinnerungen.js). */

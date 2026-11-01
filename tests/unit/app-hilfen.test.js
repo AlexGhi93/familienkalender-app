@@ -22,7 +22,7 @@ describe('Sicherung', () => {
   const s = sicherungErstellen({ state, appVersion: '9.9.9', jetzt: new Date('2026-10-14T06:00:00Z') });
 
   test('Kopf und Inhalt; flüchtige Felder fehlen', () => {
-    assert.deepEqual(Object.keys(s), ['app', 'sicherungVersion', 'appVersion', 'erstelltAm', 'settings', 'tage', 'urlaub', 'termine', 'einkauf', 'konto', 'schicht', 'fixkosten', 'ziele']);
+    assert.deepEqual(Object.keys(s), ['app', 'sicherungVersion', 'appVersion', 'erstelltAm', 'settings', 'tage', 'urlaub', 'termine', 'einkauf', 'konto', 'schicht', 'fixkosten', 'ziele', 'autos']);
     assert.deepEqual([s.app, s.sicherungVersion, s.appVersion, s.erstelltAm], ['familienkalender', SICHERUNG_VERSION, '9.9.9', '2026-10-14T06:00:00.000Z']);
     assert.deepEqual(s.tage, { '2026-10-01': { typ: 'kita_essen' }, '2026-10-02': { typ: 'krank' } });
     assert.deepEqual(Object.keys(s.tage), ['2026-10-01', '2026-10-02']);
@@ -45,7 +45,7 @@ describe('Sicherung', () => {
 
   test('Dateiname und Anzahl (Einzahl und Mehrzahl)', () => {
     assert.equal(sicherungDateiname('2026-10-14'), 'familienkalender-sicherung-2026-10-14.json');
-    assert.equal(sicherungAnzahlText(s), '2 Tage · 2 Urlaube · 8 Termine · 4 Artikel auf der Einkaufsliste · 10 Kontostände · 3 Monate Schichtplan · 13 Fixkosten-Posten');
+    assert.equal(sicherungAnzahlText(s), '2 Tage · 2 Urlaube · 8 Termine · 4 Artikel auf der Einkaufsliste · 10 Kontostände · 3 Monate Schichtplan · 13 Fixkosten-Posten · 2 Autos');
     const eins = { tage: { a: 1 }, urlaub: [1], termine: [1], einkauf: { e: [1] }, konto: { p: { papa: { '2026-09': 1 }, mama: {} } } };
     assert.equal(sicherungAnzahlText(eins), '1 Tag · 1 Urlaub · 1 Termin · 1 Artikel auf der Einkaufsliste · 1 Kontostand');
     assert.equal(sicherungAnzahlText({ ...eins, schicht: { katalog: null, monate: { '2026-09': {} } } }), '1 Tag · 1 Urlaub · 1 Termin · 1 Artikel auf der Einkaufsliste · 1 Kontostand · 1 Monat Schichtplan');

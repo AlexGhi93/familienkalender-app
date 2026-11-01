@@ -5,9 +5,30 @@ import { leeresKonto, normalisiereKonto } from '../domain/konto.js';
 import { katalogText, leererMonat, monatText, normalisiereKatalog, normalisiereMonat, standardKatalog } from '../domain/schicht.js';
 import { FIX_SHARDS, leererShard, normalisiereShard, shardText, teilGesperrtFehler } from '../domain/fixkosten.js';
 import { zieleGesperrtFehler, zieleLesen, zieleText, zieleWarnungen } from '../domain/sparziele.js';
+import { autosGesperrtFehler, autosLesen, autosText, historieGesperrtFehler, historieLesen, historieText, leereHistorie } from '../domain/autos.js';
+import { autosAusTexten, historieAusEreignis, historieId } from '../calendar/mapping.js';
 import { seedDemo } from './seed.js';
 
 const KEY = 'fk.demo.v1';
+
+/**
+ * Autos im Speicher wie im Kalender als Texte: { text (Hauptteil „fkautos“, null = noch keiner), teile: { 'fkah<auto><JJJJ>': Text } }
+ * – so verhalten sich „unlesbar“ und fremde Einträge wie bei Google. Fehlt es (älterer Speicher) oder ist es unbrauchbar → leer.
+ */
+function autosAusSpeicher(roh) {
+  const ok = roh !== null && typeof roh === 'object' && !Array.isArray(roh) && (roh.text === null || typeof roh.text === 'string') && roh.teile && typeof roh.teile === 'object';
+  return ok ? { text: roh.text, teile: Object.fromEntries(Object.entries(roh.teile).filter(([, t]) => typeof t === 'string')) } : { text: null, teile: {} };
+}
+
+/** Beispiel-Autos ({ daten, historie } im Zustandsformat) als Texte für den Speicher. */
+function autosZuSpeicher({ daten, historie }) {
+  const teile = {};
+  for (const jahre of Object.values(historie ?? {})) for (const h of Object.values(jahre)) teile[historieId(h.auto, h.jahr)] = historieText(h);
+  return { text: autosText(daten), teile };
+}
+
+/** Wie leseAutos beim Google-Adapter, aus den Texten im Speicher. */
+const autosGelesen = (autos) => autosAusTexten(autos?.text ?? null, (auto, jahr) => autos?.teile?.[historieId(auto, jahr)] ?? null);
 
 /** Schichtdaten aus dem Speicher nachsichtig lesen: { katalog | null, monate: { 'JJJJ-MM': Monat } }; Unbrauchbares fällt weg. */
 function schichtAusSpeicher(roh) {
@@ -64,12 +85,12 @@ export function createDemoAdapter({ speicher = globalThis.localStorage, jetzt = 
 
   function neuErzeugen() {
     const seed = seedDemo(todayVienna(jetzt()));
-    daten = { ...seed, ziele: zieleText(seed.ziele) }; // Sparziele wie im Kalender als Text (so verhält sich „unlesbar“ wie bei Google)
+    daten = { ...seed, ziele: zieleText(seed.ziele), autos: autosZuSpeicher(seed.autos) }; // Sparziele und Autos wie im Kalender als Text (so verhält sich „unlesbar“ wie bei Google)
     sichern();
   }
 
-  /** Was laden() und zuruecksetzen() liefern: eine Kopie, die Sparziele gelesen wie beim Google-Adapter. */
-  const nachAussen = () => ({ ...structuredClone(daten), ziele: zieleGelesen(daten.ziele) });
+  /** Was laden() und zuruecksetzen() liefern: eine Kopie, Sparziele und Autos gelesen wie beim Google-Adapter. */
+  const nachAussen = () => ({ ...structuredClone(daten), ziele: zieleGelesen(daten.ziele), autos: autosGelesen(daten.autos) });
 
   return {
     istDemo: true, // der Store erlaubt „Beispieldaten entfernen“ nur mit einem Adapter, der das von sich sagt
@@ -96,6 +117,7 @@ export function createDemoAdapter({ speicher = globalThis.localStorage, jetzt = 
           // … und noch keine Sparziele (null); Text wie im Kalender. Etwas anderes als Text (beschädigt, neuere Version) gilt als
           // unlesbar und bleibt stehen: wie bei Google wird es nie überschrieben.
           if (daten.ziele === undefined) daten.ziele = null;
+          daten.autos = autosAusSpeicher(daten.autos); // … und noch keine Autos
         }
       }
       return nachAussen();
@@ -208,6 +230,38 @@ export function createDemoAdapter({ speicher = globalThis.localStorage, jetzt = 
       const neu = aenderung(structuredClone(alt.daten));
       if (!neu) return null;
       daten.ziele = zieleText(neu); // wirft, wenn sie nicht in den Kalender passen würden
+      sichern();
+      return structuredClone(neu);
+    },
+    /** Autos und ihr Verlauf lesen (wie beim Google-Adapter): { daten, historie, warnungen, unlesbar, rohtexte }. */
+    async leseAutos() {
+      return autosGelesen(daten?.autos);
+    },
+    /** Ein Verlauf-Teil allein (wie beim Google-Adapter): { historie, unlesbar, warnungen, text, fehlt }. */
+    async leseHistorie(auto, jahr) {
+      const text = daten?.autos?.teile?.[historieId(auto, jahr)];
+      const g = historieAusEreignis(text === undefined ? null : { description: text }, auto, jahr);
+      return { ...g, text: g.unlesbar ? text : null, fehlt: text === undefined };
+    },
+    /** Hauptteil ändern (wie beim Google-Adapter): unlesbar → „AutosGesperrt“, nichts geschrieben; zu voll → abgelehnt. */
+    async aendereAutos(aenderung) {
+      const alt = autosLesen(daten.autos.text);
+      if (alt.unlesbar) throw autosGesperrtFehler();
+      const neu = aenderung(structuredClone(alt.daten));
+      if (!neu) return null;
+      daten.autos.text = autosText(neu); // wirft, wenn es nicht in den Kalender passen würde
+      sichern();
+      return structuredClone(neu);
+    },
+    /** Nur den Verlauf-Teil von `auto` im Jahr `jahr` ändern (wie beim Google-Adapter). */
+    async aendereHistorie(auto, jahr, aenderung) {
+      const id = historieId(auto, jahr);
+      const text = daten.autos.teile[id];
+      const alt = text === undefined ? { historie: leereHistorie(auto, jahr), unlesbar: false } : historieLesen(text, { auto, jahr });
+      if (alt.unlesbar) throw historieGesperrtFehler();
+      const neu = aenderung(structuredClone(alt.historie));
+      if (!neu) return null;
+      daten.autos.teile[id] = historieText(neu);
       sichern();
       return structuredClone(neu);
     },
