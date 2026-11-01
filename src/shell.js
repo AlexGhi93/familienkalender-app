@@ -380,7 +380,7 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
   store.subscribe((state) => {
     // Hat sich nur der Schichtplan, die Fixkosten oder die Sparziele geändert (z. B. das Vorladen im Hintergrund), bleibt jede Seite, die sie nicht zeigt,
     // wie sie ist; neu gezeichnet würde sie z. B. die Animationen in „Mehr“ abbrechen. Offene Blätter melden sich selbst an.
-    const nurHintergrund = nurHintergrundGeaendert(gemeldet, state, { seite: ui.seite(), kontoAnsicht: ui.kontoAnsicht });
+    const nurHintergrund = nurHintergrundGeaendert(gemeldet, state, { seite: ui.seite(), kontoAnsicht: ui.kontoAnsicht, heute: store.heute() });
     gemeldet = state;
     if (state.fehler && (state.fehler !== letzterFehler || (state.fehlerNr ?? 0) !== letzteFehlerNr)) toast(state.fehler, { art: 'fehler', dauer: 6000 });
     else if (!state.fehler && letzterFehler) entferneFehlerToast();

@@ -754,6 +754,14 @@ describe('Autos: Fälligkeiten', () => {
     const maerz = faelligkeit(saison, teslaWechsel(), teslaAuto(), null, '2027-03-20', { saetze: saetze() });
     assert.deepEqual([maerz.datum, maerz.status, maerz.erinnerungAb], ['2027-04-15', 'ok', '2027-04-01']);
     assert.equal(faelligkeit(saison, teslaWechsel(), teslaAuto(), null, '2027-04-01', { saetze: saetze() }).status, 'bald');
+    // Task 3: ebenso Winterreifen erst ab 15.10. (Spec §4: „Winterreifen montieren“ am 15.10. und 1.11.), nicht schon 30 Tage vor dem 1.11.
+    const oktober = faelligkeit(saison, teslaWechsel().slice(0, 3), teslaAuto(), null, '2026-10-14', { saetze: saetze() });
+    assert.deepEqual([oktober.datum, oktober.saison, oktober.status, oktober.erinnerungAb], ['2026-11-01', 'winter', 'ok', '2026-10-15']);
+    assert.equal(faelligkeit(saison, teslaWechsel().slice(0, 3), teslaAuto(), null, '2026-10-15', { saetze: saetze() }).status, 'bald');
+    assert.equal(faelligkeit(saison, [], teslaAuto(), null, '2026-10-14', { saetze: saetze() }).status, 'ok');
+    // Task 3 (Minor aus dem Re-Review T1): ein Auto ohne Reifensätze hat keinen saisonalen Reifenwechsel (kein Termin, keine Erinnerung)
+    assert.equal(faelligkeit(saison, [], teslaAuto(), null, '2026-10-20', { saetze: [] }), null);
+    assert.equal(faelligkeit(saison, [], teslaAuto(), null, '2026-10-20'), null);
 
     const rot = regel({ auto: T, typ: 'rotation', name: 'Reifen rotieren', intervallKm: 10000 });
     const kmInfo = kmBei(21831, { proTag: 21693 / 470, letzterKm: 21693, geschaetzt: true });

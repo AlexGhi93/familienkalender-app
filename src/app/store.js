@@ -1865,8 +1865,10 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       const jm = todayVienna(jetzt()).slice(0, 7);
       schichtVorladenLaeuft = (async () => {
         // die Autos gleichzeitig, aber ohne Einfluss auf das Push-Tor: Termine, Schicht, Fixkosten und Kontostand warten nie auf sie
-        // (ob die Autos frisch sind, steht in state.autos.frisch; Wiederholen nach einem Fehler: eigener Vorlader in der Shell)
-        const autosLauf = adapter.leseAutos ? autosHolen() : Promise.resolve(true);
+        // (ob die Autos frisch sind, steht in state.autos.frisch; Wiederholen nach einem Fehler: eigener Vorlader in der Shell). Nur
+        // angestoßen, NIE abgewartet: eine hängende Auto-Anfrage (api.js kennt kein Timeout) hielte sonst dieses Vorladen belegt, und das
+        // Tor für den nächsten Monat ginge nicht auf. Wer die Autos braucht, wartet auf `autosLaden()` (dasselbe laufende Lesen).
+        if (adapter.leseAutos) autosHolen();
         const [{ katalogGelesen, monateGelesen }, fixOk] = await Promise.all([schichtLesen(vorladeMonate(jm), { katalogNeu: true }), adapter.leseFixkosten ? fixLesen() : true]);
         if (katalogGelesen && monateGelesen && fixOk && state.schicht.vorgeladen !== jm) {
           state = { ...state, schicht: { ...state.schicht, vorgeladen: jm } };
@@ -1874,7 +1876,6 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
         }
         // nur, wenn die Schichtarten gerade gelesen werden konnten (gespeichert wird ohnehin auf der neuesten Fassung)
         if (katalogGelesen && state.schicht.katalog && katalogErgaenzen(state.schicht.katalog).geaendert) await schichtKatalogStillErgaenzen();
-        await autosLauf;
       })()
         .catch(() => {}) // Hintergrund: ein Fehler darf nichts stören
         .finally(() => {

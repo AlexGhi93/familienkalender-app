@@ -10,6 +10,7 @@ import { einkaufModel } from './einkauf-model.js';
 import { kontoKarteModel } from './konto-model.js';
 import { sachenModel } from './sachen-model.js';
 import { urlaubCountdown, urlaubModel } from './urlaub-model.js';
+import { autoKarteModel } from './autos-faellig.js';
 import {
   ABWESENHEIT,
   BETREUUNG,
@@ -101,5 +102,6 @@ export function heuteModel(state, now = new Date()) {
     einkauf: einkaufModel(state),
     konto: kontoKarteModel(state, heute),
     urlaub: { ...urlaubModel(state, heute, 0), countdown: urlaubCountdown(state, heute) },
+    autos: autoKarteModel(state.autos, heute), // Karte „🚗 Auto“: null, wenn nichts bald oder überfällig ist
   };
 }

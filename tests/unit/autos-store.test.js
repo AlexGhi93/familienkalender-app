@@ -136,6 +136,23 @@ describe('Autos laden', () => {
     assert.equal(r.ok, false);
     assert.equal(r.fehler, 'Die Autos konnten nicht gelesen werden. Bitte noch einmal versuchen.');
   });
+
+  test('N2: eine Auto-Anfrage, die NIE antwortet, hält das Vorladen nicht auf – auch das Tor des nächsten Monats öffnet', async () => {
+    const t = apiAttrappe();
+    let uhr = new Date('2026-10-31T20:00:00+01:00');
+    const ereignisse = { ...t.api.ereignisse, holen: (k, id) => (id === 'fkautos' ? new Promise(() => {}) : t.api.ereignisse.holen(k, id)) };
+    const adapter = createGoogleAdapter({ api: { ereignisse }, kalender: KALENDER, jetzt: () => uhr });
+    const store = createStore(adapter, { jetzt: () => uhr });
+    await store.laden();
+    await store.schichtVorladen();
+    assert.equal(store.getState().schicht.vorgeladen, '2026-10');
+    assert.equal(autos(store).status, 'laedt', 'die Autos hängen noch');
+    uhr = new Date('2026-11-01T07:00:00+01:00'); // Monatswechsel, die Auto-Anfrage hängt weiter
+    await store.schichtVorladen();
+    assert.equal(store.getState().schicht.vorgeladen, '2026-11');
+    assert.ok(planQuellen(store.getState(), uhr), 'der Plan für den neuen Monat geht hinaus');
+    assert.equal(autos(store).frisch, false);
+  });
 });
 
 describe('Autos ändern', () => {

@@ -1,18 +1,26 @@
 // Was im Hintergrund vorgeladen oder nachgelesen wird (Schichtplan, Fixkosten, Sparziele, Autos), zeichnet nur die Ansicht neu, die es zeigt.
 // Sonst ginge z. B. beim Eintippen des Kontostands die Tastatur zu, sobald das Vorladen der Fixkosten oder das Nachlesen der Sparziele
 // fertig ist (Neuzeichnen nimmt den Fokus).
+import { todayVienna } from '../domain/dates.js';
+import { autoKarteModel } from './views/autos-faellig.js';
 
-/** Teile des Zustands, die im Hintergrund vorgeladen werden, und wann sie sichtbar sind (`seite`, `kontoAnsicht` wie in der Shell). */
+/** Inhalt der Karte „🚗 Auto“ auf Heute als Text (zum Vergleichen). */
+const autoKarte = (state, heute) => JSON.stringify(autoKarteModel(state?.autos, heute ?? todayVienna()));
+
+/**
+ * Teile des Zustands, die im Hintergrund vorgeladen werden, und wann sie sichtbar sind (`seite`, `kontoAnsicht`, `heute` wie in der
+ * Shell; `a`, `b` = alter und neuer Zustand).
+ */
 const SICHTBAR = {
   schicht: ({ seite }) => seite === 'schicht',
   fixkosten: ({ seite, kontoAnsicht }) => seite === 'konto' && kontoAnsicht === 'fixkosten',
   ziele: ({ seite, kontoAnsicht }) => seite === 'konto' && kontoAnsicht === 'sparziele',
-  // Autos: bisher zeigt sie keine Seite; Task 3/4 (Karte auf Heute, Mehr → Autos) ergänzen hier, wo sie sichtbar sind
-  autos: ({ seite }) => seite === 'autos',
+  // Autos: auf ihrer Seite immer; auf Heute nur, wenn sich die Karte „🚗 Auto“ ändert (Laden, gleiche Daten, Nicht-Fälliges → nicht)
+  autos: ({ seite, heute }, a, b) => seite === 'autos' || (seite === 'heute' && autoKarte(a, heute) !== autoKarte(b, heute)),
 };
 
 /** Unterscheiden sich zwei Zustände nur in vorgeladenen Teilen, die gerade nicht zu sehen sind? (Dann nicht neu zeichnen.) */
 export function nurHintergrundGeaendert(a, b, ansicht) {
   const geaendert = [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((k) => a[k] !== b[k]);
-  return geaendert.length > 0 && geaendert.every((k) => SICHTBAR[k] && !SICHTBAR[k](ansicht));
+  return geaendert.length > 0 && geaendert.every((k) => SICHTBAR[k] && !SICHTBAR[k](ansicht, a, b));
 }

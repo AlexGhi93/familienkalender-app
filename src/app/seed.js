@@ -269,6 +269,9 @@ function autosDemo(heute) {
     { auto: gebraucht.auto.id, typ: 'pickerl', datum: pickerlAm, km: 93400, kosten: 8500, details: { naechsterMonat: naechstesPickerl } },
     { auto: gebraucht.auto.id, typ: 'vignette', datum: vignetteAm, kosten: 10340, details: { jahr, art: 'Klebe', gekauftAm: vignetteAm } },
     { auto: gebraucht.auto.id, typ: 'oelwechsel', datum: tag(160), km: 96500, kosten: 14900, notiz: 'Werkstatt ums Eck', details: { oelSorte: 'SAE 0W-30', menge: 3.2, filter: true } },
+    // Task 3: nach dem Winter erledigt – sonst wäre „Bremssättel“ (12 Monate ab EZ) in der Demo immer überfällig und die Karte
+    // „🚗 Auto“ stünde auf jeder Heute-Aufnahme der visuellen Basis (14.10.2026). Am Ende angehängt: die Kennungen davor bleiben gleich.
+    { auto: elektro.auto.id, typ: 'bremssattel', datum: tag(150), km: 13600, kosten: 8900 },
   ];
   const stande = [
     { auto: elektro.auto.id, datum: tag(12), km: 18400 },

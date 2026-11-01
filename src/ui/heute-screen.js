@@ -204,6 +204,32 @@ function kontoHeuteKarte(m, ui) {
   );
 }
 
+// Farben der Zeilen in der Karte „🚗 Auto“ (dieselben wie „Krank“ bzw. „Abwesend“): überfällig rot, bald orange
+const AUTO_FARBE = { ueberfaellig: TYPES.krank.farbe, bald: TYPES.abwesend.farbe };
+const AUTO_EMOJI = { ueberfaellig: '⚠️', bald: '⏳' };
+
+/**
+ * „🚗 Auto“: nur wenn bei einem Auto etwas bald fällig oder überfällig ist (heute-model `autos`): höchstens drei Zeilen wie in „Demnächst“,
+ * jede ein Link auf das Auto (`#/autos/<id>`); dazu „+ N weitere“ zur Übersicht der Autos.
+ */
+function autoKarte(m) {
+  const k = m.autos;
+  const zeile = (z) =>
+    h(
+      'a',
+      { class: `zeile tint verlauf-zeile auto-zeile ${z.status}`, href: z.ziel, style: farbe(AUTO_FARBE[z.status]), 'aria-label': `${z.titel}: ${z.text}` },
+      h('span', { class: 'emoji', 'aria-hidden': 'true' }, AUTO_EMOJI[z.status]),
+      h('span', { class: 'karte-text' }, h('b', {}, z.titel), h('small', {}, z.text)),
+      h('span', { class: 'pfeil', 'aria-hidden': 'true' }, '›'),
+    );
+  return h(
+    'div',
+    { class: 'liste auto-heute' },
+    k.zeilen.map(zeile),
+    k.mehr > 0 ? h('div', { class: 'knopfzeile' }, h('a', { class: 'knopf klein', href: '#/autos' }, `+ ${k.mehr} weitere`)) : null,
+  );
+}
+
 function urlaubKarte(m) {
   const u = m.urlaub;
   const wochenZiel = u.durchgehend.ziel / 5;
@@ -260,6 +286,7 @@ export function heuteScreen({ store, ui }) {
     abschnitt(`Sachen für ${m.einrichtung}`, sachenKarte(m, store, ui)),
     abschnitt(m.einkauf.anzahlOffen > 0 ? `🛒 Einkauf · ${m.einkauf.anzahlOffen}` : '🛒 Einkauf', einkaufKarte(m, ui)),
     m.konto.faellig ? abschnitt(`💶 Kontostand für ${m.konto.monatText} eintragen`, kontoHeuteKarte(m, ui)) : null,
+    m.autos ? abschnitt('🚗 Auto', autoKarte(m)) : null,
     m.termineDemnaechst.length > 0 ? abschnitt('Demnächst', h('div', { class: 'liste' }, m.termineDemnaechst.map((t) => terminZeile(t, ui)))) : null,
     abschnitt('Urlaub im Kindergartenjahr', urlaubKarte(m)),
     naechster ? h('div', { class: 'countdown' }, `✈️ Noch ${naechster.schlafen}× schlafen bis zum Urlaub`) : null,

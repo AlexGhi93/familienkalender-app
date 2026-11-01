@@ -121,3 +121,22 @@ test('„Sachen erledigt“ entfernt die Sache, Rückgängig holt sie zurück', 
   await erwarteToast(page, 'Wieder offen');
   await expect(sache).toHaveCount(1);
 });
+
+test('„🚗 Auto“: nur wenn bei einem Auto etwas bald fällig ist; Zeilen sortiert, jede ein Link auf das Auto', async ({ page }) => {
+  // Beispieldaten vom 20.10.: bei beiden Autos ist der Winterreifen-Wechsel (1.11.) bald dran – am 14.10. noch nicht (erst ab 15.10.)
+  const demo = seedDemo('2026-10-20');
+  await starteDemo(page, { zeit: '2026-10-20T08:00:00+02:00' }); // die Demo legt die Beispieldaten zum 20.10. an (dieselben Kennungen)
+  const karte = abschnitt(page, '🚗 Auto');
+  const zeilen = karte.locator('a.zeile');
+  await expect(zeilen).toHaveCount(2);
+  await expect(zeilen.locator('b')).toHaveText(['Fiat 500: Reifenwechsel (saisonal)', 'Tesla Model 3: Reifenwechsel (saisonal)']);
+  await expect(zeilen.locator('small')).toHaveText(['Winterreifen montieren – fällig am 01.11.2026 (in 12 Tagen)', 'Winterreifen montieren – fällig am 01.11.2026 (in 12 Tagen)']);
+  const id = (name) => demo.autos.daten.autos.find((a) => a.name === name).id;
+  await expect(zeilen.nth(0)).toHaveAttribute('href', `#/autos/${id('Fiat 500')}`);
+  await expect(zeilen.nth(1)).toHaveAttribute('href', `#/autos/${id('Tesla Model 3')}`);
+  await expect(karte.getByRole('link', { name: /weitere/ })).toHaveCount(0);
+  const box = await zeilen.nth(0).boundingBox();
+  expect(box.height).toBeGreaterThanOrEqual(44);
+  await zeilen.nth(1).click();
+  await expect(page).toHaveURL(new RegExp(`#/autos/${id('Tesla Model 3')}$`));
+});

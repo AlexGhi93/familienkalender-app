@@ -271,8 +271,8 @@ function ergebnis(kandidaten, { kmZiel = null, restKm, kmInfo, heute, quelleOhne
  * `kmInfo` = kmSchaetzung(…) oder null, `saetze` = Reifensätze des Autos (für Reifenwechsel und Rotation).
  * datum null = nur km bekannt, aber keine Geschwindigkeit (dann restKm) – oder status 'unbekannt' (dann `hinweis`, z. B. „Letzte
  * Erledigung eintragen“, und `ohneErinnerung: true`). Zusatzfelder je Art: Vignette `vignetteJahr`, `kaufenBis` (im Geschäft), `info`
- * (Texte); fester Monat `fixMonat`; saisonaler Reifenwechsel `saison` ('winter'|'sommer' = was montiert werden soll) und beim Sommer
- * `erinnerungAb` (1.4.); Rotation `satz` (Kennung des montierten Satzes).
+ * (Texte); fester Monat `fixMonat`; saisonaler Reifenwechsel `saison` ('winter'|'sommer' = was montiert werden soll) und
+ * `erinnerungAb` (Sommer 1.4., Winter 15.10.; ohne Reifensätze null); Rotation `satz` (Kennung des montierten Satzes).
  */
 export function faelligkeit(regel, arbeiten, auto, kmInfo, heute, { saetze = [] } = {}) {
   heutePruefen(heute);
@@ -292,6 +292,7 @@ export function faelligkeit(regel, arbeiten, auto, kmInfo, heute, { saetze = [] 
   }
 
   if (regel.typ === 'reifenwechsel') {
+    if (saetze.length === 0) return null; // ohne Reifensätze (keine angelegt oder alle gelöscht): kein Saisontermin, keine Erinnerung (Task 3)
     const w = letzterWechsel(alle);
     const satz = w ? saetze.find((s) => s.id === w.details.montiert) : null;
     if (w && (!satz || satz.art === 'ganzjahr')) return null;
@@ -315,8 +316,9 @@ export function faelligkeit(regel, arbeiten, auto, kmInfo, heute, { saetze = [] 
       const sommer = naechster('04-15', tag);
       [saison, datum] = winter < sommer ? ['winter', winter] : ['sommer', sommer];
     }
-    // M4: Sommerreifen erst ab 1.4. erinnern (die Winterausrüstungspflicht gilt bis 15.4.)
-    const erinnerungAb = saison === 'sommer' ? `${datum.slice(0, 4)}-04-01` : undefined;
+    // M4: Sommerreifen erst ab 1.4. erinnern (die Winterausrüstungspflicht gilt bis 15.4.). Task 3: ebenso Winterreifen erst ab 15.10.
+    // (Spec §4: „Winterreifen montieren“ am 15.10. und 1.11.) – vorher nie 'bald': keine Karte auf „Heute“, keine Push-Erinnerung
+    const erinnerungAb = `${datum.slice(0, 4)}-${saison === 'sommer' ? '04-01' : '10-15'}`;
     return { ...ergebnis([{ datum, quelle: 'fix' }], { ...k, quelleOhneDatum: 'fix', erinnerungAb }), saison };
   }
 
