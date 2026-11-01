@@ -131,7 +131,7 @@ describe('Seite eines Autos', () => {
   test('M4 (Abschluss-Review): der Datenschutz-Hinweis nennt alle Orte (Kalender versteckt, Offline-Kopie, Sicherung) – kurz', () => {
     assert.match(TEXT_DATENSCHUTZ, /Google-Kalender/);
     assert.match(TEXT_DATENSCHUTZ, /versteckt/);
-    assert.match(TEXT_DATENSCHUTZ, /Offline-Kopie auf diesem Telefon/);
+    assert.match(TEXT_DATENSCHUTZ, /Offline-Kopie auf euren Telefonen/);
     assert.match(TEXT_DATENSCHUTZ, /Sicherungen/);
     assert.doesNotMatch(TEXT_DATENSCHUTZ, /nur in/);
     assert.ok(TEXT_DATENSCHUTZ.length <= 180, String(TEXT_DATENSCHUTZ.length));

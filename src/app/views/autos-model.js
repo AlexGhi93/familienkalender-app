@@ -41,7 +41,7 @@ export const VORLAGEN_WAHL = Object.freeze([
   { id: 'leer', name: 'Leer', text: 'Ohne Regeln – alles selbst eintragen' },
 ]);
 
-export const TEXT_DATENSCHUTZ = 'Kennzeichen, FIN und Fahrzeugdaten stehen versteckt in eurem eigenen Google-Kalender, als Offline-Kopie auf diesem Telefon und in Sicherungen, die ihr speichert – sonst nirgends.';
+export const TEXT_DATENSCHUTZ = 'Kennzeichen, FIN und Fahrzeugdaten stehen versteckt in eurem eigenen Google-Kalender, als Offline-Kopie auf euren Telefonen und in Sicherungen, die ihr speichert – sonst nirgends.';
 export const TEXT_VIGNETTE_ONLINE = 'Online gekauft gilt die Vignette erst ab dem 18. Tag – im Geschäft (ÖAMTC, Tankstelle, Trafik) sofort.';
 
 const TYPEN = new Map(ARBEIT_TYPEN.map((t) => [t.id, t]));

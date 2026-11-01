@@ -11,6 +11,9 @@ const abschnitt = (page, titel) => page.locator('section.abschnitt').filter({ ha
 const regel = (page, typ) => page.locator(`.au-regel[data-typ="${typ}"]`);
 const blatt = (page, titel) => page.getByRole('dialog', { name: titel });
 
+// WebKit (nur lokal) ist bei den langen Abläufen unter Parallel-Last nahe an 30 s – dreifache Zeit, damit es nicht flackert.
+test.slow(({ browserName }) => browserName === 'webkit', 'WebKit braucht für die langen Abläufe länger');
+
 test('Mehr → Autos → Auto: Zeile mit „N fällig“, Karten je Auto, Seite des Autos', async ({ page }) => {
   await starteDemo(page, { route: '#/mehr', zeit: '2026-10-20T08:00:00+02:00' });
   const zeile = page.locator('.menue-eintrag[data-id="autos"] .menue-zeile');
@@ -31,7 +34,7 @@ test('Mehr → Autos → Auto: Zeile mit „N fällig“, Karten je Auto, Seite 
   await expect(page).toHaveURL(new RegExp(`#/autos/${autoId('2026-10-20', 'Tesla Model 3')}$`));
   await expect(page.locator('h1.au-titel')).toHaveText('Tesla Model 3');
   for (const titel of ['Fällig', 'Kilometerstand', 'Reifen', 'Vignette', 'Verlauf', 'Fahrzeugdaten']) await expect(abschnitt(page, titel)).toBeVisible();
-  await expect(abschnitt(page, 'Fahrzeugdaten')).toContainText('versteckt in eurem eigenen Google-Kalender, als Offline-Kopie auf diesem Telefon');
+  await expect(abschnitt(page, 'Fahrzeugdaten')).toContainText('versteckt in eurem eigenen Google-Kalender, als Offline-Kopie auf euren Telefonen');
   await page.getByRole('button', { name: '‹ Autos' }).click();
   await expect(page).toHaveURL(/#\/autos$/);
 });
@@ -355,7 +358,7 @@ test('Noch kein Auto: Vorlage Tesla, Kennzeichen selbst eintragen, Regeln und Re
   const b = blatt(page, '＋ Auto hinzufügen');
   await expect(b.getByRole('button', { name: /^Tesla Model 3/ })).toHaveAttribute('aria-pressed', 'true');
   await expect(b.getByRole('textbox', { name: 'Name' })).toHaveValue('Tesla Model 3');
-  await expect(b).toContainText('versteckt in eurem eigenen Google-Kalender, als Offline-Kopie auf diesem Telefon');
+  await expect(b).toContainText('versteckt in eurem eigenen Google-Kalender, als Offline-Kopie auf euren Telefonen');
   await b.getByRole('textbox', { name: 'Kennzeichen' }).fill('w-99999');
   await b.getByRole('button', { name: 'Auto anlegen' }).click();
   await erwarteToast(page, 'Auto angelegt ✓');
