@@ -17,6 +17,14 @@ export function parseDate(s) {
   return { y, m: mo, d, ms };
 }
 
+const TEXT_HEUTE = 'Ungültiges Datum (heute): erwartet wird das Wiener Datum als Text „JJJJ-MM-TT“.';
+
+/** Wirft sofort, wenn `heute` kein Datum 'JJJJ-MM-TT' ist (z. B. undefined oder ein Date-Objekt); sonst der Monat 'JJJJ-MM'. */
+export function heutePruefen(heute) {
+  if (typeof heute !== 'string' || !isValidDate(heute)) throw new Error(TEXT_HEUTE);
+  return heute.slice(0, 7);
+}
+
 export function isValidDate(s) {
   try {
     parseDate(s);

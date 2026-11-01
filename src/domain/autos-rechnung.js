@@ -4,20 +4,22 @@
 // Regeln (Spezifikation „Autos 1.3.0“ §4 und die Festlegungen im Plan):
 // - km-Schätzung: letzter bekannter Stand + Durchschnitt km/Tag × Tage seitdem. Durchschnitt aus den Punkten der letzten 90 Tage, wenn
 //   es dort mindestens 2 (an verschiedenen Tagen) gibt, sonst aus allen; sonst keiner (proTag null). Ein Stand, der niedriger ist als ein
-//   früherer, ist ein Tippfehler: Warnung, er zählt nicht mit – die Schätzung liegt nie unter dem höchsten bekannten Stand. Ein Sprung von
-//   mehr als MAX_KM_PRO_TAG km/Tag: Warnung, und gerechnet wird höchstens damit (keine absurden Termine).
+//   früherer, ist ein Tippfehler: Warnung, er zählt nicht mit – die Schätzung liegt nie unter dem höchsten gültigen Stand. Ebenso ein Stand
+//   mit mehr als MAX_KM_PRO_TAG km/Tag gegenüber dem vorigen: Warnung, er zählt nicht, spätere richtige Stände gelten wieder (Spec §10).
+//   Die Erstzulassung zählt nur bei einem neu gekauften Auto (neuGekauft) als 0-km-Punkt.
 // - Termin einer Regel = das früheste aus: letzte passende Arbeit + intervallMonate; letzte Arbeit (mit km) + intervallKm, über den
 //   Durchschnitt in ein Datum umgerechnet (km-Termin = Tag des letzten Standes + Rest-km / km pro Tag – so bleibt er von Tag zu Tag
-//   gleich); fester Monat (letzter Tag des Monats). Ohne Arbeit: ersteFaelligkeit/ersteFaelligkeitKm, sonst ab der Erstzulassung
-//   (EZ + Monate; km ab 0 bei der EZ). Status: 'ueberfaellig' (Datum vor heute oder km überschritten), 'bald' (≤ 30 Tage oder ≤ 1.000 km),
-//   'ok'; 'unbekannt', wenn sich weder Datum noch Rest-km sagen lassen (z. B. nur km-Intervall und noch kein Kilometerstand).
-// - Vignette (AT, ASFINAG): die Jahresvignette JJJJ gilt 01.12.(JJJJ−1) bis 31.01.(JJJJ+1); kaufen bis 31.01.JJJJ (dann läuft die alte ab).
+//   gleich); fester Monat (letzter Tag des Monats). Ohne Arbeit: ersteFaelligkeit/ersteFaelligkeitKm; sonst bei einem neu gekauften Auto
+//   ab der Erstzulassung (EZ + Monate; km ab 0), bei einem Gebrauchtwagen 'unbekannt' mit „Letzte Erledigung eintragen“ (Spec §10).
+//   Status: 'ueberfaellig' (Datum vor heute oder km überschritten), 'bald' (≤ 30 Tage oder ≤ 1.000 km), 'ok'; 'unbekannt', wenn sich
+//   weder Datum noch Rest-km sagen lassen – dann immer mit `hinweis` und `ohneErinnerung: true` (keine Push-Erinnerung).
+// - Vignette (AT, ASFINAG): die Jahresvignette JJJJ gilt 01.12.(JJJJ−1) bis 31.01.(JJJJ+1). Termin 13.01.JJJJ: online gekauft gilt sie
+//   erst ab dem 18. Tag (Spec §10); im Geschäft sofort, also bis 31.01. (kaufenBis).
 // - Reifen: km je Satz = Summe der Strecken, in denen er montiert war (aus den Reifenwechseln: vom km des Wechsels bis zum nächsten);
 //   eine Rotation (oder ein Reifenwechsel mit „vorne/hinten getauscht“) setzt die km seit der Rotation des Satzes auf 0.
 
-import { addDays, diffDays, isValidDate } from './dates.js';
+import { addDays, diffDays, heutePruefen, isValidDate } from './dates.js';
 import { letzterTag } from './konto.js';
-import { heutePruefen } from './sparziele-rechnung.js';
 import { AUTO_VORLAGEN, BALD_KM, BALD_TAGE, KM_FENSTER_TAGE, MAX_KM_PRO_TAG, ROTATION_KM, datumText, kmText, monatPlus } from './autos.js';
 
 const QUELLE_WINTERREIFEN = 'https://www.oesterreich.gv.at/de/themen/mobilitaet/kfz/10/2/Seite.063100';
@@ -38,14 +40,14 @@ function plusMonate(datum, n) {
 // ---------------------------------------------------------------- Punkte und Arbeiten eines Autos
 
 /**
- * Alle Kilometerpunkte eines Autos aus seinen Verlauf-Teilen, nach Datum: [{ datum, km, quelle, arbeit? }] – die Erstzulassung (0 km,
- * quelle 'ez'), eingegebene Stände und Arbeiten mit km (quelle 'arbeit', mit ihrer Kennung). Arbeiten mit GESCHÄTZTEM km zählen nicht.
+ * Alle Kilometerpunkte eines Autos aus seinen Verlauf-Teilen, nach Datum: [{ datum, km, quelle, arbeit? }] – bei einem neu gekauften
+ * Auto die Erstzulassung (0 km, quelle 'ez'), eingegebene Stände und Arbeiten mit km (quelle 'arbeit', mit ihrer Kennung). Arbeiten mit GESCHÄTZTEM km zählen nicht.
  * `auto` = das Auto (für die EZ) oder nur seine Kennung.
  */
 export function kmPunkte(historien, auto) {
   const id = typeof auto === 'string' ? auto : auto?.id;
   const punkte = [];
-  if (typeof auto === 'object' && istDatum(auto?.ezDatum)) punkte.push({ datum: auto.ezDatum, km: 0, quelle: 'ez' });
+  if (typeof auto === 'object' && auto?.neuGekauft === true && istDatum(auto.ezDatum)) punkte.push({ datum: auto.ezDatum, km: 0, quelle: 'ez' });
   for (const h of historien ?? []) {
     if (h?.auto !== id) continue;
     for (const p of h.km ?? []) punkte.push({ datum: p.datum, km: p.km, quelle: p.quelle ?? 'eingabe' });
@@ -72,33 +74,40 @@ function proTagAus(liste) {
 }
 
 /**
- * Geschätzter Kilometerstand am Tag `heute` aus `punkte` ([{ datum, km }], z. B. aus kmPunkte) →
+ * Geschätzter Kilometerstand am Tag `heute` aus `punkte` ([{ datum, km, quelle? }], z. B. aus kmPunkte) →
  * { km, geschaetzt, proTag, datum, letzterKm, warnung } oder null ohne Punkte (Review Focus 2: „unbekannt“, keine Division durch 0).
- * datum/letzterKm = der letzte (höchste) bekannte Stand; geschaetzt = km liegt darüber (dann „ca.“ zeigen); proTag = km pro Tag oder
- * null (zu wenig Punkte); warnung = Text zu Tippfehlern (niedrigerer Stand, großer Sprung) oder null. Punkte mehr als 1 Tag nach
- * `heute` zählen nicht.
+ * datum/letzterKm = der letzte (höchste) gültige Stand; geschaetzt = km liegt darüber (dann „ca.“ zeigen); proTag = km pro Tag oder
+ * null (zu wenig Punkte); warnung = Text zu Tippfehlern oder null. Punkte mehr als 1 Tag nach `heute` zählen nicht.
+ * Unplausibel und NICHT mitgerechnet (je mit Warnung „bitte prüfen“, Review Focus 1): ein Stand niedriger als der vorige gültige, und
+ * ein Stand mehr als MAX_KM_PRO_TAG km pro Tag (gleicher Tag = 1 Tag) über dem vorigen gültigen – spätere richtige Stände gelten wieder.
+ * Der EZ-Punkt (quelle 'ez', nur bei neu gekauften Autos) erzeugt nie eine Warnung: passt er nicht vor den ersten echten Stand, fällt er
+ * still weg.
  */
 export function kmSchaetzung(punkte, heute) {
   heutePruefen(heute);
   const bis = addDays(heute, 1);
   const gueltig = (punkte ?? []).filter((p) => p && istDatum(p.datum) && p.datum <= bis && Number.isInteger(p.km) && p.km >= 0).sort(frueher);
-  if (gueltig.length === 0) return null;
+  const ez = gueltig.find((p) => p.quelle === 'ez') ?? null;
   const warnungen = [];
   const folge = [];
   for (const p of gueltig) {
+    if (p.quelle === 'ez') continue;
     const vorher = folge.at(-1);
     if (vorher && p.km < vorher.km) {
       warnungen.push(`Der Kilometerstand vom ${datumText(p.datum)} (${kmText(p.km)}) ist niedriger als ein früherer (${kmText(vorher.km)}) und wird nicht mitgerechnet – bitte prüfen.`);
       continue;
     }
     if (vorher && (p.km - vorher.km) / Math.max(1, diffDays(vorher.datum, p.datum)) > MAX_KM_PRO_TAG) {
-      warnungen.push(`Der Kilometerstand vom ${datumText(p.datum)} (${kmText(p.km)}) ist ein ungewöhnlich großer Sprung – bitte prüfen.`);
+      warnungen.push(`Der Kilometerstand vom ${datumText(p.datum)} (${kmText(p.km)}) ist unplausibel (mehr als ${kmText(MAX_KM_PRO_TAG)} pro Tag) und wird nicht mitgerechnet – bitte prüfen.`);
+      continue;
     }
     folge.push(p);
   }
+  const erster = folge[0];
+  if (ez && (!erster || (ez.datum <= erster.datum && erster.km / Math.max(1, diffDays(ez.datum, erster.datum)) <= MAX_KM_PRO_TAG))) folge.unshift(ez);
+  if (folge.length === 0) return null;
   const ab = addDays(heute, -KM_FENSTER_TAGE);
-  let proTag = proTagAus(folge.filter((p) => p.datum >= ab)) ?? proTagAus(folge);
-  if (proTag !== null) proTag = Math.min(proTag, MAX_KM_PRO_TAG);
+  const proTag = proTagAus(folge.filter((p) => p.datum >= ab)) ?? proTagAus(folge);
   const letzter = folge.at(-1);
   const tage = Math.max(0, diffDays(letzter.datum, heute));
   const km = letzter.km + (proTag ? Math.round(proTag * tage) : 0);
@@ -167,7 +176,7 @@ const letzterWechsel = (arbeiten) => (arbeiten ?? []).filter((a) => a.typ === 'r
 
 /**
  * Hinweis zur Jahreszeit für den montierten Satz (Reifensatz oder null) am Tag `heute` → { saison, text, hinweis, pflicht, quelle } oder
- * null. Sommerreifen drauf ab 15.10. bis 31.3. → „Winterreifen montieren“ (pflicht = 1.11.–15.4., § 102 Abs. 8a KFG, bei winterlichen
+ * null. Sommerreifen drauf ab 15.10. bis Ende Februar → „Winterreifen montieren“ (pflicht = 1.11.–15.4., § 102 Abs. 8a KFG, bei winterlichen
  * Verhältnissen); Winterreifen drauf vom 1.4. bis 14.10. → „Sommerreifen montieren“. Ganzjahresreifen oder unbekannt → null.
  */
 export function saisonHinweis(heute, montierterSatz) {
@@ -175,7 +184,7 @@ export function saisonHinweis(heute, montierterSatz) {
   const art = montierterSatz?.art;
   const md = heute.slice(5);
   const pflichtzeit = md >= '11-01' || md <= '04-15';
-  if (art === 'sommer' && (md >= '10-15' || md <= '03-31')) {
+  if (art === 'sommer' && (md >= '10-15' || md < '03-01')) {
     return { saison: 'winter', text: 'Winterreifen montieren', hinweis: `${pflichtzeit ? 'Vom 1.11. bis 15.4. gilt' : 'Ab 1.11. gilt'} bei winterlichen Verhältnissen die Winterausrüstungspflicht; Winterreifen mind. 4 mm Profil.`, pflicht: pflichtzeit, quelle: QUELLE_WINTERREIFEN };
   }
   if (art === 'winter' && md >= '04-01' && md < '10-15') {
@@ -200,11 +209,17 @@ export function radmutternHinweis(arbeiten, heute, auto) {
 
 // ---------------------------------------------------------------- Vignette
 
-/** Jahresvignette `jahr`: gültig 01.12.(jahr−1) bis 31.01.(jahr+1); kaufen bis 31.01.jahr (dann läuft die Vorjahres-Vignette ab). */
+/**
+ * Jahresvignette `jahr`: gültig 01.12.(jahr−1) bis 31.01.(jahr+1); kaufenBis 31.01.jahr (dann läuft die Vorjahres-Vignette ab, im
+ * Geschäft gekauft gilt sie sofort); onlineBis 13.01.jahr (online gekauft gilt sie erst ab dem 18. Tag: 31.01. − 18 Tage).
+ */
 export function vignettenFrist(jahr) {
   if (!Number.isInteger(jahr)) throw new Error(`Ungültiges Jahr: ${jahr}`);
-  return { gueltigAb: `${jahr - 1}-12-01`, gueltigBis: `${jahr + 1}-01-31`, kaufenBis: `${jahr}-01-31` };
+  return { gueltigAb: `${jahr - 1}-12-01`, gueltigBis: `${jahr + 1}-01-31`, kaufenBis: `${jahr}-01-31`, onlineBis: `${jahr}-01-13` };
 }
+
+/** Hinweise zur Vignette für die Anzeige (ASFINAG, siehe Vorlage; Spec §10). */
+export const VIGNETTE_INFO = Object.freeze(['Online gekauft gilt sie erst ab dem 18. Tag.', 'Im Geschäft sofort gültig – bis 31.01.', 'Bis 31.12. noch zum alten Preis.']);
 
 // ---------------------------------------------------------------- Fälligkeiten
 
@@ -223,15 +238,18 @@ function kmDatum(kmZiel, kmInfo, basis) {
   return kmZiel <= kmInfo.letzterKm ? kmInfo.datum : null;
 }
 
-/** Ergebnis aus den Datums-Kandidaten und dem km-Ziel. */
-function ergebnis(kandidaten, { kmZiel = null, restKm, kmInfo, heute, quelleOhneDatum }) {
+/**
+ * Ergebnis aus den Datums-Kandidaten und dem km-Ziel. 'unbekannt' bekommt immer `hinweis` (Standard „Kilometerstand eintragen“) und
+ * `ohneErinnerung: true` (Task 3 schickt dafür keinen Push). Mit `erinnerungAb` ist es vor diesem Tag nie 'bald' (nur 'ok' oder 'ueberfaellig').
+ */
+function ergebnis(kandidaten, { kmZiel = null, restKm, kmInfo, heute, quelleOhneDatum, hinweis = 'Kilometerstand eintragen', erinnerungAb }) {
   const erster = kandidaten.filter((k) => k.datum).reduce((a, k) => (a === null || k.datum < a.datum ? k : a), null);
   const rest = restKm !== undefined ? restKm : kmZiel !== null && kmInfo ? kmZiel - kmInfo.km : undefined;
   const restTage = erster ? diffDays(heute, erster.datum) : null;
   let status;
   if (!erster && rest === undefined) status = 'unbekannt';
   else if ((erster && restTage < 0) || (rest !== undefined && rest < 0)) status = 'ueberfaellig';
-  else if ((erster && restTage <= BALD_TAGE) || (rest !== undefined && rest <= BALD_KM)) status = 'bald';
+  else if (((erster && restTage <= BALD_TAGE) || (rest !== undefined && rest <= BALD_KM)) && !(erinnerungAb && heute < erinnerungAb)) status = 'bald';
   else status = 'ok';
   const r = { datum: erster?.datum ?? null };
   if (kmZiel !== null) r.km = kmZiel;
@@ -239,6 +257,11 @@ function ergebnis(kandidaten, { kmZiel = null, restKm, kmInfo, heute, quelleOhne
   r.status = status;
   r.restTage = restTage;
   if (rest !== undefined) r.restKm = rest;
+  if (status === 'unbekannt') {
+    r.hinweis = hinweis;
+    r.ohneErinnerung = true;
+  }
+  if (erinnerungAb) r.erinnerungAb = erinnerungAb;
   return r;
 }
 
@@ -246,9 +269,10 @@ function ergebnis(kandidaten, { kmZiel = null, restKm, kmInfo, heute, quelleOhne
  * Termin der Regel `regel` für das Auto `auto` am Tag `heute` → { datum, km?, quelle: 'zeit'|'km'|'fix', status, restTage, restKm?, … }
  * oder null (die Regel hat keinen Termin, z. B. „Leasing-Ende“ ohne Datum im Auto). `arbeiten` = alle Arbeiten des Autos (arbeitenVon),
  * `kmInfo` = kmSchaetzung(…) oder null, `saetze` = Reifensätze des Autos (für Reifenwechsel und Rotation).
- * datum null = nur km bekannt, aber keine Geschwindigkeit (dann restKm) – oder status 'unbekannt'. Zusatzfelder je Art:
- * Vignette `vignetteJahr`; fester Monat `fixMonat`; saisonaler Reifenwechsel `saison` ('winter'|'sommer' = was montiert werden soll);
- * Rotation `satz` (Kennung des montierten Satzes).
+ * datum null = nur km bekannt, aber keine Geschwindigkeit (dann restKm) – oder status 'unbekannt' (dann `hinweis`, z. B. „Letzte
+ * Erledigung eintragen“, und `ohneErinnerung: true`). Zusatzfelder je Art: Vignette `vignetteJahr`, `kaufenBis` (im Geschäft), `info`
+ * (Texte); fester Monat `fixMonat`; saisonaler Reifenwechsel `saison` ('winter'|'sommer' = was montiert werden soll) und beim Sommer
+ * `erinnerungAb` (1.4.); Rotation `satz` (Kennung des montierten Satzes).
  */
 export function faelligkeit(regel, arbeiten, auto, kmInfo, heute, { saetze = [] } = {}) {
   heutePruefen(heute);
@@ -259,9 +283,12 @@ export function faelligkeit(regel, arbeiten, auto, kmInfo, heute, { saetze = [] 
   if (regel.typ === 'vignette') {
     const jahre = passend.map((a) => a.details?.jahr).filter(Number.isInteger);
     const jetzt = Number(heute.slice(0, 4));
-    // ohne Eintrag: die nächste Frist (die laufende Vignette wird als vorhanden angenommen)
-    const jahr = jahre.length > 0 ? Math.max(...jahre) + 1 : heute <= `${jetzt}-01-31` ? jetzt : jetzt + 1;
-    return { ...ergebnis([{ datum: vignettenFrist(jahr).kaufenBis, quelle: 'fix' }], { ...k, quelleOhneDatum: 'fix' }), vignetteJahr: jahr };
+    // die nächste Frist ab heute (bis 31.01. im Geschäft kaufbar) – die laufende Vignette wird als vorhanden angenommen; ein Eintrag
+    // schiebt nur nach vorn (nie ein uralter Termin aus einem alten Eintrag)
+    const naechste = heute <= `${jetzt}-01-31` ? jetzt : jetzt + 1;
+    const jahr = Math.max(naechste, ...jahre.map((j) => j + 1));
+    const frist = vignettenFrist(jahr);
+    return { ...ergebnis([{ datum: frist.onlineBis, quelle: 'fix' }], { ...k, quelleOhneDatum: 'fix' }), vignetteJahr: jahr, kaufenBis: frist.kaufenBis, info: [...VIGNETTE_INFO] };
   }
 
   if (regel.typ === 'reifenwechsel') {
@@ -276,7 +303,11 @@ export function faelligkeit(regel, arbeiten, auto, kmInfo, heute, { saetze = [] 
     let datum;
     if (satz) {
       saison = satz.art === 'winter' ? 'sommer' : 'winter';
-      datum = naechster(saison === 'sommer' ? '04-15' : '11-01', w.datum);
+      const md = w.datum.slice(5);
+      const j = Number(w.datum.slice(0, 4));
+      // M3: mitten in der „falschen“ Saison montiert (Sommerreifen 1.11.–Ende Februar, Winterreifen 16.4.–14.10.) → der Stichtag dieser Saison
+      if (saison === 'winter') datum = md >= '11-01' ? `${j}-11-01` : md < '03-01' ? `${j - 1}-11-01` : naechster('11-01', w.datum);
+      else datum = md > '04-15' && md < '10-15' ? `${j}-04-15` : naechster('04-15', w.datum);
     } else {
       // nicht bekannt, was montiert ist: der nächste Stichtag ab heute (1.11. Winter, 15.4. Sommer)
       const tag = addDays(heute, -1);
@@ -284,12 +315,14 @@ export function faelligkeit(regel, arbeiten, auto, kmInfo, heute, { saetze = [] 
       const sommer = naechster('04-15', tag);
       [saison, datum] = winter < sommer ? ['winter', winter] : ['sommer', sommer];
     }
-    return { ...ergebnis([{ datum, quelle: 'fix' }], { ...k, quelleOhneDatum: 'fix' }), saison };
+    // M4: Sommerreifen erst ab 1.4. erinnern (die Winterausrüstungspflicht gilt bis 15.4.)
+    const erinnerungAb = saison === 'sommer' ? `${datum.slice(0, 4)}-04-01` : undefined;
+    return { ...ergebnis([{ datum, quelle: 'fix' }], { ...k, quelleOhneDatum: 'fix', erinnerungAb }), saison };
   }
 
   if (regel.typ === 'rotation') {
     const montiert = reifenStand(saetze, alle, kmInfo, { rotationKm: regel.intervallKm }).find((s) => s.montiert);
-    if (!montiert) return ergebnis([], { ...k, quelleOhneDatum: 'km' });
+    if (!montiert) return ergebnis([], { ...k, quelleOhneDatum: 'km', hinweis: 'Reifenwechsel eintragen' });
     const restKm = regel.intervallKm - montiert.kmSeitRotation;
     const kmZiel = kmInfo ? kmInfo.km + restKm : null;
     return { ...ergebnis([{ datum: kmDatum(kmZiel, kmInfo, montiert.montiertAm), quelle: 'km' }], { ...k, kmZiel, restKm, quelleOhneDatum: 'km' }), satz: montiert.satz.id };
@@ -301,12 +334,13 @@ export function faelligkeit(regel, arbeiten, auto, kmInfo, heute, { saetze = [] 
   }
 
   if (regel.fixMonat) {
-    // Der feste Monat (z. B. Pickerl laut Plakette); ein später eingetragener „nächster Monat“ gilt, wenn er später ist. Mit Intervall:
-    // eine Arbeit ab 4 Monaten vor dem Monat (Begutachtungsfenster) erledigt ihn → der nächste Termin + Intervall.
-    let monat = regel.fixMonat;
-    for (const a of passend) if (istMonat(a.details?.naechsterMonat) && a.details.naechsterMonat > monat) monat = a.details.naechsterMonat;
+    // I4: der „nächste Monat“ der jüngsten Arbeit, die einen hat, gilt immer (auch früher als der Vorschlag); sonst der feste Monat.
+    // Mit Intervall: eine spätere Arbeit ab 4 Monaten vor dem Monat (Begutachtungsfenster) erledigt ihn → Monat + Intervall.
+    const mitMonat = passend.filter((a) => istMonat(a.details?.naechsterMonat)).at(-1) ?? null;
+    let monat = mitMonat ? mitMonat.details.naechsterMonat : regel.fixMonat;
+    const danach = mitMonat ? passend.filter((a) => frueher(a, mitMonat) > 0) : passend;
     if (regel.intervallMonate) {
-      for (let i = 0; i < 100 && passend.some((a) => a.datum >= `${monatPlus(monat, -4)}-01`); i += 1) monat = monatPlus(monat, regel.intervallMonate);
+      for (let i = 0; i < 100 && danach.some((a) => a.datum >= `${monatPlus(monat, -4)}-01`); i += 1) monat = monatPlus(monat, regel.intervallMonate);
     }
     return { ...ergebnis([{ datum: letzterTag(monat), quelle: 'fix' }], { ...k, quelleOhneDatum: 'fix' }), fixMonat: monat };
   }
@@ -323,12 +357,16 @@ export function faelligkeit(regel, arbeiten, auto, kmInfo, heute, { saetze = [] 
   } else if (regel.ersteFaelligkeit || Number.isInteger(regel.ersteFaelligkeitKm)) {
     if (regel.ersteFaelligkeit) zeit = istMonat(regel.ersteFaelligkeit) ? letzterTag(regel.ersteFaelligkeit) : regel.ersteFaelligkeit;
     if (Number.isInteger(regel.ersteFaelligkeitKm)) kmZiel = regel.ersteFaelligkeitKm;
-  } else {
+  } else if (auto?.neuGekauft === true) {
     if (regel.intervallMonate && basis) zeit = plusMonate(basis, regel.intervallMonate);
     if (regel.intervallKm) kmZiel = regel.intervallKm; // ab 0 km bei der Erstzulassung
+  } else {
+    // I3: Gebrauchtwagen ohne Erledigung – die Vorgeschichte ist unbekannt (nicht „überfällig seit 2018“), kein Push
+    return ergebnis([], { ...k, quelleOhneDatum: regel.intervallMonate ? 'zeit' : 'km', hinweis: 'Letzte Erledigung eintragen' });
   }
   const kandidaten = [{ datum: zeit, quelle: 'zeit' }, { datum: kmDatum(kmZiel, kmInfo, basis), quelle: 'km' }];
-  return ergebnis(kandidaten, { ...k, kmZiel, quelleOhneDatum: kmZiel !== null ? 'km' : 'zeit' });
+  const hinweis = !letzte && !basis && regel.intervallMonate && !regel.ersteFaelligkeit ? 'Erstzulassung eintragen' : undefined;
+  return ergebnis(kandidaten, { ...k, kmZiel, quelleOhneDatum: kmZiel !== null ? 'km' : 'zeit', hinweis });
 }
 
 // ---------------------------------------------------------------- Übersicht

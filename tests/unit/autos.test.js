@@ -74,8 +74,8 @@ function tiefFrieren(x) {
   return x;
 }
 
-const teslaAuto = () => ({ id: T, name: 'Tesla Model 3', farbeKennung: 'grau', marke: 'Tesla', handelsbezeichnung: 'Model 3', antrieb: 'Elektro', ezDatum: '2025-07-16', haltung: 'Leasing', vorlage: 'tesla3' });
-const fiatAuto = () => ({ id: F, name: 'Fiat 500', farbeKennung: 'rot', marke: 'Fiat', handelsbezeichnung: '500', antrieb: 'Benzin', ezDatum: '2017-07-24', haltung: 'Eigentum', vorlage: 'fiat500' });
+const teslaAuto = () => ({ id: T, name: 'Tesla Model 3', farbeKennung: 'grau', marke: 'Tesla', handelsbezeichnung: 'Model 3', antrieb: 'Elektro', ezDatum: '2025-07-16', neuGekauft: true, haltung: 'Leasing', vorlage: 'tesla3' });
+const fiatAuto = () => ({ id: F, name: 'Fiat 500', farbeKennung: 'rot', marke: 'Fiat', handelsbezeichnung: '500', antrieb: 'Benzin', ezDatum: '2017-07-24', neuGekauft: false, haltung: 'Eigentum', vorlage: 'fiat500' });
 const saetze = () => [
   { id: SOMMER, auto: T, name: 'Sommer', art: 'sommer' },
   { id: WINTER, auto: T, name: 'Winter', art: 'winter' },
@@ -150,6 +150,7 @@ describe('Autos: Konstanten, Kennungen, Vorlagen', () => {
     assert.ok(tesla && fiat);
     assert.ok(Object.isFrozen(tesla) && Object.isFrozen(tesla.regeln) && Object.isFrozen(tesla.regeln[0]));
     assert.equal(tesla.auto.antrieb, 'Elektro');
+    assert.deepEqual([tesla.auto.neuGekauft, fiat.auto.neuGekauft], [true, false]); // I2
     assert.equal(fiat.auto.antrieb, 'Benzin');
     for (const v of [tesla, fiat]) {
       assert.equal(v.auto.kennzeichen, undefined); // nur Modelldaten
@@ -174,7 +175,7 @@ describe('Autos: Konstanten, Kennungen, Vorlagen', () => {
     assert.match(f('oel').info, /0W-30/);
     assert.match(f('oel').info, /9\.55535-GS1/);
     assert.equal(f('bremsfluessigkeit').intervallMonate, 24);
-    assert.equal(f('zuendkerzen').intervallKm, 30000);
+    assert.deepEqual([f('zuendkerzen').intervallKm, f('zuendkerzen').intervallMonate], [30000, 24]); // I5: 30.000 km ODER 2 Jahre
     assert.match(f('zuendkerzen').info, /NGK ILKR9G8/);
     assert.match(f('zuendkerzen').info, /46344791/);
     assert.deepEqual([f('luftfilter').intervallMonate, f('luftfilter').intervallKm], [24, 30000]);
@@ -189,6 +190,7 @@ describe('Autos: Konstanten, Kennungen, Vorlagen', () => {
     assert.equal(paket.auto.marke, 'Tesla');
     assert.equal(paket.auto.name, 'Unser Tesla');
     assert.equal(paket.auto.vorlage, 'tesla3');
+    assert.equal(paket.auto.neuGekauft, true);
     assert.ok(paket.regeln.every((r) => r.auto === paket.auto.id && r.aktiv));
     assert.deepEqual(paket.saetze.map((s) => s.art), ['sommer', 'winter']);
     const d = autoAnlegen(leereAutos(), paket);
@@ -292,6 +294,8 @@ describe('Autos: Speicherformat (Hauptteil und Verlauf je Jahr)', () => {
     assert.deepEqual(Object.keys(roh), ['v', 'a', 'r', 's', 'j']);
     assert.equal(roh.a[0].k, 'W-12345'); // Kennzeichen groß
     assert.equal(roh.a[0].g, 'ABCDEFGH1JK123456');
+    assert.equal(roh.a[0].p, 1); // neuGekauft
+    assert.equal('p' in roh.a[1], false);
     assert.equal(roh.r[1].o, 1); // nicht aktiv
     assert.deepEqual(roh.j, { [T]: [2025, 2026] });
     const { daten, unlesbar } = autosLesen(text);
@@ -343,6 +347,18 @@ describe('Autos: Speicherformat (Hauptteil und Verlauf je Jahr)', () => {
     const roh = JSON.parse(historieText(h2));
     assert.deepEqual(roh.w.at(-1), fremdeArbeit);
     assert.deepEqual(roh.k.at(-1), { d: 'gestern', k: 1 });
+  });
+
+  test('M7: doppelte Kennungen beim Lesen gehen nicht verloren, sondern bleiben als fremd erhalten', () => {
+    const doppelt = { i: T, n: 'Zweiter', f: 'rot' };
+    const { daten } = autosLesen(JSON.stringify({ v: 1, a: [{ i: T, n: 'Tesla', f: 'grau' }, doppelt], r: [], s: [], j: {} }));
+    assert.deepEqual(daten.autos.map((a) => a.name), ['Tesla']);
+    assert.deepEqual(daten.fremd.a, [doppelt]);
+    assert.deepEqual(JSON.parse(autosText(daten)).a.at(-1), doppelt);
+    const w = { i: 'arb00001', y: 'wischer', d: '2026-10-01', x: {} };
+    const { historie } = historieLesen(JSON.stringify({ v: 1, a: T, j: 2026, w: [w, { ...w, d: '2026-10-02' }], k: [] }), { auto: T, jahr: 2026 });
+    assert.equal(historie.arbeiten.length, 1);
+    assert.equal(historie.fremd.w.length, 1);
   });
 
   test('Verlauf: hin und zurück, Details mit kurzen Schlüsseln', () => {
@@ -493,10 +509,19 @@ describe('Autos: Kilometerstand schätzen', () => {
     const falsch = kmSchaetzung([{ datum: '2026-10-01', km: 50000 }, { datum: '2026-10-21', km: 5000 }], HEUTE);
     assert.equal(falsch.km, 50000);
     assert.ok(falsch.warnung);
-    // großer Sprung: Warnung und gedeckelte Geschwindigkeit (keine absurden Termine)
-    const sprung = kmSchaetzung([{ datum: '2026-10-20', km: 1000 }, { datum: '2026-10-21', km: 100000 }], HEUTE);
-    assert.equal(sprung.proTag, 1500);
-    assert.match(sprung.warnung, /ungewöhnlich großer Sprung/);
+  });
+
+  test('I1: ein unplausibler Punkt (> 1.000 km/Tag) zählt nicht, spätere richtige Stände bleiben gültig', () => {
+    const tippfehler = kmSchaetzung([{ datum: '2026-10-28', km: 21600 }, { datum: '2026-10-29', km: 216930 }, { datum: '2026-10-31', km: 21800 }], HEUTE);
+    assert.equal(tippfehler.letzterKm, 21800);
+    assert.equal(tippfehler.proTag, 200 / 3);
+    assert.equal(tippfehler.km, 21867);
+    assert.equal(tippfehler.warnung, 'Der Kilometerstand vom 29.10.2026 (216.930 km) ist unplausibel (mehr als 1.000 km pro Tag) und wird nicht mitgerechnet – bitte prüfen.');
+    // am selben Tag zählt als 1 Tag: 1.000 km gehen, 1.001 km nicht
+    assert.equal(kmSchaetzung([{ datum: '2026-10-31', km: 0 }, { datum: '2026-10-31', km: 1000 }], HEUTE).letzterKm, 1000);
+    assert.equal(kmSchaetzung([{ datum: '2026-10-31', km: 0 }, { datum: '2026-10-31', km: 1001 }], HEUTE).letzterKm, 0);
+    // eine lange Pause mit vielen km ist plausibel
+    assert.equal(kmSchaetzung([{ datum: '2026-01-01', km: 0 }, { datum: '2026-10-31', km: 30000 }], HEUTE).warnung, null);
   });
 
   test('kmPunkte: Erstzulassung (0 km), Eingaben und Arbeiten mit km; geschätzte km zählen nicht', () => {
@@ -513,6 +538,17 @@ describe('Autos: Kilometerstand schätzen', () => {
     assert.equal(k.geschaetzt, true);
     assert.deepEqual(arbeitenVon(historie, T).map((a) => a.id), ['arb00001', 'arb00002', 'arb00003', 'arb00004']);
     assert.deepEqual(kmPunkte([], { id: F }), []);
+  });
+
+  test('I2: die Erstzulassung zählt nur bei einem neu gekauften Auto als 0-km-Punkt (Gebrauchtwagen: nur die eigenen Stände)', () => {
+    let h = leereHistorie(F, 2026);
+    h = kmEintragen(h, { datum: '2026-03-31', km: 80000 }, { heute: HEUTE });
+    h = kmEintragen(h, { datum: '2026-10-31', km: 83000 }, { heute: HEUTE });
+    assert.deepEqual(kmPunkte([h], fiatAuto()).map((p) => p.quelle), ['eingabe', 'eingabe']);
+    const k = kmSchaetzung(kmPunkte([h], fiatAuto()), HEUTE);
+    assert.equal(k.proTag, 3000 / 214); // ≈ 14,0 km/Tag statt 24,5 über die EZ
+    assert.equal(k.km, 83014);
+    assert.equal(kmPunkte([h], { ...fiatAuto(), neuGekauft: true })[0].quelle, 'ez');
   });
 });
 
@@ -620,15 +656,19 @@ describe('Autos: Fälligkeiten', () => {
     assert.equal(faelligkeit(oelRegel(), arbeiten, fiatAuto(), null, '2027-06-01').restTage, 0);
   });
 
-  test('Review Focus 2: ohne Arbeit und ohne km → Termine ab Erstzulassung oder ersteFaelligkeit', () => {
+  test('Review Focus 2 / I3: ohne Arbeit – neu gekauft ab Erstzulassung, gebraucht „Letzte Erledigung eintragen“ ohne Erinnerung', () => {
     const innen = regel({ auto: T, typ: 'innenraumfilter', name: 'Innenraumfilter', intervallMonate: 24 });
     assert.deepEqual(faelligkeit(innen, [], teslaAuto(), null, HEUTE), { datum: '2027-07-16', quelle: 'zeit', status: 'ok', restTage: 257 });
-    const fiatOel = faelligkeit(oelRegel(), [], fiatAuto(), null, HEUTE);
-    assert.deepEqual([fiatOel.datum, fiatOel.km, fiatOel.status, fiatOel.restKm], ['2018-07-24', 15000, 'ueberfaellig', undefined]);
+    const ohne = { datum: null, quelle: 'zeit', status: 'unbekannt', restTage: null, hinweis: 'Letzte Erledigung eintragen', ohneErinnerung: true };
+    assert.deepEqual(faelligkeit(oelRegel(), [], fiatAuto(), kmBei(85000), HEUTE), ohne);
     const kerzen = regel({ typ: 'zuendkerzen', name: 'Zündkerzen', intervallKm: 30000 });
-    assert.deepEqual(faelligkeit(kerzen, [], fiatAuto(), null, HEUTE), { datum: null, km: 30000, quelle: 'km', status: 'unbekannt', restTage: null });
-    const ohneEz = faelligkeit(innen, [], { id: T, name: 'X', farbeKennung: 'blau' }, null, HEUTE);
-    assert.deepEqual([ohneEz.datum, ohneEz.status], [null, 'unbekannt']);
+    assert.deepEqual(faelligkeit(kerzen, [], fiatAuto(), null, HEUTE), { ...ohne, quelle: 'km' });
+    // neu gekauft, aber noch kein Kilometerstand: km-Regel unbekannt, ebenfalls ohne Erinnerung
+    assert.deepEqual(faelligkeit({ ...kerzen, auto: T }, [], teslaAuto(), null, HEUTE), { datum: null, km: 30000, quelle: 'km', status: 'unbekannt', restTage: null, hinweis: 'Kilometerstand eintragen', ohneErinnerung: true });
+    const ohneEz = faelligkeit(innen, [], { id: T, name: 'X', farbeKennung: 'blau', neuGekauft: true }, null, HEUTE);
+    assert.deepEqual([ohneEz.datum, ohneEz.status, ohneEz.ohneErinnerung], [null, 'unbekannt', true]);
+    // mit einer Erledigung zählt es auch beim Gebrauchtwagen
+    assert.equal(faelligkeit(oelRegel(), [oel('2026-06-01', 80000)], fiatAuto(), null, HEUTE).datum, '2027-06-01');
     const erst = faelligkeit({ ...oelRegel(), ersteFaelligkeit: '2027-03' }, [], fiatAuto(), kmBei(85000), HEUTE);
     assert.deepEqual([erst.datum, erst.km, erst.status], ['2027-03-31', undefined, 'ok']);
     const erstKm = faelligkeit({ ...oelRegel(), ersteFaelligkeit: '2027-03-15', ersteFaelligkeitKm: 85500 }, [], fiatAuto(), kmBei(85000), HEUTE);
@@ -642,7 +682,7 @@ describe('Autos: Fälligkeiten', () => {
     assert.equal(faelligkeit(oelRegel(), [oel('2026-06-01', 80000), fremdeArbeit], fiatAuto(), null, HEUTE).datum, '2027-06-01');
     const sonst = regel({ typ: 'sonstiges', name: 'Batterie testen', intervallMonate: 12 });
     const s1 = { id: 'arb00020', auto: F, typ: 'sonstiges', datum: '2026-10-01', details: {} };
-    assert.equal(faelligkeit(sonst, [s1], fiatAuto(), null, HEUTE).datum, '2018-07-24');
+    assert.equal(faelligkeit(sonst, [s1], fiatAuto(), null, HEUTE).status, 'unbekannt');
     assert.equal(faelligkeit(sonst, [{ ...s1, regel: 'regel001' }], fiatAuto(), null, HEUTE).datum, '2027-10-01');
   });
 
@@ -652,18 +692,24 @@ describe('Autos: Fälligkeiten', () => {
   });
 
   test('Vignette 2027: gültig 01.12.2026–31.01.2028, kaufen bis 31.01.2027; Jahreswechsel (Review Focus 5)', () => {
-    assert.deepEqual(vignettenFrist(2027), { gueltigAb: '2026-12-01', gueltigBis: '2028-01-31', kaufenBis: '2027-01-31' });
+    assert.deepEqual(vignettenFrist(2027), { gueltigAb: '2026-12-01', gueltigBis: '2028-01-31', kaufenBis: '2027-01-31', onlineBis: '2027-01-13' });
     const vig = regel({ auto: T, typ: 'vignette', name: 'Vignette' });
-    assert.deepEqual(faelligkeit(vig, [], teslaAuto(), null, HEUTE), { datum: '2027-01-31', quelle: 'fix', status: 'ok', restTage: 91, vignetteJahr: 2027 });
-    assert.deepEqual(faelligkeit(vig, [], teslaAuto(), null, '2026-12-31'), { datum: '2027-01-31', quelle: 'fix', status: 'ok', restTage: 31, vignetteJahr: 2027 });
-    assert.equal(faelligkeit(vig, [], teslaAuto(), null, '2027-01-01').status, 'bald');
-    assert.equal(faelligkeit(vig, [], teslaAuto(), null, '2027-01-31').restTage, 0);
+    const info = ['Online gekauft gilt sie erst ab dem 18. Tag.', 'Im Geschäft sofort gültig – bis 31.01.', 'Bis 31.12. noch zum alten Preis.'];
+    // I6: Termin 13.01. (online erst ab dem 18. Tag gültig); im Geschäft bis 31.01.
+    assert.deepEqual(faelligkeit(vig, [], teslaAuto(), null, HEUTE), { datum: '2027-01-13', quelle: 'fix', status: 'ok', restTage: 73, vignetteJahr: 2027, kaufenBis: '2027-01-31', info });
+    assert.equal(faelligkeit(vig, [], teslaAuto(), null, '2026-12-13').status, 'ok');
+    assert.equal(faelligkeit(vig, [], teslaAuto(), null, '2026-12-14').status, 'bald'); // 30 Tage vorher, also schon im Dezember
+    assert.equal(faelligkeit(vig, [], teslaAuto(), null, '2026-12-31').restTage, 13);
+    assert.equal(faelligkeit(vig, [], teslaAuto(), null, '2027-01-13').status, 'bald');
+    const spaet = faelligkeit(vig, [], teslaAuto(), null, '2027-01-20'); // online zu spät, im Geschäft noch bis 31.01.
+    assert.deepEqual([spaet.status, spaet.vignetteJahr, spaet.kaufenBis], ['ueberfaellig', 2027, '2027-01-31']);
     assert.equal(faelligkeit(vig, [], teslaAuto(), null, '2027-02-01').vignetteJahr, 2028); // ohne Eintrag: die nächste Frist
     const gekauft = (jahr, datum) => ({ id: `vig0${jahr}`, auto: T, typ: 'vignette', datum, details: { jahr, art: 'digital' } });
     const nach = faelligkeit(vig, [gekauft(2027, '2026-12-10')], teslaAuto(), null, '2026-12-15');
-    assert.deepEqual([nach.datum, nach.vignetteJahr, nach.status], ['2028-01-31', 2028, 'ok']);
-    const vergessen = faelligkeit(vig, [gekauft(2026, '2025-12-02')], teslaAuto(), null, '2027-02-01');
-    assert.deepEqual([vergessen.datum, vergessen.status], ['2027-01-31', 'ueberfaellig']);
+    assert.deepEqual([nach.datum, nach.vignetteJahr, nach.status], ['2028-01-13', 2028, 'ok']);
+    // M2: ein alter Eintrag ergibt keinen uralten Termin – es gilt die nächste Frist ab heute
+    const alt = faelligkeit(vig, [gekauft(2025, '2024-12-02')], teslaAuto(), null, HEUTE);
+    assert.deepEqual([alt.datum, alt.status], ['2027-01-13', 'ok']);
   });
 
   test('Pickerl: fester Monat 07/2027, editierbar; nach dem Pickerl der nächste Monat', () => {
@@ -678,6 +724,13 @@ describe('Autos: Fälligkeiten', () => {
     const alt = { ...erledigt, datum: '2026-07-10', details: {} }; // das Pickerl des Vorjahres zählt nicht
     assert.equal(faelligkeit(p, [alt], fiatAuto(), null, HEUTE).fixMonat, '2027-07');
     assert.equal(faelligkeit({ ...p, intervallMonate: undefined }, [ohneMonat], fiatAuto(), null, '2027-08-01').status, 'ueberfaellig');
+    // I4: der nächste Monat der JÜNGSTEN Pickerl-Arbeit gilt immer – auch wenn er früher ist als der Vorschlag
+    const frueher = { ...erledigt, datum: '2026-05-10', details: { naechsterMonat: '2027-05' } };
+    const f1 = faelligkeit(p, [frueher], fiatAuto(), null, HEUTE);
+    assert.deepEqual([f1.datum, f1.fixMonat], ['2027-05-31', '2027-05']);
+    // die jüngste ohne Monat nach einer mit Monat: deren Monat + Intervall
+    const danach = { ...erledigt, id: 'pik00002', datum: '2027-05-20', details: {} };
+    assert.equal(faelligkeit(p, [frueher, danach], fiatAuto(), null, '2027-05-21').fixMonat, '2028-05');
   });
 
   test('saisonaler Reifenwechsel, Reifen rotieren, Leasing-Ende', () => {
@@ -689,6 +742,18 @@ describe('Autos: Fälligkeiten', () => {
     assert.equal(faelligkeit(saison, teslaWechsel().slice(0, 3), teslaAuto(), null, '2026-11-02', { saetze: saetze() }).status, 'ueberfaellig');
     const ohne = faelligkeit(saison, [], teslaAuto(), null, '2026-10-20', { saetze: saetze() });
     assert.deepEqual([ohne.datum, ohne.saison], ['2026-11-01', 'winter']);
+    // M3: Sommerreifen erst NACH dem 1.11. montiert → der Winter-Stichtag dieser Saison gilt (überfällig)
+    const spaetSommer = [...teslaWechsel().slice(0, 3), wechsel('arb00005', '2026-11-05', 21800, SOMMER)];
+    const s3 = faelligkeit(saison, spaetSommer, teslaAuto(), null, '2026-11-06', { saetze: saetze() });
+    assert.deepEqual([s3.datum, s3.status], ['2026-11-01', 'ueberfaellig']);
+    const imFebruar = [wechsel('arb00006', '2027-02-10', 25000, SOMMER)];
+    assert.equal(faelligkeit(saison, imFebruar, teslaAuto(), null, '2027-02-11', { saetze: saetze() }).datum, '2026-11-01');
+    const frueherSommer = [wechsel('arb00007', '2027-04-05', 25000, SOMMER)]; // Anfang April ist in Ordnung
+    assert.equal(faelligkeit(saison, frueherSommer, teslaAuto(), null, '2027-04-06', { saetze: saetze() }).datum, '2027-11-01');
+    // M4: Sommerreifen-Erinnerung erst ab 1.4. (Spec: 1.4. und 15.4.), nicht schon 30 Tage vor dem 15.4.
+    const maerz = faelligkeit(saison, teslaWechsel(), teslaAuto(), null, '2027-03-20', { saetze: saetze() });
+    assert.deepEqual([maerz.datum, maerz.status, maerz.erinnerungAb], ['2027-04-15', 'ok', '2027-04-01']);
+    assert.equal(faelligkeit(saison, teslaWechsel(), teslaAuto(), null, '2027-04-01', { saetze: saetze() }).status, 'bald');
 
     const rot = regel({ auto: T, typ: 'rotation', name: 'Reifen rotieren', intervallKm: 10000 });
     const kmInfo = kmBei(21831, { proTag: 21693 / 470, letzterKm: 21693, geschaetzt: true });
@@ -706,7 +771,7 @@ describe('Autos: Fälligkeiten', () => {
   });
 
   test('absurde Werte: riesige Rest-km bei winziger Geschwindigkeit → kein Datum statt Jahr 270000', () => {
-    const r = faelligkeit(regel({ typ: 'zuendkerzen', name: 'Zündkerzen', intervallKm: 1000000 }), [], fiatAuto(), kmBei(10, { proTag: 0.001 }), HEUTE);
+    const r = faelligkeit(regel({ auto: T, typ: 'zuendkerzen', name: 'Zündkerzen', intervallKm: 1000000 }), [], teslaAuto(), kmBei(10, { proTag: 0.001 }), HEUTE);
     assert.equal(r.datum, null);
     assert.equal(r.restKm, 999990);
   });
@@ -747,6 +812,22 @@ describe('Autos: Übersicht je Auto', () => {
     // abgeschaltete Regel fällt weg
     const aus = regelSetzen(daten, { ...daten.regeln.find((r) => r.typ === 'wischer'), aktiv: false });
     assert.equal(autoUebersicht(aus, [h25, h26], HEUTE)[0].faellig.some((f) => f.regel.typ === 'wischer'), false);
+  });
+
+  test('gebrauchter Fiat aus der Vorlage ohne Verlauf: nichts überfällig, unbekannt außer Pickerl, Vignette und Saison', () => {
+    const paket = autoAusVorlage('fiat500', { name: 'Fiat', ezDatum: '2017-07-24' });
+    assert.equal(paket.auto.neuGekauft, false);
+    const daten = autoAnlegen(leereAutos(), paket);
+    const h = kmEintragen(leereHistorie(paket.auto.id, 2026), { datum: '2026-10-31', km: 83000 }, { heute: HEUTE });
+    const [u] = autoUebersicht(daten, [h], HEUTE);
+    assert.equal(u.faellig.length, 10);
+    assert.equal(u.faellig.some((f) => f.status === 'ueberfaellig'), false);
+    for (const f of u.faellig) {
+      if (['pickerl', 'vignette', 'reifenwechsel'].includes(f.regel.typ)) assert.notEqual(f.status, 'unbekannt', f.regel.name);
+      else assert.deepEqual([f.status, f.hinweis, f.ohneErinnerung], ['unbekannt', 'Letzte Erledigung eintragen', true], f.regel.name);
+    }
+    assert.equal(u.kmInfo.km, 83000); // ohne EZ-Punkt nur ein Stand → keine Geschwindigkeit
+    assert.equal(u.anzahlFaellig, 1); // nur „Reifenwechsel (saisonal)“: Stichtag 1.11. ist heute
   });
 
   test('Auto ohne alles: keine Fehler, km unbekannt', () => {

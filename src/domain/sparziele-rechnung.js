@@ -32,17 +32,12 @@
 //   4. Aufteilung von gespart + ausgleich
 //   5. die übrigen Verschiebungen.
 
-import { isValidDate } from './dates.js';
+import { heutePruefen } from './dates.js';
 import { kontoVerlauf, monatVor, normalisiereKonto } from './konto.js';
 
 const MONAT = /^\d{4}-(0[1-9]|1[0-2])$/;
-const TEXT_HEUTE = 'Ungültiges Datum (heute): erwartet wird das Wiener Datum als Text „JJJJ-MM-TT“.';
-
 /** Wirft sofort, wenn `heute` kein Datum 'JJJJ-MM-TT' ist (z. B. undefined oder ein Date-Objekt) – sonst liefe die Rechnung endlos. */
-export function heutePruefen(heute) {
-  if (typeof heute !== 'string' || !isValidDate(heute)) throw new Error(TEXT_HEUTE);
-  return heute.slice(0, 7);
-}
+export { heutePruefen };
 
 /** 'JJJJ-MM' → fortlaufende Monatsnummer (für Abstände in Monaten). */
 const monatsNr = (jm) => Number(jm.slice(0, 4)) * 12 + Number(jm.slice(5, 7)) - 1;

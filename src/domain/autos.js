@@ -4,8 +4,10 @@
 //
 // Im Speicher (lesbare Namen):
 //   Auto        { id, name, farbeKennung, kennzeichen?, fin?, marke?, handelsbezeichnung?, typVariante?, motorcode?, antrieb?, leistungKw?,
-//                 hubraum?, ezDatum?, zulassungDatum?, reifenGroessen?, haltung?, leasingEnde?, notiz?, vorlage? }
+//                 hubraum?, ezDatum?, zulassungDatum?, reifenGroessen?, haltung?, leasingEnde?, notiz?, vorlage?, neuGekauft }
 //                 Alles aus dem Zulassungsschein ist freiwillig; Pflicht sind nur Name und Farbe. vorlage = AUTO_VORLAGEN[].id.
+//                 neuGekauft = seit der Erstzulassung in der Familie: dann zählt die EZ als 0-km-Punkt und Regeln ohne Erledigung
+//                 laufen ab der EZ; sonst (Gebrauchtwagen) sind sie „unbekannt – Letzte Erledigung eintragen“ (Spec §10).
 //   Regel       { id, auto, typ, name, intervallMonate?, intervallKm?, ersteFaelligkeit?, ersteFaelligkeitKm?, fixMonat?, autoDatum?,
 //                 vorlage?, aktiv }   typ = ARBEIT_TYPEN[].id; ersteFaelligkeit 'JJJJ-MM-TT' oder 'JJJJ-MM'; fixMonat 'JJJJ-MM';
 //                 autoDatum 'leasingEnde' = der Termin steht im Auto; vorlage = Schlüssel der Vorlagen-Regel (Quelle und Info stehen
@@ -21,6 +23,7 @@
 //     (im Speicher { v: 1, autos, regeln, saetze, jahre, fremd?: { a, r, s } }; j = die Jahre mit einem Verlauf-Teil, aufsteigend)
 //     Auto:       i=id n=name f=farbeKennung k=kennzeichen g=fin m=marke h=handelsbezeichnung t=typVariante c=motorcode a=antrieb
 //                 l=leistungKw u=hubraum e=ezDatum z=zulassungDatum r=reifenGroessen w=haltung b=leasingEnde o=notiz v=vorlage
+//                 p=1 (neuGekauft)
 //     Regel:      i=id a=auto y=typ n=name m=intervallMonate k=intervallKm e=ersteFaelligkeit x=ersteFaelligkeitKm f=fixMonat
 //                 d=autoDatum v=vorlage o=1 (nur wenn NICHT aktiv)
 //     Reifensatz: i=id a=auto n=name w=art g=groesse s=startKm e=1 (startGeschaetzt)
@@ -34,10 +37,9 @@
 // Jede Änderung ist eine reine Funktion Daten → Daten (das Argument bleibt unverändert, zweimal angewendet = einmal angewendet), die
 // nach HTTP 412 auf die NEUESTE Fassung angewendet wird. Zwei Telefone, die im selben Jahr Arbeiten eintragen, behalten beide.
 
-import { addDays, diffDays, isValidDate } from './dates.js';
-import { heutePruefen } from './sparziele-rechnung.js';
+import { addDays, diffDays, heutePruefen, isValidDate } from './dates.js';
 
-export const MAX_AUTOS = 6;
+export const MAX_AUTOS = 4; // mit vollen Vorlagen (≈ 1.500 Zeichen je Auto) passen etwa 4 in die 6000 Zeichen
 export const MAX_REGELN = 80; // insgesamt (die Vorlagen bringen 9–10 je Auto)
 export const MAX_SAETZE = 16; // Reifensätze insgesamt
 export const MAX_AUTOS_ZEICHEN = 6000; // wie Kontostand/Fixkosten/Sparziele: Google kürzt Beschreibungen still bei 8192 Zeichen
@@ -50,7 +52,7 @@ export const MAX_ARBEIT_NOTIZ = 120;
 export const MAX_KM = 2_000_000;
 export const MAX_SATZ_START_KM = 500_000;
 export const MAX_KOSTEN_CENTS = 9_999_999; // 99.999,99 €
-export const MAX_KM_PRO_TAG = 1500; // mehr ist ein Tippfehler: Warnung, und die Schätzung rechnet höchstens damit
+export const MAX_KM_PRO_TAG = 1000; // mehr gegenüber dem vorigen Stand ist ein Tippfehler: Warnung, der Punkt zählt nicht
 export const KM_FENSTER_TAGE = 90; // Durchschnitt aus den letzten 90 Tagen (mit ≥ 2 Punkten), sonst aus allen
 export const BALD_TAGE = 30; // „bald“: höchstens 30 Tage …
 export const BALD_KM = 1000; // … oder höchstens 1.000 km bis zum Termin
@@ -157,11 +159,11 @@ export const AUTO_VORLAGEN = tiefFrieren([
   {
     id: 'tesla3',
     name: 'Tesla Model 3',
-    auto: { name: 'Tesla Model 3', farbeKennung: 'grau', marke: 'Tesla', handelsbezeichnung: 'Model 3', antrieb: 'Elektro', reifenGroessen: '235/45 R18' },
+    auto: { name: 'Tesla Model 3', farbeKennung: 'grau', marke: 'Tesla', handelsbezeichnung: 'Model 3', antrieb: 'Elektro', reifenGroessen: '235/45 R18', neuGekauft: true },
     saetze: [{ name: 'Sommer', art: 'sommer' }, { name: 'Winter', art: 'winter' }],
     radmutternNm: 175, // Tesla Owner's Manual, Q.teslaRaeder
     regeln: [
-      { vorlage: 'vignette', typ: 'vignette', name: 'Vignette', quelle: Q.vignette, info: 'Gilt vom 1.12. des Vorjahres bis 31.1. des Folgejahres. Online gekauft gilt sie erst ab dem 18. Tag, bei ÖAMTC, ARBÖ oder an der Tankstelle sofort.' },
+      { vorlage: 'vignette', typ: 'vignette', name: 'Vignette', quelle: Q.vignette, info: 'Gilt vom 1.12. des Vorjahres bis 31.1. des Folgejahres; je Kennzeichen eine.' },
       { vorlage: 'reifen', typ: 'reifenwechsel', name: 'Reifenwechsel (saisonal)', quelle: Q.winterreifen, info: 'Winterausrüstung 1.11.–15.4. bei winterlichen Verhältnissen; Winterreifen mind. 4 mm, Sommerreifen mind. 1,6 mm Profil.' },
       { vorlage: 'rotation', typ: 'rotation', name: 'Reifen rotieren', intervallKm: 10_000, quelle: Q.teslaWartung, info: 'Alle 10.000 km je Satz oder bei ≥ 1,5 mm Profilunterschied – was zuerst eintritt.' },
       { vorlage: 'bremssattel', typ: 'bremssattel', name: 'Bremssättel reinigen und schmieren', intervallMonate: 12, intervallKm: 20_000, quelle: Q.teslaWartung, info: 'Jährlich oder alle 20.000 km, wenn im Winter Streusalz liegt.' },
@@ -170,7 +172,8 @@ export const AUTO_VORLAGEN = tiefFrieren([
       { vorlage: 'wischer', typ: 'wischer', name: 'Wischerblätter', intervallMonate: 12, quelle: Q.teslaWartung },
       // Vorschlag nach der eigenen Berechnung in der Recherche (EZ 07/2025, alte Lochung 3 Jahre → 07/2028; danach 2 Jahre nach
       // 4-2-2-2-1). Den Monat bestätigt der Halter an der gelochten Plakette (mit Austauschplakette wäre es 07/2029).
-      { vorlage: 'pickerl', typ: 'pickerl', name: 'Pickerl (§ 57a)', fixMonat: '2028-07', intervallMonate: 24, quelle: Q.pickerl, info: 'Monat laut gelochter Plakette prüfen. Ab 19.05.2027: bis 4 Monate vorher möglich, keine Nachfrist mehr.' },
+      // Ab dem 10. Jahr nach der EZ gilt jährlich – dann das Intervall auf 12 Monate stellen (steht im Info-Text).
+      { vorlage: 'pickerl', typ: 'pickerl', name: 'Pickerl (§ 57a)', fixMonat: '2028-07', intervallMonate: 24, quelle: Q.pickerl, info: 'Monat laut gelochter Plakette prüfen. Ab 19.05.2027 bis 4 Monate vorher möglich, keine Nachfrist mehr. Mit Austauschplakette (ab 19.05.2027) erst 4 Jahre nach der Erstzulassung; ab dem 10. Jahr jährlich.' },
       // Leasing-Ende: Termin aus dem Auto (leasingEnde); keine Recherche-Quelle, er steht im Leasingvertrag.
       { vorlage: 'leasing', typ: 'sonstiges', name: 'Leasing-Ende', autoDatum: 'leasingEnde', quelle: null, info: 'Laut Leasingvertrag.' },
     ],
@@ -178,27 +181,27 @@ export const AUTO_VORLAGEN = tiefFrieren([
   {
     id: 'fiat500',
     name: 'Fiat 500 TwinAir',
-    auto: { name: 'Fiat 500', farbeKennung: 'rot', marke: 'Fiat', handelsbezeichnung: '500', typVariante: '0.9 TwinAir 85 PS Dualogic', motorcode: '312A2000', antrieb: 'Benzin', leistungKw: 63, reifenGroessen: '195/45 R16' },
+    auto: { name: 'Fiat 500', farbeKennung: 'rot', marke: 'Fiat', handelsbezeichnung: '500', typVariante: '0.9 TwinAir 85 PS Dualogic', motorcode: '312A2000', antrieb: 'Benzin', leistungKw: 63, reifenGroessen: '195/45 R16', neuGekauft: false },
     saetze: [{ name: 'Sommer', art: 'sommer' }, { name: 'Winter', art: 'winter' }],
     radmutternNm: null, // im Fiat-Handbuch nicht recherchiert
     regeln: [
       // Fiat-Handbuch S. 150, 182: empfohlen alle 15.000 km / 1 Jahr (Pflicht jährlich bei Stadtbetrieb oder < 10.000 km/Jahr).
       { vorlage: 'oel', typ: 'oelwechsel', name: 'Ölwechsel', intervallMonate: 12, intervallKm: 15_000, quelle: Q.fiatHandbuch, info: 'SAE 0W-30, ACEA C2, Fiat 9.55535-GS1 (Selenia Digitek P.E.), 3,2 l mit Filter.' },
       { vorlage: 'bremsfluessigkeit', typ: 'bremsfluessigkeit', name: 'Bremsflüssigkeit', intervallMonate: 24, quelle: Q.fiatHandbuch, info: 'Alle 2 Jahre, unabhängig von km; DOT 4 (Tutela TOP 4).' },
-      // Intervall: Wartungsplan 30.000 km. Teil: OE NGK ILKR9G8 = Fiat 46344791 (Teile-Recherche § 3, z. B.
+      // Intervall: Wartungsplan „30.000 km / 2 Jahre“ (strikt einhalten). Teil: OE NGK ILKR9G8 = Fiat 46344791 (Teile-Recherche § 3, z. B.
       // https://www.fiatworkshop.co.uk/parts/500_Spark_Plug.shtml) – sie korrigiert die ältere Angabe LKR9EI-8 aus dem Handbuch.
-      { vorlage: 'zuendkerzen', typ: 'zuendkerzen', name: 'Zündkerzen', intervallKm: 30_000, quelle: Q.fiatHandbuch, info: 'OE: NGK ILKR9G8 = Fiat 46344791 (2 Stück); Abstand nicht nachbiegen.' },
+      { vorlage: 'zuendkerzen', typ: 'zuendkerzen', name: 'Zündkerzen', intervallMonate: 24, intervallKm: 30_000, quelle: Q.fiatHandbuch, info: 'OE: NGK ILKR9G8 = Fiat 46344791 (2 Stück); Abstand nicht nachbiegen.' },
       { vorlage: 'luftfilter', typ: 'luftfilter', name: 'Luftfilter', intervallMonate: 24, intervallKm: 30_000, quelle: Q.fiatHandbuch, info: 'In staubiger Gegend alle 15.000 km.' },
       { vorlage: 'innenraumfilter', typ: 'innenraumfilter', name: 'Innenraumfilter', intervallMonate: 12, quelle: Q.fiatHandbuch, info: 'Empfohlen jährlich, spätestens alle 2 Jahre.' },
       // Fußnote 5: in kalten Klimazonen höchstens 60.000 km / 4 Jahre (sonst 120.000 km / 6 Jahre).
       { vorlage: 'keilriemen', typ: 'keilriemen', name: 'Keilrippenriemen prüfen', intervallMonate: 48, intervallKm: 60_000, quelle: Q.fiatHandbuch, info: 'Kaltes Klima: spätestens alle 4 Jahre / 60.000 km ersetzen.' },
       // Fußnote 2: in Ländern mit strengem (kaltem) Klima jedes Jahr.
       { vorlage: 'dualogic', typ: 'dualogic', name: 'Dualogic-Öl prüfen', intervallMonate: 12, quelle: Q.fiatHandbuch, info: 'Ölstand der Elektrohydraulik prüfen; Tutela CS Speed.' },
-      { vorlage: 'vignette', typ: 'vignette', name: 'Vignette', quelle: Q.vignette, info: 'Gilt vom 1.12. des Vorjahres bis 31.1. des Folgejahres. Online gekauft gilt sie erst ab dem 18. Tag, bei ÖAMTC, ARBÖ oder an der Tankstelle sofort.' },
+      { vorlage: 'vignette', typ: 'vignette', name: 'Vignette', quelle: Q.vignette, info: 'Gilt vom 1.12. des Vorjahres bis 31.1. des Folgejahres; je Kennzeichen eine.' },
       { vorlage: 'reifen', typ: 'reifenwechsel', name: 'Reifenwechsel (saisonal)', quelle: Q.winterreifen, info: 'Winterausrüstung 1.11.–15.4. bei winterlichen Verhältnissen; Winterreifen mind. 4 mm, Sommerreifen mind. 1,6 mm Profil.' },
       // Vorschlag nach der eigenen Berechnung in der Recherche (EZ 07/2017: Begutachtungen 2020, 2022, dann jährlich → 07/2027,
       // Übergang mit alter Toleranz −1/+4); danach jährlich. Den Monat bestätigt der Halter an der gelochten Plakette.
-      { vorlage: 'pickerl', typ: 'pickerl', name: 'Pickerl (§ 57a)', fixMonat: '2027-07', intervallMonate: 12, quelle: Q.pickerl, info: 'Monat laut gelochter Plakette prüfen. Ab 2028 keine Nachfrist mehr nach dem Monat.' },
+      { vorlage: 'pickerl', typ: 'pickerl', name: 'Pickerl (§ 57a)', fixMonat: '2027-07', intervallMonate: 12, quelle: Q.pickerl, info: 'Monat laut gelochter Plakette prüfen. Für Juli 2027 gilt noch die Übergangsregel (bis 30.11.2027 möglich); ab 2028 keine Nachfrist mehr nach dem Monat.' },
     ],
   },
 ]);
@@ -290,6 +293,7 @@ export const AUTO_FELDER = tiefFrieren([
   { feld: 'leasingEnde', kurz: 'b', art: 'datum', name: 'Leasing-Ende' },
   { feld: 'notiz', kurz: 'o', art: 'text', max: MAX_AUTO_NOTIZ, name: 'Notiz' },
   { feld: 'vorlage', kurz: 'v', art: 'vorlage', name: 'Vorlage' },
+  { feld: 'neuGekauft', kurz: 'p', art: 'janein', name: 'Neu gekauft (seit der Erstzulassung bei uns)' },
 ]);
 
 /** Ein Feld bereinigen: → { wert } (undefined = leer/fehlt) oder { fehler }. */
@@ -664,15 +668,15 @@ function mitFremd(d, fremd) {
 }
 const baueAutos = (alt, autos, regeln, saetze, jahre) => mitFremd({ v: 1, autos, regeln, saetze, jahre }, alt?.fremd);
 
-/** Gültige Einträge (der erste je Kennung gilt) und die nicht verstandenen roh. */
+/** Gültige Einträge (der erste je Kennung gilt) und die nicht verstandenen roh – auch doppelte Kennungen: sie bleiben so erhalten. */
 function trenne(liste, lang) {
   const gut = [];
   const fremd = [];
   const ids = new Set();
   for (const k of liste) {
     const x = lang(k);
-    if (!x) fremd.push(k);
-    else if (!ids.has(x.id)) {
+    if (!x || ids.has(x.id)) fremd.push(k);
+    else {
       ids.add(x.id);
       gut.push(x);
     }
