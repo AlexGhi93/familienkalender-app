@@ -3370,6 +3370,11 @@ html:has(.screen.einkauf) {
 @media (max-width: 359px) {
   .sp-kopf .gruss {
     font-size: 1.4rem; /* „🗓️ Schichtplan“ bleibt neben „Eintragen“ in einer Zeile */
+    /* auch mit breiterer Ersatzschrift (Linux/CI ohne Systemschrift): nie umbrechen, notfalls „…“ */
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
   }
 }
 
