@@ -11,7 +11,7 @@ import { artAendern, artArchivieren, artHinzufuegen, artVerschieben, katalogErga
 import { FIX_SHARDS, TEXT_FIX_UNLESBAR, TEXT_FIX_VOLL, TEXT_TEIL_GESPERRT, leererShard, neueFixId, normalisiereShard, postenAnzahlPruefen, postenArchivieren, postenLoeschen, postenPruefen, postenSetzen, postenWiederanlegen, postenWiederherstellen, shardFuer } from '../domain/fixkosten.js';
 import { MAX_SERIEN_WOCHEN, naechsterWochentag, wochenSerie } from './serie.js';
 import { TEXT_AUTOS_GESPERRT, TEXT_AUTO_WEG, TEXT_HISTORIE_GESPERRT, arbeitLoeschen as arbeitLoeschenRein, arbeitPruefen, arbeitSetzen, arbeitSpur, arbeitWiederherstellen, autoAnlegen, autoLoeschen as autoLoeschenRein, autoSetzen, autoSpur, autoWiederherstellen, autosWarnungen, historieJahrEintragen, historieWarnungen, kmEintragen, kmPruefen, leereAutos, leereHistorie, neueAutoId, regelSetzen, satzSetzen } from '../domain/autos.js';
-import { kmPunkte } from '../domain/autos-rechnung.js';
+import { autosHistorien, kmPunkte } from '../domain/autos-rechnung.js';
 import { TEXT_ZIELE_GESPERRT, TEXT_ZIELE_NICHT_GELADEN, freiVerschieben as zielFreiVerschieben, leereZiele, neueZielId, startMonat, verschiebungLoeschen as verschiebungLoeschenRein, verschiebungWiederherstellen as verschiebungWiederherstellenRein, zielAusblenden as zielAusblendenRein, zielBeenden as zielBeendenRein, zielLoeschen as zielLoeschenRein, zielSchluss, zielSetzen, zielSpur, zielWiederherstellen as zielWiederherstellenRein, zieleWarnungen } from '../domain/sparziele.js';
 
 const KITA_TYPEN = ['kita_essen', 'kita_ohne'];
@@ -155,8 +155,21 @@ function autosZustand(gelesen, status) {
   return { daten: istObjekt(gelesen?.daten) && !unlesbar.main ? gelesen.daten : leereAutos(), historie: istObjekt(gelesen?.historie) && !unlesbar.main ? gelesen.historie : {}, status, warnungen: Array.isArray(gelesen?.warnungen) ? gelesen.warnungen : [], unlesbar, frisch: status === 'geladen' };
 }
 
-/** Alle Verlauf-Teile der Autos als Liste (für kmPunkte, arbeitenVon, autoUebersicht in domain/autos-rechnung.js). */
-export const autosHistorien = (autos) => Object.values(autos?.historie ?? {}).flatMap((jahre) => Object.values(jahre ?? {}));
+/**
+ * `zusage` mit Frist: antwortet sie nicht binnen `ms`, wird abgelehnt (Name 'Zeitueberschreitung'); eine spätere Antwort zählt nicht mehr.
+ * api.js kennt kein Timeout – ohne Frist bliebe ein hängendes Lesen der Autos für immer „laufend“ und würde nie wiederholt (Review T3 M3).
+ */
+function mitFrist(zusage, ms) {
+  let zeitgeber;
+  const frist = new Promise((_, nein) => {
+    zeitgeber = setTimeout(() => nein(Object.assign(new Error('Keine Antwort (Zeitüberschreitung).'), { name: 'Zeitueberschreitung' })), ms);
+    zeitgeber?.unref?.(); // Node (Tests): hält den Prozess nicht offen
+  });
+  return Promise.race([zusage, frist]).finally(() => clearTimeout(zeitgeber));
+}
+
+/** Alle Verlauf-Teile der Autos als Liste – liegt jetzt in domain/autos-rechnung.js (rein); hier weiter angeboten für bisherige Aufrufer. */
+export { autosHistorien };
 
 /** Wie gleichOder, aber je Verlauf-Teil: unveränderte Teile (und, ist alles gleich, das ganze Objekt) behalten ihre Identität. */
 function historieGleichOder(alt, neu) {
@@ -220,7 +233,7 @@ function ladeFelder(daten, state) {
  *   speichert sie nach dem erneuten Anmelden.
  * - Mehr als drei Schreibvorgänge melden ihren Fortschritt (`state.fortschritt`).
  */
-export function createStore(adapter, { jetzt = () => new Date(), neueId = zufaelligeId, fixId = neueFixId, zielId = neueZielId, autoId = neueAutoId } = {}) {
+export function createStore(adapter, { jetzt = () => new Date(), neueId = zufaelligeId, fixId = neueFixId, zielId = neueZielId, autoId = neueAutoId, autosFristMs = 20_000 } = {}) {
   let state = { geladen: false, settings: normalizeSettings(), tage: {}, urlaub: [], termine: [], einkauf: leereListe(), konto: leeresKonto(), schicht: leererSchichtplan(), fixkosten: leereFixkosten(), ziele: leererZieleZustand(), autos: leererAutosZustand(), fehler: null, fortschritt: null, anmeldungNoetig: false, fenster: null };
   const hoerer = new Set();
   const wartend = []; // Schreibvorgänge, die wegen abgelaufener Anmeldung noch fehlen
@@ -946,7 +959,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       melden();
       let g;
       try {
-        g = await adapter.leseAutos();
+        g = await mitFrist(adapter.leseAutos(), autosFristMs); // hängt es, gilt es als Fehler: der Vorlader der Shell versucht es später wieder
       } catch (fehler) {
         state = { ...state, autos: { ...state.autos, status: 'fehler', frisch: false, warnungen: [TEXT_AUTOS_NICHT_GELESEN] }, ...(istAuthFehler(fehler) ? { anmeldungNoetig: true } : {}) };
         melden();
@@ -2157,7 +2170,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
         const stand = schreibStand;
         let g;
         try {
-          g = await adapter.leseAutos();
+          g = await mitFrist(adapter.leseAutos(), autosFristMs);
         } catch (fehler) {
           state = { ...state, autos: { ...state.autos, frisch: false }, ...(istAuthFehler(fehler) ? { anmeldungNoetig: true } : {}) };
           melden();

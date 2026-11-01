@@ -2,8 +2,8 @@
 // Rein und deterministisch, ohne DOM und ohne Netz; alles wird bei jedem Aufruf aus den gespeicherten Daten (autos.js) neu gerechnet.
 //
 // Regeln (Spezifikation „Autos 1.3.0“ §4 und die Festlegungen im Plan):
-// - km-Schätzung: letzter bekannter Stand + Durchschnitt km/Tag × Tage seitdem. Durchschnitt aus den Punkten der letzten 90 Tage, wenn
-//   es dort mindestens 2 (an verschiedenen Tagen) gibt, sonst aus allen; sonst keiner (proTag null). Ein Stand, der niedriger ist als ein
+// - km-Schätzung: letzter bekannter Stand + Durchschnitt km/Tag × Tage seitdem. Durchschnitt aus den Punkten der 90 Tage bis zum LETZTEN
+//   Stand (nicht bis heute: ohne neuen Stand bleibt die Schätzung, und damit jeder km-Termin, von Tag zu Tag gleich), wenn es dort mindestens 2 (an verschiedenen Tagen) gibt, sonst aus allen; sonst keiner (proTag null). Ein Stand, der niedriger ist als ein
 //   früherer, ist ein Tippfehler: Warnung, er zählt nicht mit – die Schätzung liegt nie unter dem höchsten gültigen Stand. Ebenso ein Stand
 //   mit mehr als MAX_KM_PRO_TAG km/Tag gegenüber dem vorigen: Warnung, er zählt nicht, spätere richtige Stände gelten wieder (Spec §10).
 //   Die Erstzulassung zählt nur bei einem neu gekauften Auto (neuGekauft) als 0-km-Punkt.
@@ -38,6 +38,9 @@ function plusMonate(datum, n) {
 }
 
 // ---------------------------------------------------------------- Punkte und Arbeiten eines Autos
+
+/** Alle Verlauf-Teile aus `autos.historie` ({ [autoId]: { [jahr]: Teil } }, wie im Zustand der App) als Liste (für kmPunkte, arbeitenVon, autoUebersicht). */
+export const autosHistorien = (autos) => Object.values(autos?.historie ?? {}).flatMap((jahre) => Object.values(jahre ?? {}));
 
 /**
  * Alle Kilometerpunkte eines Autos aus seinen Verlauf-Teilen, nach Datum: [{ datum, km, quelle, arbeit? }] – bei einem neu gekauften
@@ -106,9 +109,11 @@ export function kmSchaetzung(punkte, heute) {
   const erster = folge[0];
   if (ez && (!erster || (ez.datum <= erster.datum && erster.km / Math.max(1, diffDays(ez.datum, erster.datum)) <= MAX_KM_PRO_TAG))) folge.unshift(ez);
   if (folge.length === 0) return null;
-  const ab = addDays(heute, -KM_FENSTER_TAGE);
-  const proTag = proTagAus(folge.filter((p) => p.datum >= ab)) ?? proTagAus(folge);
   const letzter = folge.at(-1);
+  // das Fenster endet am letzten Stand (Ruling I2 nach dem Review T3): sonst fielen ohne neue Eingabe Tag für Tag Punkte heraus, und
+  // geschätzte Termine (und damit Push-Erinnerungen) sprängen hin und her
+  const ab = addDays(letzter.datum, -KM_FENSTER_TAGE);
+  const proTag = proTagAus(folge.filter((p) => p.datum >= ab)) ?? proTagAus(folge);
   const tage = Math.max(0, diffDays(letzter.datum, heute));
   const km = letzter.km + (proTag ? Math.round(proTag * tage) : 0);
   return { km, geschaetzt: km > letzter.km, proTag, datum: letzter.datum, letzterKm: letzter.km, warnung: warnungen.length > 0 ? [...new Set(warnungen)].join(' ') : null };
@@ -176,18 +181,19 @@ const letzterWechsel = (arbeiten) => (arbeiten ?? []).filter((a) => a.typ === 'r
 
 /**
  * Hinweis zur Jahreszeit für den montierten Satz (Reifensatz oder null) am Tag `heute` → { saison, text, hinweis, pflicht, quelle } oder
- * null. Sommerreifen drauf ab 15.10. bis Ende Februar → „Winterreifen montieren“ (pflicht = 1.11.–15.4., § 102 Abs. 8a KFG, bei winterlichen
- * Verhältnissen); Winterreifen drauf vom 1.4. bis 14.10. → „Sommerreifen montieren“. Ganzjahresreifen oder unbekannt → null.
+ * null. Sommerreifen drauf ab 15.10. bis 14.3. → „Winterreifen montieren“ (pflicht = 1.11.–15.4., § 102 Abs. 8a KFG, bei winterlichen
+ * Verhältnissen); Winterreifen drauf vom 1.4. bis 30.9. → „Sommerreifen montieren“ (Ruling: Winterreifen ab 1.10. und Sommerreifen ab
+ * 15.3. gelten als richtige Saison – „O bis O“ mit Spielraum). Ganzjahresreifen oder unbekannt → null.
  */
 export function saisonHinweis(heute, montierterSatz) {
   heutePruefen(heute);
   const art = montierterSatz?.art;
   const md = heute.slice(5);
   const pflichtzeit = md >= '11-01' || md <= '04-15';
-  if (art === 'sommer' && (md >= '10-15' || md < '03-01')) {
+  if (art === 'sommer' && (md >= '10-15' || md < '03-15')) {
     return { saison: 'winter', text: 'Winterreifen montieren', hinweis: `${pflichtzeit ? 'Vom 1.11. bis 15.4. gilt' : 'Ab 1.11. gilt'} bei winterlichen Verhältnissen die Winterausrüstungspflicht; Winterreifen mind. 4 mm Profil.`, pflicht: pflichtzeit, quelle: QUELLE_WINTERREIFEN };
   }
-  if (art === 'winter' && md >= '04-01' && md < '10-15') {
+  if (art === 'winter' && md >= '04-01' && md < '10-01') {
     return { saison: 'sommer', text: 'Sommerreifen montieren', hinweis: `Die Winterausrüstungspflicht ${md > '04-15' ? 'endete' : 'endet'} am 15.4.; Sommerreifen mind. 1,6 mm Profil.`, pflicht: false, quelle: QUELLE_WINTERREIFEN };
   }
   return null;
@@ -306,9 +312,10 @@ export function faelligkeit(regel, arbeiten, auto, kmInfo, heute, { saetze = [] 
       saison = satz.art === 'winter' ? 'sommer' : 'winter';
       const md = w.datum.slice(5);
       const j = Number(w.datum.slice(0, 4));
-      // M3: mitten in der „falschen“ Saison montiert (Sommerreifen 1.11.–Ende Februar, Winterreifen 16.4.–14.10.) → der Stichtag dieser Saison
-      if (saison === 'winter') datum = md >= '11-01' ? `${j}-11-01` : md < '03-01' ? `${j - 1}-11-01` : naechster('11-01', w.datum);
-      else datum = md > '04-15' && md < '10-15' ? `${j}-04-15` : naechster('04-15', w.datum);
+      // M3: mitten in der „falschen“ Saison montiert (Sommerreifen 1.11.–14.3., Winterreifen 16.4.–30.9.) → der Stichtag dieser Saison.
+      // Ruling nach dem Review T3: Winterreifen ab 1.10. und Sommerreifen ab 15.3. gelten als richtige Saison („O bis O“ mit Spielraum).
+      if (saison === 'winter') datum = md >= '11-01' ? `${j}-11-01` : md < '03-15' ? `${j - 1}-11-01` : naechster('11-01', w.datum);
+      else datum = md > '04-15' && md < '10-01' ? `${j}-04-15` : naechster('04-15', w.datum);
     } else {
       // nicht bekannt, was montiert ist: der nächste Stichtag ab heute (1.11. Winter, 15.4. Sommer)
       const tag = addDays(heute, -1);
@@ -319,7 +326,8 @@ export function faelligkeit(regel, arbeiten, auto, kmInfo, heute, { saetze = [] 
     // M4: Sommerreifen erst ab 1.4. erinnern (die Winterausrüstungspflicht gilt bis 15.4.). Task 3: ebenso Winterreifen erst ab 15.10.
     // (Spec §4: „Winterreifen montieren“ am 15.10. und 1.11.) – vorher nie 'bald': keine Karte auf „Heute“, keine Push-Erinnerung
     const erinnerungAb = `${datum.slice(0, 4)}-${saison === 'sommer' ? '04-01' : '10-15'}`;
-    return { ...ergebnis([{ datum, quelle: 'fix' }], { ...k, quelleOhneDatum: 'fix', erinnerungAb }), saison };
+    // M7 (Review T3): nicht bekannt, welcher Satz montiert ist → der Text bittet, den Reifenwechsel einzutragen
+    return { ...ergebnis([{ datum, quelle: 'fix' }], { ...k, quelleOhneDatum: 'fix', erinnerungAb }), saison, ...(satz ? {} : { montiertUnbekannt: true }) };
   }
 
   if (regel.typ === 'rotation') {

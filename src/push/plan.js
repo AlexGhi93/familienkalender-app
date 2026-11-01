@@ -10,14 +10,14 @@ import { monatlichKuendbar, vertragStatus } from '../domain/fixkosten.js';
 import { datumAnzeige } from '../domain/eingabe.js';
 import { terminAnzeige } from '../app/views/gemeinsam.js';
 import { urlaubChecksWunsch } from '../app/urlaub-check.js';
-import { autosTermine, erinnerungText } from '../app/views/autos-faellig.js';
+import { autosUebersichten, erinnerungText, erinnerungsTage } from '../app/views/autos-faellig.js';
 import { bytesZuB64u } from './base64url.js';
 
 const TYPEN = ['arzt', 'familie', 'kita_sache', 'urlaub_check'];
 const STUNDE = 3600_000;
 // Sekunden, die der Push-Server von Google/Apple die Nachricht für ein Telefon ohne Netz aufhebt: kommt es rechtzeitig wieder ins Netz, wird sie noch zugestellt
 // („1 Stunde vorher“ nur bis kurz vor dem Termin, danach wäre sie sinnlos).
-const TTL = { tag: 21600, stunde: 3300, vortag: 21600, abend: 14400, konto: 10800, konto2: 5400, frist: 21600, auto30: 21600, auto7: 21600, autoUeber: 21600 };
+const TTL = { tag: 21600, stunde: 3300, vortag: 21600, abend: 14400, konto: 10800, konto2: 5400, frist: 21600, auto30: 21600, auto7: 21600, auto0: 21600, autoUeber: 21600, saison: 21600, radmuttern: 21600 };
 // Monatlich kündbare Verträge bekommen keine Erinnerung (sonst jeden Monat eine): Regel `monatlichKuendbar` in domain/fixkosten.js.
 
 async function kennung(terminId, art) {
@@ -163,46 +163,41 @@ async function fristenEinesPostens(posten, heute, von, bis) {
 }
 
 /**
- * Autos (Vignette, Pickerl, Ölwechsel …): 30 und 7 Tage vor dem Termin um 09:00 (Wien), an BEIDE Telefone (ohne `nur`); öffnet das Auto
- * (`#/autos/<id>`). Termin = Datum aus autoUebersicht (bei km-Regeln das geschätzte). Ist er schon überfällig, wenn der Plan entsteht:
- * EINE Erinnerung am nächsten Tag um 09:00 („überfällig seit …“). Nur aus frisch gelesenen Autos (`state.autos.frisch`, sonst keine –
- * der übrige Plan wartet nie auf sie, Spec §6) und aus dem zuletzt GESPEICHERTEN Stand (`bestaetigt`, solange eigene Änderungen offen
- * sind: so schickt das andere Telefon denselben Plan). Nichts für „unbekannt“ (`ohneErinnerung`), ohne Datum, abgeschaltete Regeln und
- * vor `erinnerungAb` (Reifenwechsel: Winter ab 15.10., Sommer ab 1.4.). Kennung = Regel, Termin und Abstand: bleibt bei Neuberechnung
- * gleich (die Überfällig-Erinnerung rückt bei jedem neuen Plan auf den nächsten Morgen; dieselbe Kennung ersetzt die Meldung auf dem Telefon).
- * Nichts hier darf den übrigen Plan verhindern.
+ * Autos (Vignette, Pickerl, Ölwechsel …), an BEIDE Telefone (ohne `nur`), um 09:00 (Wien), öffnet das Auto (`#/autos/<id>`). Die Tage
+ * kommen NUR aus dem Termin (views/autos-faellig.js `erinnerungsTage`, Ruling I1/I4 nach dem Review T3): 30 und 7 Tage vorher, am Tag
+ * selbst und eine Woche danach (solange nicht erledigt); saisonaler Reifenwechsel nur am 15.10. und 1.11. bzw. 1.4. und 15.4., solange
+ * der falsche Satz drauf ist. So ist jeder Zeitpunkt bei jeder Neuberechnung und auf beiden Telefonen derselbe, und nichts kommt doppelt.
+ * Termin = Datum aus autoUebersicht (bei km-Regeln das geschätzte; es bleibt ohne neue km-Eingabe gleich). Dazu nach einem Reifenwechsel
+ * „Radmuttern nachziehen“ zwei Tage danach (Spec §4). Kennung = Regel, Termin und Art (bzw. die Arbeit). Nur aus frisch gelesenen Autos
+ * (`state.autos.frisch`, sonst keine – der übrige Plan wartet nie auf sie, Spec §6) und aus dem zuletzt GESPEICHERTEN Stand
+ * (`bestaetigt`, solange eigene Änderungen offen sind: so schickt das andere Telefon denselben Plan). Nichts hier darf den übrigen Plan verhindern.
  */
 async function autoErinnerungen(state, von, bis) {
   const autos = state.autos;
   if (autos?.frisch !== true) return [];
   const plan = [];
+  const dazu = async (schluessel, art, tag, titel, text, autoId) => {
+    const um = wienZuInstant(tag, '09:00');
+    if (um > von && um <= bis) plan.push({ id: await kennung(schluessel, art), um, art, titel, text, ttl: TTL[art], ziel: `#/autos/${autoId}` });
+  };
   try {
-    const heute = todayVienna(new Date(von));
-    for (const { auto, f } of autosTermine(autos.bestaetigt ?? autos, heute)) {
+    for (const u of autosUebersichten(autos.bestaetigt ?? autos, todayVienna(new Date(von)))) {
+      for (const f of u.faellig) {
+        try {
+          for (const k of erinnerungsTage(f)) await dazu(`auto-${f.regel.id}-${f.datum}`, k.art, k.tag, `🚗 ${u.auto.name}: ${f.regel.name}`, erinnerungText(f, k.art), u.auto.id);
+        } catch {
+          // dieser Termin lässt sich nicht planen: die anderen trotzdem
+        }
+      }
       try {
-        plan.push(...(await erinnerungenEinesTermins(auto, f, heute, von, bis)));
+        const r = u.radmuttern;
+        if (r?.arbeit && isValidDate(r.erinnerungAm ?? '')) await dazu(`radmuttern-${u.auto.id}-${r.arbeit}`, 'radmuttern', r.erinnerungAm, `🚗 ${u.auto.name}: Radmuttern nachziehen`, r.text, u.auto.id);
       } catch {
-        // dieser Termin lässt sich nicht planen: die anderen trotzdem
+        // ohne diese eine Erinnerung weiter
       }
     }
   } catch {
     // unbrauchbare Autos im Zustand: ohne Auto-Erinnerungen weiter
-  }
-  return plan;
-}
-
-/** Die Erinnerungen eines Termins im Fenster (siehe autoErinnerungen); wirft bei unbrauchbaren Daten. */
-async function erinnerungenEinesTermins(auto, f, heute, von, bis) {
-  if (f.ohneErinnerung || f.regel?.aktiv === false || typeof f.datum !== 'string' || !isValidDate(f.datum)) return [];
-  const kandidaten = f.status === 'ueberfaellig'
-    ? [{ art: 'autoUeber', tag: addDays(heute, 1), tage: null }]
-    : [{ art: 'auto30', tag: addDays(f.datum, -30), tage: 30 }, { art: 'auto7', tag: addDays(f.datum, -7), tage: 7 }];
-  const plan = [];
-  for (const k of kandidaten) {
-    if (f.erinnerungAb && k.tag < f.erinnerungAb) continue;
-    const um = wienZuInstant(k.tag, '09:00');
-    if (um <= von || um > bis) continue;
-    plan.push({ id: await kennung(`auto-${f.regel.id}-${f.datum}`, k.art), um, art: k.art, titel: `🚗 ${auto.name}: ${f.regel.name}`, text: erinnerungText(f, k.tage, heute), ttl: TTL[k.art], ziel: `#/autos/${auto.id}` });
   }
   return plan;
 }
@@ -240,7 +235,7 @@ function nurFuer(t, settings) {
 }
 
 /**
- * Plan der nächsten `tage` Tage: [{ id, um (ms), art: 'tag'|'stunde'|'vortag'|'abend'|'konto'|'konto2'|'frist'|'auto30'|'auto7'|'autoUeber', titel, text, ttl, ziel?, nur? }], sortiert nach Zeitpunkt.
+ * Plan der nächsten `tage` Tage: [{ id, um (ms), art: 'tag'|'stunde'|'vortag'|'abend'|'konto'|'konto2'|'frist'|'auto30'|'auto7'|'auto0'|'autoUeber'|'saison'|'radmuttern', titel, text, ttl, ziel?, nur? }], sortiert nach Zeitpunkt.
  * Die `id` hängt nur an Termin und Art (nicht am Zeitpunkt), damit zwei Telefone denselben Plan ohne Doppelungen schicken.
  * `nur` ('papa' | 'mama'): nur an die Telefone dieser Person (und an Telefone ohne Angabe, siehe meldungen.js).
  */

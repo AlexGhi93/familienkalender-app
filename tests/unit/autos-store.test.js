@@ -153,6 +153,26 @@ describe('Autos laden', () => {
     assert.ok(planQuellen(store.getState(), uhr), 'der Plan für den neuen Monat geht hinaus');
     assert.equal(autos(store).frisch, false);
   });
+
+  test('M3 (Review T3): ein hängendes Lesen der Autos gilt nach der Frist als Fehler und wird beim nächsten Anstoßen wiederholt', async () => {
+    const t = apiAttrappe();
+    const { daten } = fiat();
+    await t.api.ereignisse.schreibe('kan', { id: 'fkautos', description: autosText(daten) });
+    let haengt = true;
+    let anfragen = 0;
+    const ereignisse = { ...t.api.ereignisse, holen: (k, id) => (id === 'fkautos' && (anfragen += 1) && haengt ? new Promise(() => {}) : t.api.ereignisse.holen(k, id)) };
+    const store = createStore(createGoogleAdapter({ api: { ereignisse }, kalender: KALENDER, jetzt: () => JETZT }), { jetzt: () => JETZT, autosFristMs: 30 });
+    await store.laden();
+    const r = await store.autosLaden();
+    assert.equal(r.ok, false);
+    assert.deepEqual([autos(store).status, autos(store).frisch], ['fehler', false]);
+    assert.equal(await store.autosFrischLesen(), false, 'auch das Frisch-Lesen vor dem Push-Plan hängt nicht');
+    haengt = false;
+    const vorher = anfragen;
+    assert.deepEqual(await store.autosLaden(), { ok: true });
+    assert.ok(anfragen > vorher, 'neu gefragt, nicht das alte hängende Versprechen');
+    assert.deepEqual([autos(store).status, autos(store).frisch, autos(store).daten.autos.length], ['geladen', true, 1]);
+  });
 });
 
 describe('Autos ändern', () => {

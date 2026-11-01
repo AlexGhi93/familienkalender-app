@@ -2,6 +2,7 @@
 // (km-Schätzung, Fälligkeiten, Reifen-km, Vignette, Saison). Testdaten: nur Zahlen, keine echten Namen, FIN oder Kennzeichen.
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
+import { addDays } from '../../src/domain/dates.js';
 import {
   ARBEIT_TYPEN,
   AUTO_FARBEN,
@@ -501,6 +502,23 @@ describe('Autos: Kilometerstand schätzen', () => {
     assert.equal(alt.km, 3040);
   });
 
+  test('Ruling I2 (Review T3): das Fenster endet am letzten Stand – ohne neue Eingabe bleiben Schätzung und km-Termin Tag für Tag gleich', () => {
+    // 20.08. 10.000, 01.09. 10.100, 10.10. 12.400 – früher fielen die ersten Punkte mit jedem Tag aus dem Fenster (Termin sprang)
+    const punkte = [{ datum: '2026-08-20', km: 10000 }, { datum: '2026-09-01', km: 10100 }, { datum: '2026-10-10', km: 12400 }];
+    const oelF = regel({ typ: 'oelwechsel', name: 'Ölwechsel', intervallKm: 15000 });
+    const arbeit = [{ ...oel('2026-01-20', 234) }];
+    const termine = new Set();
+    const tempi = new Set();
+    for (let tag = '2026-10-10'; tag <= '2027-01-31'; tag = addDays(tag, 1)) {
+      const kmInfo = kmSchaetzung(punkte, tag);
+      tempi.add(kmInfo.proTag);
+      termine.add(faelligkeit(oelF, arbeit, fiatAuto(), kmInfo, tag).datum);
+    }
+    assert.deepEqual([...tempi], [2400 / 51]);
+    assert.equal(termine.size, 1);
+    assert.deepEqual([...termine], ['2026-12-10']); // 2.834 km Rest mit ca. 47 km/Tag ab dem 10.10. = 61 Tage
+  });
+
   test('niedrigerer Stand → Warnung, Rechnung bleibt heil und nie unter dem letzten bekannten (Review Focus 1)', () => {
     const r = kmSchaetzung([{ datum: '2026-10-01', km: 1000 }, { datum: '2026-10-11', km: 900 }, { datum: '2026-10-21', km: 2000 }], HEUTE);
     assert.equal(r.proTag, 50);
@@ -620,7 +638,12 @@ describe('Autos: Reifensätze', () => {
     assert.equal(saisonHinweis('2026-11-01', winter), null);
     assert.equal(saisonHinweis('2027-03-31', winter), null);
     assert.equal(saisonHinweis('2027-04-01', winter).text, 'Sommerreifen montieren');
-    assert.equal(saisonHinweis('2027-10-14', winter).saison, 'sommer');
+    // Ruling (Review T3, I3): Winterreifen ab 1.10. und Sommerreifen ab 15.3. sind schon die richtige Saison
+    assert.equal(saisonHinweis('2027-09-30', winter).saison, 'sommer');
+    assert.equal(saisonHinweis('2026-10-05', winter), null);
+    assert.equal(saisonHinweis('2027-10-14', winter), null);
+    assert.equal(saisonHinweis('2027-03-10', sommer).saison, 'winter');
+    assert.equal(saisonHinweis('2027-03-20', sommer), null);
     assert.equal(saisonHinweis('2027-01-01', { ...sommer, art: 'ganzjahr' }), null);
     assert.equal(saisonHinweis('2027-01-01', null), null);
   });
@@ -762,6 +785,22 @@ describe('Autos: Fälligkeiten', () => {
     // Task 3 (Minor aus dem Re-Review T1): ein Auto ohne Reifensätze hat keinen saisonalen Reifenwechsel (kein Termin, keine Erinnerung)
     assert.equal(faelligkeit(saison, [], teslaAuto(), null, '2026-10-20', { saetze: [] }), null);
     assert.equal(faelligkeit(saison, [], teslaAuto(), null, '2026-10-20'), null);
+    // M7 (Review T3): ohne eingetragenen Reifenwechsel ist unbekannt, was montiert ist
+    assert.equal(ohne.montiertUnbekannt, true);
+    assert.equal('montiertUnbekannt' in s2, false);
+    // Ruling I3 (Review T3): Winterreifen ab 01.10. montiert = richtige Saison → nächster Stichtag 15.04., nicht „überfällig seit 15.04.“
+    const imOktober = [...teslaWechsel().slice(0, 3), wechsel('arb00008', '2026-10-05', 21000, WINTER)];
+    assert.deepEqual(
+      ['datum', 'saison', 'status'].map((k) => faelligkeit(saison, imOktober, teslaAuto(), null, '2026-10-06', { saetze: saetze() })[k]),
+      ['2027-04-15', 'sommer', 'ok'],
+    );
+    const imSeptember = [...teslaWechsel().slice(0, 3), wechsel('arb00009', '2026-09-30', 21000, WINTER)];
+    assert.deepEqual(['datum', 'status'].map((k) => faelligkeit(saison, imSeptember, teslaAuto(), null, '2026-10-01', { saetze: saetze() })[k]), ['2026-04-15', 'ueberfaellig']);
+    // … und Sommerreifen ab 15.03.: am 20.03. montiert → nächster Winter-Stichtag; am 10.03. noch die falsche Saison
+    const maerzSommer = [wechsel('arb00010', '2027-03-20', 25000, SOMMER)];
+    assert.deepEqual(['datum', 'status'].map((k) => faelligkeit(saison, maerzSommer, teslaAuto(), null, '2027-03-21', { saetze: saetze() })[k]), ['2027-11-01', 'ok']);
+    const fruehSommer = [wechsel('arb00011', '2027-03-10', 25000, SOMMER)];
+    assert.deepEqual(['datum', 'status'].map((k) => faelligkeit(saison, fruehSommer, teslaAuto(), null, '2027-03-11', { saetze: saetze() })[k]), ['2026-11-01', 'ueberfaellig']);
 
     const rot = regel({ auto: T, typ: 'rotation', name: 'Reifen rotieren', intervallKm: 10000 });
     const kmInfo = kmBei(21831, { proTag: 21693 / 470, letzterKm: 21693, geschaetzt: true });

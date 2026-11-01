@@ -10,6 +10,7 @@ import { createStore } from '../../src/app/store.js';
 import { createGoogleAdapter } from '../../src/calendar/google-adapter.js';
 import { autoAnlegen, autoAusVorlage, autosText, leereAutos } from '../../src/domain/autos.js';
 import { seedDemo } from '../../src/app/seed.js';
+import { addDays } from '../../src/domain/dates.js';
 import { apiAttrappe, zustand } from './hilfen.js';
 
 const A = 'auto0001'; // neu gekauft (EZ 10.01.2026)
@@ -52,11 +53,13 @@ function folge(start) {
 }
 
 describe('Auto-Erinnerungen im Push-Plan', () => {
-  test('Vignette 2027: 30 und 7 Tage vor dem 13.01.2027 (online gekauft gilt sie erst ab dem 18. Tag) um 09:00, an beide Telefone', async () => {
-    const plan = (await autoPlan(mitAutos(autosTeil({ regeln: [VIGNETTE] })), '2026-12-01T08:00:00+01:00'));
+  test('Vignette 2027: 30 und 7 Tage vor dem 13.01.2027, am Tag selbst und eine Woche danach, je 09:00, an beide Telefone', async () => {
+    const plan = await autoPlan(mitAutos(autosTeil({ regeln: [VIGNETTE] })), '2026-12-01T08:00:00+01:00');
     assert.deepEqual(kurz(plan), [
       ['2026-12-14T08:00:00.000Z', '🚗 Testauto: Vignette', 'Vignette 2027 kaufen – online bis 13.01., im Geschäft bis 31.01.'],
-      ['2027-01-06T08:00:00.000Z', '🚗 Testauto: Vignette', 'Vignette 2027 kaufen – online bis 13.01., im Geschäft bis 31.01.'],
+      ['2027-01-06T08:00:00.000Z', '🚗 Testauto: Vignette', 'Vignette 2027 jetzt kaufen – online nur noch bis 13.01., im Geschäft bis 31.01.'],
+      ['2027-01-13T08:00:00.000Z', '🚗 Testauto: Vignette', 'Vignette 2027: heute letzter Tag für den Online-Kauf – im Geschäft bis 31.01.'],
+      ['2027-01-20T08:00:00.000Z', '🚗 Testauto: Vignette', 'Vignette 2027 kaufen – nur noch im Geschäft bis 31.01.'],
     ]);
     for (const p of plan) {
       assert.equal('nur' in p, false);
@@ -64,19 +67,18 @@ describe('Auto-Erinnerungen im Push-Plan', () => {
       assert.equal(p.ttl, 21600);
       assert.ok(/^[A-Za-z0-9_-]{22}$/.test(p.id));
     }
-    assert.deepEqual(plan.map((p) => p.art), ['auto30', 'auto7']);
+    assert.deepEqual(plan.map((p) => p.art), ['auto30', 'auto7', 'auto0', 'autoUeber']);
+    assert.equal(new Set(plan.map((p) => p.id)).size, 4);
   });
 
-  test('Vignette über den Jahreswechsel (Review Focus 5): dieselben Kennungen im Dezember und im Januar, keine doppelten; gekauft → keine', async () => {
+  test('Vignette über den Jahreswechsel (Review Focus 5): dieselben Kennungen und Zeitpunkte im Dezember und im Januar; gekauft → keine', async () => {
     const state = mitAutos(autosTeil({ regeln: [VIGNETTE] }));
     const dez = await autoPlan(state, '2026-12-01T08:00:00+01:00');
     const jan = await autoPlan(state, '2027-01-02T08:00:00+01:00');
-    assert.deepEqual(jan.map((p) => [p.id, p.um]), [[dez[1].id, dez[1].um]]);
-    assert.notEqual(dez[0].id, dez[1].id);
-    // nach dem 13.01. überfällig: EINE Erinnerung am nächsten Tag um 09:00 (online ist es zu spät, im Geschäft geht es noch)
-    const spaet = await autoPlan(state, '2027-01-20T10:00:00+01:00');
-    assert.deepEqual(kurz(spaet), [['2027-01-21T08:00:00.000Z', '🚗 Testauto: Vignette', 'Vignette 2027 kaufen – im Geschäft bis 31.01.']]);
-    assert.equal(spaet[0].art, 'autoUeber');
+    assert.deepEqual(jan.map((p) => [p.id, p.um, p.text]), dez.slice(1).map((p) => [p.id, p.um, p.text]));
+    // nach dem 13.01.: nur noch die eine Woche danach – und nach dem 20.01. nichts mehr (keine tägliche Wiederholung)
+    assert.deepEqual((await autoPlan(state, '2027-01-15T22:00:00+01:00')).map((p) => [p.id, p.um]), [[dez[3].id, dez[3].um]]);
+    assert.deepEqual(await autoPlan(state, '2027-01-20T10:00:00+01:00'), []);
     // ab Februar die Vignette 2028: nichts im Fenster
     assert.deepEqual(await autoPlan(state, '2027-02-01T08:00:00+01:00'), []);
     // schon gekauft (Vignette 2027 eingetragen) → die nächste ist 2028
@@ -84,23 +86,40 @@ describe('Auto-Erinnerungen im Push-Plan', () => {
     assert.deepEqual(await autoPlan(gekauft, '2026-12-05T08:00:00+01:00'), []);
   });
 
-  test('km-Regel mit geschätztem Termin: Erinnerungen 30 und 7 Tage vor dem geschätzten Datum, Text „bei ca. … km (etwa …)“', async () => {
-    const plan = await autoPlan(mitAutos(autosTeil({ regeln: [OEL] })), '2026-10-14T08:00:00+02:00');
-    assert.deepEqual(kurz(plan), [
-      ['2026-11-13T08:00:00.000Z', '🚗 Testauto: Ölwechsel', 'bei ca. 15.200 km (etwa 13.12.2026)'],
-      ['2026-12-06T08:00:00.000Z', '🚗 Testauto: Ölwechsel', 'bei ca. 15.200 km (etwa 13.12.2026)'],
+  test('km-Regel mit geschätztem Termin: Erinnerungen an den geschätzten Tagen, Text „bei ca. … km (etwa …)“; ohne neue km bleiben sie gleich', async () => {
+    const state = mitAutos(autosTeil({ regeln: [OEL] }));
+    assert.deepEqual(kurz(await autoPlan(state, '2026-10-14T08:00:00+02:00')), [
+      ['2026-11-13T08:00:00.000Z', '🚗 Testauto: Ölwechsel', 'bei ca. 15.200 km (etwa 13.12.2026, in 1 Monat)'],
+      ['2026-12-06T08:00:00.000Z', '🚗 Testauto: Ölwechsel', 'bei ca. 15.200 km (etwa 13.12.2026, in 1 Woche)'],
     ]);
+    const dez = await autoPlan(state, '2026-12-01T08:00:00+01:00');
+    assert.deepEqual(kurz(dez).map((x) => [x[0], x[2]]), [
+      ['2026-12-06T08:00:00.000Z', 'bei ca. 15.200 km (etwa 13.12.2026, in 1 Woche)'],
+      ['2026-12-13T08:00:00.000Z', 'heute etwa erreicht: ca. 15.200 km'],
+      ['2026-12-20T08:00:00.000Z', 'seit etwa 1 Woche überfällig (bei ca. 15.200 km)'],
+    ]);
+    // Ruling I2: die geschätzten Tage hängen nicht am Tag der Berechnung
+    const nov = await autoPlan(state, '2026-11-20T07:00:00+01:00');
+    assert.deepEqual(nov.map((p) => [p.id, p.um]), dez.map((p) => [p.id, p.um]));
   });
 
-  test('überfällig, wenn der Plan entsteht: genau eine Erinnerung am nächsten Tag um 09:00, „überfällig seit …“', async () => {
+  test('Ruling I1: alle Zeitpunkte nur aus dem Termin – Neuberechnung an vielen Tagen (morgens und abends): jede Erinnerung genau einmal, nie verschoben', async () => {
     const brems = r('regbre01', B, { typ: 'bremsfluessigkeit', name: 'Bremsflüssigkeit', intervallMonate: 24 });
     const historie = { [B]: { 2024: { v: 1, auto: B, jahr: 2024, arbeiten: [{ id: 'arbbre01', auto: B, typ: 'bremsfluessigkeit', datum: '2024-10-01', details: {} }], km: [] } } };
     const state = mitAutos(autosTeil({ autos: [autoB], regeln: [brems], historie }));
-    const plan = await autoPlan(state, '2026-10-14T08:00:00+02:00');
-    assert.deepEqual(kurz(plan), [['2026-10-15T07:00:00.000Z', '🚗 Zweitauto: Bremsflüssigkeit', 'überfällig seit 01.10.2026']]);
-    // am Abend neu gerechnet: dieselbe Kennung (ersetzt die Meldung auf dem Telefon), am nächsten Morgen um 09:00
-    const abend = await autoPlan(state, '2026-10-14T21:00:00+02:00');
-    assert.deepEqual([abend[0].id, abend[0].um], [plan[0].id, plan[0].um]);
+    const umJeKennung = new Map();
+    for (let tag = '2026-08-01'; tag <= '2026-10-20'; tag = addDays(tag, 1)) {
+      for (const zeit of ['07:00', '10:00', '22:00']) {
+        for (const p of await autoPlan(state, `${tag}T${zeit}:00+02:00`)) {
+          if (umJeKennung.has(p.id)) assert.equal(umJeKennung.get(p.id), p.um, `${tag} ${zeit}: ${p.art} verschoben`);
+          umJeKennung.set(p.id, p.um);
+        }
+      }
+    }
+    assert.deepEqual([...umJeKennung.values()].map((um) => new Date(um).toISOString()), ['2026-09-01T07:00:00.000Z', '2026-09-24T07:00:00.000Z', '2026-10-01T07:00:00.000Z', '2026-10-08T07:00:00.000Z']);
+    // überfällig, wenn der Plan entsteht: nur noch „seit 1 Woche überfällig“ – nach dem 08.10. nichts mehr (die Karte auf Heute bleibt)
+    assert.deepEqual(kurz(await autoPlan(state, '2026-10-03T07:00:00+02:00')), [['2026-10-08T07:00:00.000Z', '🚗 Zweitauto: Bremsflüssigkeit', 'seit 1 Woche überfällig (fällig am 01.10.2026)']]);
+    assert.deepEqual(await autoPlan(state, '2026-10-14T08:00:00+02:00'), []);
   });
 
   test('ohne Erinnerung („unbekannt“), ohne Datum (km ohne Geschwindigkeit) oder abgeschaltete Regel → nichts', async () => {
@@ -110,10 +129,12 @@ describe('Auto-Erinnerungen im Push-Plan', () => {
     const historie = { [B]: { 2026: { v: 1, auto: B, jahr: 2026, arbeiten: [{ id: 'arboel02', auto: B, typ: 'oelwechsel', datum: '2026-03-01', km: 80000, details: {} }], km: [] } } };
     const mit = (regeln) => mitAutos(autosTeil({ autos: [autoB], regeln, historie }));
     assert.deepEqual(await autoPlan(mit([zuend, oelB, filter(false)]), '2026-10-14T08:00:00+02:00'), []);
-    // Gegenprobe: dieselbe Regel eingeschaltet erinnert (21.10. und 13.11.)
+    // Gegenprobe: dieselbe Regel eingeschaltet erinnert
     assert.deepEqual(kurz(await autoPlan(mit([filter(true)]), '2026-10-14T08:00:00+02:00')).map((x) => [x[0], x[2]]), [
-      ['2026-10-21T07:00:00.000Z', 'fällig am 20.11.2026 (in 30 Tagen)'],
-      ['2026-11-13T08:00:00.000Z', 'fällig am 20.11.2026 (in 7 Tagen)'],
+      ['2026-10-21T07:00:00.000Z', 'fällig am 20.11.2026 (in 1 Monat)'],
+      ['2026-11-13T08:00:00.000Z', 'fällig am 20.11.2026 (in 1 Woche)'],
+      ['2026-11-20T08:00:00.000Z', 'heute fällig (20.11.2026)'],
+      ['2026-11-27T08:00:00.000Z', 'seit 1 Woche überfällig (fällig am 20.11.2026)'],
     ]);
   });
 
@@ -135,33 +156,74 @@ describe('Auto-Erinnerungen im Push-Plan', () => {
     assert.deepEqual(await autoPlan(mitAutos(teil), '2026-10-14T08:00:00+02:00'), []);
   });
 
-  test('Kennungen stabil: je Regel, Termin und Abstand; ein neuer Termin (Pickerl-Monat geändert) ersetzt die alten', async () => {
+  test('Kennungen stabil: je Regel, Termin und Art; ein neuer Termin (Pickerl-Monat geändert) ersetzt die alten', async () => {
     const pickerl = (fixMonat) => r('regpik01', A, { typ: 'pickerl', name: 'Pickerl', fixMonat });
     const jetzt = '2026-10-14T08:00:00+02:00';
     const a = await autoPlan(mitAutos(autosTeil({ regeln: [pickerl('2026-11')] })), jetzt);
     const b = await autoPlan(mitAutos(autosTeil({ regeln: [pickerl('2026-11')] })), '2026-10-20T08:00:00+02:00');
-    assert.deepEqual(kurz(a).map((x) => x[2]), ['fällig am 30.11.2026 (in 30 Tagen)', 'fällig am 30.11.2026 (in 7 Tagen)']);
-    assert.deepEqual(b.map((p) => p.id), a.map((p) => p.id));
+    assert.deepEqual(kurz(a).map((x) => x[2]), ['fällig am 30.11.2026 (in 1 Monat)', 'fällig am 30.11.2026 (in 1 Woche)', 'heute fällig (30.11.2026)', 'seit 1 Woche überfällig (fällig am 30.11.2026)']);
+    assert.deepEqual(b.map((p) => [p.id, p.um]), a.map((p) => [p.id, p.um]));
     const neu = await autoPlan(mitAutos(autosTeil({ regeln: [pickerl('2026-12')] })), jetzt);
     assert.equal(neu.some((p) => a.some((q) => q.id === p.id)), false);
-    assert.deepEqual(kurz(neu).map((x) => x[2]), ['fällig am 31.12.2026 (in 30 Tagen)']); // 7 Tage vorher (24.12.) liegt nach dem Fenster (60 Tage)
+    assert.deepEqual(kurz(neu).map((x) => x[2]), ['fällig am 31.12.2026 (in 1 Monat)']); // 7 Tage vorher (24.12.) liegt nach dem Fenster (60 Tage)
   });
 
-  test('Zeitumstellung: 09:00 Wien am 25.10.2026 (Winterzeit) und am 28.03.2027 (Sommerzeit); Winterreifen erst ab 15.10.', async () => {
+  test('Zeitumstellung: 09:00 Wien am 25.10.2026 (Winterzeit) und am 28.03.2027 (Sommerzeit)', async () => {
+    const filter = r('regluf01', B, { typ: 'luftfilter', name: 'Luftfilter', intervallMonate: 12, ersteFaelligkeit: '2026-11-01' });
+    const herbst = await autoPlan(mitAutos(autosTeil({ autos: [autoB], regeln: [filter], historie: {} })), '2026-09-20T08:00:00+02:00');
+    assert.deepEqual(kurz(herbst).map((x) => x[0]), ['2026-10-02T07:00:00.000Z', '2026-10-25T08:00:00.000Z', '2026-11-01T08:00:00.000Z', '2026-11-08T08:00:00.000Z']);
+    const wischer = r('regwis01', B, { typ: 'wischer', name: 'Wischerblätter', intervallMonate: 12, ersteFaelligkeit: '2027-04-04' });
+    const fruehling = await autoPlan(mitAutos(autosTeil({ autos: [autoB], regeln: [wischer], historie: {} })), '2027-03-01T08:00:00+01:00');
+    assert.deepEqual(kurz(fruehling).map((x) => x[0]), ['2027-03-05T08:00:00.000Z', '2027-03-28T07:00:00.000Z', '2027-04-04T07:00:00.000Z', '2027-04-11T07:00:00.000Z']);
+  });
+
+  describe('Ruling I4: saisonaler Reifenwechsel an festen Tagen, nur solange der falsche Satz drauf ist', () => {
     const saetze = [
       { id: 'satzsom1', auto: A, name: 'Sommer', art: 'sommer' },
       { id: 'satzwin1', auto: A, name: 'Winter', art: 'winter' },
     ];
     const reifen = r('regrei01', A, { typ: 'reifenwechsel', name: 'Reifenwechsel (saisonal)' });
-    const historie = { [A]: { 2026: { v: 1, auto: A, jahr: 2026, arbeiten: [{ id: 'arbrei01', auto: A, typ: 'reifenwechsel', datum: '2026-04-10', km: 3000, details: { montiert: 'satzsom1', rotiert: false } }], km: [] } } };
-    const herbst = await autoPlan(mitAutos(autosTeil({ regeln: [reifen], saetze, historie })), '2026-09-20T08:00:00+02:00');
-    // 30 Tage vorher (02.10.) liegt vor dem 15.10.: nur die eine eine Woche vorher, am Tag der Umstellung
-    assert.deepEqual(kurz(herbst), [['2026-10-25T08:00:00.000Z', '🚗 Testauto: Reifenwechsel (saisonal)', 'Winterreifen montieren – fällig am 01.11.2026 (in 7 Tagen)']]);
-    // ohne Reifensätze: kein saisonaler Reifenwechsel
-    assert.deepEqual(await autoPlan(mitAutos(autosTeil({ regeln: [reifen], saetze: [], historie })), '2026-09-20T08:00:00+02:00'), []);
-    const wischer = r('regwis01', B, { typ: 'wischer', name: 'Wischerblätter', intervallMonate: 12, ersteFaelligkeit: '2027-04-04' });
-    const fruehling = await autoPlan(mitAutos(autosTeil({ autos: [autoB], regeln: [wischer], historie: {} })), '2027-03-01T08:00:00+01:00');
-    assert.deepEqual(kurz(fruehling).map((x) => x[0]), ['2027-03-05T08:00:00.000Z', '2027-03-28T07:00:00.000Z']);
+    const wechsel = (id, datum, km, satz) => ({ id, auto: A, typ: 'reifenwechsel', datum, km, details: { montiert: satz, rotiert: false } });
+    const mitArbeiten = (jahr, ...arbeiten) => mitAutos(autosTeil({ regeln: [reifen], saetze, historie: { [A]: { [jahr]: { v: 1, auto: A, jahr, arbeiten, km: [] } } } }));
+
+    test('Sommerreifen drauf → Winter: 15.10. und 01.11. um 09:00; nach dem Wechsel auf Winterreifen (schon am 05.10.) nichts mehr', async () => {
+      const sommerDrauf = mitArbeiten(2026, wechsel('arbrei01', '2026-04-10', 3000, 'satzsom1'));
+      assert.deepEqual(kurz(await autoPlan(sommerDrauf, '2026-09-20T08:00:00+02:00')), [
+        ['2026-10-15T07:00:00.000Z', '🚗 Testauto: Reifenwechsel (saisonal)', 'Winterreifen montieren – fällig am 01.11.2026 (in 17 Tagen)'],
+        ['2026-11-01T08:00:00.000Z', '🚗 Testauto: Reifenwechsel (saisonal)', 'Winterreifen montieren – heute fällig (01.11.2026)'],
+      ]);
+      const gewechselt = mitArbeiten(2026, wechsel('arbrei01', '2026-04-10', 3000, 'satzsom1'), wechsel('arbrei02', '2026-10-05', 7000, 'satzwin1'));
+      assert.deepEqual((await autoPlan(gewechselt, '2026-10-06T08:00:00+02:00')).filter((p) => p.titel.includes('Reifenwechsel')), []);
+    });
+
+    test('Winterreifen drauf → Sommer: 01.04. und 15.04. um 09:00 (Sommerzeit); Sommerreifen schon am 20.03. montiert → nichts', async () => {
+      const winterDrauf = mitArbeiten(2026, wechsel('arbrei02', '2026-10-05', 7000, 'satzwin1'));
+      assert.deepEqual(kurz(await autoPlan(winterDrauf, '2027-03-10T08:00:00+01:00')).map((x) => [x[0], x[2]]), [
+        ['2027-04-01T07:00:00.000Z', 'Sommerreifen montieren – fällig am 15.04.2027 (in 14 Tagen)'],
+        ['2027-04-15T07:00:00.000Z', 'Sommerreifen montieren – heute fällig (15.04.2027)'],
+      ]);
+      const sommer = mitArbeiten(2027, wechsel('arbrei03', '2027-03-20', 9000, 'satzsom1'));
+      assert.deepEqual((await autoPlan(sommer, '2027-03-21T08:00:00+01:00')).filter((p) => p.titel.includes('Reifenwechsel')), []);
+    });
+
+    test('M7: unbekannt, was montiert ist → die festen Tage mit der Bitte, den Wechsel einzutragen; ohne Reifensätze nichts', async () => {
+      const unbekannt = mitAutos(autosTeil({ regeln: [reifen], saetze, historie: {} }));
+      const plan = await autoPlan(unbekannt, '2026-09-20T08:00:00+02:00');
+      assert.deepEqual(plan.map((p) => p.text), [
+        'Winterreifen montieren – fällig am 01.11.2026 (in 17 Tagen). Schon gewechselt? Bitte den Reifenwechsel eintragen.',
+        'Winterreifen montieren – heute fällig (01.11.2026). Schon gewechselt? Bitte den Reifenwechsel eintragen.',
+      ]);
+      assert.deepEqual(await autoPlan(mitAutos(autosTeil({ regeln: [reifen], saetze: [], historie: {} })), '2026-09-20T08:00:00+02:00'), []);
+    });
+
+    test('M6: nach einem Reifenwechsel „Radmuttern nachziehen“ zwei Tage danach um 09:00 (einmal, Kennung aus der Arbeit)', async () => {
+      const gewechselt = mitArbeiten(2026, wechsel('arbrei01', '2026-04-10', 3000, 'satzsom1'), wechsel('arbrei02', '2026-10-30', 7000, 'satzwin1'));
+      const am30 = (await autoPlan(gewechselt, '2026-10-30T18:00:00+01:00')).filter((p) => p.art === 'radmuttern');
+      assert.deepEqual(kurz(am30), [['2026-11-01T08:00:00.000Z', '🚗 Testauto: Radmuttern nachziehen', 'Radmuttern nach ca. 50–100 km nachziehen.']]);
+      const am31 = (await autoPlan(gewechselt, '2026-10-31T09:00:00+01:00')).filter((p) => p.art === 'radmuttern');
+      assert.deepEqual(am31.map((p) => [p.id, p.um]), am30.map((p) => [p.id, p.um]));
+      assert.deepEqual((await autoPlan(gewechselt, '2026-11-01T10:00:00+01:00')).filter((p) => p.art === 'radmuttern'), []);
+    });
   });
 });
 
