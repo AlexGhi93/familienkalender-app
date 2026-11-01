@@ -3,7 +3,7 @@
 // dem Neuladen), Karte auf Heute führt zum Auto (auch „+ N weitere“), Löschen mit „Rückgängig“ (Arbeit und Auto), Auto aus Vorlage,
 // Wischen im Verlauf; in Glas und Bento alle Ziele ≥ 44 px.
 import { test, expect, starteDemo, erwarteToast, WERKTAG_DATUM } from './hilfen.js';
-import { autoId, demoMitAutos, vierFaellig, winterRotationFaellig } from './autos-hilfen.js';
+import { autoId, demoMitAutos, teslaOhneReifensaetze, vierFaellig, winterRotationFaellig } from './autos-hilfen.js';
 
 const TESLA = autoId(WERKTAG_DATUM, 'Tesla Model 3');
 const FIAT = autoId(WERKTAG_DATUM, 'Fiat 500');
@@ -34,6 +34,31 @@ test('Mehr → Autos → Auto: Zeile mit „N fällig“, Karten je Auto, Seite 
   await expect(abschnitt(page, 'Fahrzeugdaten')).toContainText('nur in eurem eigenen Google-Kalender');
   await page.getByRole('button', { name: '‹ Autos' }).click();
   await expect(page).toHaveURL(/#\/autos$/);
+});
+
+test('Marke „N fällig“ in Mehr: ändert sich an Ort und Stelle, wenn eine Arbeit das Fällige erledigt (ohne Neuzeichnen der Seite)', async ({ page }) => {
+  const zeit = '2026-10-20T08:00:00+02:00';
+  const tesla = autoId('2026-10-20', 'Tesla Model 3');
+  await starteDemo(page, { route: `#/autos/${tesla}`, zeit });
+  // das Blatt „Reifenwechsel eintragen“ bleibt offen, darunter geht es zurück nach „Mehr“
+  await page.getByRole('button', { name: 'Reifenwechsel (saisonal): Reifenwechsel eintragen' }).click();
+  const b = blatt(page, '🛞 Reifenwechsel eintragen');
+  await expect(b.getByRole('button', { name: '❄️ Winter' })).toHaveAttribute('aria-pressed', 'true');
+  await page.evaluate(() => (location.hash = '#/mehr'));
+  const zeile = page.locator('.menue-eintrag[data-id="autos"] .menue-zeile');
+  const marke = zeile.locator('.menue-marke');
+  await expect(marke).toHaveText('2 fällig');
+  // Merker an der Seite und an der Marke: ein Neuzeichnen von „Mehr“ würde beide ersetzen
+  await page.evaluate(() => {
+    document.querySelector('#inhalt').firstElementChild.dataset.testMerker = 'mehr';
+    document.querySelector('.menue-eintrag[data-id="autos"] .menue-marke').dataset.testMerker = 'marke';
+  });
+  await b.getByRole('button', { name: 'Eintragen' }).click();
+  await erwarteToast(page, 'Eingetragen ✓');
+  await expect(marke).toHaveText('1 fällig');
+  await expect(page).toHaveURL(/#\/mehr$/);
+  await expect(page.locator('#inhalt > [data-test-merker="mehr"]')).toHaveCount(1);
+  await expect(marke).toHaveAttribute('data-test-merker', 'marke');
 });
 
 test('Fällig: ✓ ok, ? unbekannt mit „Letzte Erledigung eintragen“, ⚠ überfällig und ⏳ bald; Regel mit Info und Quelle', async ({ page }) => {
@@ -298,6 +323,27 @@ test('Leeres Auto ohne Reifensätze: „Reifensatz anlegen“ im Reifen-Abschnit
   await b.getByRole('button', { name: 'Eintragen' }).click();
   await erwarteToast(page, 'Eingetragen ✓');
   await expect(reifen.locator('.au-satz').filter({ hasText: 'Winter' }).locator('.au-marke')).toHaveText('montiert seit 14.10.2026');
+});
+
+test('Auto ohne Reifensätze: „Reifen rotieren“ bietet „Reifensatz anlegen“, der neue Satz ist gleich gewählt – keine Sackgasse', async ({ page }) => {
+  await starteDemo(page, { route: `#/autos/${TESLA}`, speicher: { 'fk.demo.v1': demoMitAutos(WERKTAG_DATUM, teslaOhneReifensaetze) } });
+  await expect(abschnitt(page, 'Reifen')).toContainText('Noch keine Reifensätze');
+  await regel(page, 'rotation').getByRole('button', { name: /^Reifen rotieren: (?!Info)/ }).click();
+  const b = page.getByRole('dialog').filter({ hasText: 'Reifen rotiert' });
+  await expect(b).toContainText('Dieses Auto hat noch keine Reifensätze – zuerst einen anlegen.');
+  await b.getByRole('button', { name: '＋ Reifensatz anlegen' }).click();
+  const satz = blatt(page, '🛞 Reifensatz anlegen');
+  await expect(satz.getByRole('button', { name: '☀️ Sommer' })).toHaveAttribute('aria-pressed', 'true');
+  await satz.getByRole('button', { name: 'Anlegen' }).click();
+  await erwarteToast(page, 'Reifensatz angelegt ✓');
+  await expect(satz).toHaveCount(0);
+  await expect(b.getByRole('combobox', { name: 'Reifensatz' }).locator('option:checked')).toHaveText('Sommer');
+  await expect(b).not.toContainText('noch keine Reifensätze');
+  await b.getByRole('textbox', { name: 'Kilometerstand' }).fill('19.000');
+  await b.getByRole('button', { name: 'Eintragen' }).click();
+  await erwarteToast(page, 'Eingetragen ✓');
+  await expect(abschnitt(page, 'Reifen').locator('.au-satz')).toHaveCount(1);
+  await expect(abschnitt(page, 'Verlauf').getByRole('button', { name: /^Reifen rotieren, 14\.10\.2026 · 19\.000 km/ })).toContainText('Sommer rotiert');
 });
 
 test.describe('Glas und Bento', () => {

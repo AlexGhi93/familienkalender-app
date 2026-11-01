@@ -41,3 +41,11 @@ export const vierFaellig = (a) => {
   });
   return a;
 };
+
+/** Der Tesla ohne Reifensätze und ohne Reifen-Arbeiten (Reifenwechsel, Rotation); die Regel „Reifen rotieren“ bleibt. */
+export const teslaOhneReifensaetze = (a) => {
+  const tesla = a.daten.autos.find((x) => x.name === 'Tesla Model 3').id;
+  a.daten.saetze = a.daten.saetze.filter((s) => s.auto !== tesla);
+  for (const h of Object.values(a.historie[tesla] ?? {})) h.arbeiten = h.arbeiten.filter((x) => x.typ !== 'reifenwechsel' && x.typ !== 'rotation');
+  return a;
+};

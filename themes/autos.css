@@ -95,6 +95,8 @@
 :root[data-aussehen='bento'] .au-info,
 :root[data-aussehen='glas'] .au-box,
 :root[data-aussehen='bento'] .au-box,
+:root[data-aussehen='glas'] .au-saison small,
+:root[data-aussehen='bento'] .au-saison small,
 :root[data-aussehen='glas'] .au-satz-zahl,
 :root[data-aussehen='bento'] .au-satz-zahl,
 :root[data-aussehen='glas'] .au-km-karte > small,

@@ -3,7 +3,7 @@
 // `titel` (für die Galerie), `blatt` (true = man sieht nur den Bildschirm, sonst die ganze Seite) und `oeffne(page)`.
 import { starteDemo, WERKTAG, WERKTAG_DATUM } from './werkzeug.js';
 import { seedDemo } from '../../src/app/seed.js';
-import { autoId, demoMitAutos, winterRotationFaellig } from '../e2e/autos-hilfen.js';
+import { autoId, demoMitAutos, teslaOhneReifensaetze, winterRotationFaellig } from '../e2e/autos-hilfen.js';
 
 const ABEND = '2026-10-14T19:00:00+02:00';
 const AUTO_DEZEMBER = '2026-12-20T08:00:00+01:00'; // Tesla: Winterreifen überfällig, Vignette bald
@@ -337,6 +337,26 @@ export const BILDSCHIRME = [
       await starteDemo(p, { route: `#/autos/${autoId(WERKTAG_DATUM, 'Tesla Model 3')}` });
       await p.getByRole('button', { name: '＋ Reifensatz anlegen' }).click();
       await p.getByRole('dialog', { name: '🛞 Reifensatz anlegen' }).waitFor();
+    },
+  },
+  {
+    name: 'auto-arbeit',
+    titel: 'Auto: Arbeit eintragen (Art frei wählen)',
+    blatt: true,
+    oeffne: async (p) => {
+      await starteDemo(p, { route: `#/autos/${autoId(WERKTAG_DATUM, 'Tesla Model 3')}` });
+      await p.locator('.au-held').getByRole('button', { name: '＋ Arbeit eintragen' }).click();
+      await p.getByRole('dialog', { name: '＋ Arbeit eintragen' }).getByRole('combobox', { name: 'Art der Arbeit' }).waitFor();
+    },
+  },
+  {
+    name: 'auto-rotation-ohne-satz',
+    titel: 'Auto: Reifen rotieren ohne Reifensatz („Reifensatz anlegen“)',
+    blatt: true,
+    oeffne: async (p) => {
+      await starteDemo(p, { route: `#/autos/${autoId(WERKTAG_DATUM, 'Tesla Model 3')}`, speicher: { 'fk.demo.v1': demoMitAutos(WERKTAG_DATUM, teslaOhneReifensaetze) } });
+      await p.locator('.au-regel[data-typ="rotation"]').getByRole('button', { name: /^Reifen rotieren: (?!Info)/ }).click();
+      await p.getByRole('dialog', { name: '🔄 Reifen rotiert eintragen' }).getByRole('button', { name: '＋ Reifensatz anlegen' }).waitFor();
     },
   },
   {

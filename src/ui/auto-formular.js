@@ -256,7 +256,20 @@ export function oeffneArbeitFormular({ store }, autoId, optionen = {}) {
       );
     }
     if (e.typ === 'rotation') {
-      felder.push(feld('Reifensatz', auswahl('Reifensatz', e.saetze.map((s) => [s.id, s.name]), e.details.satzId, (w) => (e.details.satzId = w))));
+      // ohne Reifensatz keine Sackgasse (wie M7 beim Reifenwechsel): gleich hier einen anlegen, er ist danach gewählt
+      felder.push(
+        e.saetze.length === 0
+          ? gruppe(
+              'Reifensatz',
+              h('p', { class: 'leise' }, 'Dieses Auto hat noch keine Reifensätze – zuerst einen anlegen.'),
+              h('div', { class: 'knopfzeile au-satz-neu' }, h('button', { class: 'knopf klein', type: 'button', onClick: () => oeffneSatzFormular({ store }, autoId, { danach: () => {
+                      e.saetze = (store.getState().autos.daten.saetze ?? []).filter((x) => x.auto === autoId);
+                      if (!e.details.satzId) detailsVorbelegen(store.getState(), heute, e);
+                      neuZeichnen();
+                    } }) }, '＋ Reifensatz anlegen')),
+            )
+          : feld('Reifensatz', auswahl('Reifensatz', e.saetze.map((s) => [s.id, s.name]), e.details.satzId, (w) => (e.details.satzId = w))),
+      );
     }
     if (e.typ === 'pickerl') {
       felder.push(

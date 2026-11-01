@@ -5090,6 +5090,11 @@ html:has(.screen.einkauf) {
   color: var(--ink-2);
 }
 
+/* der Hinweis zur Saison: ohne eigene Größe wäre er als <small> nur 12 px (≥ 13 px wie die anderen Tipps) */
+.au-saison small {
+  font-size: 0.82rem;
+}
+
 .au-quelle {
   display: inline-flex;
   align-items: center;
