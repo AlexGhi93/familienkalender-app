@@ -8,6 +8,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { BILDSCHIRME } from './bildschirme.js';
 import { AUSSEHEN, MODI, WURZEL, neuerKontext, ruhe, starteServer, telefon } from './werkzeug.js';
+import { VERSION } from '../../src/app/version.js';
 
 function argument(name, standard) {
   const i = process.argv.indexOf(`--${name}`);
@@ -78,7 +79,7 @@ const html = `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Familienkalender 1.2.0 – Galerie</title>
+<title>Familienkalender ${esc(VERSION)} – Galerie</title>
 <style>
   :root { color-scheme: light dark; --bg: #f4f2fa; --karte: #fff; --ink: #1d1830; --ink-2: #575170; --akzent: #5a3ccf; --linie: #ddd8ee; }
   @media (prefers-color-scheme: dark) { :root { --bg: #14111d; --karte: #221d31; --ink: #f5f2ff; --ink-2: #c9c3e0; --akzent: #b9a5ff; --linie: #3b3453; } }
@@ -109,7 +110,7 @@ const html = `<!doctype html>
 </head>
 <body>
 <header>
-  <h1>Familienkalender 1.2.0 – alle Bildschirme</h1>
+  <h1>Familienkalender ${esc(VERSION)} – alle Bildschirme</h1>
   ${filter('aussehen', aussehenListe)}
   ${filter('modus', modusListe)}
 </header>
