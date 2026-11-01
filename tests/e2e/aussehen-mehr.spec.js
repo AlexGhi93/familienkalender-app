@@ -48,7 +48,7 @@ test.describe('mit Bewegung', () => {
 
     await page.evaluate(() => localStorage.setItem('fk.bewegung.v1', 'reduziert'));
     await page.reload();
-    await expect(page.locator('.menue-symbol.spielt')).toHaveCount(11);
+    await expect(page.locator('.menue-symbol.spielt')).toHaveCount(12);
     expect((await namen()).every((n) => n === 'none')).toBe(true);
     await page.locator('.menue-eintrag[data-id="familie"] .menue-zeile').click();
     await expect(page.locator('#menue-familie')).toBeVisible();

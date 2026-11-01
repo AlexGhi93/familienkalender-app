@@ -24,7 +24,7 @@ const TELEFON = {
 };
 /** WebKit als iPhone 17 Pro (402 × 874 CSS-px, Safari-PWA ohne Leisten): Glas und Bento über die Hauptbildschirme. */
 const IPHONE = { ...devices['iPhone 15 Pro'], viewport: { width: 402, height: 874 }, screen: { width: 402, height: 874 }, deviceScaleFactor: 3 };
-const WEBKIT_DATEIEN = /(aussehen-[a-z]+|heute|monat|schichtplan-glas-bento|konto-bewegung|mehr)\.spec\.js$/;
+const WEBKIT_DATEIEN = /(aussehen-[a-z]+|heute|monat|schichtplan-glas-bento|konto-bewegung|mehr|autos)\.spec\.js$/;
 
 export default defineConfig({
   testDir: 'tests/e2e',

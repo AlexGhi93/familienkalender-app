@@ -3,8 +3,10 @@
 // `titel` (für die Galerie), `blatt` (true = man sieht nur den Bildschirm, sonst die ganze Seite) und `oeffne(page)`.
 import { starteDemo, WERKTAG, WERKTAG_DATUM } from './werkzeug.js';
 import { seedDemo } from '../../src/app/seed.js';
+import { autoId, demoMitAutos, winterRotationFaellig } from '../e2e/autos-hilfen.js';
 
 const ABEND = '2026-10-14T19:00:00+02:00';
+const AUTO_DEZEMBER = '2026-12-20T08:00:00+01:00'; // Tesla: Winterreifen überfällig, Vignette bald
 const ansichtKonto = (page, name) => page.getByRole('group', { name: 'Ansicht im Konto' }).getByRole('button', { name });
 
 function konfliktDemo() {
@@ -226,6 +228,117 @@ export const BILDSCHIRME = [
       await p.locator(`.menue-eintrag[data-id="${id}"].offen`).waitFor();
     },
   })),
+  {
+    name: 'autos',
+    titel: 'Autos: Liste',
+    oeffne: async (p) => {
+      await starteDemo(p, { route: '#/autos' });
+      await p.locator('.au-karte').first().waitFor();
+    },
+  },
+  {
+    name: 'autos-leer',
+    titel: 'Autos: noch kein Auto',
+    oeffne: async (p) => {
+      await starteDemo(p, { route: '#/autos', speicher: { 'fk.demo.v1': demoMitAutos(WERKTAG_DATUM, undefined, { leer: true }) } });
+      await p.locator('.au-leer').waitFor();
+    },
+  },
+  {
+    name: 'auto-tesla',
+    titel: 'Auto: Tesla (Fällig, km, Reifen, Vignette, Verlauf, Daten)',
+    oeffne: async (p) => {
+      await starteDemo(p, { route: `#/autos/${autoId(WERKTAG_DATUM, 'Tesla Model 3')}` });
+      await p.locator('.au-held').waitFor();
+    },
+  },
+  {
+    name: 'auto-fiat',
+    titel: 'Auto: Fiat (unbekannte Termine, Ölwechsel)',
+    oeffne: async (p) => {
+      await starteDemo(p, { route: `#/autos/${autoId(WERKTAG_DATUM, 'Fiat 500')}` });
+      await p.locator('.au-held').waitFor();
+    },
+  },
+  {
+    name: 'auto-faellig',
+    titel: 'Auto: überfällig und bald (20.12.)',
+    oeffne: async (p) => {
+      await starteDemo(p, { zeit: AUTO_DEZEMBER, route: `#/autos/${autoId('2026-12-20', 'Tesla Model 3')}` });
+      await p.locator('.au-regel.ueberfaellig').first().waitFor();
+    },
+  },
+  {
+    name: 'auto-oelwechsel',
+    titel: 'Auto: Ölwechsel eintragen',
+    blatt: true,
+    oeffne: async (p) => {
+      await starteDemo(p, { route: `#/autos/${autoId(WERKTAG_DATUM, 'Fiat 500')}` });
+      await p.getByRole('button', { name: 'Ölwechsel: Erledigt eintragen' }).click();
+      await p.getByRole('dialog', { name: '🛢️ Ölwechsel eintragen' }).waitFor();
+    },
+  },
+  {
+    name: 'auto-reifenwechsel',
+    titel: 'Auto: Reifenwechsel mit Vorschlag „vorne/hinten getauscht“',
+    blatt: true,
+    oeffne: async (p) => {
+      await starteDemo(p, { route: `#/autos/${autoId(WERKTAG_DATUM, 'Tesla Model 3')}`, speicher: { 'fk.demo.v1': demoMitAutos(WERKTAG_DATUM, winterRotationFaellig) } });
+      await p.getByRole('button', { name: '＋ Reifenwechsel' }).click();
+      await p.locator('.au-vorschlag').waitFor();
+    },
+  },
+  {
+    name: 'auto-vignette',
+    titel: 'Auto: Vignette eintragen',
+    blatt: true,
+    oeffne: async (p) => {
+      await starteDemo(p, { route: `#/autos/${autoId(WERKTAG_DATUM, 'Tesla Model 3')}` });
+      await p.getByRole('button', { name: 'Vignette eintragen' }).click();
+      await p.getByRole('dialog', { name: '🎫 Vignette eintragen' }).waitFor();
+    },
+  },
+  {
+    name: 'auto-km',
+    titel: 'Auto: Kilometerstand mit „bitte prüfen“',
+    blatt: true,
+    oeffne: async (p) => {
+      await starteDemo(p, { route: `#/autos/${autoId(WERKTAG_DATUM, 'Tesla Model 3')}` });
+      await p.getByRole('button', { name: 'Kilometerstand aktualisieren' }).click();
+      await p.getByRole('dialog', { name: 'Kilometerstand aktualisieren' }).getByRole('textbox', { name: 'Kilometerstand laut Tacho' }).fill('17.000');
+      await p.locator('.au-feld-hinweis').waitFor();
+    },
+  },
+  {
+    name: 'auto-regel',
+    titel: 'Auto: Regel (Info, Quelle, Intervall)',
+    blatt: true,
+    oeffne: async (p) => {
+      await starteDemo(p, { route: `#/autos/${autoId(WERKTAG_DATUM, 'Fiat 500')}` });
+      await p.getByRole('button', { name: 'Ölwechsel: Info, Quelle, ändern oder abschalten' }).click();
+      await p.locator('.au-regel-info').waitFor();
+    },
+  },
+  {
+    name: 'auto-neu',
+    titel: 'Auto hinzufügen (Vorlage)',
+    blatt: true,
+    oeffne: async (p) => {
+      await starteDemo(p, { route: '#/autos' });
+      await p.getByRole('button', { name: '＋ Auto hinzufügen' }).click();
+      await p.getByRole('dialog', { name: '＋ Auto hinzufügen' }).waitFor();
+    },
+  },
+  {
+    name: 'auto-daten',
+    titel: 'Auto: Fahrzeugdaten bearbeiten',
+    blatt: true,
+    oeffne: async (p) => {
+      await starteDemo(p, { route: `#/autos/${autoId(WERKTAG_DATUM, 'Tesla Model 3')}` });
+      await p.getByRole('button', { name: 'Fahrzeugdaten bearbeiten' }).click();
+      await p.getByRole('dialog', { name: 'Fahrzeugdaten bearbeiten' }).waitFor();
+    },
+  },
   {
     name: 'konto-und-app',
     titel: 'Konto & App',

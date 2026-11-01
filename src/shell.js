@@ -12,6 +12,7 @@ import { einkaufScreen } from './ui/einkauf-screen.js';
 import { verlaufScreen } from './ui/verlauf-screen.js';
 import { kontoScreen } from './ui/konto-screen.js';
 import { appScreen } from './ui/app-screen.js';
+import { autosScreen } from './ui/autos-screen.js';
 import { oeffneTagesblatt } from './ui/tagesblatt.js';
 import { terminEntwurf } from './app/termin.js';
 import { verbindenKarte, verbindungsBanner, versionsBanner } from './ui/verbindung.js';
@@ -42,9 +43,10 @@ const SEITEN = {
   verlauf: verlaufScreen, // erreichbar von „Mehr“
   konto: kontoScreen, // Registerkarte „Konto“ mit „Kontostand · Fixkosten · Sparziele“; auch erreichbar von „Mehr“, „Heute“ (am letzten Tag) und den Erinnerungen (#/konto/kontostand, #/konto/fixkosten); #/konto/sparziele öffnet die Sparziele direkt
   app: appScreen, // „Konto & App“: erreichbar von „Mehr“
+  autos: autosScreen, // „Autos“ (#/autos) und die Seite eines Autos (#/autos/<id>): von „Mehr“, der Karte „🚗 Auto“ auf Heute und den Erinnerungen
 };
 
-const SEITEN_TITEL = { einkauf: 'Einkauf', schicht: 'Schichtplan', verlauf: 'Verlauf', konto: 'Kontostand', app: 'Konto & App' }; // Fenstertitel, wo er von der Registerkarte abweicht oder es keine gibt
+const SEITEN_TITEL = { einkauf: 'Einkauf', schicht: 'Schichtplan', verlauf: 'Verlauf', konto: 'Kontostand', app: 'Konto & App', autos: 'Autos' }; // Fenstertitel, wo er von der Registerkarte abweicht oder es keine gibt
 
 // Drei links, dann „Neu“ als runder Hauptknopf, gleich danach „Schicht“, dann drei. Lange Namen passen bei acht Karten nicht in die
 // Leiste („Kontostand“ → „Konto“, „Schichtplan“ → „Schicht“); der Fenstertitel sagt es ganz.
@@ -79,8 +81,10 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
   let schichtAngefragt = null; // Monat, den der Schichtplan zuletzt geladen hat (null = beim nächsten Zeichnen neu laden)
   let schichtRueckkehr = null; // Zeitpunkt (ms) des letzten Neu-Holens beim Zurückkehren in die App
   let letzteSeite = null; // zuletzt gezeichnete Seite (für `ui.seiteBetreten`)
+  let zumAnfang = false; // nach dem Wechsel auf eine Seite der Autos oben beginnen
   let fixAngefragt = false; // wurden die Fixkosten beim Öffnen ihrer Ansicht schon gelesen? (zurückgesetzt beim Verlassen)
   let zieleAngefragt = false; // wurden die Sparziele beim Öffnen ihrer Ansicht schon gelesen? (zurückgesetzt beim Verlassen)
+  let autosAngefragt = false; // wurden die Autos beim Öffnen ihrer Seite schon frisch gelesen? (zurückgesetzt beim Verlassen)
   const versionPruefen = async () => {
     if (neueVersion || !(await istNeueVersionVerfuegbar({ aktuell: VERSION }))) return;
     neueVersion = true;
@@ -135,6 +139,11 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
     fixFilter: 'alle', // Filter der Fixkosten (Alle · Papa · Mama · Gemeinsam · Kind)
     verlauf: { typ: 'alle', jahr: null, text: '', von: null, laedt: false }, // Filter und geladener Bereich des Verlaufs
     titel: () => 'Familienkalender',
+    /** Kennung des Autos in #/autos/<id> (sonst null: die Liste der Autos). */
+    autoId: () => {
+      const [name, id] = fenster.location.hash.replace(/^#\/?/, '').split('/');
+      return name === 'autos' && id ? id : null;
+    },
     seite: () => {
       const name = fenster.location.hash.replace(/^#\/?/, '').split('/')[0];
       return name in SEITEN ? name : 'heute';
@@ -154,13 +163,16 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
       if (auth && !state.geladen) {
         fuelle(inhalt, verbindenKarte({ verbinden, verbindung: ui.verbindung, login: auth.dauerAnmeldung?.() ?? null }));
       } else {
-        ui.seiteBetreten = seite !== letzteSeite;
+        // die Seite eines Autos ist eine eigene Seite: von der Liste dorthin (und zurück) neu betreten, oben beginnen, einblenden
+        const besuch = seite === 'autos' ? `autos-${ui.autoId() ?? 'liste'}` : seite;
+        ui.seiteBetreten = besuch !== letzteSeite;
         if (ui.seiteBetreten) neuerBesuch(); // Einblenden/Hochzählen dürfen auf der neuen Seite wieder spielen
-        letzteSeite = seite;
+        if (ui.seiteBetreten && seite === 'autos' && letzteSeite !== null) zumAnfang = true;
+        letzteSeite = besuch;
         fuelle(inhalt, SEITEN[seite]({ store, ui }));
         // Glas/Bento: die Karten kommen beim ersten Zeichnen dieses Bildschirms gestaffelt herein – nicht bei jedem Neuzeichnen
         // (Speichern, Vorladen im Hintergrund, anderes Telefon), sonst „ploppt“ alles ständig (siehe ui/bewegung.js)
-        einblenden(inhalt.firstElementChild, seite === 'konto' ? `konto-${ui.kontoAnsicht}` : seite);
+        einblenden(inhalt.firstElementChild, seite === 'konto' ? `konto-${ui.kontoAnsicht}` : besuch);
         if (seite === 'monat') ui.monatLaden();
         if (seite === 'urlaub') ui.urlaubLaden();
         if (seite === 'verlauf') ui.verlaufLaden();
@@ -170,9 +182,12 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
         else fixAngefragt = false; // beim nächsten Öffnen der Fixkosten frisch lesen
         if (seite === 'konto' && ui.kontoAnsicht === 'sparziele') ui.zieleLaden();
         else zieleAngefragt = false; // beim nächsten Öffnen der Sparziele frisch lesen
+        if (seite === 'autos') ui.autosLesen();
+        else autosAngefragt = false; // beim nächsten Öffnen frisch lesen (das andere Telefon könnte etwas eingetragen haben)
       }
-      inhalt.scrollTop = alt;
-      fenster.scrollTo(0, scrollY);
+      inhalt.scrollTop = zumAnfang ? 0 : alt;
+      fenster.scrollTo(0, zumAnfang ? 0 : scrollY);
+      zumAnfang = false;
       fuelle(leiste, TABS.map(([id, symbol, text]) => tab(id, symbol, text, seite)));
       const kontoTitel = { fixkosten: 'Fixkosten', sparziele: 'Sparziele' }[ui.kontoAnsicht];
       const seitenTitel = seite === 'konto' && kontoTitel ? kontoTitel : (SEITEN_TITEL[seite] ?? TABS.find(([id]) => id === seite)?.[2]);
@@ -211,6 +226,12 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
       if (zieleAngefragt) return;
       zieleAngefragt = true;
       store.zieleLaden?.().catch?.(() => {});
+    },
+    /** Autos beim Öffnen ihrer Seite einmal frisch lesen (Fehler stehen im Status, der letzte Stand bleibt sichtbar). */
+    autosLesen() {
+      if (autosAngefragt) return;
+      autosAngefragt = true;
+      Promise.resolve().then(() => store.autosLaden?.()).catch(() => {}); // erst nach dem laufenden Zeichnen
     },
     /** Ansicht des Konto-Tabs wechseln („kontostand“ | „fixkosten“ | „sparziele“) und auf diesem Telefon merken. */
     setzeKontoAnsicht(ansicht) {
@@ -262,7 +283,9 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
       ui.rendern();
     },
     gehZu(seite) {
-      if (ui.seite() === seite) ui.rendern();
+      const aktuell = fenster.location.hash.replace(/^#\/?/, '');
+      // dieselbe Seite: nur neu zeichnen – aber von der Seite eines Autos (#/autos/<id>) zur Liste (#/autos) ist es ein Wechsel
+      if (aktuell === seite || (ui.seite() === seite && !aktuell.includes('/'))) ui.rendern();
       else fenster.location.hash = `#/${seite}`;
       fenster.scrollTo(0, 0);
     },

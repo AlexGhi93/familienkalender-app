@@ -22,7 +22,7 @@ test('Mehr: erste Zeile zeigt „Nicht verbunden“ als Warnung', async ({ page 
   const status = zeile.locator('.menue-status');
   await expect(status).toHaveText('📴 Nicht verbunden');
   await expect(status).toHaveClass(/warnung/);
-  await expect(page.locator('.menue-eintrag')).toHaveCount(11);
+  await expect(page.locator('.menue-eintrag')).toHaveCount(12);
 });
 
 test('Konto & App: fünf Karten, Status, Code für das andere Elternteil', async ({ page }) => {

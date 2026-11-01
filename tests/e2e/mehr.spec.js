@@ -1,12 +1,12 @@
-// „Mehr“: Menü mit elf Zeilen und animierten Symbolen, Akkordeon (immer nur eine Zeile offen), Speichern ohne Zuklappen und ohne
+// „Mehr“: Menü mit zwölf Zeilen und animierten Symbolen, Akkordeon (immer nur eine Zeile offen), Speichern ohne Zuklappen und ohne
 // neues Intro, reduzierte Bewegung, Wege zu „Konto & App“, „Verlauf“ und „Kontostand“; getippte Uhrzeit und getipptes Datum
 // werden mit Enter bzw. beim Verlassen des Feldes gespeichert.
 import { test, expect, starteDemo, tab, erwarteToast } from './hilfen.js';
 
-const IDS = ['app', 'betreuung', 'familie', 'nachrichten', 'zeiten', 'bringen', 'urlaub', 'mitnehmen', 'sachen', 'kontostand', 'verlauf'];
-const TITEL = ['Konto & App', 'Betreuung', 'Familie', 'Nachrichten', 'Zeiten für Sachen', 'Bringen & Abholen', 'Urlaub', 'Mitnehmen beim Arzt', 'Eigene Sachen', 'Kontostand', 'Verlauf'];
-const SYMBOLE = ['👤', '📅', '👶', '📨', '⏰', '🚗', '✈️', '🩺', '🎒', '💶', '📜'];
-const ANIMATIONEN = ['m-nicken', 'm-blatt', 'm-wiegen', 'm-brief', 'm-klingeln', 'm-auto', 'm-fliegen', 'm-herz', 'm-huepfen', 'm-muenze', 'm-rolle'];
+const IDS = ['app', 'betreuung', 'familie', 'nachrichten', 'zeiten', 'bringen', 'urlaub', 'mitnehmen', 'sachen', 'kontostand', 'autos', 'verlauf'];
+const TITEL = ['Konto & App', 'Betreuung', 'Familie', 'Nachrichten', 'Zeiten für Sachen', 'Bringen & Abholen', 'Urlaub', 'Mitnehmen beim Arzt', 'Eigene Sachen', 'Kontostand', 'Autos', 'Verlauf'];
+const SYMBOLE = ['👤', '📅', '👶', '📨', '⏰', '🚗', '✈️', '🩺', '🎒', '💶', '🚗', '📜'];
+const ANIMATIONEN = ['m-nicken', 'm-blatt', 'm-wiegen', 'm-brief', 'm-klingeln', 'm-auto', 'm-fliegen', 'm-herz', 'm-huepfen', 'm-muenze', 'm-hupen', 'm-rolle'];
 const KLAPPT = ['betreuung', 'familie', 'nachrichten', 'zeiten', 'bringen', 'urlaub', 'mitnehmen', 'sachen', 'kontostand'];
 const N = IDS.length;
 
@@ -19,7 +19,7 @@ const tafel = (page, id) => page.locator(`#menue-${id}`);
 const symbole = (page) => page.locator('.menue-symbol');
 const animationen = (page) => symbole(page).evaluateAll((els) => els.map((el) => getComputedStyle(el).animationName));
 
-test('Aufbau: elf Zeilen, neun klappen auf, zwei führen weiter', async ({ page }) => {
+test('Aufbau: zwölf Zeilen, neun klappen auf, drei führen weiter', async ({ page }) => {
   await starteDemo(page, { route: '#/mehr' });
   await expect(page).toHaveTitle('Familienkalender · Mehr');
   await expect(page.locator('.menue-eintrag')).toHaveCount(N);
@@ -34,12 +34,12 @@ test('Aufbau: elf Zeilen, neun klappen auf, zwei führen weiter', async ({ page 
     await expect(zeile(page, id)).toHaveAttribute('aria-expanded', 'false');
     await expect(tafel(page, id)).toBeHidden();
   }
-  for (const id of ['app', 'verlauf']) await expect(zeile(page, id)).not.toHaveAttribute('aria-expanded');
+  for (const id of ['app', 'autos', 'verlauf']) await expect(zeile(page, id)).not.toHaveAttribute('aria-expanded');
   await expect(zeile(page, 'app')).toContainText('Mit Google verbinden, Darstellung, Sicherung');
   await expect(page.locator('.menue-status')).toHaveCount(0); // in der Demo kein Verbindungsstatus
 });
 
-test('Intro beim Betreten: alle elf Symbole spielen ihre eigene Animation, nacheinander', async ({ page }) => {
+test('Intro beim Betreten: alle zwölf Symbole spielen ihre eigene Animation, nacheinander', async ({ page }) => {
   await starteDemo(page, { route: '#/heute' });
   await tab(page, 'Mehr');
   await expect(symbole(page)).toHaveCount(N);
@@ -47,7 +47,7 @@ test('Intro beim Betreten: alle elf Symbole spielen ihre eigene Animation, nache
   expect(await animationen(page)).toEqual(ANIMATIONEN);
   expect(new Set(ANIMATIONEN).size).toBe(N); // jede Zeile hat ihre eigene Bewegung
   const verzoegerungen = await symbole(page).evaluateAll((els) => els.map((el) => parseFloat(getComputedStyle(el).animationDelay)));
-  expect(verzoegerungen).toEqual([0.15, 0.26, 0.37, 0.48, 0.59, 0.7, 0.81, 0.92, 1.03, 1.14, 1.25]);
+  expect(verzoegerungen).toEqual([0.15, 0.26, 0.37, 0.48, 0.59, 0.7, 0.81, 0.92, 1.03, 1.14, 1.25, 1.36]);
   const dauer = await symbole(page).first().evaluate((el) => getComputedStyle(el).animationDuration);
   expect(dauer).toBe('0.9s');
   // die Animationen laufen wirklich (Web Animations API) und enden von selbst

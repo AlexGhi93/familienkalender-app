@@ -2890,6 +2890,47 @@ figure.diagramm {
   }
 }
 
+/* 🚗 Autos: hupt – springt kurz hoch, wird groß und federt nach */
+.anim-hupen {
+  transform-origin: 50% 85%;
+}
+.anim-hupen.spielt {
+  animation-name: m-hupen;
+}
+@keyframes m-hupen {
+  0%,
+  100% {
+    transform: none;
+  }
+  18% {
+    transform: translateY(-4px) scale(1.16, 0.9);
+  }
+  34% {
+    transform: translateY(0) scale(0.92, 1.1);
+  }
+  52% {
+    transform: translateY(-2px) scale(1.1, 0.95);
+  }
+  70% {
+    transform: scale(0.98, 1.02);
+  }
+}
+
+/* „2 fällig“ an der Zeile „Autos“ */
+.menue-marke {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  margin-top: 4px;
+  padding: 1px 10px;
+  border-radius: var(--r-chip);
+  border: 1px solid color-mix(in srgb, var(--abwesend) 70%, transparent);
+  background: color-mix(in srgb, var(--abwesend) 26%, var(--karte));
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .menue-symbol.spielt,
   .menue-inhalt.aufgehend {
@@ -4632,6 +4673,660 @@ html:has(.screen.einkauf) {
 .sz-wahl small {
   color: var(--ink-2);
   font-weight: 600;
+}
+
+/* ---------- Autos (src/ui/autos-screen.js, auto-screen.js, auto-formular.js) ----------
+   --auto = Farbe des Autos (nur Schmuck: Kachel, Tönung, Balken – Schrift bleibt --ink). Stand immer als Zeichen + Wort (✓ ok,
+   ⏳ bald, ⚠ überfällig, ? unbekannt). Glas und Bento würzen das in themes/autos.css. */
+
+.autos-seite,
+.auto-seite {
+  --auto: var(--grau);
+}
+
+.au-karte {
+  gap: 10px;
+  color: inherit;
+  text-decoration: none;
+  background: color-mix(in srgb, var(--auto) 7%, var(--karte));
+  border-color: color-mix(in srgb, var(--auto) 38%, var(--linie));
+}
+
+.au-karte:active {
+  transform: scale(0.99);
+}
+
+.au-kopf {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.au-kachel {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--auto) 26%, var(--karte));
+  border: 1.5px solid color-mix(in srgb, var(--auto) 60%, transparent);
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.au-kachel.gross {
+  width: 58px;
+  height: 58px;
+  border-radius: 18px;
+  font-size: 1.9rem;
+}
+
+.au-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.au-name h3,
+.au-titel {
+  font-family: var(--font-titel);
+  font-weight: var(--gewicht-titel);
+  overflow-wrap: anywhere;
+}
+
+.au-titel {
+  font-size: 1.5rem;
+  line-height: 1.15;
+}
+
+.au-name small {
+  color: var(--ink-2);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.au-name .au-kennzeichen {
+  align-self: flex-start;
+  margin-top: 6px;
+}
+
+.au-pfeil {
+  flex: none;
+  color: var(--ink-2);
+  font-size: 1.6rem;
+  line-height: 1;
+}
+
+.au-zeile-km {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+}
+
+.au-km-zahl {
+  font-family: var(--font-zahl);
+  font-size: 1.35rem;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.au-km-zahl.gross {
+  font-size: 1.75rem;
+}
+
+/* Kennzeichen wie das österreichische Schild: weiß, rot-weiß-rote Kanten, dunkle Schrift (in jedem Aussehen gleich) */
+.au-kennzeichen {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1.5px solid #1f1d29;
+  border-radius: 6px;
+  background: linear-gradient(#d4202a 0 3px, #ffffff 3px calc(100% - 3px), #d4202a calc(100% - 3px));
+  color: #16141f;
+  font-family: var(--font-zahl);
+  font-size: 0.88rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.au-faellig {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: var(--r-chip);
+  border: 1px solid color-mix(in srgb, var(--abwesend) 70%, transparent);
+  background: color-mix(in srgb, var(--abwesend) 26%, var(--karte));
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.au-naechste {
+  --c: var(--kita);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  border-radius: var(--r-zeile);
+  background: color-mix(in srgb, var(--c) 10%, var(--karte));
+}
+
+.au-naechste.bald {
+  --c: var(--abwesend);
+}
+
+.au-naechste.ueberfaellig {
+  --c: var(--gefahr);
+}
+
+.au-naechste.unbekannt {
+  --c: var(--grau);
+}
+
+.au-naechste-titel {
+  color: var(--ink-2);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.au-naechste-zeile {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+
+.au-naechste-text {
+  color: var(--ink);
+  font-size: 0.9rem;
+}
+
+/* Stand als Pille: Zeichen + Wort */
+.au-status {
+  --c: var(--kita);
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: var(--r-chip);
+  border: 1.5px solid color-mix(in srgb, var(--c) 55%, transparent);
+  background: color-mix(in srgb, var(--c) 18%, var(--karte));
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.au-status.bald {
+  --c: var(--abwesend);
+}
+
+.au-status.ueberfaellig {
+  border-color: var(--gefahr);
+  background: var(--gefahr);
+  color: var(--gefahr-ink);
+}
+
+.au-status.unbekannt {
+  --c: var(--grau);
+}
+
+.au-held {
+  gap: 12px;
+  background: color-mix(in srgb, var(--auto) 9%, var(--karte));
+  border-color: color-mix(in srgb, var(--auto) 40%, var(--linie));
+}
+
+.au-knoepfe > .knopf {
+  flex: 1 1 auto;
+}
+
+.au-datum[data-feld='fin'] dd {
+  font-size: 0.9rem;
+  letter-spacing: -0.01em;
+}
+
+.au-liste {
+  gap: 0;
+  padding-top: 4px;
+  padding-bottom: 10px;
+}
+
+.au-regel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 0;
+  border-top: 1px solid var(--linie);
+}
+
+.au-regel:first-child {
+  border-top: 0;
+}
+
+.au-regel-kopf {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.au-regel-kopf > .emoji {
+  width: 30px;
+  text-align: center;
+}
+
+.au-regel-name {
+  flex: 1;
+  min-width: 0;
+  align-self: center;
+  overflow-wrap: anywhere;
+}
+
+.au-regel-text {
+  padding-left: 40px;
+  color: var(--ink);
+  font-size: 0.92rem;
+}
+
+.au-regel.ueberfaellig .au-regel-text {
+  color: var(--gefahr);
+  font-weight: 700;
+}
+
+.knopf.au-info-knopf {
+  min-width: 44px;
+  padding-left: 0;
+  padding-right: 0;
+  font-size: 1.15rem;
+}
+
+.au-intervall {
+  padding-left: 40px;
+  color: var(--ink-2);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.au-aus {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--linie);
+}
+
+.au-aus-zeile {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--ink-2);
+}
+
+.au-km-karte {
+  gap: 6px;
+}
+
+.au-km-karte > small {
+  color: var(--ink-2);
+  font-size: 0.88rem;
+}
+
+.au-km-kopf {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.au-marke {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 9px;
+  border-radius: var(--r-chip);
+  background: color-mix(in srgb, var(--ink-2) 12%, var(--karte));
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.au-marke.an {
+  background: color-mix(in srgb, var(--kita) 20%, var(--karte));
+}
+
+.au-warnung {
+  color: var(--gefahr);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.au-reifen {
+  gap: 10px;
+}
+
+.au-satz {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: var(--r-zeile);
+  border: var(--rand) solid var(--linie);
+}
+
+.au-satz.montiert {
+  border-color: color-mix(in srgb, var(--kita) 55%, transparent);
+  background: color-mix(in srgb, var(--kita) 6%, var(--karte));
+}
+
+.au-satz-kopf {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.au-satz-kopf b {
+  flex: 1;
+}
+
+.au-satz-zahl {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 0.9rem;
+}
+
+.au-satz-zahl b {
+  font-family: var(--font-zahl);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.au-balken {
+  --balken: var(--akzent);
+  height: 10px;
+  border-radius: 5px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--balken) 14%, var(--karte));
+}
+
+.au-satz.faellig .au-balken {
+  --balken: var(--gefahr);
+}
+
+.au-balken > span {
+  display: block;
+  height: 100%;
+  border-radius: 5px;
+  background: var(--balken);
+}
+
+.au-box {
+  font-size: 0.9rem;
+  padding-top: 10px;
+}
+
+.au-saison,
+.au-regel-info {
+  gap: 6px;
+}
+
+.au-saison small,
+.au-regel-info small {
+  color: var(--ink-2);
+}
+
+.au-quelle {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  min-height: 44px;
+  color: var(--ink);
+  font-weight: 800;
+  text-decoration: underline;
+  text-decoration-color: var(--akzent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+
+/* „‹ Mehr“ / „‹ Autos“ und Platzhalter: auf diesen Seiten ≥ 4,5:1 (eine Spur dunkler bzw. --ink-2) */
+.autos-seite > .zurueck,
+.auto-seite > .zurueck {
+  color: color-mix(in srgb, var(--akzent) 88%, var(--ink));
+}
+
+.au-felder input::placeholder {
+  color: var(--ink-2);
+  opacity: 1;
+}
+
+.au-vignette {
+  gap: 8px;
+}
+
+.au-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding-left: 22px;
+  font-size: 0.9rem;
+}
+
+/* Verlauf: Zeile (Knopf) über dem Knopf „Löschen“; nach links wischen schiebt sie zur Seite */
+.au-wisch {
+  position: relative;
+  overflow: hidden;
+  border-top: 1px solid var(--linie);
+}
+
+.au-wisch:first-child {
+  border-top: 0;
+}
+
+.au-wisch-loeschen {
+  position: absolute;
+  top: 4px;
+  right: 0;
+  bottom: 4px;
+  width: 92px;
+  border: 0;
+  border-radius: var(--r-zeile);
+  background: var(--gefahr);
+  color: var(--gefahr-ink);
+  font-weight: 800;
+}
+
+.au-wisch:not(.offen):not(.zieht) .au-wisch-loeschen {
+  visibility: hidden;
+}
+
+.au-eintrag {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 58px;
+  padding: 10px 2px;
+  border: 0;
+  background: var(--karte);
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  transition: transform 0.2s ease;
+}
+
+.au-verlauf .au-eintrag {
+  background: var(--karte);
+}
+
+.au-wisch.offen .au-eintrag {
+  transform: translateX(-96px);
+}
+
+.au-wisch.zieht .au-eintrag {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .au-eintrag {
+    transition: none;
+  }
+}
+
+.au-eintrag > .emoji {
+  width: 30px;
+  text-align: center;
+}
+
+.au-eintrag-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+  gap: 1px;
+}
+
+.au-eintrag-text small {
+  color: var(--ink-2);
+  font-size: 0.88rem;
+}
+
+.au-eintrag-details {
+  overflow-wrap: anywhere;
+}
+
+.au-kosten {
+  flex: none;
+  font-family: var(--font-zahl);
+  font-weight: 800;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.au-tipp {
+  padding-top: 8px;
+  font-size: 0.82rem;
+}
+
+.au-daten {
+  gap: 10px;
+}
+
+.au-daten-liste {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+}
+
+.au-datum {
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+  gap: 10px;
+  padding: 7px 0;
+  border-top: 1px solid var(--linie);
+}
+
+.au-datum:first-child {
+  border-top: 0;
+}
+
+.au-datum dt {
+  color: var(--ink-2);
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+.au-datum dd {
+  margin: 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.au-datum.leer dd {
+  color: var(--ink-2);
+  font-weight: 600;
+}
+
+/* Formulare */
+.au-vorlagen {
+  display: grid;
+  gap: 8px;
+}
+
+.au-vorlage {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-height: 58px;
+  padding: 10px 14px;
+  border-radius: var(--r-zeile);
+  border: var(--rand) solid var(--linie);
+  background: var(--karte-2);
+  color: var(--ink);
+  text-align: left;
+  font: inherit;
+}
+
+.au-vorlage small {
+  color: var(--ink-2);
+  font-size: 0.85rem;
+}
+
+.au-vorlage.aktiv {
+  border: 2px solid var(--akzent);
+  background: color-mix(in srgb, var(--akzent) 14%, var(--karte));
+}
+
+.au-farbe {
+  gap: 7px;
+}
+
+.au-farbpunkt {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--auto);
+  box-shadow: inset 0 0 0 1.5px rgb(0 0 0 / 0.2);
+}
+
+.au-feld-hinweis {
+  display: block;
+  margin-top: 4px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--abwesend) 70%, transparent);
+  background: color-mix(in srgb, var(--abwesend) 16%, var(--karte));
+  color: var(--ink);
+  font-size: 0.88rem;
+}
+
+.au-feld-hinweis.fehler {
+  border-color: var(--gefahr);
+  background: color-mix(in srgb, var(--gefahr) 10%, var(--karte));
+}
+
+.au-km-hinweis {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.au-datenschutz {
+  font-size: 0.85rem;
 }
 
 /* ---------- Bewegung (1.2.0, src/ui/bewegung.js): Effekte nur in Glas und Bento, nur mit Bewegung ----------

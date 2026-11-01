@@ -15,6 +15,7 @@ import { einrichtungsFormen } from '../app/nachrichten.js';
 import { betragAusText } from '../app/termin.js';
 import { einrichtungFor } from '../domain/modus.js';
 import { MAX_ESSEN_PREIS_CENT } from '../domain/settings.js';
+import { autosFaelligAnzahl } from '../app/views/autos-model.js';
 
 const KURZSTATUS = {
   verbunden: '✅ Verbunden mit Google',
@@ -50,6 +51,12 @@ function verbindungsStatus({ store, ui }) {
     if (box.isConnected) zeichne();
   };
   return box;
+}
+
+/** „2 fällig“ an der Zeile „Autos“ (bald oder überfällig, alle Autos); sonst nichts. */
+function autosMarke(store) {
+  const n = autosFaelligAnzahl(store.getState(), store.heute());
+  return n > 0 ? h('span', { class: 'menue-marke' }, `${n} fällig`) : null;
 }
 
 export function mehrScreen({ store, ui }) {
@@ -208,6 +215,16 @@ export function mehrScreen({ store, ui }) {
     { id: 'mitnehmen', emoji: '🩺', animation: 'herz', farbe: 'var(--arzt)', titel: 'Mitnehmen beim Arzt', text: 'Vorschläge je Arzttermin', inhalt: mitnehmenInhalt({ settings, speichern }) },
     { id: 'sachen', emoji: '🎒', animation: 'huepfen', farbe: 'var(--sache)', titel: 'Eigene Sachen', text: 'Eigene Vorschläge für Sachen', inhalt: sachenEigeneInhalt({ settings, speichern }) },
     { id: 'kontostand', emoji: '💶', animation: 'muenze', farbe: 'var(--serie-papa)', titel: 'Kontostand', text: 'Stand, Erinnerung am Monatsende', inhalt: kontostandInhalt({ store, ui, settings, speichern }) },
+    {
+      id: 'autos',
+      emoji: '🚗',
+      animation: 'hupen',
+      farbe: 'var(--krank)',
+      titel: 'Autos',
+      text: 'Wartung, Reifen, Vignette, Kilometerstand',
+      status: autosMarke(store),
+      beiKlick: () => ui.gehZu('autos'),
+    },
     { id: 'verlauf', emoji: '📜', animation: 'rolle', farbe: 'var(--grau)', titel: 'Verlauf', text: 'Alle Einträge, mit Suche und Filtern', beiKlick: () => ui.gehZu('verlauf') },
   ];
 

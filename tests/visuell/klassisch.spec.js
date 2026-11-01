@@ -8,6 +8,7 @@
 // Rückfrage, Formulare, Fehler- und Verbindungszustände, Konflikt, Fokusring, gesperrter Knopf, gestreifter Ersatzdienst.
 import { test as basis, expect, starteDemo, starteGoogleAusSnapshot, googleAttrappe, WERKTAG, WERKTAG_DATUM, KONFIG_GOOGLE, NETZFEHLER } from '../e2e/hilfen.js';
 import { seedDemo } from '../../src/app/seed.js';
+import { autoId, demoMitAutos, winterRotationFaellig } from '../e2e/autos-hilfen.js';
 
 /** Abend desselben Werktags: „Heute“ blickt dann auf morgen („Wer bringt morgen?“, Dienst-Karte mit „Morgen“). */
 const ABEND = '2026-10-14T19:00:00+02:00';
@@ -272,6 +273,72 @@ test('Mehr: ein Eintrag aufgeklappt', async ({ page }) => {
   await page.locator('.menue-eintrag[data-id="familie"] .menue-zeile').click();
   await expect(page.locator('.menue-eintrag[data-id="familie"]')).toHaveClass(/offen/);
   await foto(page, 'mehr-offen', { ganz: false });
+});
+
+// Autos (1.3.0): neue Bildschirme – ihre Basis entstand mit 1.3.0 (Task 4), nicht auf 097adc4 (dort gab es sie nicht)
+test.describe('Autos', () => {
+  const TESLA = autoId(WERKTAG_DATUM, 'Tesla Model 3');
+  const FIAT = autoId(WERKTAG_DATUM, 'Fiat 500');
+
+  test('Autos: Liste', async ({ page }) => {
+    await starteDemo(page, { route: '#/autos' });
+    await expect(page.locator('.au-karte')).toHaveCount(2);
+    await foto(page, 'autos');
+  });
+
+  test('Autos: noch kein Auto', async ({ page }) => {
+    await starteDemo(page, { route: '#/autos', speicher: { 'fk.demo.v1': demoMitAutos(WERKTAG_DATUM, undefined, { leer: true }) } });
+    await expect(page.locator('.au-leer')).toBeVisible();
+    await foto(page, 'autos-leer');
+  });
+
+  test('Auto: Tesla', async ({ page }) => {
+    await starteDemo(page, { route: `#/autos/${TESLA}` });
+    await expect(page.locator('.au-held')).toBeVisible();
+    await foto(page, 'auto-tesla');
+  });
+
+  test('Auto: Fiat (unbekannte Termine)', async ({ page }) => {
+    await starteDemo(page, { route: `#/autos/${FIAT}` });
+    await expect(page.locator('.au-held')).toBeVisible();
+    await foto(page, 'auto-fiat');
+  });
+
+  test('Auto: überfällig und bald', async ({ page }) => {
+    await starteDemo(page, { zeit: '2026-12-20T08:00:00+01:00', route: `#/autos/${autoId('2026-12-20', 'Tesla Model 3')}` });
+    await expect(page.locator('.au-regel.ueberfaellig')).toHaveCount(1);
+    await foto(page, 'auto-faellig', { ganz: false });
+  });
+
+  test('Auto: Ölwechsel eintragen', async ({ page }) => {
+    await starteDemo(page, { route: `#/autos/${FIAT}` });
+    await page.getByRole('button', { name: 'Ölwechsel: Erledigt eintragen' }).click();
+    await expect(page.getByRole('dialog', { name: '🛢️ Ölwechsel eintragen' })).toBeVisible();
+    await foto(page, 'auto-oelwechsel', { ganz: false });
+  });
+
+  test('Auto: Reifenwechsel mit Vorschlag', async ({ page }) => {
+    await starteDemo(page, { route: `#/autos/${TESLA}`, speicher: { 'fk.demo.v1': demoMitAutos(WERKTAG_DATUM, winterRotationFaellig) } });
+    await page.getByRole('button', { name: '＋ Reifenwechsel' }).click();
+    await expect(page.locator('.au-vorschlag')).toBeVisible();
+    await foto(page, 'auto-reifenwechsel', { ganz: false });
+  });
+
+  test('Auto: Kilometerstand mit „bitte prüfen“', async ({ page }) => {
+    await starteDemo(page, { route: `#/autos/${TESLA}` });
+    await page.getByRole('button', { name: 'Kilometerstand aktualisieren' }).click();
+    await page.getByRole('textbox', { name: 'Kilometerstand laut Tacho' }).fill('17.000');
+    await expect(page.locator('.au-feld-hinweis')).toBeVisible();
+    await page.getByRole('textbox', { name: 'Kilometerstand laut Tacho' }).blur();
+    await foto(page, 'auto-km', { ganz: false });
+  });
+
+  test('Auto hinzufügen', async ({ page }) => {
+    await starteDemo(page, { route: '#/autos' });
+    await page.getByRole('button', { name: '＋ Auto hinzufügen' }).click();
+    await expect(page.getByRole('dialog', { name: '＋ Auto hinzufügen' })).toBeVisible();
+    await foto(page, 'auto-neu', { ganz: false });
+  });
 });
 
 test.describe('Einrichtung, Verbindung, Fehler', () => {

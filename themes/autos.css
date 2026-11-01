@@ -1,0 +1,593 @@
+/* Glas & Licht und Bento bunt: autos (nur unter :root[data-aussehen="glas"] bzw. [data-aussehen="bento"]; Klassisch unberührt).
+   Bereich: Seite „Autos“ (Karten je Auto, Vorlagen), Seite eines Autos (Kopf, Fällig, Kilometerstand, Reifen mit Balken „seit dem
+   Rotieren“, Vignette, Verlauf mit Wischen, Fahrzeugdaten) und die Blätter (Arbeit, Kilometerstand, Regel, Auto).
+   --auto = Farbe des Autos (nur Schmuck: Licht, Tönung, Kachel – Schrift bleibt --ink). Stand immer als Zeichen + Wort.
+   Aufbau: 1. Tokens je Aussehen × Hell/Dunkel  2. Gemeinsame Maße  3. Glas  4. Bento  5. Bewegung (nur ohne „Reduziert“ und ohne
+   prefers-reduced-motion). Die Balken füllt fortschritt() (src/ui/bewegung.js) über scaleX; Kilometer zählen mit hochzaehlen() hoch.
+   Text ≥ 16 px, kleine Etiketten ≥ 13 px, Ziele ≥ 44 px, Kontrast ≥ 4,5:1 (tests/visuell/kontrast.mjs). */
+
+/* ---------- 1. Tokens ---------- */
+
+/* --au-ok/-bald/-ueber: Fläche der Stand-Pille, --au-…-ink: Schrift darauf (≥ 4,5:1); --au-balken: Füllung der Balken */
+:root[data-aussehen='glas'] {
+  --au-ok: rgba(29, 140, 102, 0.16);
+  --au-ok-rand: rgba(29, 140, 102, 0.45);
+  --au-bald: rgba(214, 112, 20, 0.18);
+  --au-bald-rand: rgba(214, 112, 20, 0.5);
+  --au-ueber: #c4314b;
+  --au-ueber-ink: #ffffff;
+  --au-balken: linear-gradient(90deg, #8c6dff, #5a3ccf);
+  --au-balken-faellig: linear-gradient(90deg, #f07a8a, #c4314b);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-aussehen='glas']:not([data-theme='light']) {
+    --au-ok: rgba(63, 211, 155, 0.16);
+    --au-ok-rand: rgba(63, 211, 155, 0.45);
+    --au-bald: rgba(255, 170, 90, 0.17);
+    --au-bald-rand: rgba(255, 170, 90, 0.5);
+    --au-ueber: #ff8a96;
+    --au-ueber-ink: #2a0509;
+    --au-balken: linear-gradient(90deg, #b9a6ff, #8c6dff);
+    --au-balken-faellig: linear-gradient(90deg, #ffb0b8, #ff7b8a);
+  }
+}
+
+:root[data-aussehen='glas'][data-theme='dark'] {
+  --au-ok: rgba(63, 211, 155, 0.16);
+  --au-ok-rand: rgba(63, 211, 155, 0.45);
+  --au-bald: rgba(255, 170, 90, 0.17);
+  --au-bald-rand: rgba(255, 170, 90, 0.5);
+  --au-ueber: #ff8a96;
+  --au-ueber-ink: #2a0509;
+  --au-balken: linear-gradient(90deg, #b9a6ff, #8c6dff);
+  --au-balken-faellig: linear-gradient(90deg, #ffb0b8, #ff7b8a);
+}
+
+:root[data-aussehen='bento'] {
+  --au-ok: #0b7a52;
+  --au-ok-ink: #ffffff;
+  --au-bald: #c2410c;
+  --au-bald-ink: #ffffff;
+  --au-ueber: #c62838;
+  --au-ueber-ink: #ffffff;
+  --au-unbekannt: #e9e5f6;
+  --au-balken: #6440f5;
+  --au-balken-faellig: #e5484d;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-aussehen='bento']:not([data-theme='light']) {
+    --au-ok: #3fd39b;
+    --au-ok-ink: #032a1b;
+    --au-bald: #ff8d66;
+    --au-bald-ink: #2a0d03;
+    --au-ueber: #ff7b86;
+    --au-ueber-ink: #2a0509;
+    --au-unbekannt: rgb(255 255 255 / 0.12);
+    --au-balken: #9d85ff;
+    --au-balken-faellig: #ff7b86;
+  }
+}
+
+:root[data-aussehen='bento'][data-theme='dark'] {
+  --au-ok: #3fd39b;
+  --au-ok-ink: #032a1b;
+  --au-bald: #ff8d66;
+  --au-bald-ink: #2a0d03;
+  --au-ueber: #ff7b86;
+  --au-ueber-ink: #2a0509;
+  --au-unbekannt: rgb(255 255 255 / 0.12);
+  --au-balken: #9d85ff;
+  --au-balken-faellig: #ff7b86;
+}
+
+/* ---------- 2. Gemeinsam (beide Aussehen) ---------- */
+
+/* Text ≥ 16 px (Klassisch bleibt wie es ist) */
+:root[data-aussehen='glas'] .au-regel-text,
+:root[data-aussehen='bento'] .au-regel-text,
+:root[data-aussehen='glas'] .au-naechste-text,
+:root[data-aussehen='bento'] .au-naechste-text,
+:root[data-aussehen='glas'] .au-eintrag-text small,
+:root[data-aussehen='bento'] .au-eintrag-text small,
+:root[data-aussehen='glas'] .au-info,
+:root[data-aussehen='bento'] .au-info,
+:root[data-aussehen='glas'] .au-box,
+:root[data-aussehen='bento'] .au-box,
+:root[data-aussehen='glas'] .au-satz-zahl,
+:root[data-aussehen='bento'] .au-satz-zahl,
+:root[data-aussehen='glas'] .au-km-karte > small,
+:root[data-aussehen='bento'] .au-km-karte > small,
+:root[data-aussehen='glas'] .au-name small,
+:root[data-aussehen='bento'] .au-name small,
+:root[data-aussehen='glas'] .au-feld-hinweis,
+:root[data-aussehen='bento'] .au-feld-hinweis,
+:root[data-aussehen='glas'] .au-warnung,
+:root[data-aussehen='bento'] .au-warnung,
+:root[data-aussehen='glas'] .au-vorlage small,
+:root[data-aussehen='bento'] .au-vorlage small {
+  font-size: 1rem;
+}
+
+:root[data-aussehen='glas'] .au-intervall,
+:root[data-aussehen='bento'] .au-intervall,
+:root[data-aussehen='glas'] .au-datum dt,
+:root[data-aussehen='bento'] .au-datum dt {
+  font-size: 0.875rem;
+}
+
+:root[data-aussehen='glas'] .au-km-zahl,
+:root[data-aussehen='bento'] .au-km-zahl {
+  font-size: 1.5rem;
+  letter-spacing: -0.02em;
+}
+
+:root[data-aussehen='glas'] .au-km-zahl.gross,
+:root[data-aussehen='bento'] .au-km-zahl.gross {
+  font-size: 2rem;
+}
+
+:root[data-aussehen='glas'] .au-kachel,
+:root[data-aussehen='bento'] .au-kachel {
+  width: 50px;
+  height: 50px;
+  border-radius: 17px;
+}
+
+:root[data-aussehen='glas'] .au-kachel.gross,
+:root[data-aussehen='bento'] .au-kachel.gross {
+  width: 62px;
+  height: 62px;
+  border-radius: 21px;
+  font-size: 2rem;
+}
+
+:root[data-aussehen='glas'] .au-titel,
+:root[data-aussehen='bento'] .au-titel {
+  font-size: 1.625rem;
+}
+
+:root[data-aussehen='glas'] .au-status,
+:root[data-aussehen='bento'] .au-status,
+:root[data-aussehen='glas'] .au-faellig,
+:root[data-aussehen='bento'] .au-faellig {
+  min-height: 32px;
+  padding: 0 12px;
+  font-size: 0.875rem;
+}
+
+/* fortschritt(): die Füllung ist voll breit und wächst über scaleX (Klassisch behält width in %) */
+:root[data-aussehen='glas'] .au-balken > span,
+:root[data-aussehen='bento'] .au-balken > span {
+  border-radius: 0;
+  background: var(--au-balken);
+}
+
+:root[data-aussehen='glas'] .au-balken > span.bw-fortschritt,
+:root[data-aussehen='bento'] .au-balken > span.bw-fortschritt {
+  width: 100% !important;
+}
+
+:root[data-aussehen='glas'] .au-satz.faellig .au-balken > span,
+:root[data-aussehen='bento'] .au-satz.faellig .au-balken > span {
+  background: var(--au-balken-faellig);
+}
+
+:root[data-aussehen='glas'] .au-eintrag,
+:root[data-aussehen='bento'] .au-eintrag {
+  min-height: 64px;
+}
+
+/* zwei Knöpfe nebeneinander (Kopf des Autos, Reifen): etwas schmaler, damit sie in eine Zeile passen */
+:root[data-aussehen='glas'] .au-knoepfe > .knopf,
+:root[data-aussehen='bento'] .au-knoepfe > .knopf {
+  padding-left: 12px;
+  padding-right: 12px;
+  font-size: 1rem;
+}
+
+:root[data-aussehen='glas'] .au-wisch-loeschen,
+:root[data-aussehen='bento'] .au-wisch-loeschen {
+  border-radius: 18px;
+}
+
+/* ---------- 3. Glas ---------- */
+
+/* Karten je Auto und der Kopf: Fake-Glas mit einem weichen Licht in der Farbe des Autos oben links */
+:root[data-aussehen='glas'] .au-karte,
+:root[data-aussehen='glas'] .au-held {
+  border: 1px solid var(--glas-kante);
+  background:
+    radial-gradient(120% 95% at 0% 0%, color-mix(in srgb, var(--auto) 30%, transparent), transparent 62%),
+    linear-gradient(165deg, var(--glas-hoch), var(--karte) 70%);
+  box-shadow: var(--schatten-karte);
+}
+
+:root[data-aussehen='glas'] .au-held {
+  padding: 18px;
+  border-radius: 28px;
+}
+
+:root[data-aussehen='glas'] .au-kachel {
+  border: 1px solid var(--glas-kante);
+  background: linear-gradient(160deg, color-mix(in srgb, var(--auto) 42%, var(--glas-hoch)), color-mix(in srgb, var(--auto) 18%, var(--karte)));
+  box-shadow: inset 0 1px 0 var(--glas-kante), 0 6px 16px -8px color-mix(in srgb, var(--auto) 70%, transparent);
+}
+
+:root[data-aussehen='glas'] .au-naechste {
+  border: 1px solid var(--glas-kante);
+  background: color-mix(in srgb, var(--c) 12%, var(--glas-hoch));
+}
+
+:root[data-aussehen='glas'] .au-status {
+  border: 1px solid var(--au-ok-rand);
+  background: var(--au-ok);
+  color: var(--ink);
+}
+
+:root[data-aussehen='glas'] .au-status.bald {
+  border-color: var(--au-bald-rand);
+  background: var(--au-bald);
+}
+
+:root[data-aussehen='glas'] .au-status.ueberfaellig {
+  border-color: var(--au-ueber);
+  background: var(--au-ueber);
+  color: var(--au-ueber-ink);
+  box-shadow: 0 6px 14px -8px var(--au-ueber);
+}
+
+:root[data-aussehen='glas'] .au-status.unbekannt {
+  border-color: var(--linie);
+  background: var(--glas-stark);
+}
+
+:root[data-aussehen='glas'] .au-faellig,
+:root[data-aussehen='glas'] .au-marke {
+  border: 1px solid var(--glas-kante);
+  background: color-mix(in srgb, var(--abwesend) 22%, var(--glas-hoch));
+  color: var(--ink);
+}
+
+:root[data-aussehen='glas'] .au-marke {
+  background: var(--glas-stark);
+}
+
+:root[data-aussehen='glas'] .au-marke.an {
+  background: var(--au-ok);
+  border-color: var(--au-ok-rand);
+}
+
+:root[data-aussehen='glas'] .au-regel,
+:root[data-aussehen='glas'] .au-wisch,
+:root[data-aussehen='glas'] .au-datum {
+  border-top-color: var(--linie);
+}
+
+:root[data-aussehen='glas'] .au-regel.ueberfaellig .au-regel-text {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+:root[data-aussehen='glas'] .au-satz {
+  border: 1px solid var(--glas-kante);
+  border-radius: 20px;
+  background: var(--glas-hoch);
+}
+
+:root[data-aussehen='glas'] .au-satz.montiert {
+  background: linear-gradient(165deg, color-mix(in srgb, var(--auto) 16%, var(--glas-hoch)), var(--glas-hoch) 70%);
+  box-shadow: inset 0 1px 0 var(--glas-kante), 0 10px 24px -14px color-mix(in srgb, var(--auto) 80%, transparent);
+}
+
+:root[data-aussehen='glas'] .au-balken {
+  position: relative;
+  height: 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink) 9%, transparent);
+  box-shadow: inset 0 1px 2px rgba(20, 10, 60, 0.12);
+}
+
+:root[data-aussehen='glas'] .au-balken > span::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0) 70%);
+}
+
+:root[data-aussehen='glas'] .au-balken > span {
+  position: relative;
+}
+
+:root[data-aussehen='glas'] .au-warnung,
+:root[data-aussehen='glas'] .au-regel.ueberfaellig .au-regel-text {
+  color: var(--ink);
+}
+
+:root[data-aussehen='glas'] .au-warnung {
+  padding: 8px 12px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--au-ueber) 55%, transparent);
+  background: color-mix(in srgb, var(--au-ueber) 12%, var(--glas-hoch));
+}
+
+:root[data-aussehen='glas'] .au-quelle {
+  color: var(--akzent-text, var(--akzent));
+}
+
+/* Verlauf: die Zeile ist durchsichtig wie die Karte; nur beim Wischen deckt sie den Knopf „Löschen“ */
+:root[data-aussehen='glas'] .au-eintrag {
+  background: transparent;
+}
+
+:root[data-aussehen='glas'] .au-wisch.zieht .au-eintrag,
+:root[data-aussehen='glas'] .au-wisch.offen .au-eintrag {
+  background: var(--karte-voll);
+  border-radius: 18px;
+}
+
+:root[data-aussehen='glas'] .au-kosten {
+  font-weight: 750;
+}
+
+:root[data-aussehen='glas'] .au-vorlage {
+  border: 1px solid var(--glas-kante);
+  border-radius: 20px;
+  background: var(--glas-stark);
+  box-shadow: var(--schatten-knopf);
+}
+
+:root[data-aussehen='glas'] .au-vorlage.aktiv {
+  border: 1.5px solid var(--akzent);
+  background: color-mix(in srgb, var(--akzent) 14%, var(--glas-hoch));
+}
+
+:root[data-aussehen='glas'] .au-feld-hinweis {
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--abwesend) 16%, var(--glas-hoch));
+}
+
+/* ---------- 4. Bento ---------- */
+
+/* Jede Auto-Kachel in der Tönung ihres Autos, Bonbon-Kante in derselben Farbe */
+:root[data-aussehen='bento'] .au-karte,
+:root[data-aussehen='bento'] .au-held {
+  border: 0;
+  border-radius: 28px;
+  background: color-mix(in srgb, var(--auto) 15%, var(--karte));
+  box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--auto) 34%, transparent);
+}
+
+:root[data-aussehen='bento'] .au-held {
+  padding: 18px;
+  background: color-mix(in srgb, var(--auto) 20%, var(--karte));
+}
+
+:root[data-aussehen='bento'] .au-kachel {
+  border: 0;
+  background: var(--auto);
+  box-shadow: inset 0 -3px 0 rgb(0 0 0 / 0.16), inset 0 2px 0 rgb(255 255 255 / 0.35);
+}
+
+:root[data-aussehen='bento'] .au-name h3,
+:root[data-aussehen='bento'] .au-titel {
+  font-weight: 600;
+}
+
+:root[data-aussehen='bento'] .au-name small {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+:root[data-aussehen='bento'] .au-naechste {
+  background: var(--knopf-auf-tint);
+  box-shadow: var(--lippe);
+}
+
+:root[data-aussehen='bento'] .au-naechste-titel {
+  color: var(--ink);
+}
+
+:root[data-aussehen='bento'] .au-status {
+  border: 0;
+  background: var(--au-ok);
+  color: var(--au-ok-ink);
+  box-shadow: inset 0 -3px 0 rgb(0 0 0 / 0.14);
+  font-weight: 800;
+}
+
+:root[data-aussehen='bento'] .au-status.bald {
+  background: var(--au-bald);
+  color: var(--au-bald-ink);
+}
+
+:root[data-aussehen='bento'] .au-status.ueberfaellig {
+  background: var(--au-ueber);
+  color: var(--au-ueber-ink);
+}
+
+:root[data-aussehen='bento'] .au-status.unbekannt {
+  background: var(--au-unbekannt);
+  color: var(--ink);
+  box-shadow: var(--lippe);
+}
+
+:root[data-aussehen='bento'] .au-faellig {
+  border: 0;
+  background: var(--person-kind);
+  color: var(--person-kind-auf);
+  box-shadow: inset 0 -3px 0 rgb(0 0 0 / 0.12);
+}
+
+:root[data-aussehen='bento'] .au-marke {
+  background: var(--flaeche-2);
+  color: var(--ink);
+}
+
+:root[data-aussehen='bento'] .au-marke.an {
+  background: var(--person-gemeinsam-tint);
+  color: var(--person-gemeinsam-ink);
+}
+
+:root[data-aussehen='bento'] .au-liste,
+:root[data-aussehen='bento'] .au-km-karte,
+:root[data-aussehen='bento'] .au-reifen,
+:root[data-aussehen='bento'] .au-vignette,
+:root[data-aussehen='bento'] .au-daten {
+  border-radius: 28px;
+}
+
+:root[data-aussehen='bento'] .au-regel,
+:root[data-aussehen='bento'] .au-wisch,
+:root[data-aussehen='bento'] .au-datum {
+  border-top: 2px dashed var(--linie);
+}
+
+:root[data-aussehen='bento'] .au-regel:first-child,
+:root[data-aussehen='bento'] .au-wisch:first-child,
+:root[data-aussehen='bento'] .au-datum:first-child {
+  border-top: 0;
+}
+
+:root[data-aussehen='bento'] .au-regel.ueberfaellig .au-regel-text,
+:root[data-aussehen='bento'] .au-warnung {
+  color: var(--ink);
+  font-weight: 800;
+}
+
+:root[data-aussehen='bento'] .au-warnung {
+  padding: 8px 12px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--au-ueber) 18%, var(--karte));
+}
+
+:root[data-aussehen='bento'] .au-satz {
+  border: 0;
+  border-radius: 22px;
+  background: var(--karte-2);
+  box-shadow: var(--lippe);
+}
+
+:root[data-aussehen='bento'] .au-satz.montiert {
+  background: color-mix(in srgb, var(--auto) 16%, var(--karte));
+  box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--auto) 34%, transparent);
+}
+
+:root[data-aussehen='bento'] .au-satz-kopf b {
+  font-family: var(--font-titel);
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+:root[data-aussehen='bento'] .au-balken {
+  height: 16px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--au-balken) 20%, var(--karte));
+  box-shadow: inset 0 2px 0 rgb(0 0 0 / 0.06);
+}
+
+:root[data-aussehen='bento'] .au-satz.faellig .au-balken {
+  background: color-mix(in srgb, var(--au-balken-faellig) 20%, var(--karte));
+}
+
+:root[data-aussehen='bento'] .au-kennzeichen {
+  box-shadow: inset 0 -2px 0 rgb(0 0 0 / 0.12);
+}
+
+:root[data-aussehen='bento'] .au-vorlage {
+  border: 0;
+  border-radius: 22px;
+  background: var(--karte-2);
+  box-shadow: var(--lippe);
+}
+
+:root[data-aussehen='bento'] .au-vorlage.aktiv {
+  border: 0;
+  background: color-mix(in srgb, var(--akzent) 20%, var(--karte));
+  box-shadow: inset 0 0 0 2.5px var(--akzent), var(--lippe);
+}
+
+:root[data-aussehen='bento'] .au-vorlage b {
+  font-family: var(--font-titel);
+  font-weight: 600;
+  font-size: 1.0625rem;
+}
+
+:root[data-aussehen='bento'] .au-feld-hinweis {
+  border: 0;
+  border-radius: 16px;
+  background: var(--person-kind-tint);
+  color: var(--person-kind-ink);
+}
+
+:root[data-aussehen='bento'] .au-feld-hinweis.fehler {
+  background: color-mix(in srgb, var(--au-ueber) 18%, var(--karte));
+  color: var(--ink);
+}
+
+:root[data-aussehen='bento'] .au-kosten {
+  font-weight: 900;
+}
+
+/* ---------- 5. Bewegung (nur ohne „Reduziert“ und ohne prefers-reduced-motion) ---------- */
+
+@keyframes au-wackeln {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(-5deg);
+  }
+  75% {
+    transform: rotate(5deg);
+  }
+}
+
+@keyframes au-fahren {
+  from {
+    transform: translateX(-14px) rotate(-6deg);
+    opacity: 0.4;
+  }
+  60% {
+    transform: translateX(3px) rotate(2deg);
+    opacity: 1;
+  }
+  to {
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* beim ersten Zeigen: das Auto in der Kachel fährt herein, eine überfällige Pille wackelt dreimal (vor dem Aufräumen, 1,4 s) */
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .bw-einblenden .au-kachel,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .bw-einblenden .au-kachel {
+    animation: au-fahren 0.6s cubic-bezier(0.34, 1.4, 0.64, 1) 0.2s backwards;
+  }
+
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .bw-einblenden .au-status.ueberfaellig {
+    animation: au-wackeln 0.3s ease-in-out 0.4s 3;
+  }
+
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .au-karte,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .au-karte {
+    transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .au-karte:active,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .au-karte:active {
+    transform: scale(0.98);
+    transition-duration: 0.08s;
+  }
+
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .au-eintrag,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .au-eintrag {
+    transition: transform 0.35s var(--kurve-feder);
+  }
+
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .au-wisch.zieht .au-eintrag,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .au-wisch.zieht .au-eintrag {
+    transition: none;
+  }
+}

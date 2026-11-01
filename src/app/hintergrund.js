@@ -3,6 +3,7 @@
 // fertig ist (Neuzeichnen nimmt den Fokus).
 import { todayVienna } from '../domain/dates.js';
 import { autoKarteModel } from './views/autos-faellig.js';
+import { autosFaelligAnzahl } from './views/autos-model.js';
 
 /** Inhalt der Karte „🚗 Auto“ auf Heute als Text (zum Vergleichen). */
 const autoKarte = (state, heute) => JSON.stringify(autoKarteModel(state?.autos, heute ?? todayVienna()));
@@ -16,7 +17,11 @@ const SICHTBAR = {
   fixkosten: ({ seite, kontoAnsicht }) => seite === 'konto' && kontoAnsicht === 'fixkosten',
   ziele: ({ seite, kontoAnsicht }) => seite === 'konto' && kontoAnsicht === 'sparziele',
   // Autos: auf ihrer Seite immer; auf Heute nur, wenn sich die Karte „🚗 Auto“ ändert (Laden, gleiche Daten, Nicht-Fälliges → nicht)
-  autos: ({ seite, heute }, a, b) => seite === 'autos' || (seite === 'heute' && autoKarte(a, heute) !== autoKarte(b, heute)),
+  // … und in „Mehr“ nur, wenn sich die Zahl „N fällig“ an der Zeile „Autos“ ändert
+  autos: ({ seite, heute }, a, b) =>
+    seite === 'autos' ||
+    (seite === 'heute' && autoKarte(a, heute) !== autoKarte(b, heute)) ||
+    (seite === 'mehr' && autosFaelligAnzahl(a, heute ?? todayVienna()) !== autosFaelligAnzahl(b, heute ?? todayVienna())),
 };
 
 /** Unterscheiden sich zwei Zustände nur in vorgeladenen Teilen, die gerade nicht zu sehen sind? (Dann nicht neu zeichnen.) */

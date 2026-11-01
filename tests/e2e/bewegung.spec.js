@@ -249,8 +249,8 @@ test.describe('Klassisch mit „Bewegung: Reduziert“ (System ohne Wunsch)', ()
     await expect(html(page)).toHaveAttribute('data-bewegung', 'reduziert');
     await expect(html(page)).not.toHaveAttribute('data-aussehen');
     await tab(page, 'Mehr');
-    await expect(page.locator('.menue-symbol')).toHaveCount(11);
-    expect(await page.locator('.menue-symbol').evaluateAll((els) => els.map((el) => getComputedStyle(el).animationName))).toEqual(Array(11).fill('none'));
+    await expect(page.locator('.menue-symbol')).toHaveCount(12);
+    expect(await page.locator('.menue-symbol').evaluateAll((els) => els.map((el) => getComputedStyle(el).animationName))).toEqual(Array(12).fill('none'));
     expect(await page.evaluate(() => document.getAnimations().length), 'keine laufende Animation auf der Seite').toBe(0);
   });
 

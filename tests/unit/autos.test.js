@@ -795,12 +795,24 @@ describe('Autos: Fälligkeiten', () => {
       ['2027-04-15', 'sommer', 'ok'],
     );
     const imSeptember = [...teslaWechsel().slice(0, 3), wechsel('arb00009', '2026-09-30', 21000, WINTER)];
-    assert.deepEqual(['datum', 'status'].map((k) => faelligkeit(saison, imSeptember, teslaAuto(), null, '2026-10-01', { saetze: saetze() })[k]), ['2026-04-15', 'ueberfaellig']);
+    assert.deepEqual(['datum', 'status'].map((k) => faelligkeit(saison, imSeptember, teslaAuto(), null, '2026-09-30', { saetze: saetze() })[k]), ['2026-04-15', 'ueberfaellig']);
     // … und Sommerreifen ab 15.03.: am 20.03. montiert → nächster Winter-Stichtag; am 10.03. noch die falsche Saison
     const maerzSommer = [wechsel('arb00010', '2027-03-20', 25000, SOMMER)];
     assert.deepEqual(['datum', 'status'].map((k) => faelligkeit(saison, maerzSommer, teslaAuto(), null, '2027-03-21', { saetze: saetze() })[k]), ['2027-11-01', 'ok']);
     const fruehSommer = [wechsel('arb00011', '2027-03-10', 25000, SOMMER)];
     assert.deepEqual(['datum', 'status'].map((k) => faelligkeit(saison, fruehSommer, teslaAuto(), null, '2027-03-11', { saetze: saetze() })[k]), ['2026-11-01', 'ueberfaellig']);
+    // N1 (Re-Review T3): der vergangene Stichtag gilt nur, solange die falsche Saison dauert – danach zählt der Satz als richtig und
+    // der nächste Stichtag ab heute (Sommerreifen bis 15.03., Winterreifen bis 01.10.)
+    const stand = (liste, tagHeute) => ['datum', 'status'].map((k) => faelligkeit(saison, liste, teslaAuto(), null, tagHeute, { saetze: saetze() })[k]);
+    assert.deepEqual(stand(fruehSommer, '2027-03-12'), ['2026-11-01', 'ueberfaellig']);
+    assert.deepEqual(stand(fruehSommer, '2027-03-20'), ['2027-11-01', 'ok']);
+    assert.deepEqual(stand(fruehSommer, '2027-07-01'), ['2027-11-01', 'ok']);
+    assert.deepEqual(stand(spaetSommer, '2027-03-15'), ['2027-11-01', 'ok']);
+    const septemberWinter = [...teslaWechsel().slice(0, 3), wechsel('arb00012', '2026-09-25', 21000, WINTER)];
+    assert.deepEqual(stand(septemberWinter, '2026-09-28'), ['2026-04-15', 'ueberfaellig']);
+    assert.deepEqual(stand(septemberWinter, '2026-10-05'), ['2027-04-15', 'ok']);
+    assert.deepEqual(stand(septemberWinter, '2026-12-01'), ['2027-04-15', 'ok']);
+    assert.deepEqual(stand(imSeptember, '2026-10-01'), ['2027-04-15', 'ok']);
 
     const rot = regel({ auto: T, typ: 'rotation', name: 'Reifen rotieren', intervallKm: 10000 });
     const kmInfo = kmBei(21831, { proTag: 21693 / 470, letzterKm: 21693, geschaetzt: true });

@@ -314,8 +314,17 @@ export function faelligkeit(regel, arbeiten, auto, kmInfo, heute, { saetze = [] 
       const j = Number(w.datum.slice(0, 4));
       // M3: mitten in der „falschen“ Saison montiert (Sommerreifen 1.11.–14.3., Winterreifen 16.4.–30.9.) → der Stichtag dieser Saison.
       // Ruling nach dem Review T3: Winterreifen ab 1.10. und Sommerreifen ab 15.3. gelten als richtige Saison („O bis O“ mit Spielraum).
-      if (saison === 'winter') datum = md >= '11-01' ? `${j}-11-01` : md < '03-15' ? `${j - 1}-11-01` : naechster('11-01', w.datum);
-      else datum = md > '04-15' && md < '10-01' ? `${j}-04-15` : naechster('04-15', w.datum);
+      // N1 (Re-Review T3): der vergangene Stichtag gilt nur, solange die falsche Saison dauert (Sommerreifen bis 15.03., Winterreifen
+      // bis 01.10.); danach zählt der Satz als richtig und der nächste Stichtag ab heute – nie monatelang „überfällig“.
+      const gestern = addDays(heute, -1);
+      if (saison === 'winter') {
+        const falsch = md >= '11-01' || md < '03-15';
+        const ende = `${md >= '11-01' ? j + 1 : j}-03-15`;
+        datum = !falsch ? naechster('11-01', w.datum) : heute < ende ? `${md >= '11-01' ? j : j - 1}-11-01` : naechster('11-01', gestern);
+      } else {
+        const falsch = md > '04-15' && md < '10-01';
+        datum = !falsch ? naechster('04-15', w.datum) : heute < `${j}-10-01` ? `${j}-04-15` : naechster('04-15', gestern);
+      }
     } else {
       // nicht bekannt, was montiert ist: der nächste Stichtag ab heute (1.11. Winter, 15.4. Sommer)
       const tag = addDays(heute, -1);
