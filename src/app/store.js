@@ -164,8 +164,8 @@ function autosZustand(gelesen, status) {
 function mitFrist(zusage, ms) {
   let zeitgeber;
   const frist = new Promise((_, nein) => {
+    // nicht unref(): sonst endet unter Node 22 die Ereignisschleife, während nur noch die Frist wartet (Test bricht ab); `finally` räumt ohnehin auf
     zeitgeber = setTimeout(() => nein(Object.assign(new Error('Keine Antwort (Zeitüberschreitung).'), { name: 'Zeitueberschreitung' })), ms);
-    zeitgeber?.unref?.(); // Node (Tests): hält den Prozess nicht offen
   });
   return Promise.race([zusage, frist]).finally(() => clearTimeout(zeitgeber));
 }
