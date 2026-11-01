@@ -4,7 +4,7 @@ import { addDays, todayVienna } from '../domain/dates.js';
 import { kindergartenjahr } from '../domain/urlaub.js';
 import { normalizeSettings } from '../domain/settings.js';
 import { beendeTestErinnerung, pruefeErinnerungen, repariereErinnerungen, starteTestErinnerung } from './erinnerungen.js';
-import { AUTOS_ID, autosAusTexten, autosTeile, autosZuEreignis, historieAusEreignis, historieId, historieZuEreignis, EINKAUF_ID, EINSTELLUNGEN_ID, FIX_IDS, GERAETE_ID, KONTO_ID, SCHICHTARTEN_ID, ZIELE_ID, einkaufAusEreignis, einkaufZuEreignis, kontoAusEreignis, kontoZuEreignis, einstellungenAusEreignis, einstellungenZuEreignis, fixShardAusEreignis, fixShardId, fixShardZuEreignis, geraeteAusEreignis, geraeteZuEreignis, schichtartenAusEreignis, schichtartenZuEreignis, schichtMonatAusEreignis, schichtMonatId, schichtMonatZuEreignis, tagZuEreignis, terminZuEreignis, urlaubCheckZuEreignis, urlaubZuEreignis, zieleAusEreignis, zieleZuEreignis } from './mapping.js';
+import { AUTOS_ID, autosAusTexten, autosBisJahr, autosTeile, autosZuEreignis, historieAusEreignis, historieId, historieZuEreignis, istHistorieId, EINKAUF_ID, EINSTELLUNGEN_ID, FIX_IDS, GERAETE_ID, KONTO_ID, SCHICHTARTEN_ID, ZIELE_ID, einkaufAusEreignis, einkaufZuEreignis, kontoAusEreignis, kontoZuEreignis, einstellungenAusEreignis, einstellungenZuEreignis, fixShardAusEreignis, fixShardId, fixShardZuEreignis, geraeteAusEreignis, geraeteZuEreignis, schichtartenAusEreignis, schichtartenZuEreignis, schichtMonatAusEreignis, schichtMonatId, schichtMonatZuEreignis, tagZuEreignis, terminZuEreignis, urlaubCheckZuEreignis, urlaubZuEreignis, zieleAusEreignis, zieleZuEreignis } from './mapping.js';
 import { leererMonat, standardKatalog } from '../domain/schicht.js';
 import { leererShard, teilGesperrtFehler } from '../domain/fixkosten.js';
 import { leereZiele, zieleGesperrtFehler } from '../domain/sparziele.js';
@@ -323,10 +323,12 @@ export function createGoogleAdapter({ api, kalender, jetzt = () => new Date(), a
       const e = await api.ereignisse.holen(kalender.anwesenheit, AUTOS_ID);
       const hauptText = !e || e.status === 'cancelled' ? null : (e.description ?? '');
       const vorab = autosLesen(hauptText);
-      const teile = vorab.unlesbar ? [] : autosTeile(vorab.daten);
+      const bisJahr = autosBisJahr(jetzt());
+      const teile = vorab.unlesbar ? [] : autosTeile(vorab.daten, bisJahr);
+      // holen: 404 → null (nie angelegt = leeres Jahr); jeder andere Fehler wirft und lässt das ganze Lesen scheitern – nie „leer“
       const ereignisse = await Promise.all(teile.map(({ auto, jahr }) => api.ereignisse.holen(kalender.anwesenheit, historieId(auto, jahr))));
       const texte = new Map(teile.map(({ auto, jahr }, i) => [historieId(auto, jahr), !ereignisse[i] ? null : ereignisse[i].status === 'cancelled' ? { geloescht: true } : (ereignisse[i].description ?? '')]));
-      return autosAusTexten(hauptText, (auto, jahr) => texte.get(historieId(auto, jahr)) ?? null);
+      return autosAusTexten(hauptText, (auto, jahr) => texte.get(historieId(auto, jahr)) ?? null, { bisJahr });
     },
 
     /**
@@ -335,9 +337,9 @@ export function createGoogleAdapter({ api, kalender, jetzt = () => new Date(), a
      */
     async leseAutosSicherung() {
       const [g, versteckt] = await Promise.all([this.leseAutos(), api.ereignisse.liste(kalender.anwesenheit, { von: '2000-01-01', bis: '2000-01-02' })]);
-      const bekannt = new Set(g.unlesbar.main ? [] : autosTeile(g.daten).map(({ auto, jahr }) => historieId(auto, jahr)));
+      const bekannt = new Set(g.unlesbar.main ? [] : autosTeile(g.daten, autosBisJahr(jetzt())).map(({ auto, jahr }) => historieId(auto, jahr)));
       const weitereTeile = versteckt
-        .filter((e) => typeof e?.id === 'string' && e.id.startsWith('fkah') && e.status !== 'cancelled' && !bekannt.has(e.id))
+        .filter((e) => istHistorieId(e?.id) && e.status !== 'cancelled' && !bekannt.has(e.id))
         .map((e) => ({ id: e.id, text: e.description ?? '' }))
         .sort((a, b) => a.id.localeCompare(b.id));
       return { ...g, weitereTeile };

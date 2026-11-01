@@ -55,6 +55,18 @@ describe('mapping: versteckte Ereignisse „fkautos“ und „fkah…“', () =>
     assert.equal(istAutosId('fk20261101'), false);
   });
 
+  test('istAutosId streng: nur „fkautos“ und das volle Muster fkah + Auto-ID + Jahr; normale Google-IDs mit „fkah…“ bleiben sichtbar', () => {
+    assert.equal(istAutosId(historieId('0123', 2000)), true);
+    assert.equal(istAutosId(historieId('0123456789abcdev', 2100)), true);
+    for (const id of ['fkah', 'fkahx', 'fkah0123', 'fkah012', 'fkah01232026x', 'fkah0123abcv202', 'fkah0123abcvz026', 'fkahABCD2026', 'fkah0123abcv1999', 'fkah0123abcv2101',
+      'fkah7k2m9q4r1t8v3n6p0s5u2w', 'fkahm3q8v1n5p7r2t4s6u0k9b2', 'fkah0123456789abcdefg2026', 'fkautosx', 'xfkautos', 'fkautos2026', null, 42]) {
+      assert.equal(istAutosId(id), false, String(id));
+    }
+    const settings = normalizeSettings();
+    const termin = { id: 'fkah7k2m9q4r1t8v3n6p0s5u2w', status: 'confirmed', summary: 'Zahnarzt', start: { dateTime: '2026-11-05T10:00:00+01:00' }, end: { dateTime: '2026-11-05T11:00:00+01:00' } };
+    assert.notEqual(ereignisZuEintrag(termin, 'termine', settings).art, 'ignorieren');
+  });
+
   test('von ereignisZuEintrag ignoriert (tauchen nirgends als Termin auf)', () => {
     const settings = normalizeSettings();
     const { daten, paket } = hauptMitAuto();
@@ -106,18 +118,21 @@ describe('mapping: versteckte Ereignisse „fkautos“ und „fkah…“', () =>
     daten = historieJahrEintragen(daten, id, 2024);
     const h25 = arbeitSetzen(leereHistorie(id, 2025), oel(id, { datum: '2025-05-10', km: 80_000 }), { heute: HEUTE });
     const texte = { [historieId(id, 2025)]: historieText(h25), [historieId(id, 2026)]: '{kaputt', [historieId(id, 2024)]: { geloescht: true } };
-    const g = autosAusTexten(autosText(daten), (auto, jahr) => texte[historieId(auto, jahr)] ?? null);
+    const gefragt = [];
+    const g = autosAusTexten(autosText(daten), (auto, jahr) => (gefragt.push(jahr), texte[historieId(auto, jahr)] ?? null), { bisJahr: 2027 });
+    assert.deepEqual(gefragt, [2024, 2025, 2026, 2027], 'M3: jedes Jahr vom ersten bis bisJahr');
     assert.deepEqual(g.daten, daten);
     assert.deepEqual(Object.keys(g.historie), [id]);
     assert.deepEqual(g.historie[id][2025], h25);
     assert.deepEqual(g.historie[id][2026], leereHistorie(id, 2026));
     assert.deepEqual(g.historie[id][2024], leereHistorie(id, 2024));
+    assert.equal(2027 in g.historie[id], false, 'nie angelegt: ein leeres Jahr, nicht unlesbar');
     assert.deepEqual(g.unlesbar, { shards: [{ auto: id, jahr: 2026 }] });
     assert.deepEqual(g.rohtexte, [{ id: historieId(id, 2026), text: '{kaputt' }]);
     assert.equal(g.warnungen.length, 2);
     assert.ok(g.warnungen.some((w) => w.includes('2024') && w.includes('Fiat 500') && w.includes('gelöscht')), g.warnungen.join(' | '));
-    const still = autosAusTexten(autosText(daten), () => null);
-    assert.deepEqual([still.warnungen, still.historie[id][2024]], [[], leereHistorie(id, 2024)], 'nie angelegt: still leer');
+    const still = autosAusTexten(autosText(daten), () => null, { bisJahr: 2026 });
+    assert.deepEqual([still.warnungen, still.historie, still.unlesbar], [[], {}, { shards: [] }], 'nie angelegt: still leer');
     assert.ok(g.warnungen.some((w) => w.includes('2026') && w.includes('unlesbar')), g.warnungen.join(' | '));
 
     const unl = autosAusTexten('{kaputt', () => assert.fail('ohne lesbaren Index wird kein Teil gefragt'));
@@ -157,9 +172,38 @@ describe('Google-Adapter: Autos', () => {
     assert.deepEqual(t.log.slice(1).sort(), [2024, 2025, 2026].map((j) => `GET ${historieId(id, j)}`));
     assert.equal(t.zaehler.maxGleichzeitig, 3, 'die Teile werden gleichzeitig gelesen');
     assert.deepEqual(g.daten, daten);
-    assert.deepEqual(g.historie[id], { 2024: leereHistorie(id, 2024), 2025: h25, 2026: h26 });
+    assert.deepEqual(g.historie[id], { 2025: h25, 2026: h26 }); // 2024 nie angelegt: ein leeres Jahr
     assert.deepEqual(g.warnungen, []);
     assert.deepEqual(g.unlesbar, { shards: [] });
+  });
+
+  test('M3: liest jedes Jahr vom ersten bis morgen (am 31.12. schon das nächste); fehlende Jahre zählen leer, nicht unlesbar', async () => {
+    const { daten: d0, paket } = hauptMitAuto();
+    const id = paket.auto.id;
+    const daten = historieJahrEintragen(d0, id, 2020);
+    const h26 = kmEintragen(leereHistorie(id, 2026), { datum: '2026-10-01', km: 95_000 }, { heute: HEUTE });
+    const t = await aufbau({ fkautos: autosText(daten), [historieId(id, 2026)]: historieText(h26) });
+    t.log.length = 0;
+    const g = await t.adapter.leseAutos();
+    assert.deepEqual(t.log.slice(1).sort(), [2020, 2021, 2022, 2023, 2024, 2025, 2026].map((j) => `GET ${historieId(id, j)}`));
+    assert.deepEqual([g.historie, g.warnungen, g.unlesbar], [{ [id]: { 2026: h26 } }, [], { shards: [] }]);
+    const silvester = createGoogleAdapter({ api: t.api, kalender: KALENDER, jetzt: () => new Date('2026-12-31T10:00:00+01:00') });
+    t.log.length = 0;
+    await silvester.leseAutos();
+    assert.ok(t.log.includes(`GET ${historieId(id, 2027)}`), 'am 31.12. darf eine Arbeit vom 01.01. schon da sein');
+  });
+
+  test('M3: ein Lesefehler eines Teils (HTTP 500) ist kein „fehlt“ – das ganze Lesen scheitert, nichts gilt als leer', async () => {
+    const { daten: d0, paket } = hauptMitAuto();
+    const id = paket.auto.id;
+    const t = await aufbau({ fkautos: autosText(historieJahrEintragen(d0, id, 2025)) });
+    const holen = t.api.ereignisse.holen;
+    t.api.ereignisse.holen = async (k, eid) => {
+      if (eid === historieId(id, 2025)) throw Object.assign(new Error('HTTP 500'), { status: 500 });
+      return holen(k, eid);
+    };
+    await assert.rejects(t.adapter.leseAutos(), /500/);
+    await assert.rejects(t.adapter.leseAutosSicherung(), /500/);
   });
 
   test('aendereAutos/aendereHistorie: reine Änderung auf der neuesten Fassung; schreibt nur das eine Ereignis', async () => {
@@ -168,7 +212,7 @@ describe('Google-Adapter: Autos', () => {
     const t = await aufbau({ fkautos: autosText(daten) });
     t.log.length = 0;
     const neu = await t.adapter.aendereAutos((d) => historieJahrEintragen(d, id, 2026));
-    assert.deepEqual(neu.jahre, { [id]: [2026] });
+    assert.deepEqual(neu.ab, { [id]: 2026 });
     assert.deepEqual(t.geschrieben(), ['PATCH fkautos']);
     t.log.length = 0;
     const h = await t.adapter.aendereHistorie(id, 2026, (x) => arbeitSetzen(x, oel(id), { heute: HEUTE }));
@@ -224,7 +268,7 @@ describe('Demo-Adapter und Beispieldaten: Autos', () => {
     const liste = Object.values(historie).flatMap((j) => Object.values(j));
     for (const h of liste) {
       historieText(h);
-      assert.ok(daten.jahre[h.auto].includes(h.jahr), 'jeder Teil steht im Jahres-Index');
+      assert.ok(daten.ab[h.auto] <= h.jahr, 'jeder Teil liegt ab dem ersten Jahr des Index');
     }
     for (const a of daten.autos) {
       const punkte = kmPunkte(liste, a);

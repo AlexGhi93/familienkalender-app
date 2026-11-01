@@ -19,8 +19,10 @@
 //                 km werden NICHT doppelt gespeichert, sondern beim Rechnen dazugenommen (kmPunkte in autos-rechnung.js).
 //
 // Im Kalender zwei Arten versteckter Ereignisse (Task 2: calendar/mapping.js), je ein JSON ≤ 6000 Zeichen mit KURZEN Schlüsseln:
-//  1) Hauptteil „fkautos“: { v: 1, a: [Auto], r: [Regel], s: [Reifensatz], j: { <autoId>: [Jahr, …] } }
-//     (im Speicher { v: 1, autos, regeln, saetze, jahre, fremd?: { a, r, s } }; j = die Jahre mit einem Verlauf-Teil, aufsteigend)
+//  1) Hauptteil „fkautos“: { v: 1, a: [Auto], r: [Regel], s: [Reifensatz], j: { <autoId>: erstesJahr } }
+//     (im Speicher { v: 1, autos, regeln, saetze, ab, fremd?: { a, r, s } }; j/ab = je Auto das ERSTE Jahr mit einem Verlauf-Teil –
+//     gelesen werden alle Jahre von dort bis heute, ein fehlender Teil zählt leer. M3 (Abschluss-Review): so wächst der Hauptteil nicht
+//     mit den Jahren. Eine Liste von Jahren (frühe 1.3.0-Testfassung) wird nachsichtig gelesen: das kleinste Jahr gilt.)
 //     Auto:       i=id n=name f=farbeKennung k=kennzeichen g=fin m=marke h=handelsbezeichnung t=typVariante c=motorcode a=antrieb
 //                 l=leistungKw u=hubraum e=ezDatum z=zulassungDatum r=reifenGroessen w=haltung b=leasingEnde o=notiz v=vorlage
 //                 p=1 (neuGekauft)
@@ -209,7 +211,7 @@ export const AUTO_VORLAGEN = tiefFrieren([
 // ---------------------------------------------------------------- Meldungen
 
 export const TEXT_AUTOS_VOLL = 'Im Kalender ist kein Platz mehr für weitere Autos, Regeln oder Reifensätze. Bitte Notizen kürzen oder Nicht-Gebrauchtes löschen.';
-export const TEXT_HISTORIE_VOLL = 'Im Verlauf dieses Jahres ist kein Platz mehr – bitte Notizen kürzen oder Doppeltes löschen.';
+export const TEXT_HISTORIE_VOLL = 'Im Verlauf dieses Jahres ist kein Platz mehr – bitte Notizen kürzen oder alte Kilometerstände bzw. doppelte Arbeiten löschen (Kilometerstand → „Alle Stände“, Verlauf → Eintrag).';
 export const TEXT_AUTOS_GESPERRT = 'Die Autos sind unlesbar (beschädigt oder von einer neueren App-Version). Damit nichts verloren geht, lassen sie sich hier nicht ändern – bitte die App auf beiden Telefonen aktualisieren.';
 export const TEXT_HISTORIE_GESPERRT = 'Dieser Teil des Verlaufs ist unlesbar (beschädigt oder von einer neueren App-Version). Damit nichts verloren geht, lässt er sich hier nicht ändern – bitte die App auf beiden Telefonen aktualisieren.';
 export const TEXT_AUTO_WEG = 'Dieses Auto gibt es nicht mehr.';
@@ -659,14 +661,14 @@ function langPunkt(k) {
 
 // ---------------------------------------------------------------- Hauptteil: lesen und schreiben
 
-export const leereAutos = () => ({ v: 1, autos: [], regeln: [], saetze: [], jahre: {} });
+export const leereAutos = () => ({ v: 1, autos: [], regeln: [], saetze: [], ab: {} });
 
 /** Fremde Einträge von `alt` nur übernehmen, wenn es welche gibt. */
 function mitFremd(d, fremd) {
   if (fremd && (fremd.a?.length > 0 || fremd.r?.length > 0 || fremd.s?.length > 0)) d.fremd = { a: fremd.a ?? [], r: fremd.r ?? [], s: fremd.s ?? [] };
   return d;
 }
-const baueAutos = (alt, autos, regeln, saetze, jahre) => mitFremd({ v: 1, autos, regeln, saetze, jahre }, alt?.fremd);
+const baueAutos = (alt, autos, regeln, saetze, ab) => mitFremd({ v: 1, autos, regeln, saetze, ab }, alt?.fremd);
 
 /** Gültige Einträge (der erste je Kennung gilt) und die nicht verstandenen roh – auch doppelte Kennungen: sie bleiben so erhalten. */
 function trenne(liste, lang) {
@@ -684,9 +686,10 @@ function trenne(liste, lang) {
   return { gut, fremd };
 }
 
-const istJahreListe = (j) => Array.isArray(j) && j.every(istJahr);
-const sortierteJahre = (j) => [...new Set(j)].sort((a, b) => a - b);
-const istJahreIndex = (j) => istObjekt(j) && Object.entries(j).every(([id, liste]) => istKennung(id) && istJahreListe(liste));
+// erstes Jahr je Auto: eine Zahl (oder, nachsichtig, eine nicht leere Liste von Jahren – dann gilt das kleinste)
+const istErstesJahr = (j) => istJahr(j) || (Array.isArray(j) && j.length > 0 && j.every(istJahr));
+const erstesJahr = (j) => (Array.isArray(j) ? Math.min(...j) : j);
+const istJahreIndex = (j) => istObjekt(j) && Object.entries(j).every(([id, x]) => istKennung(id) && istErstesJahr(x));
 
 /**
  * Gelesene Daten im Speicherformat (kurze Schlüssel) → { daten, fremd }. Nicht verstandene Autos, Regeln und Reifensätze landen roh in
@@ -698,10 +701,10 @@ export function normalisiereAutos(roh) {
   const a = trenne(roh.a, langAuto);
   const r = trenne(Array.isArray(roh.r) ? roh.r : [], langRegel);
   const s = trenne(Array.isArray(roh.s) ? roh.s : [], langSatz);
-  const jahre = {};
-  if (istJahreIndex(roh.j)) for (const [id, liste] of Object.entries(roh.j)) jahre[id] = sortierteJahre(liste);
+  const ab = {};
+  if (istJahreIndex(roh.j)) for (const [id, x] of Object.entries(roh.j)) ab[id] = erstesJahr(x);
   const fremd = { a: a.fremd, r: r.fremd, s: s.fremd };
-  return { daten: baueAutos({ fremd: JSON.parse(JSON.stringify(fremd)) }, a.gut, r.gut, s.gut, jahre), fremd };
+  return { daten: baueAutos({ fremd: JSON.parse(JSON.stringify(fremd)) }, a.gut, r.gut, s.gut, ab), fremd };
 }
 
 /** Die Daten als Text für das Ereignis „fkautos“ (kurze Schlüssel, fremde Einträge am Ende); zu voll → TEXT_AUTOS_VOLL. */
@@ -710,7 +713,7 @@ export function autosText(daten) {
   const regeln = (daten?.regeln ?? []).map(normalisiereRegel).filter(Boolean);
   const saetze = (daten?.saetze ?? []).map(normalisiereSatz).filter(Boolean);
   const j = {};
-  for (const [id, liste] of Object.entries(daten?.jahre ?? {})) if (istKennung(id) && istJahreListe(liste) && liste.length > 0) j[id] = sortierteJahre(liste);
+  for (const [id, x] of Object.entries(daten?.ab ?? {})) if (istKennung(id) && istErstesJahr(x)) j[id] = erstesJahr(x);
   const f = daten?.fremd ?? {};
   const text = JSON.stringify({ v: 1, a: [...autos.map(kurzAuto), ...(f.a ?? [])], r: [...regeln.map(kurzRegel), ...(f.r ?? [])], s: [...saetze.map(kurzSatz), ...(f.s ?? [])], j });
   if (text.length > MAX_AUTOS_ZEICHEN) throw new Error(TEXT_AUTOS_VOLL);
@@ -804,8 +807,8 @@ export function historieWarnungen({ historie, unlesbar } = {}) {
 // ---------------------------------------------------------------- Änderungen am Hauptteil (rein, wiederholbar)
 
 /** Neue Daten mit diesen Listen; wirft TEXT_AUTOS_VOLL, wenn sie nicht mehr in den Kalender passen. */
-function mitAutos(alt, { autos = alt.autos, regeln = alt.regeln, saetze = alt.saetze, jahre = alt.jahre } = {}) {
-  const neu = baueAutos(alt, autos, regeln, saetze, jahre);
+function mitAutos(alt, { autos = alt.autos, regeln = alt.regeln, saetze = alt.saetze, ab = alt.ab } = {}) {
+  const neu = baueAutos(alt, autos, regeln, saetze, ab);
   autosText(neu);
   return neu;
 }
@@ -871,40 +874,95 @@ export function satzSetzen(daten, satz) {
 /** Löscht eine Regel; unbekannt → dieselben Daten. */
 export function regelLoeschen(daten, id) {
   if (!(daten.regeln ?? []).some((r) => r.id === id)) return daten;
-  return baueAutos(daten, daten.autos, daten.regeln.filter((r) => r.id !== id), daten.saetze, daten.jahre);
+  return baueAutos(daten, daten.autos, daten.regeln.filter((r) => r.id !== id), daten.saetze, daten.ab);
 }
 
 /** Löscht einen Reifensatz (Arbeiten, die ihn nennen, zählen dann für keinen Satz); unbekannt → dieselben Daten. */
 export function satzLoeschen(daten, id) {
   if (!(daten.saetze ?? []).some((s) => s.id === id)) return daten;
-  return baueAutos(daten, daten.autos, daten.regeln, daten.saetze.filter((s) => s.id !== id), daten.jahre);
+  return baueAutos(daten, daten.autos, daten.regeln, daten.saetze.filter((s) => s.id !== id), daten.ab);
 }
 
-/** Merkt sich, dass es für `auto` einen Verlauf-Teil im Jahr `jahr` gibt (vor dem ersten Schreiben eines neuen Jahres). */
+/** Was regelLoeschen entfernt – für „Rückgängig“: { regel, stelle }; unbekannt → null. */
+export function regelSpur(daten, id) {
+  const stelle = (daten?.regeln ?? []).findIndex((r) => r.id === id);
+  return stelle < 0 ? null : { regel: daten.regeln[stelle], stelle };
+}
+
+/** „Rückgängig“ nach regelLoeschen: dieselbe Regel an ihrer alten Stelle; das Auto muss es noch geben. Schon da → dieselben Daten. */
+export function regelWiederherstellen(daten, spur) {
+  const r = normalisiereRegel(spur?.regel);
+  if (!r) throw new Error('Ungültige Regel.');
+  const liste = daten.regeln ?? [];
+  if (liste.some((x) => x.id === r.id)) return daten;
+  if (!autoDa(daten, r.auto)) throw new Error(TEXT_AUTO_WEG);
+  if (fremdeKennung(daten.fremd?.r, r.id)) throw new Error(TEXT_KENNUNG_NEUER);
+  if (liste.length + (daten.fremd?.r?.length ?? 0) >= MAX_REGELN) throw new Error(`Höchstens ${MAX_REGELN} Regeln.`);
+  return mitAutos(daten, { regeln: eingefuegt(liste, r, spur.stelle) });
+}
+
+/** Was satzLoeschen entfernt – für „Rückgängig“: { satz, stelle }; unbekannt → null. */
+export function satzSpur(daten, id) {
+  const stelle = (daten?.saetze ?? []).findIndex((x) => x.id === id);
+  return stelle < 0 ? null : { satz: daten.saetze[stelle], stelle };
+}
+
+/** „Rückgängig“ nach satzLoeschen: derselbe Reifensatz an seiner alten Stelle; das Auto muss es noch geben. Schon da → dieselben Daten. */
+export function satzWiederherstellen(daten, spur) {
+  const satz = normalisiereSatz(spur?.satz);
+  if (!satz) throw new Error('Ungültiger Reifensatz.');
+  const liste = daten.saetze ?? [];
+  if (liste.some((x) => x.id === satz.id)) return daten;
+  if (!autoDa(daten, satz.auto)) throw new Error(TEXT_AUTO_WEG);
+  if (fremdeKennung(daten.fremd?.s, satz.id)) throw new Error(TEXT_KENNUNG_NEUER);
+  if (liste.length + (daten.fremd?.s?.length ?? 0) >= MAX_SAETZE) throw new Error(`Höchstens ${MAX_SAETZE} Reifensätze.`);
+  return mitAutos(daten, { saetze: eingefuegt(liste, satz, spur.stelle) });
+}
+
+// je Art der Arbeit die Felder, die einen Reifensatz nennen (Reifenwechsel: montiert, Rotation: satzId)
+const SATZ_VERWEISE = new Map(ARBEIT_TYPEN.map((t) => [t.id, t.details.filter((d) => d.art === 'satz').map((d) => d.feld)]).filter(([, f]) => f.length > 0));
+
+/** Wie viele der `arbeiten` den Reifensatz `id` nennen (Reifenwechsel: montiert, Rotation: Reifensatz). */
+export function satzVerwendet(arbeiten, id) {
+  return (arbeiten ?? []).filter((a) => (SATZ_VERWEISE.get(a?.typ) ?? []).some((f) => a.details?.[f] === id)).length;
+}
+
+/** Meldung, wenn ein Reifensatz noch im Verlauf steht (dann lässt er sich nicht löschen). */
+export const satzVerwendetText = (name, anzahl) =>
+  `„${name}“ steht in ${anzahl === 1 ? '1 Arbeit' : `${anzahl} Arbeiten`} im Verlauf und lässt sich deshalb nicht löschen. Erst diese Arbeiten im Verlauf löschen – dann geht es.`;
+
+/**
+ * Stellt sicher, dass der Index den Verlauf-Teil von `auto` im Jahr `jahr` kennt (vor dem ersten Schreiben in dieses Jahr): ist `jahr`
+ * früher als das gemerkte erste Jahr (oder gibt es keins), wird es das neue erste Jahr; sonst dieselben Daten (M3: gelesen wird ohnehin
+ * jedes Jahr vom ersten bis heute).
+ */
 export function historieJahrEintragen(daten, auto, jahr) {
   if (!istJahr(jahr)) throw new Error('Ungültiges Jahr.');
   if (!autoDa(daten, auto)) throw new Error(TEXT_AUTO_WEG);
-  const alt = daten.jahre?.[auto] ?? [];
-  if (alt.includes(jahr)) return daten;
-  return mitAutos(daten, { jahre: { ...(daten.jahre ?? {}), [auto]: sortierteJahre([...alt, jahr]) } });
+  const alt = daten.ab?.[auto];
+  if (istJahr(alt) && alt <= jahr) return daten;
+  return mitAutos(daten, { ab: { ...(daten.ab ?? {}), [auto]: jahr } });
 }
 
+/** Kennt der Index den Verlauf-Teil von `auto` im Jahr `jahr` (erstes Jahr ≤ jahr)? */
+export const historieJahrBekannt = (daten, auto, jahr) => istJahr(daten?.ab?.[auto]) && daten.ab[auto] <= jahr;
+
 /**
- * Was autoLoeschen entfernt – für „Rückgängig“: { auto, stelle, regeln: [{ regel, stelle }], saetze: [{ satz, stelle }], jahre };
+ * Was autoLoeschen entfernt – für „Rückgängig“: { auto, stelle, regeln: [{ regel, stelle }], saetze: [{ satz, stelle }], ab } (ab = erstes Jahr des Index oder null);
  * unbekannt → null. Die Verlauf-Teile im Kalender bleiben beim Löschen liegen (Task 2 entscheidet), daher kommen die Jahre mit zurück.
  */
 export function autoSpur(daten, id) {
   const stelle = (daten?.autos ?? []).findIndex((a) => a.id === id);
   if (stelle < 0) return null;
   const mit = (liste, name) => liste.flatMap((x, i) => (x.auto === id ? [{ [name]: x, stelle: i }] : []));
-  return { auto: daten.autos[stelle], stelle, regeln: mit(daten.regeln ?? [], 'regel'), saetze: mit(daten.saetze ?? [], 'satz'), jahre: daten.jahre?.[id] ?? [] };
+  return { auto: daten.autos[stelle], stelle, regeln: mit(daten.regeln ?? [], 'regel'), saetze: mit(daten.saetze ?? [], 'satz'), ab: daten.ab?.[id] ?? null };
 }
 
 /** Löscht ein Auto samt seinen Regeln, Reifensätzen und dem Jahres-Index; unbekannt → dieselben Daten. */
 export function autoLoeschen(daten, id) {
   if (!autoDa(daten, id)) return daten;
-  const { [id]: _weg, ...jahre } = daten.jahre ?? {};
-  return baueAutos(daten, daten.autos.filter((a) => a.id !== id), (daten.regeln ?? []).filter((r) => r.auto !== id), (daten.saetze ?? []).filter((s) => s.auto !== id), jahre);
+  const { [id]: _weg, ...ab } = daten.ab ?? {};
+  return baueAutos(daten, daten.autos.filter((a) => a.id !== id), (daten.regeln ?? []).filter((r) => r.auto !== id), (daten.saetze ?? []).filter((s) => s.auto !== id), ab);
 }
 
 const eingefuegt = (liste, eintrag, stelle) => {
@@ -929,8 +987,8 @@ export function autoWiederherstellen(daten, spur) {
     const s = normalisiereSatz(satz);
     if (s && s.auto === auto.id && !saetze.some((x) => x.id === s.id)) saetze = eingefuegt(saetze, s, stelle);
   }
-  const jahre = istJahreListe(spur.jahre) && spur.jahre.length > 0 ? { ...(daten.jahre ?? {}), [auto.id]: sortierteJahre(spur.jahre) } : daten.jahre ?? {};
-  return mitAutos(daten, { autos: eingefuegt(daten.autos, auto, spur.stelle), regeln, saetze, jahre });
+  const ab = istJahr(spur.ab) ? { ...(daten.ab ?? {}), [auto.id]: spur.ab } : daten.ab ?? {};
+  return mitAutos(daten, { autos: eingefuegt(daten.autos, auto, spur.stelle), regeln, saetze, ab });
 }
 
 /**
@@ -1038,6 +1096,24 @@ export function kmLoeschen(historie, datum) {
   const liste = historie.km ?? [];
   if (!liste.some((p) => p.quelle === 'eingabe' && p.datum === datum)) return historie;
   return baueHistorie(historie, historie.arbeiten ?? [], liste.filter((p) => !(p.quelle === 'eingabe' && p.datum === datum)));
+}
+
+/** Was kmLoeschen entfernt – für „Rückgängig“: { punkt }; kein eingegebener Stand an dem Tag → null. */
+export function kmSpur(historie, datum) {
+  const punkt = (historie?.km ?? []).find((p) => p.quelle === 'eingabe' && p.datum === datum);
+  return punkt ? { punkt } : null;
+}
+
+/**
+ * „Rückgängig“ nach kmLoeschen: derselbe Stand wieder an seinem Tag (ohne Zukunfts-Prüfung). Gibt es an dem Tag inzwischen einen
+ * eingegebenen Stand (z. B. vom anderen Telefon), bleibt dieser → derselbe Teil.
+ */
+export function kmWiederherstellen(historie, spur) {
+  const p = spur?.punkt;
+  if (!istObjekt(p) || typeof p.datum !== 'string' || !Number.isInteger(p.km) || p.km < 0 || p.km > MAX_KM || jahrVon(p.datum) !== historie.jahr) throw new Error('Ungültiger Kilometerstand.');
+  const liste = historie.km ?? [];
+  if (liste.some((x) => x.quelle === 'eingabe' && x.datum === p.datum)) return historie;
+  return mitHistorie(historie, historie.arbeiten ?? [], [...liste, { datum: p.datum, km: p.km, quelle: 'eingabe' }].sort(nachDatum));
 }
 
 /** Der Monat 'JJJJ-MM' plus `n` Monate (für Rechnungen; ungültige Eingabe wirft nicht, sondern ergibt Unsinn – vorher prüfen). */

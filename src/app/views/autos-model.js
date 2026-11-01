@@ -20,6 +20,7 @@ import {
   kmText,
   monatPlus,
   regelVorlage,
+  satzVerwendet,
 } from '../../domain/autos.js';
 import { VIGNETTE_INFO, arbeitenVon, autoUebersicht, autosHistorien, kmPunkte, reifenStand, vignettenFrist } from '../../domain/autos-rechnung.js';
 
@@ -40,7 +41,7 @@ export const VORLAGEN_WAHL = Object.freeze([
   { id: 'leer', name: 'Leer', text: 'Ohne Regeln – alles selbst eintragen' },
 ]);
 
-export const TEXT_DATENSCHUTZ = 'Kennzeichen, FIN und alle Fahrzeugdaten stehen nur in eurem eigenen Google-Kalender (versteckt) – nirgends sonst.';
+export const TEXT_DATENSCHUTZ = 'Kennzeichen, FIN und Fahrzeugdaten stehen versteckt in eurem eigenen Google-Kalender, als Offline-Kopie auf diesem Telefon und in Sicherungen, die ihr speichert – sonst nirgends.';
 export const TEXT_VIGNETTE_ONLINE = 'Online gekauft gilt die Vignette erst ab dem 18. Tag – im Geschäft (ÖAMTC, Tankstelle, Trafik) sofort.';
 
 const TYPEN = new Map(ARBEIT_TYPEN.map((t) => [t.id, t]));
@@ -223,7 +224,15 @@ function regelZeile(f, auto, heute) {
 
 const ART_EMOJI = { sommer: '☀️', winter: '❄️', ganzjahr: '🌤️' };
 
-function reifenModel(u, regeln) {
+/** Alle eingegebenen Kilometerstände des Autos (alle gelesenen Jahre), neueste zuerst – zum Löschen (M2, Abschluss-Review). */
+function kmEintraege(autos, autoId) {
+  return Object.values(autos?.historie?.[autoId] ?? {})
+    .flatMap((h) => (h.km ?? []).filter((p) => p.quelle === 'eingabe'))
+    .sort((a, b) => (a.datum < b.datum ? 1 : a.datum > b.datum ? -1 : 0))
+    .map((p) => ({ datum: p.datum, jahr: Number(p.datum.slice(0, 4)), text: `${datumText(p.datum)} · ${kmText(p.km)}`, beschriftung: `Löschen: Kilometerstand vom ${datumText(p.datum)} (${kmText(p.km)})` }));
+}
+
+function reifenModel(u, regeln, arbeiten = []) {
   const rotation = regeln.find((r) => r.typ === 'rotation' && r.aktiv !== false && r.intervallKm);
   const rotationKm = rotation?.intervallKm ?? ROTATION_KM;
   return {
@@ -241,6 +250,8 @@ function reifenModel(u, regeln) {
       seitRotationText: `${r.geschaetzt ? 'ca. ' : ''}${kmText(r.kmSeitRotation).replace(' km', '')} / ${kmText(rotationKm)}`,
       anteil: Math.min(1, Math.max(0, r.kmSeitRotation / rotationKm)),
       rotationFaellig: Boolean(rotation) && r.kmSeitRotation >= rotationKm,
+      verwendet: satzVerwendet(arbeiten, r.satz.id),
+      loeschenBeschriftung: `Reifensatz löschen: ${r.satz.name}`,
     })),
     saison: u.saison ? { text: u.saison.text, hinweis: u.saison.hinweis, quelle: u.saison.quelle } : null,
   };
@@ -315,11 +326,11 @@ export function autoSeiteModel(state, heute, autoId) {
     farbe: farbeVon(auto),
     kennzeichen: auto.kennzeichen ?? null,
     untertitel: untertitel(auto),
-    km: kmModel(u),
+    km: { ...kmModel(u), eintraege: kmEintraege(autos, autoId) },
     anzahlFaellig: u.anzahlFaellig,
     faellig: u.faellig.map((f) => regelZeile(f, auto, heute)),
     aus: regeln.filter((r) => r.aktiv === false).map((r) => ({ regelId: r.id, name: r.name, emoji: TYPEN.get(r.typ)?.emoji ?? '🔧' })),
-    reifen: reifenModel(u, regeln),
+    reifen: reifenModel(u, regeln, arbeiten),
     vignette: vignetteModel(u, auto, heute),
     verlauf: verlaufModel(arbeiten, regeln, saetze),
     fahrzeugdaten: FAHRZEUG_FELDER.map((def) => ({ feld: def.feld, name: def.name, wert: feldAnzeige(def, auto[def.feld]) })),

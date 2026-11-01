@@ -206,13 +206,12 @@ describe('Auto-Erinnerungen im Push-Plan', () => {
       assert.deepEqual((await autoPlan(sommer, '2027-03-21T08:00:00+01:00')).filter((p) => p.titel.includes('Reifenwechsel')), []);
     });
 
-    test('M7: unbekannt, was montiert ist → die festen Tage mit der Bitte, den Wechsel einzutragen; ohne Reifensätze nichts', async () => {
+    test('M7 (Abschluss-Review): unbekannt, was montiert ist → keine Erinnerung (wie „Letzte Erledigung eintragen“), keine Karte auf Heute; ohne Reifensätze nichts', async () => {
       const unbekannt = mitAutos(autosTeil({ regeln: [reifen], saetze, historie: {} }));
-      const plan = await autoPlan(unbekannt, '2026-09-20T08:00:00+02:00');
-      assert.deepEqual(plan.map((p) => p.text), [
-        'Winterreifen montieren – fällig am 01.11.2026 (in 17 Tagen). Schon gewechselt? Bitte den Reifenwechsel eintragen.',
-        'Winterreifen montieren – heute fällig (01.11.2026). Schon gewechselt? Bitte den Reifenwechsel eintragen.',
-      ]);
+      for (const iso of ['2026-09-20T08:00:00+02:00', '2026-10-20T08:00:00+02:00', '2026-11-02T08:00:00+01:00', '2027-01-05T08:00:00+01:00', '2027-04-10T08:00:00+02:00']) {
+        assert.deepEqual(await autoPlan(unbekannt, iso), [], iso);
+        assert.equal(autoKarteModel(unbekannt.autos, iso.slice(0, 10)), null, iso);
+      }
       assert.deepEqual(await autoPlan(mitAutos(autosTeil({ regeln: [reifen], saetze: [], historie: {} })), '2026-09-20T08:00:00+02:00'), []);
     });
 

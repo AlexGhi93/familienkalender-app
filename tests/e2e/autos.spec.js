@@ -15,7 +15,7 @@ test('Mehr → Autos → Auto: Zeile mit „N fällig“, Karten je Auto, Seite 
   await starteDemo(page, { route: '#/mehr', zeit: '2026-10-20T08:00:00+02:00' });
   const zeile = page.locator('.menue-eintrag[data-id="autos"] .menue-zeile');
   await expect(zeile).toContainText('Autos');
-  await expect(zeile.locator('.menue-marke')).toHaveText('2 fällig');
+  await expect(zeile.locator('.menue-marke')).toHaveText('1 fällig'); // M7: der Fiat (Reifensatz unbekannt) zählt nicht
   await zeile.click();
   await expect(page).toHaveURL(/#\/autos$/);
   await expect(page).toHaveTitle('Familienkalender · Autos');
@@ -31,7 +31,7 @@ test('Mehr → Autos → Auto: Zeile mit „N fällig“, Karten je Auto, Seite 
   await expect(page).toHaveURL(new RegExp(`#/autos/${autoId('2026-10-20', 'Tesla Model 3')}$`));
   await expect(page.locator('h1.au-titel')).toHaveText('Tesla Model 3');
   for (const titel of ['Fällig', 'Kilometerstand', 'Reifen', 'Vignette', 'Verlauf', 'Fahrzeugdaten']) await expect(abschnitt(page, titel)).toBeVisible();
-  await expect(abschnitt(page, 'Fahrzeugdaten')).toContainText('nur in eurem eigenen Google-Kalender');
+  await expect(abschnitt(page, 'Fahrzeugdaten')).toContainText('versteckt in eurem eigenen Google-Kalender, als Offline-Kopie auf diesem Telefon');
   await page.getByRole('button', { name: '‹ Autos' }).click();
   await expect(page).toHaveURL(/#\/autos$/);
 });
@@ -39,7 +39,7 @@ test('Mehr → Autos → Auto: Zeile mit „N fällig“, Karten je Auto, Seite 
 test('Marke „N fällig“ in Mehr: ändert sich an Ort und Stelle, wenn eine Arbeit das Fällige erledigt (ohne Neuzeichnen der Seite)', async ({ page }) => {
   const zeit = '2026-10-20T08:00:00+02:00';
   const tesla = autoId('2026-10-20', 'Tesla Model 3');
-  await starteDemo(page, { route: `#/autos/${tesla}`, zeit });
+  await starteDemo(page, { route: `#/autos/${tesla}`, zeit, speicher: { 'fk.demo.v1': demoMitAutos('2026-10-20', vierFaellig) } });
   // das Blatt „Reifenwechsel eintragen“ bleibt offen, darunter geht es zurück nach „Mehr“
   await page.getByRole('button', { name: 'Reifenwechsel (saisonal): Reifenwechsel eintragen' }).click();
   const b = blatt(page, '🛞 Reifenwechsel eintragen');
@@ -47,7 +47,7 @@ test('Marke „N fällig“ in Mehr: ändert sich an Ort und Stelle, wenn eine A
   await page.evaluate(() => (location.hash = '#/mehr'));
   const zeile = page.locator('.menue-eintrag[data-id="autos"] .menue-zeile');
   const marke = zeile.locator('.menue-marke');
-  await expect(marke).toHaveText('2 fällig');
+  await expect(marke).toHaveText('4 fällig');
   // Merker an der Seite und an der Marke: ein Neuzeichnen von „Mehr“ würde beide ersetzen
   await page.evaluate(() => {
     document.querySelector('#inhalt').firstElementChild.dataset.testMerker = 'mehr';
@@ -55,7 +55,7 @@ test('Marke „N fällig“ in Mehr: ändert sich an Ort und Stelle, wenn eine A
   });
   await b.getByRole('button', { name: 'Eintragen' }).click();
   await erwarteToast(page, 'Eingetragen ✓');
-  await expect(marke).toHaveText('1 fällig');
+  await expect(marke).toHaveText('3 fällig');
   await expect(page).toHaveURL(/#\/mehr$/);
   await expect(page.locator('#inhalt > [data-test-merker="mehr"]')).toHaveCount(1);
   await expect(marke).toHaveAttribute('data-test-merker', 'marke');
@@ -272,6 +272,81 @@ test('Löschen mit „Rückgängig“: eine Arbeit (Blatt und Wischen) und das g
   await expect(page.locator('.au-karte')).toHaveCount(2);
 });
 
+test.describe('M2 (Abschluss-Review): löschen mit „Rückgängig“ – Kilometerstand, Regel, Reifensatz', () => {
+  test('Kilometerstand: „Alle Stände“ → Löschen → Rückgängig; bleibt nach dem Neuladen', async ({ page }) => {
+    await starteDemo(page, { route: `#/autos/${TESLA}` });
+    const km = abschnitt(page, 'Kilometerstand');
+    await expect(km.locator('.au-km-zahl')).toHaveText('ca. 18.872 km');
+    await km.getByText('Alle Stände (1)').click();
+    const eintrag = km.locator('.au-km-eintrag');
+    await expect(eintrag).toHaveCount(1);
+    await expect(eintrag).toContainText('02.10.2026 · 18.400 km');
+    await eintrag.getByRole('button', { name: 'Löschen: Kilometerstand vom 02.10.2026 (18.400 km)' }).click();
+    await erwarteToast(page, 'Gelöscht ✓');
+    await expect(km.locator('.au-km-alle')).toHaveCount(0);
+    await expect(km).not.toContainText('Zuletzt bekannt: 18.400 km');
+    await page.locator('.toast').getByRole('button', { name: 'Rückgängig' }).click();
+    await erwarteToast(page, 'Wiederhergestellt ✓');
+    await expect(km.locator('.au-km-zahl')).toHaveText('ca. 18.872 km');
+    await expect(km.locator('.au-km-alle')).toHaveAttribute('open', '');
+    await eintrag.getByRole('button', { name: /^Löschen: Kilometerstand vom 02\.10\.2026/ }).click();
+    await erwarteToast(page, 'Gelöscht ✓');
+    await page.reload();
+    await expect(abschnitt(page, 'Kilometerstand')).not.toContainText('18.400 km');
+    await expect(abschnitt(page, 'Kilometerstand').locator('.au-km-alle')).toHaveCount(0);
+  });
+
+  test('Regel löschen → Rückgängig; danach weg aus „Fällig“, aus der Marke in Mehr und von der Karte auf Heute', async ({ page }) => {
+    const zeit = '2026-10-20T08:00:00+02:00';
+    const tesla = autoId('2026-10-20', 'Tesla Model 3');
+    await starteDemo(page, { route: `#/autos/${tesla}`, zeit });
+    await expect(regel(page, 'reifenwechsel')).toHaveCount(1);
+    const loeschen = async () => {
+      await page.getByRole('button', { name: 'Reifenwechsel (saisonal): Info, Quelle, ändern oder abschalten' }).click();
+      const b = blatt(page, '🛞 Reifenwechsel (saisonal)');
+      await expect(b.getByRole('checkbox', { name: /Aktiv/ })).toBeChecked(); // Abschalten gibt es weiterhin
+      await b.getByRole('button', { name: 'Regel löschen' }).click();
+      await erwarteToast(page, 'Gelöscht ✓');
+      await expect(b).toHaveCount(0);
+      await expect(regel(page, 'reifenwechsel')).toHaveCount(0);
+    };
+    await loeschen();
+    await page.locator('.toast').getByRole('button', { name: 'Rückgängig' }).click();
+    await erwarteToast(page, 'Wiederhergestellt ✓');
+    await expect(regel(page, 'reifenwechsel')).toHaveCount(1);
+    await loeschen();
+    await page.evaluate(() => (location.hash = '#/mehr'));
+    await expect(page.locator('.menue-eintrag[data-id="autos"] .menue-zeile')).toContainText('Autos');
+    await expect(page.locator('.menue-eintrag[data-id="autos"] .menue-marke')).toBeHidden(); // 0 fällig: versteckt
+    await page.evaluate(() => (location.hash = '#/heute'));
+    await expect(page.locator('section.abschnitt').first()).toBeVisible();
+    await expect(page.locator('section.abschnitt').filter({ has: page.getByRole('heading', { name: '🚗 Auto', exact: true }) })).toHaveCount(0);
+    await page.goto(`/#/autos/${tesla}`);
+    await expect(page.locator('h1.au-titel')).toHaveText('Tesla Model 3');
+    await expect(regel(page, 'reifenwechsel')).toHaveCount(0);
+  });
+
+  test('Reifensatz löschen: im Verlauf genannt → klare Meldung, bleibt; unbenutzt → Gelöscht ✓ · Rückgängig', async ({ page }) => {
+    await starteDemo(page, { route: `#/autos/${TESLA}` });
+    const reifen = abschnitt(page, 'Reifen');
+    await expect(reifen.locator('.au-satz')).toHaveCount(2);
+    await reifen.getByRole('button', { name: 'Reifensatz löschen: Sommer' }).click();
+    await erwarteToast(page, '„Sommer“ steht in 1 Arbeit im Verlauf und lässt sich deshalb nicht löschen. Erst diese Arbeiten im Verlauf löschen – dann geht es.');
+    await expect(reifen.locator('.au-satz')).toHaveCount(2);
+    await page.goto(`/#/autos/${FIAT}`);
+    const fiatReifen = abschnitt(page, 'Reifen');
+    await expect(fiatReifen.locator('.au-satz')).toHaveCount(2);
+    await fiatReifen.getByRole('button', { name: 'Reifensatz löschen: Winter' }).click();
+    await erwarteToast(page, 'Gelöscht ✓');
+    await expect(fiatReifen.locator('.au-satz')).toHaveCount(1);
+    await page.locator('.toast').getByRole('button', { name: 'Rückgängig' }).click();
+    await erwarteToast(page, 'Wiederhergestellt ✓');
+    await expect(fiatReifen.locator('.au-satz-kopf b')).toHaveText(['Sommer', 'Winter']);
+    await page.reload();
+    await expect(abschnitt(page, 'Reifen').locator('.au-satz')).toHaveCount(2);
+  });
+});
+
 test('Noch kein Auto: Vorlage Tesla, Kennzeichen selbst eintragen, Regeln und Reifensätze sind gleich da', async ({ page }) => {
   await starteDemo(page, { route: '#/autos', speicher: { 'fk.demo.v1': demoMitAutos(WERKTAG_DATUM, undefined, { leer: true }) } });
   await expect(page.locator('.au-leer h3')).toHaveText('Noch kein Auto – ＋ Auto hinzufügen');
@@ -280,7 +355,7 @@ test('Noch kein Auto: Vorlage Tesla, Kennzeichen selbst eintragen, Regeln und Re
   const b = blatt(page, '＋ Auto hinzufügen');
   await expect(b.getByRole('button', { name: /^Tesla Model 3/ })).toHaveAttribute('aria-pressed', 'true');
   await expect(b.getByRole('textbox', { name: 'Name' })).toHaveValue('Tesla Model 3');
-  await expect(b).toContainText('nur in eurem eigenen Google-Kalender');
+  await expect(b).toContainText('versteckt in eurem eigenen Google-Kalender, als Offline-Kopie auf diesem Telefon');
   await b.getByRole('textbox', { name: 'Kennzeichen' }).fill('w-99999');
   await b.getByRole('button', { name: 'Auto anlegen' }).click();
   await erwarteToast(page, 'Auto angelegt ✓');
@@ -376,6 +451,18 @@ test.describe('Glas und Bento', () => {
     expect(klein).toEqual([]);
     await page.getByRole('button', { name: 'Reifenwechsel (saisonal): Reifenwechsel eintragen' }).click();
     await expect(blatt(page, '🛞 Reifenwechsel eintragen')).toBeVisible();
+    expect(await kleineZiele(page)).toEqual([]);
+  });
+
+  test('M2: die neuen Lösch-Knöpfe (Alle Stände, Reifensatz, Regel) sind ≥ 44 px', async ({ page }) => {
+    await starteDemo(page, { route: `#/autos/${TESLA}` });
+    const kopf = page.locator('.au-km-alle-kopf');
+    expect((await kopf.boundingBox()).height).toBeGreaterThanOrEqual(44);
+    await kopf.click();
+    await expect(page.locator('.au-km-eintrag')).toHaveCount(1);
+    expect(await kleineZiele(page)).toEqual([]);
+    await page.getByRole('button', { name: 'Reifenwechsel (saisonal): Info, Quelle, ändern oder abschalten' }).click();
+    await expect(blatt(page, '🛞 Reifenwechsel (saisonal)').getByRole('button', { name: 'Regel löschen' })).toBeVisible();
     expect(await kleineZiele(page)).toEqual([]);
   });
 

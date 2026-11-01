@@ -1,7 +1,7 @@
 // Reine Umrechnung zwischen dem App-Modell und Google-Kalender-Ereignissen: kein Netz, kein DOM.
 // Grundlage: Titel sind die einzige Quelle für Mitnehmen/Kosten, die echte Startzeit gilt für die Uhrzeit,
 // und das Verhalten der API ist in docs/spike/CONTRACT.md belegt.
-import { addDays } from '../domain/dates.js';
+import { addDays, todayVienna } from '../domain/dates.js';
 import { eventSpan, spanDays, toGoogleAllDay } from '../domain/span.js';
 import { dayEventId, istUrlaubCheckId, urlaubCheckEventId } from '../domain/ids.js';
 import { FAMILIE_SYMBOLE, FUER, TAGES_TYPEN, TYPES } from '../domain/types.js';
@@ -336,8 +336,16 @@ export function historieId(auto, jahr) {
   return `fkah${auto}${jahr}`;
 }
 
-/** „fkautos“ und alle Verlauf-Teile „fkah…“ sind für die übrige App unsichtbar. */
-export const istAutosId = (id) => typeof id === 'string' && (id === AUTOS_ID || id.startsWith('fkah'));
+const HISTORIE_KENNUNG = /^fkah[0-9a-v]{4,16}(\d{4})$/;
+
+/** Hat `id` genau das Muster eines Verlauf-Teils (fkah + Auto-ID + Jahr 2000–2100)? Eine zufällige Google-ID mit „fkah…“ zählt nicht. */
+export function istHistorieId(id) {
+  const m = typeof id === 'string' ? HISTORIE_KENNUNG.exec(id) : null;
+  return !!m && Number(m[1]) >= 2000 && Number(m[1]) <= 2100;
+}
+
+/** „fkautos“ und die Verlauf-Teile „fkah<auto><JJJJ>“ sind für die übrige App unsichtbar – streng nach Muster, nicht nur nach dem Anfang. */
+export const istAutosId = (id) => id === AUTOS_ID || istHistorieId(id);
 
 /** Ein Verlauf-Teil ({ auto, jahr, arbeiten, km }) als verstecktes Ereignis „fkah<auto><JJJJ>“; ein zu voller Teil wird abgelehnt. */
 export function historieZuEreignis(historie) {
@@ -350,29 +358,41 @@ export function historieAusEreignis(event, auto, jahr) {
   return { historie, unlesbar, warnungen: historieWarnungen({ historie, unlesbar }) };
 }
 
-/** Alle Paare { auto, jahr } aus dem Jahres-Index (Reihenfolge: Autos wie im Index, Jahre aufsteigend). */
-export const autosTeile = (daten) => Object.entries(daten?.jahre ?? {}).flatMap(([auto, jahre]) => jahre.map((jahr) => ({ auto, jahr })));
+/**
+ * Bis zu welchem Jahr der Verlauf gelesen wird: das Jahr von morgen in Wien (eine Arbeit darf höchstens einen Tag in der Zukunft
+ * liegen – am 31.12. also schon im nächsten Jahr).
+ */
+export const autosBisJahr = (jetzt = new Date()) => Number(addDays(todayVienna(jetzt), 1).slice(0, 4));
+
+/**
+ * Alle Paare { auto, jahr }, die zu lesen sind (M3, Abschluss-Review): je Auto vom ersten Jahr des Index bis `bisJahr` (Reihenfolge:
+ * Autos wie im Index, Jahre aufsteigend). Liegt das erste Jahr nach `bisJahr` (falsche Uhr), wenigstens das erste Jahr.
+ */
+export const autosTeile = (daten, bisJahr) =>
+  Object.entries(daten?.ab ?? {}).flatMap(([auto, ab]) => Array.from({ length: Math.max(0, (Number.isInteger(bisJahr) ? bisJahr : ab) - ab) + 1 }, (_, i) => ({ auto, jahr: ab + i })));
 
 /**
  * Autos aus den Texten im Kalender (Google und Demo gleich): `hauptText` = Beschreibung von „fkautos“ (null = fehlt), `teilText(auto,
  * jahr)` = Beschreibung des Verlauf-Teils, null (nie angelegt) oder { geloescht: true } (im Kalender gelöscht). → { daten, historie:
  * { [auto]: { [jahr]: Historie } }, warnungen, unlesbar: { main?: true, shards: [{ auto, jahr }] }, rohtexte: [{ id, text }] }. Gefragt
- * werden nur die Teile aus dem Jahres-Index; ein fehlender zählt leer – still, wenn er nie angelegt wurde (z. B. Index geschrieben, Teil
- * gescheitert), mit Hinweis, wenn ihn jemand gelöscht hat. Ist der Hauptteil unlesbar, kennt man keinen Index: alles leer und gesperrt.
+ * werden die Teile je Auto vom ersten Jahr des Index bis `bisJahr` (autosTeile); ein nie angelegter zählt als leeres Jahr (fehlt still in
+ * `historie`, ist NICHT unlesbar), ein gelöschter leer mit Hinweis. Ein Lesefehler ist kein „fehlt“: den meldet der Adapter, indem er
+ * selbst scheitert (dann wird nichts geschrieben). Ist der Hauptteil unlesbar, kennt man keinen Index: alles leer und gesperrt.
  * `rohtexte` = die Texte der unlesbaren Teile (für die Sicherung).
  */
-export function autosAusTexten(hauptText, teilText) {
+export function autosAusTexten(hauptText, teilText, { bisJahr } = {}) {
   const haupt = autosAusEreignis(hauptText == null ? null : { description: hauptText });
   if (haupt.unlesbar) return { daten: haupt.daten, historie: {}, warnungen: haupt.warnungen, unlesbar: { main: true, shards: [] }, rohtexte: [{ id: AUTOS_ID, text: hauptText }] };
   const historie = {};
   const warnungen = [...haupt.warnungen];
   const shards = [];
   const rohtexte = [];
-  for (const { auto, jahr } of autosTeile(haupt.daten)) {
+  for (const { auto, jahr } of autosTeile(haupt.daten, bisJahr)) {
     const text = teilText(auto, jahr);
+    if (text == null) continue; // nie angelegt: ein leeres Jahr
     const name = haupt.daten.autos.find((a) => a.id === auto)?.name;
     historie[auto] ??= {};
-    if (text == null || typeof text !== 'string') {
+    if (typeof text !== 'string') {
       historie[auto][jahr] = leereHistorie(auto, jahr);
       if (text?.geloescht) warnungen.push(`Der Verlauf ${jahr}${name ? ` von „${name}“` : ''} wurde im Kalender gelöscht (wohl von Hand); er wird leer gezeigt.`);
       continue;

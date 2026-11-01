@@ -306,10 +306,18 @@ export function faelligkeit(regel, arbeiten, auto, kmInfo, heute, { saetze = [] 
       const j = Number(nach.slice(0, 4));
       return `${j}-${tagMonat}` > nach ? `${j}-${tagMonat}` : `${j + 1}-${tagMonat}`;
     };
-    let saison;
+    if (!satz) {
+      // M7 (Abschluss-Review): nicht bekannt, welcher Satz montiert ist → kein Termin und keine Erinnerung (wie „Letzte Erledigung
+      // eintragen“), aber die ganze Saison ein Hinweis: Winter 15.10.–15.04. (Pflicht 1.11.–15.4.), Sommer 16.04.–30.09. (wie
+      // saisonHinweis für Winterreifen); dazwischen (1.–14.10.) nur „Reifenwechsel eintragen“.
+      const md = heute.slice(5);
+      const s = md >= '10-15' || md <= '04-15' ? 'winter' : md < '10-01' ? 'sommer' : null;
+      const hinweis = s ? `${s === 'winter' ? 'Winter' : 'Sommer'}reifen montieren? Bitte den Reifenwechsel eintragen` : 'Reifenwechsel eintragen';
+      return { ...ergebnis([], { ...k, quelleOhneDatum: 'fix', hinweis }), ...(s ? { saison: s } : {}), montiertUnbekannt: true };
+    }
+    const saison = satz.art === 'winter' ? 'sommer' : 'winter';
     let datum;
-    if (satz) {
-      saison = satz.art === 'winter' ? 'sommer' : 'winter';
+    {
       const md = w.datum.slice(5);
       const j = Number(w.datum.slice(0, 4));
       // M3: mitten in der „falschen“ Saison montiert (Sommerreifen 1.11.–14.3., Winterreifen 16.4.–30.9.) → der Stichtag dieser Saison.
@@ -329,18 +337,11 @@ export function faelligkeit(regel, arbeiten, auto, kmInfo, heute, { saetze = [] 
         const stichtag = falsch ? `${j}-04-15` : naechster('04-15', w.datum);
         datum = heute < `${stichtag.slice(0, 4)}-10-01` ? stichtag : naechster('04-15', gestern);
       }
-    } else {
-      // nicht bekannt, was montiert ist: der nächste Stichtag ab heute (1.11. Winter, 15.4. Sommer)
-      const tag = addDays(heute, -1);
-      const winter = naechster('11-01', tag);
-      const sommer = naechster('04-15', tag);
-      [saison, datum] = winter < sommer ? ['winter', winter] : ['sommer', sommer];
     }
     // M4: Sommerreifen erst ab 1.4. erinnern (die Winterausrüstungspflicht gilt bis 15.4.). Task 3: ebenso Winterreifen erst ab 15.10.
     // (Spec §4: „Winterreifen montieren“ am 15.10. und 1.11.) – vorher nie 'bald': keine Karte auf „Heute“, keine Push-Erinnerung
     const erinnerungAb = `${datum.slice(0, 4)}-${saison === 'sommer' ? '04-01' : '10-15'}`;
-    // M7 (Review T3): nicht bekannt, welcher Satz montiert ist → der Text bittet, den Reifenwechsel einzutragen
-    return { ...ergebnis([{ datum, quelle: 'fix' }], { ...k, quelleOhneDatum: 'fix', erinnerungAb }), saison, ...(satz ? {} : { montiertUnbekannt: true }) };
+    return { ...ergebnis([{ datum, quelle: 'fix' }], { ...k, quelleOhneDatum: 'fix', erinnerungAb }), saison };
   }
 
   if (regel.typ === 'rotation') {

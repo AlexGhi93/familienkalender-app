@@ -30,12 +30,17 @@ export const winterRotationFaellig = (a) => {
   return a;
 };
 
-/** Vier fällige Dinge am 20.10.2026 (Heute: drei Zeilen + „+ 1 weitere“): dazu Wischerblätter (alle 3 Monate, überfällig) und Pickerl (Oktober). */
+/**
+ * Vier fällige Dinge am 20.10.2026 (Heute: drei Zeilen + „+ 1 weitere“): Reifenwechsel des Tesla, dazu Wischerblätter (alle 3 Monate,
+ * überfällig), Pickerl (Oktober) und Innenraumfilter (alle 12 Monate ab der EZ, überfällig) – seit M7 (Abschluss-Review) zählt der
+ * Fiat ohne bekannten Reifensatz nicht mehr als „fällig“.
+ */
 export const vierFaellig = (a) => {
   const tesla = a.daten.autos.find((x) => x.name === 'Tesla Model 3').id;
   a.daten.regeln = a.daten.regeln.map((r) => {
     if (r.auto !== tesla) return r;
     if (r.typ === 'wischer') return { ...r, intervallMonate: 3 };
+    if (r.typ === 'innenraumfilter') return { ...r, intervallMonate: 12 };
     if (r.typ === 'pickerl') return { ...r, fixMonat: '2026-10' };
     return r;
   });

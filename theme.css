@@ -4991,6 +4991,43 @@ html:has(.screen.einkauf) {
   gap: 10px;
 }
 
+/* M2 (Abschluss-Review): „Alle Stände“ – jeder eingegebene Kilometerstand mit „Löschen“ */
+.au-km-alle {
+  margin-top: 4px;
+  border-top: 1px solid var(--linie);
+}
+
+.au-km-alle-kopf {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--ink);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.au-km-liste {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.au-km-eintrag {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 52px;
+  border-top: 1px solid var(--linie);
+  color: var(--ink);
+}
+
+.au-km-eintrag:first-child {
+  border-top: 0;
+}
+
 .au-marke {
   display: inline-flex;
   align-items: center;

@@ -22,7 +22,7 @@ import {
 } from '../../src/app/views/autos-model.js';
 import { TEXT_AUTOS_GESPERRT, leereAutos } from '../../src/domain/autos.js';
 import { addDays } from '../../src/domain/dates.js';
-import { faelligText } from '../../src/app/views/autos-model.js';
+import { TEXT_DATENSCHUTZ, faelligText } from '../../src/app/views/autos-model.js';
 
 const HEUTE = '2026-10-14';
 
@@ -55,8 +55,9 @@ describe('Liste der Autos', () => {
   test('„N fällig“ in der Karte und für „Mehr“', () => {
     const s = mitDemo('2026-10-20');
     const m = autosListeModel(s, '2026-10-20');
-    assert.deepEqual(m.karten.map((k) => k.faelligText), ['1 fällig', '1 fällig']);
-    assert.equal(autosFaelligAnzahl(s, '2026-10-20'), 2);
+    // M7 (Abschluss-Review): beim Fiat ist unbekannt, welcher Satz drauf ist → „unbekannt“, nicht „fällig“
+    assert.deepEqual(m.karten.map((k) => k.faelligText), ['1 fällig', null]);
+    assert.equal(autosFaelligAnzahl(s, '2026-10-20'), 1);
     assert.equal(autosFaelligAnzahl(mitDemo(), HEUTE), 0);
     assert.equal(autosFaelligAnzahl({}, HEUTE), 0);
   });
@@ -122,6 +123,32 @@ describe('Seite eines Autos', () => {
     assert.ok(Math.abs(tesla.saetze[0].anteil - 0.7072) < 1e-9);
     const fiat = autoSeiteModel(s, HEUTE, id(s, 'Fiat 500')).reifen;
     assert.equal(fiat.mitRotation, false);
+    // M2 (Abschluss-Review): löschbar nur, wenn keine Arbeit den Satz nennt (Demo: beide Tesla-Sätze stehen im Verlauf)
+    assert.deepEqual(tesla.saetze.map((x) => [x.verwendet, x.loeschenBeschriftung]), [[1, 'Reifensatz löschen: Sommer'], [1, 'Reifensatz löschen: Winter']]);
+    assert.deepEqual(fiat.saetze.map((x) => x.verwendet), [0, 0]);
+  });
+
+  test('M4 (Abschluss-Review): der Datenschutz-Hinweis nennt alle Orte (Kalender versteckt, Offline-Kopie, Sicherung) – kurz', () => {
+    assert.match(TEXT_DATENSCHUTZ, /Google-Kalender/);
+    assert.match(TEXT_DATENSCHUTZ, /versteckt/);
+    assert.match(TEXT_DATENSCHUTZ, /Offline-Kopie auf diesem Telefon/);
+    assert.match(TEXT_DATENSCHUTZ, /Sicherungen/);
+    assert.doesNotMatch(TEXT_DATENSCHUTZ, /nur in/);
+    assert.ok(TEXT_DATENSCHUTZ.length <= 180, String(TEXT_DATENSCHUTZ.length));
+  });
+
+  test('M2 (Abschluss-Review): alle eingegebenen Kilometerstände, neueste zuerst, zum Löschen', () => {
+    const s = mitDemo('2026-10-14', (a) => {
+      const t = a.daten.autos.find((x) => x.name === 'Tesla Model 3').id;
+      const h = a.historie[t][2026];
+      return { ...a, historie: { ...a.historie, [t]: { ...a.historie[t], 2026: { ...h, km: [{ datum: '2026-01-05', km: 9000, quelle: 'eingabe' }, ...h.km] } } } };
+    });
+    const m = autoSeiteModel(s, HEUTE, id(s, 'Tesla Model 3'));
+    assert.deepEqual(m.km.eintraege, [
+      { datum: '2026-10-02', jahr: 2026, text: '02.10.2026 · 18.400 km', beschriftung: 'Löschen: Kilometerstand vom 02.10.2026 (18.400 km)' },
+      { datum: '2026-01-05', jahr: 2026, text: '05.01.2026 · 9.000 km', beschriftung: 'Löschen: Kilometerstand vom 05.01.2026 (9.000 km)' },
+    ]);
+    assert.deepEqual(autoSeiteModel(s, HEUTE, id(s, 'Fiat 500')).km.eintraege.map((e) => e.text), ['06.10.2026 · 99.800 km']);
   });
 
   test('Vignette: Jahr, Stand, die 3 Hinweise, Quelle ASFINAG', () => {
@@ -355,7 +382,9 @@ describe('Pille und Text widersprechen sich nie (Ruling I1 nach dem Review T4)',
     assert.equal(faelligText({ regel: regel('wischer'), status: 'ok', datum: '2026-11-30', quelle: 'zeit' }, HEUTE), 'fällig am 30.11.2026');
     const s = mitDemo();
     const fiat = autoSeiteModel(s, HEUTE, id(s, 'Fiat 500')).faellig.find((z) => z.typ === 'reifenwechsel');
-    assert.deepEqual([fiat.status, fiat.text, fiat.aktion], ['ok', 'Winterreifen montieren – ab 15.10., spätestens 01.11.2026', 'Reifenwechsel eintragen']);
+    assert.deepEqual([fiat.status, fiat.text, fiat.aktion], ['unbekannt', 'unbekannt – Reifenwechsel eintragen', 'Reifenwechsel eintragen']);
+    const imWinter = autoSeiteModel(mitDemo('2026-11-20'), '2026-11-20', id(s, 'Fiat 500')).faellig.find((z) => z.typ === 'reifenwechsel');
+    assert.deepEqual([imWinter.status, imWinter.text], ['unbekannt', 'unbekannt – Winterreifen montieren? Bitte den Reifenwechsel eintragen']);
   });
 });
 

@@ -10,7 +10,7 @@ import { entferneExtra, entferneStand, extraWiederherstellen, fuegeExtraHinzu, l
 import { artAendern, artArchivieren, artHinzufuegen, artVerschieben, katalogErgaenzen, leererMonat, normalisiereKatalog, normalisiereMonat, schaltePinsel, schichtAm, setzeNotiz, setzeSchicht, standardKatalog, tageImMonat, vorladeMonate, zusatzEntfernen, zusatzHinzufuegen, zusatzWiederherstellen } from '../domain/schicht.js';
 import { FIX_SHARDS, TEXT_FIX_UNLESBAR, TEXT_FIX_VOLL, TEXT_TEIL_GESPERRT, leererShard, neueFixId, normalisiereShard, postenAnzahlPruefen, postenArchivieren, postenLoeschen, postenPruefen, postenSetzen, postenWiederanlegen, postenWiederherstellen, shardFuer } from '../domain/fixkosten.js';
 import { MAX_SERIEN_WOCHEN, naechsterWochentag, wochenSerie } from './serie.js';
-import { TEXT_AUTOS_GESPERRT, TEXT_AUTO_WEG, TEXT_HISTORIE_GESPERRT, arbeitLoeschen as arbeitLoeschenRein, arbeitPruefen, arbeitSetzen, arbeitSpur, arbeitWiederherstellen, autoAnlegen, autoLoeschen as autoLoeschenRein, autoSetzen, autoSpur, autoWiederherstellen, autosWarnungen, historieJahrEintragen, historieWarnungen, kmEintragen, kmPruefen, leereAutos, leereHistorie, neueAutoId, regelSetzen, satzSetzen } from '../domain/autos.js';
+import { TEXT_AUTOS_GESPERRT, TEXT_AUTO_WEG, TEXT_HISTORIE_GESPERRT, arbeitLoeschen as arbeitLoeschenRein, arbeitPruefen, arbeitSetzen, arbeitSpur, arbeitWiederherstellen, autoAnlegen, autoLoeschen as autoLoeschenRein, autoSetzen, autoSpur, autoWiederherstellen, autosWarnungen, historieJahrBekannt, historieJahrEintragen, historieWarnungen, kmEintragen, kmLoeschen as kmLoeschenRein, kmPruefen, kmSpur, kmWiederherstellen, leereAutos, leereHistorie, neueAutoId, regelLoeschen as regelLoeschenRein, regelSetzen, regelSpur, regelWiederherstellen, satzLoeschen as satzLoeschenRein, satzSetzen, satzSpur, satzVerwendet, satzVerwendetText, satzWiederherstellen } from '../domain/autos.js';
 import { autosHistorien, kmPunkte } from '../domain/autos-rechnung.js';
 import { TEXT_ZIELE_GESPERRT, TEXT_ZIELE_NICHT_GELADEN, freiVerschieben as zielFreiVerschieben, leereZiele, neueZielId, startMonat, verschiebungLoeschen as verschiebungLoeschenRein, verschiebungWiederherstellen as verschiebungWiederherstellenRein, zielAusblenden as zielAusblendenRein, zielBeenden as zielBeendenRein, zielLoeschen as zielLoeschenRein, zielSchluss, zielSetzen, zielSpur, zielWiederherstellen as zielWiederherstellenRein, zieleWarnungen } from '../domain/sparziele.js';
 
@@ -44,6 +44,8 @@ const TEXT_AUTOS_NEUER = 'Diesen Eintrag hat das andere Telefon mit einer neuere
 const TEXT_REGEL_WEG = 'Diese Regel gibt es nicht mehr – sie wurde wohl auf dem anderen Telefon gelöscht.';
 const TEXT_SATZ_WEG = 'Diesen Reifensatz gibt es nicht mehr – er wurde wohl auf dem anderen Telefon gelöscht.';
 const TEXT_ARBEIT_WEG = 'Diese Arbeit gibt es nicht mehr – sie wurde wohl auf dem anderen Telefon gelöscht.';
+const TEXT_KM_WEG = 'Diesen Kilometerstand gibt es nicht mehr – er wurde wohl auf dem anderen Telefon gelöscht.';
+const TEXT_SATZ_VERLAUF_GESPERRT = 'Ein Teil des Verlaufs dieses Autos ist unlesbar – ob der Reifensatz dort noch vorkommt, lässt sich nicht prüfen. Bitte die App auf beiden Telefonen aktualisieren.';
 const TEXT_KENNUNG_BELEGT = 'Diese Kennung ist schon vergeben. Bitte noch einmal versuchen.';
 
 /**
@@ -131,7 +133,7 @@ function zieleZustand(gelesen, status) {
 const istObjekt = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 
 /**
- * Autos im Zustand: `daten` = Hauptteil { v, autos, regeln, saetze, jahre, fremd? } (domain/autos.js; unlesbar → leer), `historie` =
+ * Autos im Zustand: `daten` = Hauptteil { v, autos, regeln, saetze, ab, fremd? } (domain/autos.js; unlesbar → leer), `historie` =
  * { [autoId]: { [jahr]: { v, auto, jahr, arbeiten, km, fremd? } } } (die Verlauf-Teile aus dem Jahres-Index; ein gelöschtes Auto kann
  * hier noch stehen, maßgeblich ist daten.autos), `status` null (noch nie gelesen) | 'gespeichert' (Schnappschuss oder Beispieldaten,
  * noch nicht aus dem Kalender) | 'laedt' | 'geladen' | 'fehler' (letztes Lesen gescheitert: Daten wie zuletzt gelesen), `warnungen`
@@ -1022,7 +1024,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
    */
   async function indexSichern(auto, jahr) {
     const e = autosOffen.get('haupt');
-    if ((e?.basis ?? state.autos.daten).jahre?.[auto]?.includes(jahr)) return;
+    if (historieJahrBekannt(e?.basis ?? state.autos.daten, auto, jahr)) return;
     const gespeichert = await adapter.aendereAutos(fachlich((d) => historieJahrEintragen(d, auto, jahr)));
     if (!gespeichert) return;
     if (e) e.basis = gespeichert;
@@ -1075,7 +1077,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     if (teilGesperrt(auto, jahr)) return { ok: false, fehler: TEXT_HISTORIE_GESPERRT };
     if (!(state.autos.daten.autos ?? []).some((a) => a.id === auto)) return { ok: false, fehler: TEXT_AUTO_WEG };
     try {
-      const bekannt = (autosOffen.get('haupt')?.basis ?? state.autos.daten).jahre?.[auto]?.includes(jahr);
+      const bekannt = historieJahrBekannt(autosOffen.get('haupt')?.basis ?? state.autos.daten, auto, jahr);
       if (!bekannt) {
         const r = await autosHauptAendern((d) => historieJahrEintragen(d, auto, jahr));
         if (!r.ok && !r.wartet) return r;
@@ -1104,6 +1106,9 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
 
   /** Alle vergebenen Kennungen von Arbeiten des Autos `auto` (alle angezeigten Jahre, auch fremde). */
   const arbeitKennungen = (auto) => new Set(Object.values(state.autos.historie[auto] ?? {}).flatMap((h) => [...(h.arbeiten ?? []).map((a) => a.id), ...(h.fremd?.w ?? []).map((k) => k?.i)]));
+
+  /** Alle angezeigten Arbeiten des Autos `auto` (alle Jahre). */
+  const arbeitenDesAutos = (auto) => Object.values(state.autos.historie[auto] ?? {}).flatMap((h) => h.arbeiten ?? []);
 
   /** Das Jahr, in dem die Arbeit `id` des Autos `auto` angezeigt wird, oder null. */
   function arbeitJahr(auto, id) {
@@ -1158,7 +1163,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       await autosHauptAendern((x) => {
         if (!x.fremd) return leereAutos();
         const fremdeAutos = new Set((x.fremd.a ?? []).map((k) => k?.i));
-        return { ...leereAutos(), jahre: Object.fromEntries(Object.entries(x.jahre ?? {}).filter(([id]) => fremdeAutos.has(id))), fremd: x.fremd };
+        return { ...leereAutos(), ab: Object.fromEntries(Object.entries(x.ab ?? {}).filter(([id]) => fremdeAutos.has(id))), fremd: x.fremd };
       }),
     );
   }
@@ -2349,6 +2354,67 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       if (fehler) return { ok: false, fehler };
       const r = await autosInJahrAendern(autoId, Number(datum.slice(0, 4)), (h) => kmEintragen(h, { datum, km }, { heute }));
       return r.ok ? { ok: true, warnung } : r;
+    },
+
+    /**
+     * Kilometerstand vom Tag `datum` des Autos `autoId` löschen (nur der Teil dieses Jahres wird geschrieben). → wie `arbeitLoeschen`,
+     * bei Erfolg mit `rueckgaengig()`: genau dieser Stand (wie er im Kalender stand) wieder an seinem Tag.
+     */
+    async kmLoeschen(autoId, datum) {
+      const nichtBereit = await autosBereit();
+      if (nichtBereit) return { ok: false, fehler: nichtBereit };
+      if (!(state.autos.daten.autos ?? []).some((a) => a.id === autoId)) return { ok: false, fehler: TEXT_AUTO_WEG };
+      const jahr = typeof datum === 'string' ? Number(datum.slice(0, 4)) : NaN;
+      if (!kmSpur(state.autos.historie[autoId]?.[jahr], datum)) return { ok: false, fehler: TEXT_KM_WEG };
+      let spur = null;
+      const r = await autosInJahrAendern(autoId, jahr, (h) => {
+        const s = kmSpur(h, datum);
+        if (!s) throw new Error(TEXT_KM_WEG);
+        const neu = kmLoeschenRein(h, datum);
+        spur = s; // auf der neuesten Fassung
+        return neu;
+      });
+      const zurueck = async () => {
+        const nb = await autosBereit();
+        return nb ? { ok: false, fehler: nb } : autosInJahrAendern(autoId, jahr, (h) => kmWiederherstellen(h, spur));
+      };
+      return mitRueckgaengig(r, spur ? zurueck : null);
+    },
+
+    /**
+     * Reifensatz löschen – nur, wenn keine Arbeit im Verlauf ihn nennt (sonst Meldung, nichts geschrieben; erst diese Arbeiten löschen).
+     * → wie `autoSpeichern`, bei Erfolg mit `rueckgaengig()`: derselbe Satz an seiner alten Stelle.
+     */
+    async satzLoeschen(id) {
+      const nichtBereit = await autosBereit();
+      if (nichtBereit) return { ok: false, fehler: nichtBereit };
+      const satz = (state.autos.daten.saetze ?? []).find((x) => x.id === id);
+      if (!satz) return { ok: false, fehler: (state.autos.daten.fremd?.s ?? []).some((k) => k?.i === id) ? TEXT_AUTOS_NEUER : TEXT_SATZ_WEG };
+      if (state.autos.unlesbar.shards.some((x) => x.auto === satz.auto)) return { ok: false, fehler: TEXT_SATZ_VERLAUF_GESPERRT };
+      const n = satzVerwendet(arbeitenDesAutos(satz.auto), id);
+      if (n > 0) return { ok: false, fehler: satzVerwendetText(satz.name, n) };
+      let spur = null;
+      const r = await autosHauptSicher((d) => {
+        eintragVorhanden(d.saetze, d.fremd?.s, id, TEXT_SATZ_WEG);
+        const s = satzSpur(d, id);
+        const neu = satzLoeschenRein(d, id);
+        spur = s;
+        return neu;
+      });
+      return mitRueckgaengig(r, spur ? () => autosHauptSicher((d) => satzWiederherstellen(d, spur)) : null);
+    },
+
+    /** Regel löschen (statt nur abschalten). → wie `autoSpeichern`, bei Erfolg mit `rueckgaengig()`: dieselbe Regel an ihrer alten Stelle. */
+    async regelLoeschen(id) {
+      let spur = null;
+      const r = await autosHauptSicher((d) => {
+        eintragVorhanden(d.regeln, d.fremd?.r, id, TEXT_REGEL_WEG);
+        const s = regelSpur(d, id);
+        const neu = regelLoeschenRein(d, id);
+        spur = s;
+        return neu;
+      });
+      return mitRueckgaengig(r, spur ? () => autosHauptSicher((d) => regelWiederherstellen(d, spur)) : null);
     },
 
     async einstellungen(teil) {

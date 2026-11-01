@@ -310,6 +310,15 @@ export const BILDSCHIRME = [
     },
   },
   {
+    name: 'auto-km-alle',
+    titel: 'Auto: „Alle Stände“ mit „Löschen“ (M2, Abschluss-Review)',
+    oeffne: async (p) => {
+      await starteDemo(p, { route: `#/autos/${autoId(WERKTAG_DATUM, 'Tesla Model 3')}` });
+      await p.locator('.au-km-alle-kopf').click();
+      await p.locator('.au-km-eintrag').first().scrollIntoViewIfNeeded();
+    },
+  },
+  {
     name: 'auto-regel',
     titel: 'Auto: Regel (Info, Quelle, Intervall)',
     blatt: true,

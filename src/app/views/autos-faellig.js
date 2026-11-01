@@ -60,8 +60,6 @@ function vignetteText(f, art) {
 
 /** Saisonaler Reifenwechsel: „Winterreifen montieren – “ vor dem Text. */
 const vorsatz = (f) => (f.regel.typ === 'reifenwechsel' && f.saison ? `${f.saison === 'winter' ? 'Winter' : 'Sommer'}reifen montieren – ` : '');
-/** M7: weiß die App nicht, welcher Satz drauf ist, kommt der Saisontermin jedes Halbjahr – der Text sagt, wie das aufhört. */
-const nachsatz = (f) => (f.montiertUnbekannt ? '. Schon gewechselt? Bitte den Reifenwechsel eintragen.' : '');
 const nachKm = (f) => f.quelle === 'km' && Number.isInteger(f.km);
 
 /**
@@ -78,7 +76,7 @@ export function erinnerungText(f, art) {
   else if (art === 'auto0') text = km ? `heute etwa erreicht: ca. ${km}` : `heute fällig (${d})`;
   else if (art === 'autoUeber') text = km ? `seit etwa 1 Woche überfällig (bei ca. ${km})` : `seit 1 Woche überfällig (fällig am ${d})`;
   else text = km ? `bei ca. ${km} (etwa ${d}, ${ABSTAND[art]})` : `fällig am ${d} (${ABSTAND[art]})`;
-  return `${vorsatz(f)}${text}${nachsatz(f)}`;
+  return `${vorsatz(f)}${text}`; // unbekannt, welcher Satz drauf ist: gar keine Erinnerung (M7, Abschluss-Review)
 }
 
 /** „überfällig seit 01.10.2026“ (km-Termin: „seit etwa …“); überfällig nur nach km ohne vergangenes Datum: „ca. 300 km darüber“. */

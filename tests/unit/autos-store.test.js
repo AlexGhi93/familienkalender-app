@@ -10,7 +10,8 @@ import { createSnapshot, SNAPSHOT_KEY } from '../../src/calendar/snapshot.js';
 import { historieId } from '../../src/calendar/mapping.js';
 import { sicherungAnzahlText, sicherungErstellen } from '../../src/app/sicherung.js';
 import { TEXT_AUTOS_GESPERRT, TEXT_AUTO_WEG, TEXT_HISTORIE_GESPERRT, autoAnlegen, autoAusVorlage, autosText, historieJahrEintragen, historieText, leereAutos, leereHistorie, arbeitSetzen } from '../../src/domain/autos.js';
-import { planQuellen } from '../../src/push/plan.js';
+import { planeErinnerungen, planQuellen, quellenGeaendert } from '../../src/push/plan.js';
+import { autoKarteModel } from '../../src/app/views/autos-faellig.js';
 import { apiAttrappe, speicherAttrappe } from './hilfen.js';
 
 const JETZT = new Date('2026-11-01T08:00:00+01:00');
@@ -69,7 +70,7 @@ describe('Autos laden', () => {
     assert.equal(a.status, 'geladen');
     assert.equal(a.daten.autos.length, 2);
     assert.ok(autosHistorien(a).length >= 2);
-    for (const h of autosHistorien(a)) assert.ok(a.daten.jahre[h.auto].includes(h.jahr));
+    for (const h of autosHistorien(a)) assert.ok(a.daten.ab[h.auto] <= h.jahr);
     assert.equal(store.getState().schicht.vorgeladen, '2026-11');
   });
 
@@ -83,8 +84,9 @@ describe('Autos laden', () => {
     assert.equal(a.status, 'geladen');
     assert.deepEqual(a.daten, daten);
     assert.deepEqual(a.historie[id][2025], h25);
-    assert.deepEqual(a.historie[id][2026], leereHistorie(id, 2026));
+    assert.equal(2026 in a.historie[id], false, 'nie angelegt: ein leeres Jahr');
     assert.deepEqual(a.warnungen, []);
+    assert.deepEqual(a.unlesbar, { shards: [] });
     assert.equal(a.frisch, true);
   });
 
@@ -210,9 +212,17 @@ describe('Autos ändern', () => {
     const r2 = await t.store.arbeitSpeichern(oel(id, { datum: '2025-03-01', km: 80_000 }));
     assert.equal(r2.ok, true);
     assert.deepEqual(t.geschrieben(), ['PATCH fkautos', `POST ${historieId(id, 2025)}`]);
-    assert.deepEqual(autos(t.store).daten.jahre[id], [2025, 2026]);
+    assert.deepEqual(autos(t.store).daten.ab[id], 2025, 'M3: ein früheres Jahr senkt das erste Jahr');
+    assert.deepEqual(JSON.parse(t.text('fkautos')).j, { [id]: 2025 });
     assert.equal(JSON.parse(t.text(historieId(id, 2025))).w.length, 1);
     assert.equal(JSON.parse(t.text(historieId(id, 2026))).w.length, 1, 'der Teil 2026 bleibt unberührt');
+    // M3: ein Jahr zwischen erstem Jahr und heute (oder später) braucht den Hauptteil nicht
+    await t.store.arbeitSpeichern(oel(id, { datum: '2026-02-01', km: 85_000 }));
+    t.log.length = 0;
+    assert.equal((await t.store.kmSpeichern(id, { datum: '2025-12-01', km: 84_000 })).ok, true);
+    assert.deepEqual(t.geschrieben(), [`PATCH ${historieId(id, 2025)}`]);
+    await t.store.autosLaden();
+    assert.deepEqual(Object.keys(autos(t.store).historie[id]), ['2025', '2026']);
   });
 
   test('ungültige Arbeit, Datum in der Zukunft, unbekanntes Auto → Meldung, nichts geschrieben; km niedriger als früher → Warnung, gespeichert', async () => {
@@ -309,6 +319,76 @@ describe('Autos ändern', () => {
   });
 });
 
+describe('M2 (Abschluss-Review): löschen fast überall, mit „Rückgängig“', () => {
+  test('Kilometerstand löschen + Rückgängig: der Teil ist danach Zeichen für Zeichen wie vorher; unbekannt → Meldung', async () => {
+    const { daten, id } = fiat();
+    const t = await google({ vorhanden: { fkautos: autosText(historieJahrEintragen(daten, id, 2026)) } });
+    await t.store.autosLaden();
+    for (const [datum, km] of [['2026-09-01', 98_000], ['2026-10-01', 99_000], ['2026-10-20', 99_800]]) assert.equal((await t.store.kmSpeichern(id, { datum, km })).ok, true);
+    const vorher = t.text(historieId(id, 2026));
+    const r = await t.store.kmLoeschen(id, '2026-10-01');
+    assert.equal(r.ok, true);
+    assert.deepEqual(autos(t.store).historie[id][2026].km.map((p) => p.datum), ['2026-09-01', '2026-10-20']);
+    assert.deepEqual(JSON.parse(t.text(historieId(id, 2026))).k.map((p) => p.d), ['2026-09-01', '2026-10-20']);
+    const z = await r.rueckgaengig();
+    assert.equal(z.ok, true);
+    assert.equal(t.text(historieId(id, 2026)), vorher);
+    assert.deepEqual(await t.store.kmLoeschen(id, '2026-01-01'), { ok: false, fehler: 'Diesen Kilometerstand gibt es nicht mehr – er wurde wohl auf dem anderen Telefon gelöscht.' });
+    assert.deepEqual(await t.store.kmLoeschen('weg00000', '2026-10-01'), { ok: false, fehler: TEXT_AUTO_WEG });
+  });
+
+  test('Reifensatz löschen + Rückgängig nur, wenn keine Arbeit ihn nennt; sonst klare Meldung und nichts geschrieben', async () => {
+    const { daten, id, paket } = fiat();
+    const [sommer, winter] = paket.saetze;
+    const t = await google({ vorhanden: { fkautos: autosText(historieJahrEintragen(daten, id, 2026)) }, ids: ['arb00001'] });
+    await t.store.autosLaden();
+    assert.equal((await t.store.arbeitSpeichern({ auto: id, typ: 'reifenwechsel', datum: '2026-04-10', km: 90_000, details: { montiert: sommer.id } })).ok, true);
+    const vorher = t.text('fkautos');
+    const anzahl = t.geschrieben().length;
+    const belegt = await t.store.satzLoeschen(sommer.id);
+    assert.deepEqual(belegt, { ok: false, fehler: '„Sommer“ steht in 1 Arbeit im Verlauf und lässt sich deshalb nicht löschen. Erst diese Arbeiten im Verlauf löschen – dann geht es.' });
+    assert.equal(t.geschrieben().length, anzahl, 'nichts geschrieben');
+    const r = await t.store.satzLoeschen(winter.id);
+    assert.equal(r.ok, true);
+    assert.deepEqual(autos(t.store).daten.saetze.map((x) => x.id), [sommer.id]);
+    assert.deepEqual(JSON.parse(t.text('fkautos')).s.map((x) => x.i), [sommer.id]);
+    assert.equal((await r.rueckgaengig()).ok, true);
+    assert.equal(t.text('fkautos'), vorher);
+    assert.deepEqual(await t.store.satzLoeschen('weg00000'), { ok: false, fehler: 'Diesen Reifensatz gibt es nicht mehr – er wurde wohl auf dem anderen Telefon gelöscht.' });
+    // die Arbeit gelöscht → der Satz ist frei
+    assert.equal((await t.store.arbeitLoeschen(id, 2026, 'arb00001')).ok, true);
+    assert.equal((await t.store.satzLoeschen(sommer.id)).ok, true);
+  });
+
+  test('Regel löschen + Rückgängig: Hauptteil exakt wie vorher; Push-Plan und Karte auf Heute folgen sofort', async () => {
+    const { daten, id, paket } = fiat();
+    const t = await google({ vorhanden: { fkautos: autosText(historieJahrEintragen(daten, id, 2026)) } });
+    await t.store.autosLaden();
+    const vignette = paket.regeln.find((x) => x.typ === 'vignette');
+    const vorher = t.text('fkautos');
+    const heute = '2027-01-10';
+    const plan = async () => (await planeErinnerungen(t.store.getState(), { jetzt: new Date('2026-12-01T08:00:00+01:00') })).filter((p) => p.titel.startsWith('🚗') && p.titel.includes('Vignette'));
+    const karte = () => (autoKarteModel(t.store.getState().autos, heute)?.zeilen ?? []).filter((z) => z.titel.includes('Vignette'));
+    assert.ok((await plan()).length > 0);
+    assert.equal(karte().length, 1);
+    await t.store.schichtVorladen();
+    const q = planQuellen(t.store.getState(), JETZT);
+    assert.ok(q, 'der Plan geht hinaus');
+    const r = await t.store.regelLoeschen(vignette.id);
+    assert.equal(r.ok, true);
+    assert.equal(autos(t.store).daten.regeln.some((x) => x.id === vignette.id), false);
+    assert.equal(JSON.parse(t.text('fkautos')).r.some((x) => x.i === vignette.id), false);
+    assert.deepEqual(await plan(), []);
+    assert.deepEqual(karte(), []);
+    assert.equal(quellenGeaendert(planQuellen(t.store.getState(), JETZT), q), true, 'der Plan wird neu gesendet');
+    assert.equal((await r.rueckgaengig()).ok, true);
+    assert.equal(t.text('fkautos'), vorher);
+    assert.ok((await plan()).length > 0);
+    assert.equal(karte().length, 1);
+    assert.deepEqual(await t.store.regelLoeschen('weg00000'), { ok: false, fehler: 'Diese Regel gibt es nicht mehr – sie wurde wohl auf dem anderen Telefon gelöscht.' });
+  });
+});
+
 describe('Zwei Telefone (Review Focus 4)', () => {
   test('beide tragen für dasselbe Auto im selben Jahr eine Arbeit ein → beide bleiben, auch der Jahres-Index nur einmal', async () => {
     const { daten, id } = fiat();
@@ -320,7 +400,7 @@ describe('Zwei Telefone (Review Focus 4)', () => {
     assert.deepEqual([ra.ok, rb.ok], [true, true]);
     const teil = JSON.parse(a.text(historieId(id, 2026)));
     assert.deepEqual(teil.w.map((w) => w.i).sort(), ['aaaa0001', 'bbbb0001']);
-    assert.deepEqual(JSON.parse(a.text('fkautos')).j, { [id]: [2026] });
+    assert.deepEqual(JSON.parse(a.text('fkautos')).j, { [id]: 2026 });
     // nacheinander mit veraltetem Stand: der zweite schreibt auf die neueste Fassung
     await a.store.arbeitSpeichern(oel(id, { datum: '2026-06-01', km: 88_000 }));
     await b.store.arbeitSpeichern(oel(id, { datum: '2026-06-02', km: 88_100 }));
@@ -393,6 +473,27 @@ describe('Unlesbar und fremd', () => {
     const w = JSON.parse(t.text(historieId(id, 2026))).w;
     assert.deepEqual(w.at(-1), FREMD_ARBEIT);
     assert.equal(w.length, 2);
+  });
+
+  test('M3: ein Lesefehler eines Verlauf-Teils (HTTP 500) sperrt wie bisher – nichts wird als leeres Jahr überschrieben', async () => {
+    const { daten, id } = fiat();
+    const h25 = arbeitSetzen(leereHistorie(id, 2025), { ...oel(id, { datum: '2025-05-10', km: 80_000 }), id: 'arb00025' }, { heute: HEUTE });
+    const text25 = historieText(h25);
+    let kaputt = true;
+    const t = await google({
+      vorhanden: { fkautos: autosText(historieJahrEintragen(daten, id, 2025)), [historieId(id, 2025)]: text25 },
+      ids: ['arb00001'],
+      stoeren: (e) => ({ ...e, holen: async (k, eid) => (kaputt && eid === historieId(id, 2025) ? Promise.reject(Object.assign(new Error('HTTP 500'), { status: 500 })) : e.holen(k, eid)) }),
+    });
+    const r = await t.store.autosLaden();
+    assert.equal(r.ok, false);
+    assert.equal(autos(t.store).frisch, false);
+    const w = await t.store.arbeitSpeichern(oel(id, { datum: '2025-06-01', km: 81_000 }));
+    assert.equal(w.ok, false);
+    assert.equal(t.text(historieId(id, 2025)), text25, 'der Teil bleibt unberührt');
+    kaputt = false;
+    assert.deepEqual(await t.store.autosLaden(), { ok: true });
+    assert.deepEqual(autos(t.store).historie[id][2025], h25);
   });
 
   test('Netzfehler beim Speichern: zurückgenommen, neu gelesen, gemeldet; abgelaufene Anmeldung: wartet und wird danach gespeichert', async () => {
@@ -475,7 +576,7 @@ describe('Schnappschuss, Sicherung, Demo', () => {
     await store.kontoLeeren();
     assert.deepEqual(autos(store).daten.autos, []);
     const g = await adapter.leseAutos();
-    assert.deepEqual([g.daten.autos, g.daten.regeln, g.daten.saetze, g.daten.jahre], [[], [], [], {}]);
+    assert.deepEqual([g.daten.autos, g.daten.regeln, g.daten.saetze, g.daten.ab], [[], [], [], {}]);
     const teile = JSON.parse(speicher.getItem(KEY)).autos.teile;
     for (const text of Object.values(teile)) assert.deepEqual([JSON.parse(text).w, JSON.parse(text).k], [[], []]);
     // neuer Start: bleibt leer
@@ -538,7 +639,7 @@ describe('Fix-Runde 1: abgelaufene Anmeldung, Nachholen', () => {
     await t.store.arbeitSpeichern(oel(id));
     t.setze(() => null);
     await t.store.wiederholeAusstehende();
-    assert.deepEqual(JSON.parse(t.text('fkautos')).j, { [id]: [2026] });
+    assert.deepEqual(JSON.parse(t.text('fkautos')).j, { [id]: 2026 });
     await t.store.autosLaden();
     assert.equal(autos(t.store).historie[id][2026].arbeiten.length, 1);
   });

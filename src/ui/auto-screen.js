@@ -6,7 +6,7 @@ import { h } from './dom.js';
 import { abschnitt } from './components.js';
 import { fortschritt, hochzaehlen } from './bewegung.js';
 import { TEXT_DATENSCHUTZ, autoSeiteModel } from '../app/views/autos-model.js';
-import { arbeitLoeschen, oeffneArbeitFormular, oeffneAutoFormular, oeffneKmFormular, oeffneRegelFormular, oeffneSatzFormular, regelEinschalten } from './auto-formular.js';
+import { arbeitLoeschen, kmLoeschen, oeffneArbeitFormular, oeffneAutoFormular, oeffneKmFormular, oeffneRegelFormular, oeffneSatzFormular, regelEinschalten, satzLoeschen } from './auto-formular.js';
 
 /** Knopf „Nochmal versuchen“: liest die Autos neu (das Neuzeichnen ersetzt ihn). */
 export function autosNochmalKnopf(store) {
@@ -130,6 +130,34 @@ function faelligAbschnitt(m, ctx) {
   );
 }
 
+// „Alle Stände“ bleibt nach dem Neuzeichnen (z. B. nach einem Löschen) offen
+const kmListeOffen = new Set();
+
+/** M2 (Abschluss-Review): alle eingegebenen Kilometerstände, je mit „Löschen“ (danach „Rückgängig“). */
+function kmListe(m, ctx) {
+  const eintraege = m.km.eintraege ?? [];
+  if (eintraege.length === 0) return null;
+  const liste = h(
+    'details',
+    { class: 'au-km-alle', open: kmListeOffen.has(m.id) },
+    h('summary', { class: 'au-km-alle-kopf' }, `Alle Stände (${eintraege.length})`),
+    h(
+      'ul',
+      { class: 'au-km-liste' },
+      eintraege.map((e) =>
+        h(
+          'li',
+          { class: 'au-km-eintrag', 'data-datum': e.datum },
+          h('span', {}, e.text),
+          h('button', { class: 'knopf klein au-loeschen', type: 'button', 'aria-label': e.beschriftung, disabled: Boolean(m.gesperrt), onClick: (ev) => kmLoeschen(ctx, m.id, e.datum, [ev.currentTarget]) }, 'Löschen'),
+        ),
+      ),
+    ),
+  );
+  liste.addEventListener('toggle', () => (liste.open ? kmListeOffen.add(m.id) : kmListeOffen.delete(m.id)));
+  return liste;
+}
+
 function kmAbschnitt(m, ctx) {
   const k = m.km;
   return abschnitt(
@@ -143,11 +171,12 @@ function kmAbschnitt(m, ctx) {
       !k.stand && k.zahl === null ? h('small', {}, 'Noch kein Kilometerstand eingetragen – dann rechnet die App die km-Termine.') : null,
       k.warnung ? h('p', { class: 'au-warnung', role: 'note' }, `⚠ ${k.warnung}`) : null,
       h('div', { class: 'knopfzeile' }, knopf('Kilometerstand aktualisieren', 'primaer', () => oeffneKmFormular(ctx, m.id), { disabled: Boolean(m.gesperrt) })),
+      kmListe(m, ctx),
     ),
   );
 }
 
-function satzKarte(s, r, m) {
+function satzKarte(s, r, m, ctx) {
   let balken = null;
   if (r.mitRotation) {
     const breite = Math.round(s.anteil * 100);
@@ -163,6 +192,8 @@ function satzKarte(s, r, m) {
     r.mitRotation ? h('div', { class: 'au-satz-zahl' }, h('span', {}, 'Seit dem Rotieren'), h('b', {}, s.seitRotationText)) : null,
     balken,
     s.rotationFaellig ? h('p', { class: 'au-warnung' }, `⚠ Rotieren fällig – vorne/hinten tauschen (alle ${r.rotationKm.toLocaleString('de-AT')} km)`) : null,
+    // M2 (Abschluss-Review): steht der Satz im Verlauf, erklärt die Meldung, warum er (noch) nicht gelöscht wird
+    h('div', { class: 'knopfzeile au-satz-loeschen' }, knopf('Reifensatz löschen', 'au-loeschen', (ev) => satzLoeschen(ctx, s.id, [ev.currentTarget]), { disabled: Boolean(m.gesperrt), 'aria-label': s.loeschenBeschriftung })),
   );
 }
 
@@ -175,7 +206,7 @@ function reifenAbschnitt(m, ctx) {
       'article',
       { class: 'karte au-reifen' },
       r.saetze.length === 0 ? h('p', { class: 'leise' }, 'Noch keine Reifensätze. Lege Sommer- und Winterreifen an – dann rechnet die App die Kilometer je Satz und erinnert an den Wechsel.') : null,
-      r.saetze.map((s) => satzKarte(s, r, m)),
+      r.saetze.map((s) => satzKarte(s, r, m, ctx)),
       r.saison ? h('div', { class: 'fk-box au-box au-saison' }, h('b', {}, `🗓️ ${r.saison.text}`), h('small', {}, r.saison.hinweis), h('a', { class: 'au-quelle', href: r.saison.quelle, target: '_blank', rel: 'noopener noreferrer' }, 'Quelle: oesterreich.gv.at ↗')) : null,
       h(
         'div',

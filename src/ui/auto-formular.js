@@ -1,6 +1,6 @@
 // Blätter der Autos: „Erledigt eintragen“ / „Arbeit ändern“ (je Art eigene Felder: Öl Sorte/Menge/Filter, Reifenwechsel Satz +
 // „vorne/hinten getauscht“, Rotation, Vignette Jahr/Art/gekauft am, Pickerl nächster Monat, sonst Datum/km/Notiz/Kosten),
-// „Kilometerstand aktualisieren“, „Regel“ (Info, Quelle, Intervall, aktiv), „Auto hinzufügen“ (Vorlage) und „Fahrzeugdaten bearbeiten“
+// „Kilometerstand aktualisieren“ (Stände löschen), „Regel“ (Info, Quelle, Intervall, aktiv, löschen), Reifensatz löschen, „Auto hinzufügen“ (Vorlage) und „Fahrzeugdaten bearbeiten“
 // samt Löschen mit „Rückgängig“. Ergebnisse des Stores erscheinen als eine Meldung (gemeldet = die Shell zeigt sie schon); bei einem
 // Fehler bleibt das Blatt mit der Eingabe offen. Alles Rechnen steht in app/views/autos-model.js, alle Texte kommen als Text in die Seite.
 import { fuelle, h } from './dom.js';
@@ -336,6 +336,18 @@ export async function arbeitLoeschen({ store }, autoId, jahr, id, knoepfe = []) 
   if (!geloeschtMelden(await sicher(store.arbeitLoeschen(autoId, jahr, id)))) knoepfe.forEach((k) => (k.disabled = false));
 }
 
+/** Einen Kilometerstand löschen (Liste „Alle Stände“) → „Gelöscht ✓ · Rückgängig“. */
+export async function kmLoeschen({ store }, autoId, datum, knoepfe = []) {
+  knoepfe.forEach((k) => (k.disabled = true));
+  if (!geloeschtMelden(await sicher(store.kmLoeschen(autoId, datum)))) knoepfe.forEach((k) => (k.disabled = false));
+}
+
+/** Einen Reifensatz löschen → „Gelöscht ✓ · Rückgängig“; steht er im Verlauf, sagt die Meldung, was zu tun ist. */
+export async function satzLoeschen({ store }, satzId, knoepfe = []) {
+  knoepfe.forEach((k) => (k.disabled = true));
+  if (!geloeschtMelden(await sicher(store.satzLoeschen(satzId)))) knoepfe.forEach((k) => (k.disabled = false));
+}
+
 // ---------------------------------------------------------------- Kilometerstand
 
 export function oeffneKmFormular({ store }, autoId) {
@@ -453,6 +465,29 @@ export function oeffneRegelFormular({ store }, regelId) {
         haken('Aktiv: erinnern und unter „Fällig“ zeigen', e.aktiv, (w) => (e.aktiv = w)),
       ),
       h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein primaer', type: 'button', disabled: aus, onClick: speichern }, speichert ? 'Speichert …' : 'Speichern')),
+      h('small', { class: 'leise fk-tipp' }, 'Abschalten behält die Regel (ohne Erinnerung); Löschen entfernt sie – mit „Rückgängig“.'),
+      h(
+        'div',
+        { class: 'knopfzeile loeschen-zeile' },
+        h(
+          'button',
+          {
+            class: 'knopf klein gefahr',
+            type: 'button',
+            disabled: aus,
+            onClick: async () => {
+              if (speichert) return;
+              speichert = true;
+              neuZeichnen();
+              const geloescht = geloeschtMelden(await sicher(store.regelLoeschen(regelId)));
+              speichert = false;
+              if (geloescht) schliessen();
+              else neuZeichnen();
+            },
+          },
+          'Regel löschen',
+        ),
+      ),
     ];
   });
 }
@@ -646,7 +681,7 @@ const SATZ_NAMEN = [
 
 /**
  * „Reifensatz anlegen“ (M7, Review T4): Name (Sommer/Winter/Ganzjahr oder frei), Art, optional Größe – damit auch ein „Leer“-Auto einen
- * Reifenwechsel eintragen kann. Umbenennen und Löschen kommen später. `danach` läuft nach dem Speichern (z. B. das Reifenwechsel-Blatt neu zeichnen).
+ * Reifenwechsel eintragen kann. Löschen: „Reifensatz löschen“ auf der Karte des Satzes (nur, wenn ihn keine Arbeit nennt). `danach` läuft nach dem Speichern (z. B. das Reifenwechsel-Blatt neu zeichnen).
  */
 export function oeffneSatzFormular({ store }, autoId, { danach = () => {} } = {}) {
   const auto = (store.getState().autos.daten.autos ?? []).find((a) => a.id === autoId);
