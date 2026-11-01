@@ -150,10 +150,11 @@ export function entferneFehlerToast() {
  * Rückfrage als Blatt; ruft `beiJa` nur nach Bestätigung auf – und höchstens einmal: ein Doppeltipp, während das Blatt noch
  * hinausgleitet, löst die Aktion kein zweites Mal aus (der Knopf ist sofort aus).
  */
-export function bestaetigen({ titel, text, ja = 'Ja', nein = 'Abbrechen', gefahr = false, beiJa }) {
+export function bestaetigen({ titel, text, ja = 'Ja', nein = 'Abbrechen', gefahr = false, beiJa, beimSchliessen = () => {} }) {
   let gewaehlt = false;
   return blatt({
     titel,
+    beimSchliessen,
     render: ({ schliessen }) => [
       h('p', { class: 'blatt-text' }, text),
       h(

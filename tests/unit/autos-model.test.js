@@ -21,6 +21,8 @@ import {
   rotationVorschlag,
 } from '../../src/app/views/autos-model.js';
 import { TEXT_AUTOS_GESPERRT, leereAutos } from '../../src/domain/autos.js';
+import { addDays } from '../../src/domain/dates.js';
+import { faelligText } from '../../src/app/views/autos-model.js';
 
 const HEUTE = '2026-10-14';
 
@@ -43,7 +45,7 @@ describe('Liste der Autos', () => {
     assert.equal(tesla.km.text, 'ca. 18.872 km');
     assert.equal(tesla.ziel, `#/autos/${tesla.id}`);
     assert.deepEqual([tesla.naechste.titel, tesla.naechste.status, tesla.naechste.symbol], ['Reifenwechsel (saisonal)', 'ok', '✓']);
-    assert.equal(tesla.naechste.text, 'Winterreifen montieren – fällig am 01.11.2026 (in 18 Tagen)');
+    assert.equal(tesla.naechste.text, 'Winterreifen montieren – ab 15.10., spätestens 01.11.2026'); // ✓ ok: kein Countdown (Ruling I1)
     assert.equal(tesla.faelligText, null);
     assert.equal(tesla.untertitel, 'Elektro · EZ 06/2025');
     assert.match(tesla.beschriftung, /^Tesla Model 3, W-12345, ca\. 18\.872 km, Als Nächstes: Reifenwechsel/);
@@ -251,7 +253,7 @@ describe('Regel und Auto', () => {
     const fiat = id(s, 'Fiat 500');
     const regel = s.autos.daten.regeln.find((r) => r.auto === fiat && r.typ === 'oelwechsel');
     const e = regelEntwurf(s, regel.id);
-    assert.deepEqual([e.name, e.monate, e.km, e.aktiv, e.mitIntervall], ['Ölwechsel', '12', '15000', true, true]);
+    assert.deepEqual([e.name, e.monate, e.km, e.aktiv, e.mitIntervall], ['Ölwechsel', '12', '15.000', true, true]);
     assert.match(e.quelle, /fiat/);
     const { regel: neu } = entwurfZuRegel({ ...e, monate: '24', km: '20.000', aktiv: false });
     assert.deepEqual([neu.id, neu.intervallMonate, neu.intervallKm, neu.aktiv, neu.typ], [regel.id, 24, 20000, false, 'oelwechsel']);
@@ -289,5 +291,87 @@ describe('Wischen im Verlauf (src/ui/auto-screen.js)', () => {
     assert.equal(wischZiel(5, 0, false), null);
     assert.equal(wischZiel(30, 0, true), 'zu');
     assert.equal(wischZiel(-20, 0, true), 'auf');
+  });
+});
+
+describe('Pille und Text widersprechen sich nie (Ruling I1 nach dem Review T4)', () => {
+  /** Passt der Text zum Stand? → null oder der Grund. */
+  function widerspruch(z) {
+    const t = z.text;
+    if (z.status === 'unbekannt') return /^unbekannt – /.test(t) ? null : 'unbekannt ohne „unbekannt“';
+    if (z.status === 'ueberfaellig') return /überfällig|zu spät/.test(t) ? null : '⚠ ohne „überfällig“';
+    if (/überfällig|zu spät/.test(t)) return `${z.status} mit „überfällig“`;
+    if (z.status === 'ok' && /in d+ Tagen|(morgen)|(heute)/.test(t)) return '✓ ok mit Countdown';
+    if (z.status === 'bald' && /spätestens/.test(t)) return '⏳ bald mit „ab …, spätestens“';
+    if (z.status === 'bald' && /in ca. d+ (Monaten|Jahren)/.test(t) && !/noch ca./.test(t)) return '⏳ bald mit fernem Termin ohne km-Grund';
+    return null;
+  }
+
+  test('jeder Tag eines Jahres, beide Autos, Seite und „Als Nächstes“ der Liste', () => {
+    const s = mitDemo();
+    const fehler = [];
+    const gesehen = new Set();
+    for (let i = 0; i < 400; i += 1) {
+      const heute = addDays(HEUTE, i);
+      for (const a of s.autos.daten.autos) {
+        for (const z of autoSeiteModel(s, heute, a.id).faellig) {
+          gesehen.add(z.status);
+          const w = widerspruch(z);
+          if (w) fehler.push(`${heute} ${a.name} ${z.name}: ${w} – „${z.symbol} ${z.wort}“ / „${z.text}“`);
+        }
+      }
+      for (const k of autosListeModel(s, heute).karten) {
+        const w = k.naechste && widerspruch(k.naechste);
+        if (w) fehler.push(`${heute} Liste ${k.name}: ${w} – „${k.naechste.text}“`);
+      }
+    }
+    assert.deepEqual(fehler, []);
+    assert.deepEqual([...gesehen].sort(), ['bald', 'ok', 'ueberfaellig', 'unbekannt']); // die Matrix deckt alle Stände ab
+  });
+
+  test('saisonal: 14.10. „ab 15.10., spätestens 01.11.“ (✓), 15.10. Countdown (⏳); ebenso 31.03./01.04.', () => {
+    const s = mitDemo();
+    const tesla = id(s, 'Tesla Model 3');
+    const reifen = (heute) => autoSeiteModel(s, heute, tesla).faellig.find((z) => z.typ === 'reifenwechsel');
+    assert.deepEqual([reifen('2026-10-14').status, reifen('2026-10-14').text], ['ok', 'Winterreifen montieren – ab 15.10., spätestens 01.11.2026']);
+    assert.deepEqual([reifen('2026-10-15').status, reifen('2026-10-15').text], ['bald', 'Winterreifen montieren – fällig am 01.11.2026 (in 17 Tagen)']);
+    // Winter montiert (Fixture): Sommerreifen ab 01.04.
+    const w = s.autos.daten.saetze.find((x) => x.auto === tesla && x.art === 'winter');
+    const s2 = mitDemo(HEUTE, (a) => {
+      const h = a.historie[tesla][2026];
+      a.historie[tesla][2026] = { ...h, arbeiten: [...h.arbeiten, { id: 'demowint', auto: tesla, typ: 'reifenwechsel', datum: '2026-10-13', km: 18800, details: { montiert: w.id, rotiert: false } }] };
+      return a;
+    });
+    const z = (heute) => autoSeiteModel(s2, heute, tesla).faellig.find((x) => x.typ === 'reifenwechsel');
+    assert.deepEqual([z('2027-03-31').status, z('2027-03-31').text], ['ok', 'Sommerreifen montieren – ab 01.04., spätestens 15.04.2027']);
+    assert.deepEqual([z('2027-04-01').status, z('2027-04-01').text], ['bald', 'Sommerreifen montieren – fällig am 15.04.2027 (in 14 Tagen)']);
+  });
+
+  test('km-Termin ✓ ohne Datum dahinter, ⏳ mit; ⏳ nur wegen der km sagt die km; Knopf „Reifenwechsel eintragen“', () => {
+    const regel = (typ) => ({ typ, name: 'x' });
+    assert.equal(faelligText({ regel: regel('rotation'), status: 'ok', datum: '2027-03-01', quelle: 'km', km: 27800 }, HEUTE), 'bei ca. 27.800 km');
+    assert.equal(faelligText({ regel: regel('rotation'), status: 'bald', datum: '2026-11-01', quelle: 'km', km: 27800 }, HEUTE), 'bei ca. 27.800 km (etwa 01.11.2026)');
+    assert.equal(faelligText({ regel: regel('oelwechsel'), status: 'bald', datum: '2027-05-07', quelle: 'zeit', restKm: 800 }, HEUTE), 'fällig am 07.05.2027 (in ca. 7 Monaten) · noch ca. 800 km');
+    assert.equal(faelligText({ regel: regel('wischer'), status: 'ok', datum: '2026-11-30', quelle: 'zeit' }, HEUTE), 'fällig am 30.11.2026');
+    const s = mitDemo();
+    const fiat = autoSeiteModel(s, HEUTE, id(s, 'Fiat 500')).faellig.find((z) => z.typ === 'reifenwechsel');
+    assert.deepEqual([fiat.status, fiat.text, fiat.aktion], ['ok', 'Winterreifen montieren – ab 15.10., spätestens 01.11.2026', 'Reifenwechsel eintragen']);
+  });
+});
+
+describe('Reifensätze: Vorschlag ohne bekannten Satz (M8) und Auto ohne Sätze (M7)', () => {
+  test('nichts montiert: im Oktober Winter, im Mai Sommer vorgewählt', () => {
+    const s = mitDemo();
+    const fiat = id(s, 'Fiat 500');
+    const satz = (art) => s.autos.daten.saetze.find((x) => x.auto === fiat && x.art === art).id;
+    assert.equal(arbeitEntwurf(s, HEUTE, fiat, { typ: 'reifenwechsel' }).details.montiert, satz('winter'));
+    assert.equal(arbeitEntwurf(s, '2027-05-10', fiat, { typ: 'reifenwechsel' }).details.montiert, satz('sommer'));
+  });
+
+  test('ein Auto ohne Reifensätze hat einen leeren Reifen-Abschnitt (zum Anlegen), keinen fehlenden', () => {
+    const s = mitDemo(HEUTE, (a) => ({ ...a, daten: { ...a.daten, saetze: [] } }));
+    const r = autoSeiteModel(s, HEUTE, id(s, 'Fiat 500')).reifen;
+    assert.deepEqual([r.saetze, r.saison], [[], null]);
+    assert.equal(arbeitEntwurf(s, HEUTE, id(s, 'Fiat 500'), { typ: 'reifenwechsel' }).details.montiert, null);
   });
 });

@@ -320,10 +320,14 @@ export function faelligkeit(regel, arbeiten, auto, kmInfo, heute, { saetze = [] 
       if (saison === 'winter') {
         const falsch = md >= '11-01' || md < '03-15';
         const ende = `${md >= '11-01' ? j + 1 : j}-03-15`;
-        datum = !falsch ? naechster('11-01', w.datum) : heute < ende ? `${md >= '11-01' ? j : j - 1}-11-01` : naechster('11-01', gestern);
+        // M4 (Review T4): ebenso in der richtigen Saison montiert – der folgende Stichtag gilt nur bis zum Ende der Wintersaison danach
+        const stichtag = falsch ? `${md >= '11-01' ? j : j - 1}-11-01` : naechster('11-01', w.datum);
+        const bis = falsch ? ende : `${Number(stichtag.slice(0, 4)) + 1}-03-15`;
+        datum = heute < bis ? stichtag : naechster('11-01', gestern);
       } else {
         const falsch = md > '04-15' && md < '10-01';
-        datum = !falsch ? naechster('04-15', w.datum) : heute < `${j}-10-01` ? `${j}-04-15` : naechster('04-15', gestern);
+        const stichtag = falsch ? `${j}-04-15` : naechster('04-15', w.datum);
+        datum = heute < `${stichtag.slice(0, 4)}-10-01` ? stichtag : naechster('04-15', gestern);
       }
     } else {
       // nicht bekannt, was montiert ist: der nächste Stichtag ab heute (1.11. Winter, 15.4. Sommer)

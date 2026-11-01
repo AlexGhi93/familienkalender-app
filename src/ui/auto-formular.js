@@ -7,7 +7,7 @@ import { fuelle, h } from './dom.js';
 import { bestaetigen, blatt, chip, toast } from './components.js';
 import { datumFeld } from './eingabefelder.js';
 import { geloeschtMelden } from './fortschritt.js';
-import { erledigt, sicher } from './sparziele-formular.js';
+import { sicher } from './sparziele-formular.js';
 import { MONATE } from '../app/format-de.js';
 import { ARBEIT_TYPEN, AUTO_ANTRIEBE, AUTO_FELDER, AUTO_HALTUNGEN, MAX_ARBEIT_NOTIZ, VIGNETTE_ARTEN, kmText } from '../domain/autos.js';
 import {
@@ -33,6 +33,23 @@ import {
 } from '../app/views/autos-model.js';
 
 const TYPEN = new Map(ARBEIT_TYPEN.map((t) => [t.id, t]));
+const ALLGEMEINER_FEHLER = 'Das hat nicht geklappt. Bitte noch einmal versuchen.';
+
+/**
+ * Ergebnis des Stores melden; true = erledigt (gespeichert oder wartet nur auf die Anmeldung). Ein Fehler mit `gemeldet` zeigt schon die
+ * Shell. Die Erfolgsmeldung ersetzt eine noch stehende Fehlermeldung (M2, Review T4: nach einer berichtigten Eingabe soll man sehen, dass
+ * gespeichert wurde – sonst trägt man es womöglich ein zweites Mal ein).
+ */
+function erledigt(r, erfolg) {
+  if (r?.ok || r?.wartet) {
+    if (r.ok) toast(typeof erfolg === 'function' ? erfolg(r) : erfolg, { ersetztFehler: true });
+    return true;
+  }
+  if (!r?.gemeldet) toast(r?.fehler ?? ALLGEMEINER_FEHLER, { art: 'fehler' });
+  return false;
+}
+
+const SATZ_EMOJI = { winter: '❄️', sommer: '☀️', ganzjahr: '🌤️' };
 
 const feld = (titel, inhalt, ...mehr) => h('label', { class: 'feld' }, h('span', {}, titel), inhalt, ...mehr);
 const gruppe = (titel, inhalt, ...mehr) => h('div', { class: 'feld' }, h('span', { 'aria-hidden': 'true' }, titel), inhalt, ...mehr);
@@ -201,18 +218,20 @@ export function oeffneArbeitFormular({ store }, autoId, optionen = {}) {
         e.oel.info ? h('p', { class: 'leise fk-tipp' }, e.oel.info) : null,
       );
     }
+    e.saetze = (state.autos.daten.saetze ?? []).filter((s) => s.auto === autoId); // auch gerade erst angelegte (M7)
     if (e.typ === 'reifenwechsel') {
-      const vorschlag = e.details.montiert ? rotationVorschlag(store.getState(), heute, autoId, e.details.montiert) : { rotiert: false, text: null };
+      // M9 (Review T4): der Vorschlag gilt für heute – nur bei einem neuen Eintrag, nicht beim Ändern eines alten
+      const vorschlag = e.details.montiert && !bearbeiten ? rotationVorschlag(store.getState(), heute, autoId, e.details.montiert) : { rotiert: false, text: null };
       felder.push(
         gruppe(
           'Welcher Satz ist jetzt montiert?',
           e.saetze.length === 0
-            ? h('p', { class: 'leise' }, 'Dieses Auto hat noch keine Reifensätze.')
+            ? h('p', { class: 'leise' }, 'Dieses Auto hat noch keine Reifensätze – zuerst einen anlegen.')
             : h(
                 'div',
                 { class: 'chip-reihe', role: 'group', 'aria-label': 'Montierter Reifensatz' },
                 e.saetze.map((s) =>
-                  chip(`${s.art === 'winter' ? '❄️' : s.art === 'sommer' ? '☀️' : '🌤️'} ${s.name}`, {
+                  chip(`${SATZ_EMOJI[s.art] ?? '🛞'} ${s.name}`, {
                     art: e.details.montiert === s.id ? 'aktiv' : '',
                     onClick: () => {
                       e.details.montiert = s.id;
@@ -227,6 +246,12 @@ export function oeffneArbeitFormular({ store }, autoId, optionen = {}) {
           e.details.rotiert = w;
           rotiertVonHand = true;
         }),
+        h('div', { class: 'knopfzeile au-satz-neu' }, h('button', { class: 'knopf klein', type: 'button', onClick: () => oeffneSatzFormular({ store }, autoId, { danach: () => {
+                  // der neue Satz: ist noch keiner gewählt, gleich den der Saison vorschlagen
+                  e.saetze = (store.getState().autos.daten.saetze ?? []).filter((x) => x.auto === autoId);
+                  if (!e.details.montiert) detailsVorbelegen(store.getState(), heute, e);
+                  neuZeichnen();
+                } }) }, '＋ Reifensatz anlegen')),
         vorschlag.text ? h('p', { class: 'fk-box au-box au-vorschlag' }, `🔄 ${vorschlag.text}`) : null,
       );
     }
@@ -270,15 +295,14 @@ export function oeffneArbeitFormular({ store }, autoId, optionen = {}) {
             class: 'knopf klein gefahr',
             type: 'button',
             disabled: aus,
-            onClick: async (ev) => {
-              const knopf = ev.currentTarget;
-              knopf.disabled = true;
-              speichernKnopf.disabled = true;
-              if (geloeschtMelden(await sicher(store.arbeitLoeschen(autoId, e.jahr, e.id)))) schliessen();
-              else {
-                knopf.disabled = false;
-                speichernKnopf.disabled = false;
-              }
+            onClick: async () => {
+              if (speichert) return;
+              speichert = true; // M3 (Review T4): während des Löschens ist das ganze Blatt aus – auch nach einem Neuzeichnen
+              neuZeichnen();
+              const geloescht = geloeschtMelden(await sicher(store.arbeitLoeschen(autoId, e.jahr, e.id)));
+              speichert = false;
+              if (geloescht) schliessen();
+              else neuZeichnen();
             },
           },
           'Löschen',
@@ -458,6 +482,7 @@ export function oeffneAutoFormular({ store, ui }, { autoId = null, vorlage = 'te
   }
   let e = autoEntwurf(vorhanden, vorlage);
   let speichert = false;
+  let fragt = false; // die Rückfrage „Auto löschen?“ ist offen
   return formularBlatt(vorhanden ? 'Fahrzeugdaten bearbeiten' : '＋ Auto hinzufügen', ({ schliessen, neuZeichnen }) => {
     const gesperrt = autosSperre(store.getState().autos);
     const aus = Boolean(gesperrt) || speichert;
@@ -530,7 +555,37 @@ export function oeffneAutoFormular({ store, ui }, { autoId = null, vorlage = 'te
       }
       neuZeichnen();
     };
-    const loeschenKnopf = vorhanden ? h('button', { class: 'knopf klein gefahr', type: 'button', disabled: aus, onClick: () => autoLoeschenFragen({ store, ui }, vorhanden, schliessen) }, 'Auto löschen') : null;
+    // M3 (Review T4): nur eine Rückfrage zugleich; ab „Löschen“ ist das Blatt aus, nach einem Fehler wieder an
+    const loeschenKnopf = vorhanden
+      ? h(
+          'button',
+          {
+            class: 'knopf klein gefahr',
+            type: 'button',
+            disabled: aus || fragt,
+            onClick: () => {
+              if (fragt || speichert) return;
+              fragt = true;
+              neuZeichnen();
+              autoLoeschenFragen({ store, ui }, vorhanden, schliessen, {
+                beimSchliessen: () => {
+                  fragt = false;
+                  if (!speichert) neuZeichnen();
+                },
+                beginnt: () => {
+                  speichert = true;
+                  neuZeichnen();
+                },
+                fehlgeschlagen: () => {
+                  speichert = false;
+                  neuZeichnen();
+                },
+              });
+            },
+          },
+          'Auto löschen',
+        )
+      : null;
     return [
       gesperrt ? gesperrtHinweis(gesperrt) : null,
       h(
@@ -551,17 +606,89 @@ export function oeffneAutoFormular({ store, ui }, { autoId = null, vorlage = 'te
 }
 
 /** Rückfrage „Auto löschen?“, danach „Gelöscht ✓ · Rückgängig“ und zurück zur Liste. */
-export function autoLoeschenFragen({ store, ui }, auto, danach = () => {}) {
+export function autoLoeschenFragen({ store, ui }, auto, danach = () => {}, { beimSchliessen = () => {}, beginnt = () => {}, fehlgeschlagen = () => {} } = {}) {
   return bestaetigen({
     titel: 'Auto löschen?',
     text: `„${auto.name}“ mit allen Regeln und Reifensätzen löschen? Mit „Rückgängig“ kommt alles samt Verlauf zurück.`,
     ja: 'Löschen',
     gefahr: true,
+    beimSchliessen,
     beiJa: async () => {
+      beginnt();
       if (geloeschtMelden(await sicher(store.autoLoeschen(auto.id)))) {
         danach();
         ui.gehZu('autos');
-      }
+      } else fehlgeschlagen();
     },
+  });
+}
+
+// ---------------------------------------------------------------- Reifensatz
+
+const SATZ_NAMEN = [
+  ['Sommer', 'sommer'],
+  ['Winter', 'winter'],
+  ['Ganzjahr', 'ganzjahr'],
+];
+
+/**
+ * „Reifensatz anlegen“ (M7, Review T4): Name (Sommer/Winter/Ganzjahr oder frei), Art, optional Größe – damit auch ein „Leer“-Auto einen
+ * Reifenwechsel eintragen kann. Umbenennen und Löschen kommen später. `danach` läuft nach dem Speichern (z. B. das Reifenwechsel-Blatt neu zeichnen).
+ */
+export function oeffneSatzFormular({ store }, autoId, { danach = () => {} } = {}) {
+  const auto = (store.getState().autos.daten.autos ?? []).find((a) => a.id === autoId);
+  if (!auto) {
+    toast('Dieses Auto gibt es nicht mehr.', { art: 'fehler' });
+    return null;
+  }
+  const vorhanden = new Set((store.getState().autos.daten.saetze ?? []).filter((s) => s.auto === autoId).map((s) => s.art));
+  const start = SATZ_NAMEN.find(([, art]) => !vorhanden.has(art)) ?? SATZ_NAMEN[0];
+  const e = { name: start[0], art: start[1], groesse: auto.reifenGroessen ?? '' };
+  let speichert = false;
+  return formularBlatt('🛞 Reifensatz anlegen', ({ schliessen, neuZeichnen }) => {
+    const gesperrt = autosSperre(store.getState().autos);
+    const aus = Boolean(gesperrt) || speichert;
+    const speichern = async () => {
+      if (speichert) return;
+      speichert = true;
+      neuZeichnen();
+      const r = await sicher(store.satzSpeichern({ auto: autoId, name: e.name, art: e.art, ...(e.groesse.trim() ? { groesse: e.groesse } : {}) }));
+      speichert = false;
+      if (erledigt(r, 'Reifensatz angelegt ✓')) {
+        schliessen();
+        danach();
+        return;
+      }
+      neuZeichnen();
+    };
+    const name = textFeld({ wert: e.name, beschriftung: 'Name des Reifensatzes', platzhalter: 'z. B. Winter Alu', max: 20, beiEingabe: (w) => (e.name = w) });
+    return [
+      gesperrt ? gesperrtHinweis(gesperrt) : null,
+      h(
+        'fieldset',
+        { class: 'fk-felder au-felder', disabled: aus },
+        gruppe(
+          'Welcher Satz?',
+          h(
+            'div',
+            { class: 'chip-reihe', role: 'group', 'aria-label': 'Art des Reifensatzes' },
+            SATZ_NAMEN.map(([text, art]) =>
+              chip(`${SATZ_EMOJI[art]} ${text}`, {
+                art: e.art === art ? 'aktiv' : '',
+                onClick: () => {
+                  if (SATZ_NAMEN.some(([n]) => n === e.name) || e.name.trim() === '') e.name = text; // einen eigenen Namen nicht überschreiben
+                  e.art = art;
+                  neuZeichnen();
+                },
+              }),
+            ),
+          ),
+        ),
+        feld('Name', name),
+        feld('Reifengröße (optional)', textFeld({ wert: e.groesse, beschriftung: 'Reifengröße', platzhalter: 'z. B. 205/55 R16', max: 30, beiEingabe: (w) => (e.groesse = w) })),
+        h('small', { class: 'leise fk-tipp' }, 'Die Kilometer je Satz rechnet die App aus den Reifenwechseln – beim ersten Wechsel den Kilometerstand eintragen.'),
+      ),
+      h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein primaer', type: 'button', disabled: aus, onClick: speichern }, speichert ? 'Speichert …' : 'Anlegen')),
+    ];
   });
 }

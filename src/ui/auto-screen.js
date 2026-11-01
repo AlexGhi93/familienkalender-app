@@ -6,7 +6,7 @@ import { h } from './dom.js';
 import { abschnitt } from './components.js';
 import { fortschritt, hochzaehlen } from './bewegung.js';
 import { TEXT_DATENSCHUTZ, autoSeiteModel } from '../app/views/autos-model.js';
-import { arbeitLoeschen, oeffneArbeitFormular, oeffneAutoFormular, oeffneKmFormular, oeffneRegelFormular, regelEinschalten } from './auto-formular.js';
+import { arbeitLoeschen, oeffneArbeitFormular, oeffneAutoFormular, oeffneKmFormular, oeffneRegelFormular, oeffneSatzFormular, regelEinschalten } from './auto-formular.js';
 
 /** Knopf „Nochmal versuchen“: liest die Autos neu (das Neuzeichnen ersetzt ihn). */
 export function autosNochmalKnopf(store) {
@@ -174,14 +174,16 @@ function reifenAbschnitt(m, ctx) {
     h(
       'article',
       { class: 'karte au-reifen' },
+      r.saetze.length === 0 ? h('p', { class: 'leise' }, 'Noch keine Reifensätze. Lege Sommer- und Winterreifen an – dann rechnet die App die Kilometer je Satz und erinnert an den Wechsel.') : null,
       r.saetze.map((s) => satzKarte(s, r, m)),
       r.saison ? h('div', { class: 'fk-box au-box au-saison' }, h('b', {}, `🗓️ ${r.saison.text}`), h('small', {}, r.saison.hinweis), h('a', { class: 'au-quelle', href: r.saison.quelle, target: '_blank', rel: 'noopener noreferrer' }, 'Quelle: oesterreich.gv.at ↗')) : null,
       h(
         'div',
         { class: 'knopfzeile au-knoepfe' },
-        r.mitRotation ? knopf('＋ Rotation', '', () => oeffneArbeitFormular(ctx, m.id, { typ: 'rotation' }), { disabled: Boolean(m.gesperrt) }) : null,
-        knopf('＋ Reifenwechsel', 'primaer', () => oeffneArbeitFormular(ctx, m.id, { typ: 'reifenwechsel' }), { disabled: Boolean(m.gesperrt) }),
+        r.saetze.length > 0 && r.mitRotation ? knopf('＋ Rotation', '', () => oeffneArbeitFormular(ctx, m.id, { typ: 'rotation' }), { disabled: Boolean(m.gesperrt) }) : null,
+        r.saetze.length > 0 ? knopf('＋ Reifenwechsel', 'primaer', () => oeffneArbeitFormular(ctx, m.id, { typ: 'reifenwechsel' }), { disabled: Boolean(m.gesperrt) }) : null,
       ),
+      h('div', { class: 'knopfzeile au-satz-neu' }, knopf('＋ Reifensatz anlegen', r.saetze.length === 0 ? 'primaer' : '', () => oeffneSatzFormular(ctx, m.id), { disabled: Boolean(m.gesperrt) })),
     ),
   );
 }
@@ -302,8 +304,12 @@ export function autoScreen({ store, ui }, id) {
   const m = autoSeiteModel(store.getState(), store.heute(), id);
   const zurueck = h('button', { class: 'zurueck', type: 'button', onClick: () => ui.gehZu('autos') }, '‹ Autos');
   if (!m) {
-    const laedt = ['laedt', null].includes(store.getState().autos?.status) && !store.getState().autos?.frisch;
-    return h('section', { class: 'screen auto-seite' }, zurueck, h('article', { class: 'karte hinweis' }, h('p', {}, laedt ? 'Das Auto wird geladen …' : 'Dieses Auto gibt es nicht (mehr).')));
+    const a = store.getState().autos;
+    const laedt = ['laedt', null].includes(a?.status) && !a?.frisch;
+    // M5 (Review T4): nicht gelesen ist nicht „gibt es nicht“
+    const fehler = a?.status === 'fehler' && (a?.daten?.autos ?? []).length === 0;
+    const text = laedt ? 'Das Auto wird geladen …' : fehler ? 'Die Autos konnten nicht gelesen werden.' : 'Dieses Auto gibt es nicht (mehr).';
+    return h('section', { class: 'screen auto-seite' }, zurueck, h('article', { class: 'karte hinweis' }, h('p', {}, text), fehler ? h('div', { class: 'knopfzeile' }, autosNochmalKnopf(store)) : null));
   }
   return h(
     'section',

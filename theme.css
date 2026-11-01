@@ -2916,7 +2916,11 @@ figure.diagramm {
   }
 }
 
-/* „2 fällig“ an der Zeile „Autos“ */
+/* „2 fällig“ an der Zeile „Autos“ (bei 0 versteckt) */
+.menue-marke[hidden] {
+  display: none;
+}
+
 .menue-marke {
   align-self: flex-start;
   display: inline-flex;

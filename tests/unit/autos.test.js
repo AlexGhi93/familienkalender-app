@@ -260,7 +260,7 @@ describe('Autos: Prüfen mit deutschen Meldungen', () => {
     assert.equal(arbeitPruefen({ ...ok, kosten: -1 }, { heute: HEUTE }).fehler, 'Bitte Kosten von 0 € bis 99.999,99 € eingeben.');
     assert.equal(arbeitPruefen({ ...ok, notiz: 'x'.repeat(121) }, { heute: HEUTE }).fehler, 'Die Notiz darf höchstens 120 Zeichen haben.');
     assert.equal(arbeitPruefen({ ...ok, typ: 'oelwechsel', details: { menge: '3,2', filter: true } }, { heute: HEUTE }).fehler, null);
-    assert.equal(arbeitPruefen({ ...ok, typ: 'oelwechsel', details: { menge: 'viel' } }, { heute: HEUTE }).fehler, 'Ungültige Angabe bei „Menge (Liter)“.');
+    assert.equal(arbeitPruefen({ ...ok, typ: 'oelwechsel', details: { menge: 'viel' } }, { heute: HEUTE }).fehler, 'Bitte die Menge in Litern eingeben, z. B. 3,2.');
     assert.throws(() => arbeitPruefen(ok, {}), /heute/);
   });
 
@@ -813,6 +813,17 @@ describe('Autos: Fälligkeiten', () => {
     assert.deepEqual(stand(septemberWinter, '2026-10-05'), ['2027-04-15', 'ok']);
     assert.deepEqual(stand(septemberWinter, '2026-12-01'), ['2027-04-15', 'ok']);
     assert.deepEqual(stand(imSeptember, '2026-10-01'), ['2027-04-15', 'ok']);
+    // M4 (Review T4): in der RICHTIGEN Saison montiert und danach nichts eingetragen – überfällig nur, solange die folgende (falsche)
+    // Saison dauert; ist sie vorbei, zählt der Satz wieder als richtig (nicht den ganzen nächsten Sommer „überfällig seit 01.11.“)
+    const aprilSommer = [wechsel('arb00013', '2026-04-10', 9000, SOMMER)];
+    assert.deepEqual(stand(aprilSommer, '2026-11-05'), ['2026-11-01', 'ueberfaellig']);
+    assert.deepEqual(stand(aprilSommer, '2027-03-14'), ['2026-11-01', 'ueberfaellig']);
+    assert.deepEqual(stand(aprilSommer, '2027-03-15'), ['2027-11-01', 'ok']);
+    assert.deepEqual(stand(aprilSommer, '2027-06-01'), ['2027-11-01', 'ok']);
+    const oktoberWinter = [wechsel('arb00014', '2026-10-20', 21000, WINTER)];
+    assert.deepEqual(stand(oktoberWinter, '2027-05-01'), ['2027-04-15', 'ueberfaellig']);
+    assert.deepEqual(stand(oktoberWinter, '2027-10-01'), ['2028-04-15', 'ok']);
+    assert.deepEqual(stand(oktoberWinter, '2027-12-01'), ['2028-04-15', 'ok']);
 
     const rot = regel({ auto: T, typ: 'rotation', name: 'Reifen rotieren', intervallKm: 10000 });
     const kmInfo = kmBei(21831, { proTag: 21693 / 470, letzterKm: 21693, geschaetzt: true });

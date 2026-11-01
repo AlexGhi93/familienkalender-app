@@ -9,6 +9,7 @@ import {
   AUTO_FARBEN,
   AUTO_FELDER,
   AUTO_VORLAGEN,
+  BALD_KM,
   MAX_AUTOS,
   ROTATION_KM,
   TEXT_AUTOS_GESPERRT,
@@ -62,12 +63,30 @@ export function abstandText(tage) {
 
 const vorsatz = (f) => (f.regel.typ === 'reifenwechsel' && f.saison ? `${f.saison === 'winter' ? 'Winter' : 'Sommer'}reifen montieren – ` : '');
 
-/** Text einer Zeile „Fällig“ (mit den Tagen von heute aus). */
+/**
+ * Abstand zum Termin für den Text – nie im Widerspruch zur Pille (Ruling I1 nach dem Review T4): ein kurzer Countdown („in 18 Tagen“,
+ * „morgen“) nur bei ⏳ bald; bei ✓ ok nur ein grober („in ca. 7 Monaten“, ab 61 Tagen), sonst keiner. Ohne Abstand → ''.
+ */
+function abstand(f, heute) {
+  if (!istDatum(f.datum)) return '';
+  const tage = diffDays(heute, f.datum);
+  if (f.status === 'bald' || (f.status === 'ok' && tage > 60)) return ` (${abstandText(tage)})`;
+  return '';
+}
+
+/** ⏳ bald nur wegen der km (das Datum kommt aus der Zeit): die km dazu sagen. */
+const kmRest = (f) => (f.status === 'bald' && f.quelle !== 'km' && Number.isFinite(f.restKm) && f.restKm >= 0 && f.restKm <= BALD_KM ? ` · noch ca. ${kmText(f.restKm)}` : '');
+
+/**
+ * Text einer Zeile „Fällig“ (und „Als Nächstes“): passt immer zur Pille daneben (Ruling I1) – „überfällig“ nur bei ⚠, ein kurzer
+ * Countdown nur bei ⏳, ein saisonaler Termin vor seiner Erinnerung als „ab 15.10., spätestens 01.11.2026“, ein km-Termin als
+ * „bei ca. 21.800 km“ (das geschätzte Datum nur bei ⏳).
+ */
 export function faelligText(f, heute) {
   if (f.status === 'unbekannt') return `unbekannt – ${f.hinweis ?? 'Letzte Erledigung eintragen'}`;
   if (f.regel.typ === 'vignette') {
     if (f.status === 'ueberfaellig') return `Vignette ${f.vignetteJahr}: online zu spät – im Geschäft noch bis ${datumText(f.kaufenBis)}`;
-    return `Vignette ${f.vignetteJahr} kaufen: online bis ${kurzDatum(f.datum)}, im Geschäft bis ${kurzDatum(f.kaufenBis)} (${abstandText(diffDays(heute, f.datum))})`;
+    return `Vignette ${f.vignetteJahr} kaufen: online bis ${kurzDatum(f.datum)}, im Geschäft bis ${kurzDatum(f.kaufenBis)}${abstand(f, heute)}`;
   }
   const km = f.quelle === 'km' && Number.isInteger(f.km);
   if (f.status === 'ueberfaellig') {
@@ -75,8 +94,9 @@ export function faelligText(f, heute) {
     return `${vorsatz(f)}überfällig${Number.isFinite(f.restKm) && f.restKm < 0 ? ` – ca. ${kmText(-f.restKm)} darüber` : ''}`;
   }
   if (!istDatum(f.datum)) return `${vorsatz(f)}noch ca. ${kmText(Math.max(0, f.restKm ?? 0))}`;
-  if (km) return `${vorsatz(f)}bei ca. ${kmText(f.km)} (etwa ${datumText(f.datum)})`;
-  return `${vorsatz(f)}fällig am ${datumText(f.datum)} (${abstandText(diffDays(heute, f.datum))})${f.montiertUnbekannt ? ' – montierten Satz eintragen' : ''}`;
+  if (km) return `${vorsatz(f)}bei ca. ${kmText(f.km)}${f.status === 'bald' ? ` (etwa ${datumText(f.datum)})` : ''}`;
+  if (f.status === 'ok' && istDatum(f.erinnerungAb) && heute < f.erinnerungAb) return `${vorsatz(f)}ab ${kurzDatum(f.erinnerungAb)}, spätestens ${datumText(f.datum)}`;
+  return `${vorsatz(f)}fällig am ${datumText(f.datum)}${abstand(f, heute)}${kmRest(f)}`;
 }
 
 /** „alle 12 Monate oder 15.000 km“, „fester Monat: Juli 2028, danach alle 24 Monate“ … */
@@ -197,14 +217,13 @@ function regelZeile(f, auto, heute) {
     quelle: v?.quelle ?? null,
     // Leasing-Ende: der Termin steht im Auto – „erledigen“ geht nicht, nur das Datum ändern
     ausAuto: Boolean(f.regel.autoDatum),
-    aktion: f.regel.autoDatum ? 'Datum ändern' : f.status === 'unbekannt' ? 'Letzte Erledigung eintragen' : 'Erledigt eintragen',
+    aktion: f.regel.autoDatum ? 'Datum ändern' : f.regel.typ === 'reifenwechsel' ? 'Reifenwechsel eintragen' : f.status === 'unbekannt' ? 'Letzte Erledigung eintragen' : 'Erledigt eintragen',
   };
 }
 
 const ART_EMOJI = { sommer: '☀️', winter: '❄️', ganzjahr: '🌤️' };
 
 function reifenModel(u, regeln) {
-  if (u.reifen.length === 0) return null;
   const rotation = regeln.find((r) => r.typ === 'rotation' && r.aktiv !== false && r.intervallKm);
   const rotationKm = rotation?.intervallKm ?? ROTATION_KM;
   return {
@@ -409,7 +428,9 @@ export function detailsVorbelegen(state, heute, e, { regel = null, reifen = null
       e.details = { oelSorte: '', menge: '', filter: true };
       break;
     case 'reifenwechsel': {
-      const ziel = (e.saetze.find((s) => s.id !== montiert) ?? e.saetze[0])?.id ?? null;
+      // montiert ist etwas: der andere Satz. Nichts bekannt (M8, Review T4): der Satz der Saison (Winter vom 01.10. bis 14.03.), sonst keiner
+      const saison = heute.slice(5) >= '10-01' || heute.slice(5) < '03-15' ? 'winter' : 'sommer';
+      const ziel = montiert ? ((e.saetze.find((s) => s.id !== montiert) ?? e.saetze[0])?.id ?? null) : (e.saetze.find((s) => s.art === saison)?.id ?? null);
       e.details = { montiert: ziel, rotiert: ziel ? rotationVorschlag(state, heute, e.auto, ziel).rotiert : false };
       break;
     }
@@ -516,7 +537,7 @@ export function regelEntwurf(state, regelId) {
     original: regel,
     name: regel.name,
     monate: regel.intervallMonate ? String(regel.intervallMonate) : '',
-    km: regel.intervallKm ? String(regel.intervallKm) : '',
+    km: regel.intervallKm ? kmFeld(regel.intervallKm) : '',
     fixMonat: regel.fixMonat ?? '',
     aktiv: regel.aktiv !== false,
     info: v?.info ?? null,

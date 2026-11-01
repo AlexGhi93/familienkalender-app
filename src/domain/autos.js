@@ -340,7 +340,7 @@ function feldWert(def, roh) {
     }
     case 'liter': {
       const n = typeof roh === 'number' ? roh : typeof roh === 'string' && /^\d{1,2}([.,]\d{1,2})?$/.test(roh.trim()) ? Number(roh.trim().replace(',', '.')) : NaN;
-      return Number.isFinite(n) && n > 0 && n <= 20 && Math.abs(n * 100 - Math.round(n * 100)) < 1e-9 ? { wert: n } : { fehler: `Ungültige Angabe bei „${def.name}“.` };
+      return Number.isFinite(n) && n > 0 && n <= 20 && Math.abs(n * 100 - Math.round(n * 100)) < 1e-9 ? { wert: n } : { fehler: 'Bitte die Menge in Litern eingeben, z. B. 3,2.' };
     }
     default:
       return { fehler: `Ungültige Angabe bei „${def.name}“.` };

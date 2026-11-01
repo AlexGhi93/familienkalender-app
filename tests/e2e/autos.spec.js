@@ -79,6 +79,11 @@ test('Ölwechsel eintragen: Vorschläge aus der Vorlage, der Termin rückt ein J
   await b.getByRole('textbox', { name: 'Ölsorte' }).fill('SAE 0W-30');
   await b.getByRole('textbox', { name: 'Menge in Litern' }).fill('3,2');
   await b.getByRole('textbox', { name: 'Kosten in Euro' }).fill('139,90');
+  // eine falsche Menge: verständliche Meldung, das Blatt bleibt offen; berichtigt ersetzt „Eingetragen ✓“ die Fehlermeldung
+  await b.getByRole('textbox', { name: 'Menge in Litern' }).fill('drei');
+  await b.getByRole('button', { name: 'Eintragen' }).click();
+  await erwarteToast(page, 'Bitte die Menge in Litern eingeben, z. B. 3,2.');
+  await b.getByRole('textbox', { name: 'Menge in Litern' }).fill('3,2');
   await b.getByRole('button', { name: 'Eintragen' }).click();
   await erwarteToast(page, 'Eingetragen ✓');
   await expect(b).toHaveCount(0);
@@ -146,7 +151,7 @@ test('Kilometerstand aktualisieren: „bitte prüfen“ gleich beim Tippen, neue
   await starteDemo(page, { route: `#/autos/${TESLA}` });
   const km = abschnitt(page, 'Kilometerstand');
   await expect(km.locator('.au-km-zahl')).toHaveText('ca. 18.872 km');
-  await expect(regel(page, 'rotation').locator('.au-regel-text')).toHaveText('bei ca. 21.800 km (etwa 28.12.2026)');
+  await expect(regel(page, 'rotation').locator('.au-regel-text')).toHaveText('bei ca. 21.800 km');
   await km.getByRole('button', { name: 'Kilometerstand aktualisieren' }).click();
   const b = blatt(page, 'Kilometerstand aktualisieren');
   const feld = b.getByRole('textbox', { name: 'Kilometerstand laut Tacho' });
@@ -159,7 +164,7 @@ test('Kilometerstand aktualisieren: „bitte prüfen“ gleich beim Tippen, neue
   await expect(km.locator('.au-km-zahl')).toHaveText('19.500 km');
   await expect(page.locator('.au-held .au-km-zahl')).toHaveText('19.500 km');
   await expect(km).toContainText('Zuletzt bekannt: 19.500 km am 14.10.2026');
-  await expect(regel(page, 'rotation').locator('.au-regel-text')).not.toHaveText('bei ca. 21.800 km (etwa 28.12.2026)');
+  await expect(regel(page, 'rotation').locator('.au-regel-text')).not.toHaveText('bei ca. 21.800 km');
   await page.reload();
   await expect(abschnitt(page, 'Kilometerstand').locator('.au-km-zahl')).toHaveText('19.500 km');
 });
@@ -261,6 +266,40 @@ test('Noch kein Auto: Vorlage Tesla, Kennzeichen selbst eintragen, Regeln und Re
   await expect(page.locator('.au-satz')).toHaveCount(2);
 });
 
+test('Leeres Auto ohne Reifensätze: „Reifensatz anlegen“ im Reifen-Abschnitt und im Reifenwechsel-Blatt – keine Sackgasse', async ({ page }) => {
+  await starteDemo(page, { route: '#/autos', speicher: { 'fk.demo.v1': demoMitAutos(WERKTAG_DATUM, undefined, { leer: true }) } });
+  await page.locator('.au-leer .au-vorlage').filter({ hasText: 'Leer' }).click();
+  const neu = blatt(page, '＋ Auto hinzufügen');
+  await neu.getByRole('textbox', { name: 'Name' }).fill('Kleinbus');
+  await neu.getByRole('button', { name: 'Auto anlegen' }).click();
+  await erwarteToast(page, 'Auto angelegt ✓');
+  const reifen = abschnitt(page, 'Reifen');
+  await expect(reifen).toContainText('Noch keine Reifensätze');
+  await expect(reifen.getByRole('button', { name: '＋ Reifenwechsel' })).toHaveCount(0);
+  // im Reifen-Abschnitt: Sommer
+  await reifen.getByRole('button', { name: '＋ Reifensatz anlegen' }).click();
+  let satz = blatt(page, '🛞 Reifensatz anlegen');
+  await expect(satz.getByRole('button', { name: '☀️ Sommer' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(satz.getByRole('textbox', { name: 'Name des Reifensatzes' })).toHaveValue('Sommer');
+  await satz.getByRole('button', { name: 'Anlegen' }).click();
+  await erwarteToast(page, 'Reifensatz angelegt ✓');
+  await expect(reifen.locator('.au-satz')).toHaveCount(1);
+  // im Reifenwechsel-Blatt: Winter dazu, er ist danach (Oktober) gleich gewählt
+  await page.locator('.au-held').getByRole('button', { name: '＋ Arbeit eintragen' }).click();
+  const b = blatt(page, '＋ Arbeit eintragen');
+  await b.getByRole('combobox', { name: 'Art der Arbeit' }).selectOption('reifenwechsel');
+  await b.getByRole('button', { name: '＋ Reifensatz anlegen' }).click();
+  satz = blatt(page, '🛞 Reifensatz anlegen');
+  await expect(satz.getByRole('button', { name: '❄️ Winter' })).toHaveAttribute('aria-pressed', 'true');
+  await satz.getByRole('textbox', { name: 'Reifengröße' }).fill('195/65 R15');
+  await satz.getByRole('button', { name: 'Anlegen' }).click();
+  await expect(b.getByRole('button', { name: '❄️ Winter' })).toHaveAttribute('aria-pressed', 'true');
+  await b.getByRole('textbox', { name: 'Kilometerstand' }).fill('50.000');
+  await b.getByRole('button', { name: 'Eintragen' }).click();
+  await erwarteToast(page, 'Eingetragen ✓');
+  await expect(reifen.locator('.au-satz').filter({ hasText: 'Winter' }).locator('.au-marke')).toHaveText('montiert seit 14.10.2026');
+});
+
 test.describe('Glas und Bento', () => {
   test.beforeEach(({ aussehen }) => test.skip(!aussehen, 'nur in den Projekten telefon-glas und telefon-bento'));
 
@@ -289,7 +328,7 @@ test.describe('Glas und Bento', () => {
         .map((e) => `${e.className} ${getComputedStyle(e).fontSize}`),
     );
     expect(klein).toEqual([]);
-    await page.getByRole('button', { name: 'Reifenwechsel (saisonal): Erledigt eintragen' }).click();
+    await page.getByRole('button', { name: 'Reifenwechsel (saisonal): Reifenwechsel eintragen' }).click();
     await expect(blatt(page, '🛞 Reifenwechsel eintragen')).toBeVisible();
     expect(await kleineZiele(page)).toEqual([]);
   });

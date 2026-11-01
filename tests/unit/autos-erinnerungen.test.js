@@ -340,12 +340,12 @@ describe('Neuzeichnen nach einem Lesen der Autos im Hintergrund', () => {
     assert.equal(nurHintergrundGeaendert(ohne, mitKarte, { ...ansicht, seite: 'autos' }), false);
   });
 
-  test('in „Mehr“ nur, wenn sich die Zahl „N fällig“ an der Zeile „Autos“ ändert', () => {
+  test('in „Mehr“ nie (die Shell beschriftet nur die Marke „N fällig“ neu – sonst ginge beim Tippen die Tastatur zu)', () => {
     const ohne = s(autosTeil({ regeln: [OEL] }));
     const mitKarte = s(autosTeil({ autos: [autoB], regeln: [brems], historie: historieB }));
     const ansicht = { seite: 'mehr', kontoAnsicht: 'kontostand', heute: HEUTE };
     assert.equal(nurHintergrundGeaendert(ohne, s({ ...ohne.autos, status: 'laedt' }), ansicht), true);
     assert.equal(nurHintergrundGeaendert(ohne, s(autosTeil({ regeln: [OEL, VIGNETTE] })), ansicht), true);
-    assert.equal(nurHintergrundGeaendert(ohne, mitKarte, ansicht), false);
+    assert.equal(nurHintergrundGeaendert(ohne, mitKarte, ansicht), true);
   });
 });

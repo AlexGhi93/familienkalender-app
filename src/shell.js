@@ -426,6 +426,7 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
     }
     schichtVorladenAnstossen();
     if (!nurHintergrund) ui.rendern();
+    else ui.autosMarkeZeichnen?.(); // „N fällig“ in „Mehr“ an Ort und Stelle (die Seite bleibt, wie sie ist)
     if (snapshot && state.geladen && !state.nurSnapshot) {
       clearTimeout(speicherZeitgeber);
       speicherZeitgeber = setTimeout(() => snapshot.speichern(store.getState(), store.heute()), SNAPSHOT_VERZOEGERUNG_MS);

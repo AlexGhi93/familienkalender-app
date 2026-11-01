@@ -330,6 +330,16 @@ export const BILDSCHIRME = [
     },
   },
   {
+    name: 'auto-satz',
+    titel: 'Auto: Reifensatz anlegen',
+    blatt: true,
+    oeffne: async (p) => {
+      await starteDemo(p, { route: `#/autos/${autoId(WERKTAG_DATUM, 'Tesla Model 3')}` });
+      await p.getByRole('button', { name: '＋ Reifensatz anlegen' }).click();
+      await p.getByRole('dialog', { name: '🛞 Reifensatz anlegen' }).waitFor();
+    },
+  },
+  {
     name: 'auto-daten',
     titel: 'Auto: Fahrzeugdaten bearbeiten',
     blatt: true,

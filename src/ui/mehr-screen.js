@@ -53,10 +53,22 @@ function verbindungsStatus({ store, ui }) {
   return box;
 }
 
-/** „2 fällig“ an der Zeile „Autos“ (bald oder überfällig, alle Autos); sonst nichts. */
-function autosMarke(store) {
-  const n = autosFaelligAnzahl(store.getState(), store.heute());
-  return n > 0 ? h('span', { class: 'menue-marke' }, `${n} fällig`) : null;
+/**
+ * „2 fällig“ an der Zeile „Autos“ (bald oder überfällig, alle Autos); bei 0 versteckt. Ändert ein Lesen im Hintergrund die Zahl, wird nur
+ * die Marke neu beschriftet (`ui.autosMarkeZeichnen`), nicht die Seite – sonst ginge beim Tippen in „Mehr“ die Tastatur zu (M6, Review T4).
+ */
+function autosMarke({ store, ui }) {
+  const marke = h('span', { class: 'menue-marke' });
+  const zeichne = () => {
+    const n = autosFaelligAnzahl(store.getState(), store.heute());
+    marke.hidden = n === 0;
+    marke.textContent = n > 0 ? `${n} fällig` : '';
+  };
+  zeichne();
+  ui.autosMarkeZeichnen = () => {
+    if (marke.isConnected) zeichne();
+  };
+  return marke;
 }
 
 export function mehrScreen({ store, ui }) {
@@ -222,7 +234,7 @@ export function mehrScreen({ store, ui }) {
       farbe: 'var(--krank)',
       titel: 'Autos',
       text: 'Wartung, Reifen, Vignette, Kilometerstand',
-      status: autosMarke(store),
+      status: autosMarke({ store, ui }),
       beiKlick: () => ui.gehZu('autos'),
     },
     { id: 'verlauf', emoji: '📜', animation: 'rolle', farbe: 'var(--grau)', titel: 'Verlauf', text: 'Alle Einträge, mit Suche und Filtern', beiKlick: () => ui.gehZu('verlauf') },
