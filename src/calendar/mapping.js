@@ -355,9 +355,10 @@ export const autosTeile = (daten) => Object.entries(daten?.jahre ?? {}).flatMap(
 
 /**
  * Autos aus den Texten im Kalender (Google und Demo gleich): `hauptText` = Beschreibung von „fkautos“ (null = fehlt), `teilText(auto,
- * jahr)` = Beschreibung des Verlauf-Teils oder null, wenn es ihn nicht gibt. → { daten, historie: { [auto]: { [jahr]: Historie } },
- * warnungen, unlesbar: { main?: true, shards: [{ auto, jahr }] }, rohtexte: [{ id, text }] }. Gefragt werden nur die Teile aus dem
- * Jahres-Index; ein fehlender zählt leer (mit Hinweis). Ist der Hauptteil unlesbar, kennt man keinen Index: alles leer und gesperrt.
+ * jahr)` = Beschreibung des Verlauf-Teils, null (nie angelegt) oder { geloescht: true } (im Kalender gelöscht). → { daten, historie:
+ * { [auto]: { [jahr]: Historie } }, warnungen, unlesbar: { main?: true, shards: [{ auto, jahr }] }, rohtexte: [{ id, text }] }. Gefragt
+ * werden nur die Teile aus dem Jahres-Index; ein fehlender zählt leer – still, wenn er nie angelegt wurde (z. B. Index geschrieben, Teil
+ * gescheitert), mit Hinweis, wenn ihn jemand gelöscht hat. Ist der Hauptteil unlesbar, kennt man keinen Index: alles leer und gesperrt.
  * `rohtexte` = die Texte der unlesbaren Teile (für die Sicherung).
  */
 export function autosAusTexten(hauptText, teilText) {
@@ -371,9 +372,9 @@ export function autosAusTexten(hauptText, teilText) {
     const text = teilText(auto, jahr);
     const name = haupt.daten.autos.find((a) => a.id === auto)?.name;
     historie[auto] ??= {};
-    if (text == null) {
+    if (text == null || typeof text !== 'string') {
       historie[auto][jahr] = leereHistorie(auto, jahr);
-      warnungen.push(`Der Verlauf ${jahr}${name ? ` von „${name}“` : ''} wurde im Kalender nicht gefunden (wohl von Hand gelöscht); er wird leer gezeigt.`);
+      if (text?.geloescht) warnungen.push(`Der Verlauf ${jahr}${name ? ` von „${name}“` : ''} wurde im Kalender gelöscht (wohl von Hand); er wird leer gezeigt.`);
       continue;
     }
     const g = historieAusEreignis({ description: text }, auto, jahr);

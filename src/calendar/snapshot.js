@@ -112,16 +112,23 @@ function pruefeAutos(roh) {
  * Autos für den Schnappschuss: als Kalendertexte (kurz, mit fremden Einträgen); nur gelesene (Status 'geladen' oder 'gespeichert') –
  * sonst (noch nie gelesen, gerade am Lesen, gescheitert) null: dann behält speichern() die Autos des bisherigen Schnappschusses.
  */
-function autosFuerSnapshot(autos) {
+function autosFuerSnapshot(autos, { jahre = Infinity } = {}) {
   if (autos?.status !== 'geladen' && autos?.status !== 'gespeichert') return null;
+  const stand = autos.bestaetigt ?? autos; // offene (z. B. auf die Anmeldung wartende) Änderungen gelten nicht als gespeichert
   try {
     const historie = {};
-    for (const [auto, jahre] of Object.entries(autos.historie ?? {})) for (const [jahr, h] of Object.entries(jahre ?? {})) (historie[auto] ??= {})[jahr] = historieText(h);
-    return { text: autosText(autos.daten), historie, unlesbar: autos.unlesbar ?? { shards: [] } };
+    for (const [auto, liste] of Object.entries(stand.historie ?? {})) {
+      const neueste = Object.keys(liste ?? {}).map(Number).sort((a, b) => b - a).slice(0, jahre);
+      for (const jahr of neueste) (historie[auto] ??= {})[jahr] = historieText(liste[jahr]);
+    }
+    return { text: autosText(stand.daten), historie, unlesbar: autos.unlesbar ?? { shards: [] } };
   } catch {
     return null;
   }
 }
+
+/** So viele Jahre je Auto bleiben im Schnappschuss, wenn er sonst zu groß wäre (die längste Regel rechnet mit 48 Monaten). */
+export const SNAPSHOT_AUTOS_JAHRE = 5;
 
 /** Prüft die gelesene Struktur streng; liefert die bereinigten Daten oder null. */
 function pruefe(roh) {
@@ -174,7 +181,7 @@ export function createSnapshot({ speicher = globalThis.localStorage ?? null, jet
         }
       };
       const grenze = addDays(heute, -TAGE_ZURUECK);
-      const text = JSON.stringify({
+      const roh = {
         v: 1,
         gespeichertAm: jetzt().toISOString(),
         settings: state.settings,
@@ -189,7 +196,11 @@ export function createSnapshot({ speicher = globalThis.localStorage ?? null, jet
         fixkosten: state.fixkosten?.shards ? { shards: state.fixkosten.shards, unlesbar: state.fixkosten.unlesbar ?? [] } : null,
         ziele: zieleFuerSnapshot(state.ziele) ?? (state.ziele?.status === 'fehler' ? letzteZiele() : null), // höchstens ~6000 Zeichen (Kalendertext)
         autos: autosFuerSnapshot(state.autos) ?? letzteAutos(), // Kalendertexte: Hauptteil + je Auto und Jahr ein Teil (je ≤ 6000 Zeichen)
-      });
+      };
+      let text = JSON.stringify(roh);
+      // zu groß (viele Jahre Verlauf): erst nur die neuesten Jahre je Auto, sonst ohne Autos – der Rest des Abbilds bleibt aktuell
+      if (text.length > MAX_SNAPSHOT_ZEICHEN && roh.autos) text = JSON.stringify({ ...roh, autos: autosFuerSnapshot(state.autos, { jahre: SNAPSHOT_AUTOS_JAHRE }) });
+      if (text.length > MAX_SNAPSHOT_ZEICHEN && roh.autos) text = JSON.stringify({ ...roh, autos: null });
       if (text.length > MAX_SNAPSHOT_ZEICHEN) return false;
       try {
         speicher.setItem(SNAPSHOT_KEY, text);

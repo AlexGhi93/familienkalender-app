@@ -136,9 +136,12 @@ const istObjekt = (x) => x !== null && typeof x === 'object' && !Array.isArray(x
  * hier noch stehen, maßgeblich ist daten.autos), `status` null (noch nie gelesen) | 'gespeichert' (Schnappschuss oder Beispieldaten,
  * noch nicht aus dem Kalender) | 'laedt' | 'geladen' | 'fehler' (letztes Lesen gescheitert: Daten wie zuletzt gelesen), `warnungen`
  * = Hinweise für die Anzeige, `unlesbar` = { main?: true, shards: [{ auto, jahr }] }: was diese Version nicht lesen kann – leer gezeigt
- * und gesperrt (main: alles).
+ * und gesperrt (main: alles). `frisch` = das LETZTE Lesen aus dem Kalender in dieser Sitzung ist gelungen (false: noch nie, nur
+ * Schnappschuss/Beispieldaten, oder zuletzt gescheitert). Nur dann gehören Auto-Erinnerungen in den Push-Plan (Task 3); der übrige Plan
+ * wartet nie auf die Autos. `bestaetigt` = { daten, historie } der zuletzt GESPEICHERTE Stand, nur solange eigene Änderungen offen sind
+ * (für den Schnappschuss: eine Änderung, die auf die Anmeldung wartet, darf nach einem Neustart nicht als gespeichert erscheinen).
  */
-const leererAutosZustand = () => ({ daten: leereAutos(), historie: {}, status: null, warnungen: [], unlesbar: { shards: [] } });
+const leererAutosZustand = () => ({ daten: leereAutos(), historie: {}, status: null, warnungen: [], unlesbar: { shards: [] }, frisch: false });
 
 /** Unlesbare Teile aus dem, was Adapter oder Schnappschuss liefern: { main?: true, shards: [{ auto, jahr }] } (Ungültiges fällt weg). */
 function unlesbareAutos(roh) {
@@ -149,7 +152,7 @@ function unlesbareAutos(roh) {
 /** Zustand der Autos aus dem, was Adapter ({ daten, historie, warnungen, unlesbar }) oder Schnappschuss liefern. */
 function autosZustand(gelesen, status) {
   const unlesbar = unlesbareAutos(gelesen?.unlesbar);
-  return { daten: istObjekt(gelesen?.daten) && !unlesbar.main ? gelesen.daten : leereAutos(), historie: istObjekt(gelesen?.historie) && !unlesbar.main ? gelesen.historie : {}, status, warnungen: Array.isArray(gelesen?.warnungen) ? gelesen.warnungen : [], unlesbar };
+  return { daten: istObjekt(gelesen?.daten) && !unlesbar.main ? gelesen.daten : leereAutos(), historie: istObjekt(gelesen?.historie) && !unlesbar.main ? gelesen.historie : {}, status, warnungen: Array.isArray(gelesen?.warnungen) ? gelesen.warnungen : [], unlesbar, frisch: status === 'geladen' };
 }
 
 /** Alle Verlauf-Teile der Autos als Liste (für kmPunkte, arbeitenVon, autoUebersicht in domain/autos-rechnung.js). */
@@ -380,6 +383,16 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     if (r?.schonDa) {
       const e = new Error(TEXT_SCHON_WIEDER_DA);
       FACHLICH.add(e);
+      throw e;
+    }
+  };
+
+  /** Wie `fachlich`, für eine asynchrone Prüfung ohne Argument: ihre Ablehnung zählt als fachliche Meldung. */
+  const fachlichAsync = (pruefung) => async () => {
+    try {
+      return await pruefung();
+    } catch (e) {
+      if (e instanceof Error && !istAuthFehler(e) && e.fachlich) FACHLICH.add(e);
       throw e;
     }
   };
@@ -860,6 +873,26 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     }
   }
 
+  /**
+   * `autos` mit `bestaetigt` (siehe leererAutosZustand), solange eigene Änderungen offen sind: Hauptteil und Teile mit offenen Änderungen
+   * stehen dort mit ihrer `basis` (dem zuletzt gespeicherten Stand); ohne offene Änderungen fällt `bestaetigt` weg.
+   */
+  function mitBestaetigt(autos) {
+    const { bestaetigt: _alt, ...rest } = autos;
+    const offen = [...autosOffen.entries()].filter(([, e]) => e.offen.length > 0);
+    if (offen.length === 0) return rest;
+    let daten = rest.daten;
+    let historie = rest.historie;
+    for (const [schluessel, e] of offen) {
+      if (schluessel === 'haupt') daten = e.basis;
+      else {
+        const [, auto, jahr] = schluessel.split(':');
+        historie = { ...historie, [auto]: { ...(historie[auto] ?? {}), [jahr]: e.basis } };
+      }
+    }
+    return { ...rest, bestaetigt: { daten, historie } };
+  }
+
   /** Der Hauptteil ist (inzwischen) unlesbar: alles leer und gesperrt. */
   function autosHauptSperren() {
     autosOffenLeeren('haupt', leereAutos());
@@ -897,7 +930,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       historie = { ...historie, [auto]: { ...(historie[auto] ?? {}), [jahr]: leereHistorie(auto, jahr) } };
       autosOffenLeeren(teilSchluessel(auto, jahr), leereHistorie(auto, jahr));
     }
-    state = { ...state, autos: { daten: eigene ? a.daten : gleichOder(a.daten, frisch.daten), historie: historieGleichOder(a.historie, historie), status: 'geladen', warnungen: gleichOder(a.warnungen, frisch.warnungen), unlesbar: gleichOder(a.unlesbar, frisch.unlesbar) } };
+    state = { ...state, autos: mitBestaetigt({ daten: eigene ? a.daten : gleichOder(a.daten, frisch.daten), historie: historieGleichOder(a.historie, historie), status: 'geladen', warnungen: gleichOder(a.warnungen, frisch.warnungen), unlesbar: gleichOder(a.unlesbar, frisch.unlesbar), frisch: true }) };
   }
 
   /**
@@ -915,7 +948,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       try {
         g = await adapter.leseAutos();
       } catch (fehler) {
-        state = { ...state, autos: { ...state.autos, status: 'fehler', warnungen: [TEXT_AUTOS_NICHT_GELESEN] }, ...(istAuthFehler(fehler) ? { anmeldungNoetig: true } : {}) };
+        state = { ...state, autos: { ...state.autos, status: 'fehler', frisch: false, warnungen: [TEXT_AUTOS_NICHT_GELESEN] }, ...(istAuthFehler(fehler) ? { anmeldungNoetig: true } : {}) };
         melden();
         return false;
       }
@@ -944,7 +977,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       await teilAendern(autosOffen, 'haupt', fn, {
         leer: leereAutos,
         aktuell: () => state.autos.daten,
-        mit: (daten) => ({ ...state, autos: { ...state.autos, daten } }),
+        mit: (daten) => ({ ...state, autos: mitBestaetigt({ ...state.autos, daten }) }),
         async speichern(f) {
           try {
             return await adapter.aendereAutos(f);
@@ -969,15 +1002,34 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     );
   }
 
-  /** Ändert NUR den Verlauf-Teil von `auto` im Jahr `jahr` mit `fn(historie)`; → wie teilErgebnis. Wirft wie autosHauptAendern. */
-  async function autosTeilAendern(auto, jahr, fn) {
+  /**
+   * Vor dem Schreiben eines Teils: steht `jahr` im zuletzt GESPEICHERTEN Jahres-Index? Sonst zuerst dort eintragen – in DEMSELBEN
+   * Schreibvorgang wie der Teil (auch beim Nachholen nach der Anmeldung): scheitert das, wird der Teil nicht geschrieben, es entsteht nie
+   * ein Teil, den der Index nicht kennt (er bliebe unsichtbar). Hat das andere Telefon das Auto gelöscht → fachliche Meldung.
+   */
+  async function indexSichern(auto, jahr) {
+    const e = autosOffen.get('haupt');
+    if ((e?.basis ?? state.autos.daten).jahre?.[auto]?.includes(jahr)) return;
+    const gespeichert = await adapter.aendereAutos(fachlich((d) => historieJahrEintragen(d, auto, jahr)));
+    if (!gespeichert) return;
+    if (e) e.basis = gespeichert;
+    else state = { ...state, autos: { ...state.autos, daten: gleichOder(state.autos.daten, gespeichert) } };
+  }
+
+  /**
+   * Ändert NUR den Verlauf-Teil von `auto` im Jahr `jahr` mit `fn(historie)`; → wie teilErgebnis. Wirft wie autosHauptAendern.
+   * `vorher()` (optional, async) läuft in jedem Schreibvorgang (auch beim Nachholen) vor dem Schreiben und darf fachlich ablehnen.
+   */
+  async function autosTeilAendern(auto, jahr, fn, { vorher = null } = {}) {
     return teilErgebnis(
       await teilAendern(autosOffen, teilSchluessel(auto, jahr), fn, {
         leer: () => leereHistorie(auto, jahr),
         aktuell: () => state.autos.historie[auto]?.[jahr] ?? null,
-        mit: (h) => ({ ...state, autos: { ...state.autos, historie: { ...state.autos.historie, [auto]: { ...(state.autos.historie[auto] ?? {}), [jahr]: h } } } }),
+        mit: (h) => ({ ...state, autos: mitBestaetigt({ ...state.autos, historie: { ...state.autos.historie, [auto]: { ...(state.autos.historie[auto] ?? {}), [jahr]: h } } }) }),
         async speichern(f) {
           try {
+            if (vorher) await vorher();
+            await indexSichern(auto, jahr);
             return await adapter.aendereHistorie(auto, jahr, f);
           } catch (e) {
             if (e?.name === 'HistorieGesperrt') {
@@ -1003,10 +1055,10 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
   /**
    * Ändert den Teil von `auto` im Jahr `jahr` mit `fn(historie)`. Steht das Jahr im zuletzt GESPEICHERTEN Jahres-Index noch nicht, wird
    * es zuerst dort eingetragen (das prüft auf der neuesten Fassung zugleich, dass es das Auto noch gibt) und erst danach der Teil
-   * geschrieben: so steht nie ein Teil im Kalender, den der Index nicht kennt (er bliebe unsichtbar). Gesperrt (unlesbar) → Meldung.
-   * → wie teilErgebnis; wirft nie.
+   * geschrieben: so steht nie ein Teil im Kalender, den der Index nicht kennt (er bliebe unsichtbar; beim Nachholen nach der Anmeldung
+   * sichert das indexSichern im Teil selbst). Gesperrt (unlesbar) → Meldung. `optionen` siehe autosTeilAendern. → wie teilErgebnis; wirft nie.
    */
-  async function autosInJahrAendern(auto, jahr, fn) {
+  async function autosInJahrAendern(auto, jahr, fn, optionen) {
     if (teilGesperrt(auto, jahr)) return { ok: false, fehler: TEXT_HISTORIE_GESPERRT };
     if (!(state.autos.daten.autos ?? []).some((a) => a.id === auto)) return { ok: false, fehler: TEXT_AUTO_WEG };
     try {
@@ -1015,7 +1067,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
         const r = await autosHauptAendern((d) => historieJahrEintragen(d, auto, jahr));
         if (!r.ok && !r.wartet) return r;
       }
-      return await autosTeilAendern(auto, jahr, fn);
+      return await autosTeilAendern(auto, jahr, fn, optionen);
     } catch (e) {
       return { ok: false, fehler: e?.message || TEXT_FEHLER }; // schon am angezeigten Stand abgelehnt: nichts geändert
     }
@@ -1060,11 +1112,14 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     }
   }
 
-  /** Autos für die Sicherung: frisch aus dem Kalender (Anmeldefehler laufen nach oben); ohne passenden Adapter der angezeigte Stand. */
+  /**
+   * Autos für die Sicherung: frisch aus dem Kalender (Anmeldefehler laufen nach oben), dazu roh alle Verlauf-Teile, die der Index nicht
+   * kennt (`weitereTeile`: Teile gelöschter Autos, alles bei unlesbarem Hauptteil); ohne passenden Adapter der angezeigte Stand.
+   */
   async function autosFuerSicherung() {
-    if (!adapter.leseAutos) return { daten: state.autos.daten, historie: state.autos.historie, rohtexte: [] };
-    const g = await adapter.leseAutos();
-    return { daten: g.daten, historie: g.historie, rohtexte: g.rohtexte ?? [] };
+    if (!adapter.leseAutos) return { daten: state.autos.daten, historie: state.autos.historie, rohtexte: [], weitereTeile: [] };
+    const g = adapter.leseAutosSicherung ? await adapter.leseAutosSicherung() : await adapter.leseAutos();
+    return { daten: g.daten, historie: g.historie, rohtexte: g.rohtexte ?? [], weitereTeile: g.weitereTeile ?? [] };
   }
 
   /**
@@ -1797,7 +1852,8 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     /**
      * Schichtplan, Fixkosten und Autos im Hintergrund nach dem Start (Google und Demo), damit die Erinnerungen von jedem Telefon aus
      * stimmen: liest die Schichtarten (immer neu), den laufenden Monat mit den zwei folgenden und – gleichzeitig – die vier Teile der
-     * Fixkosten (Kündigungsfristen) und die Autos samt Verlauf (Vignette, Pickerl …); erst wenn ALLES gelesen ist, gilt `schicht.vorgeladen` = der laufende Monat (das eine
+     * Fixkosten (Kündigungsfristen) und die Autos samt Verlauf (Vignette, Pickerl …; sie zählen NICHT für das Tor, siehe
+     * state.autos.frisch); erst wenn Schichtplan und Fixkosten gelesen sind, gilt `schicht.vorgeladen` = der laufende Monat (das eine
      * Tor für den Push-Plan: bleibt, auch wenn ein späteres Vorladen im selben Monat scheitert; nach dem Monatswechsel braucht es ein
      * neues Vorladen). Fehlt Papa noch eine später dazugekommene Standardart (E – Ersatzdienst), wird sie einmal still ergänzt
      * (siehe `schichtKatalogStillErgaenzen`; das zweite Telefon ergänzt nichts doppelt). Tut nichts vor dem Laden, solange nur
@@ -1808,13 +1864,17 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       if (!adapter.leseSchichtMonat || !state.geladen || state.nurSnapshot || state.anmeldungNoetig) return Promise.resolve();
       const jm = todayVienna(jetzt()).slice(0, 7);
       schichtVorladenLaeuft = (async () => {
-        const [{ katalogGelesen, monateGelesen }, fixOk, autosOk] = await Promise.all([schichtLesen(vorladeMonate(jm), { katalogNeu: true }), adapter.leseFixkosten ? fixLesen() : true, adapter.leseAutos ? autosHolen() : true]);
-        if (katalogGelesen && monateGelesen && fixOk && autosOk && state.schicht.vorgeladen !== jm) {
+        // die Autos gleichzeitig, aber ohne Einfluss auf das Push-Tor: Termine, Schicht, Fixkosten und Kontostand warten nie auf sie
+        // (ob die Autos frisch sind, steht in state.autos.frisch; Wiederholen nach einem Fehler: eigener Vorlader in der Shell)
+        const autosLauf = adapter.leseAutos ? autosHolen() : Promise.resolve(true);
+        const [{ katalogGelesen, monateGelesen }, fixOk] = await Promise.all([schichtLesen(vorladeMonate(jm), { katalogNeu: true }), adapter.leseFixkosten ? fixLesen() : true]);
+        if (katalogGelesen && monateGelesen && fixOk && state.schicht.vorgeladen !== jm) {
           state = { ...state, schicht: { ...state.schicht, vorgeladen: jm } };
           melden();
         }
         // nur, wenn die Schichtarten gerade gelesen werden konnten (gespeichert wird ohnehin auf der neuesten Fassung)
         if (katalogGelesen && state.schicht.katalog && katalogErgaenzen(state.schicht.katalog).geaendert) await schichtKatalogStillErgaenzen();
+        await autosLauf;
       })()
         .catch(() => {}) // Hintergrund: ein Fehler darf nichts stören
         .finally(() => {
@@ -1828,7 +1888,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
      * die zwei danach) frisch aus dem Kalender. Der Plan ersetzt beim Push-Dienst den der ganzen Familie; aus einem veralteten Stand
      * würde er Zusätze löschen (oder zurückbringen), die das andere Telefon inzwischen eingetragen (oder entfernt) hat – und für sie gibt
      * es keine Erinnerung von Google Kalender. Ebenso, gleichzeitig, die vier Teile der Fixkosten (`fixFrischLesen`: Erinnerungen an
-     * Kündigungsfristen gehen an beide Telefone) und die Autos (`autosFrischLesen`). Gemeldet wird nur eine echte Änderung (siehe `schichtAktualisieren`); danach gilt der
+     * Kündigungsfristen gehen an beide Telefone). Die Autos (`autosFrischLesen`) werden nur angestoßen, nicht abgewartet. Gemeldet wird nur eine echte Änderung (siehe `schichtAktualisieren`); danach gilt der
      * laufende Monat als vorgeladen. Ergebnis: true = beides aktuell, false = ging gerade nicht (nicht geladen, Lesefehler, eigene
      * Änderung wird noch gespeichert) – dann nicht senden. Höchstens ein Lesen gleichzeitig; wirft nicht.
      */
@@ -1836,8 +1896,9 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       if (schichtFrischLaeuft) return schichtFrischLaeuft;
       const jm = todayVienna(jetzt()).slice(0, 7);
       schichtFrischLaeuft = (async () => {
-        const [schichtOk, fixOk, autosOk] = await Promise.all([store.schichtAktualisieren(vorladeMonate(jm)), adapter.leseFixkosten ? store.fixFrischLesen() : true, adapter.leseAutos ? store.autosFrischLesen() : true]);
-        const ok = schichtOk && fixOk && autosOk;
+        if (adapter.leseAutos) store.autosFrischLesen(); // nebenher, ohne zu warten: ändert es etwas, löst das einen neuen Plan aus (planQuellen)
+        const [schichtOk, fixOk] = await Promise.all([store.schichtAktualisieren(vorladeMonate(jm)), adapter.leseFixkosten ? store.fixFrischLesen() : true]);
+        const ok = schichtOk && fixOk;
         if (ok && state.schicht.vorgeladen !== jm) {
           state = { ...state, schicht: { ...state.schicht, vorgeladen: jm } };
           melden();
@@ -2097,10 +2158,8 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
         try {
           g = await adapter.leseAutos();
         } catch (fehler) {
-          if (istAuthFehler(fehler)) {
-            state = { ...state, anmeldungNoetig: true };
-            melden();
-          }
+          state = { ...state, autos: { ...state.autos, frisch: false }, ...(istAuthFehler(fehler) ? { anmeldungNoetig: true } : {}) };
+          melden();
           return false;
         }
         if (stand !== schreibStand || eigene()) return false;
@@ -2218,9 +2277,19 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       const jahr = Number(arbeit.datum.slice(0, 4));
       if (teilGesperrt(auto, jahr) || (altJahr !== null && teilGesperrt(auto, altJahr))) return { ok: false, fehler: TEXT_HISTORIE_GESPERRT };
       const setzen = altJahr === jahr ? (h) => (eintragVorhanden(h.arbeiten, h.fremd?.w, id, TEXT_ARBEIT_WEG), arbeitSetzen(h, arbeit, { heute })) : (h) => arbeitSetzen(h, arbeit, { heute });
-      const r = await autosInJahrAendern(auto, jahr, setzen);
-      if (!r.ok || altJahr === null || altJahr === jahr) return r.ok ? { ok: true, id, warnung } : r;
-      const weg = await autosInJahrAendern(auto, altJahr, (h) => arbeitLoeschenRein(h, id));
+      const wechsel = altJahr !== null && altJahr !== jahr;
+      // Jahreswechsel: jeder der beiden Schritte prüft in seinem eigenen Schreibvorgang (auch beim Nachholen nach der Anmeldung), dass der
+      // andere passt – eingetragen wird nur, was im alten Jahr noch steht (M6), gelöscht nur, was im neuen schon gespeichert ist (I2).
+      const steht = (j, text) => async () => {
+        const g = await adapter.leseHistorie(auto, j);
+        if (!(g.historie?.arbeiten ?? []).some((a) => a.id === id)) throw Object.assign(new Error(text), { fachlich: true });
+      };
+      const imAlten = wechsel ? { vorher: fachlichAsync(steht(altJahr, TEXT_ARBEIT_WEG)) } : undefined;
+      const r = await autosInJahrAendern(auto, jahr, setzen, imAlten);
+      if (!wechsel) return r.ok ? { ok: true, id, warnung } : r;
+      if (!r.ok && !r.wartet) return r;
+      const weg = await autosInJahrAendern(auto, altJahr, (h) => arbeitLoeschenRein(h, id), { vorher: fachlichAsync(steht(jahr, `Die Arbeit wurde nicht verschoben – sie steht weiter im Jahr ${altJahr}.`)) });
+      if (r.wartet) return weg.ok ? r : weg;
       if (weg.ok || weg.wartet) return weg.ok ? { ok: true, id, warnung } : weg;
       fehlerNr += 1;
       const text = `Die Arbeit steht jetzt im Jahr ${jahr}, im Jahr ${altJahr} konnte sie aber nicht entfernt werden – bitte dort noch einmal löschen.`;

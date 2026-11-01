@@ -105,7 +105,7 @@ describe('mapping: versteckte Ereignisse „fkautos“ und „fkah…“', () =>
     daten = historieJahrEintragen(daten, id, 2026);
     daten = historieJahrEintragen(daten, id, 2024);
     const h25 = arbeitSetzen(leereHistorie(id, 2025), oel(id, { datum: '2025-05-10', km: 80_000 }), { heute: HEUTE });
-    const texte = { [historieId(id, 2025)]: historieText(h25), [historieId(id, 2026)]: '{kaputt' };
+    const texte = { [historieId(id, 2025)]: historieText(h25), [historieId(id, 2026)]: '{kaputt', [historieId(id, 2024)]: { geloescht: true } };
     const g = autosAusTexten(autosText(daten), (auto, jahr) => texte[historieId(auto, jahr)] ?? null);
     assert.deepEqual(g.daten, daten);
     assert.deepEqual(Object.keys(g.historie), [id]);
@@ -115,7 +115,9 @@ describe('mapping: versteckte Ereignisse „fkautos“ und „fkah…“', () =>
     assert.deepEqual(g.unlesbar, { shards: [{ auto: id, jahr: 2026 }] });
     assert.deepEqual(g.rohtexte, [{ id: historieId(id, 2026), text: '{kaputt' }]);
     assert.equal(g.warnungen.length, 2);
-    assert.ok(g.warnungen.some((w) => w.includes('2024') && w.includes('Fiat 500')), g.warnungen.join(' | '));
+    assert.ok(g.warnungen.some((w) => w.includes('2024') && w.includes('Fiat 500') && w.includes('gelöscht')), g.warnungen.join(' | '));
+    const still = autosAusTexten(autosText(daten), () => null);
+    assert.deepEqual([still.warnungen, still.historie[id][2024]], [[], leereHistorie(id, 2024)], 'nie angelegt: still leer');
     assert.ok(g.warnungen.some((w) => w.includes('2026') && w.includes('unlesbar')), g.warnungen.join(' | '));
 
     const unl = autosAusTexten('{kaputt', () => assert.fail('ohne lesbaren Index wird kein Teil gefragt'));
@@ -141,7 +143,7 @@ describe('Google-Adapter: Autos', () => {
     assert.ok(!t.log.some((x) => x.includes('fkautos') || x.includes('fkah')), t.log.join(' '));
   });
 
-  test('liest erst „fkautos“, dann alle Teile des Jahres-Index gleichzeitig; ein fehlender Teil zählt leer (mit Warnung)', async () => {
+  test('liest erst „fkautos“, dann alle Teile des Jahres-Index gleichzeitig; ein nie angelegter Teil zählt still leer', async () => {
     const { daten: d0, paket } = hauptMitAuto();
     const id = paket.auto.id;
     const daten = [2024, 2025, 2026].reduce((d, j) => historieJahrEintragen(d, id, j), d0);
@@ -156,7 +158,7 @@ describe('Google-Adapter: Autos', () => {
     assert.equal(t.zaehler.maxGleichzeitig, 3, 'die Teile werden gleichzeitig gelesen');
     assert.deepEqual(g.daten, daten);
     assert.deepEqual(g.historie[id], { 2024: leereHistorie(id, 2024), 2025: h25, 2026: h26 });
-    assert.equal(g.warnungen.length, 1);
+    assert.deepEqual(g.warnungen, []);
     assert.deepEqual(g.unlesbar, { shards: [] });
   });
 

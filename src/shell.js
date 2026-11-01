@@ -332,7 +332,17 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
     vorgeladen: () => store.getState().schicht.vorgeladen,
     monat: () => todayVienna(store.jetzt()).slice(0, 7),
   });
-  const schichtVorladenAnstossen = (optionen) => schichtVorlader.anstossen(optionen);
+  // Autos mit eigenem Wiederholen (30 s, 2 min, 10 min …), unabhängig vom Push-Tor: scheitert ihr Lesen, wartet sonst nichts darauf
+  const autosVorlader = createSchichtVorlader({
+    bereit: () => (auth ? googleBereit() : store.getState().geladen),
+    vorladen: () => Promise.resolve().then(() => store.autosLaden()),
+    vorgeladen: () => (store.getState().autos.frisch ? todayVienna(store.jetzt()).slice(0, 7) : null),
+    monat: () => todayVienna(store.jetzt()).slice(0, 7),
+  });
+  const schichtVorladenAnstossen = (optionen) => {
+    schichtVorlader.anstossen(optionen);
+    autosVorlader.anstossen(optionen);
+  };
 
   const schichtAbgleich = createSchichtAbgleich({
     aktiv: () => ui.seite() === 'schicht' && document.visibilityState === 'visible' && googleBereit(),

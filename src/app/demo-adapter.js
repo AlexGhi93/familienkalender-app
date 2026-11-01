@@ -6,7 +6,7 @@ import { katalogText, leererMonat, monatText, normalisiereKatalog, normalisiereM
 import { FIX_SHARDS, leererShard, normalisiereShard, shardText, teilGesperrtFehler } from '../domain/fixkosten.js';
 import { zieleGesperrtFehler, zieleLesen, zieleText, zieleWarnungen } from '../domain/sparziele.js';
 import { autosGesperrtFehler, autosLesen, autosText, historieGesperrtFehler, historieLesen, historieText, leereHistorie } from '../domain/autos.js';
-import { autosAusTexten, historieAusEreignis, historieId } from '../calendar/mapping.js';
+import { autosAusTexten, autosTeile, historieAusEreignis, historieId } from '../calendar/mapping.js';
 import { seedDemo } from './seed.js';
 
 const KEY = 'fk.demo.v1';
@@ -236,6 +236,16 @@ export function createDemoAdapter({ speicher = globalThis.localStorage, jetzt = 
     /** Autos und ihr Verlauf lesen (wie beim Google-Adapter): { daten, historie, warnungen, unlesbar, rohtexte }. */
     async leseAutos() {
       return autosGelesen(daten?.autos);
+    },
+    /** Für die Sicherung (wie beim Google-Adapter): leseAutos plus `weitereTeile` = Teile, die der Index nicht kennt (roh). */
+    async leseAutosSicherung() {
+      const g = autosGelesen(daten?.autos);
+      const bekannt = new Set(g.unlesbar.main ? [] : autosTeile(g.daten).map(({ auto, jahr }) => historieId(auto, jahr)));
+      const weitereTeile = Object.entries(daten?.autos?.teile ?? {})
+        .filter(([id]) => !bekannt.has(id))
+        .map(([id, text]) => ({ id, text }))
+        .sort((a, b) => a.id.localeCompare(b.id));
+      return { ...g, weitereTeile };
     },
     /** Ein Verlauf-Teil allein (wie beim Google-Adapter): { historie, unlesbar, warnungen, text, fehlt }. */
     async leseHistorie(auto, jahr) {

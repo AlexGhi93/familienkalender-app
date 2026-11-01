@@ -325,8 +325,22 @@ export function createGoogleAdapter({ api, kalender, jetzt = () => new Date(), a
       const vorab = autosLesen(hauptText);
       const teile = vorab.unlesbar ? [] : autosTeile(vorab.daten);
       const ereignisse = await Promise.all(teile.map(({ auto, jahr }) => api.ereignisse.holen(kalender.anwesenheit, historieId(auto, jahr))));
-      const texte = new Map(teile.map(({ auto, jahr }, i) => [historieId(auto, jahr), !ereignisse[i] || ereignisse[i].status === 'cancelled' ? null : (ereignisse[i].description ?? '')]));
+      const texte = new Map(teile.map(({ auto, jahr }, i) => [historieId(auto, jahr), !ereignisse[i] ? null : ereignisse[i].status === 'cancelled' ? { geloescht: true } : (ereignisse[i].description ?? '')]));
       return autosAusTexten(hauptText, (auto, jahr) => texte.get(historieId(auto, jahr)) ?? null);
+    },
+
+    /**
+     * Für die Sicherung: wie leseAutos, dazu `weitereTeile` = [{ id, text }] aller Verlauf-Teile („fkah…“ am 2000-01-01 in „Anwesenheit“),
+     * die der Index nicht kennt – Teile gelöschter Autos, bei unlesbarem Hauptteil alle. Nichts davon wird je geschrieben.
+     */
+    async leseAutosSicherung() {
+      const [g, versteckt] = await Promise.all([this.leseAutos(), api.ereignisse.liste(kalender.anwesenheit, { von: '2000-01-01', bis: '2000-01-02' })]);
+      const bekannt = new Set(g.unlesbar.main ? [] : autosTeile(g.daten).map(({ auto, jahr }) => historieId(auto, jahr)));
+      const weitereTeile = versteckt
+        .filter((e) => typeof e?.id === 'string' && e.id.startsWith('fkah') && e.status !== 'cancelled' && !bekannt.has(e.id))
+        .map((e) => ({ id: e.id, text: e.description ?? '' }))
+        .sort((a, b) => a.id.localeCompare(b.id));
+      return { ...g, weitereTeile };
     },
 
     /** Ein Verlauf-Teil allein (nach einem Speicherfehler): { historie, unlesbar, warnungen, text (Rohtext, nur wenn unlesbar), fehlt }. */

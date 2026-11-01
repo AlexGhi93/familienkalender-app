@@ -10,6 +10,7 @@ import { createSnapshot, SNAPSHOT_KEY } from '../../src/calendar/snapshot.js';
 import { historieId } from '../../src/calendar/mapping.js';
 import { sicherungAnzahlText, sicherungErstellen } from '../../src/app/sicherung.js';
 import { TEXT_AUTOS_GESPERRT, TEXT_AUTO_WEG, TEXT_HISTORIE_GESPERRT, autoAnlegen, autoAusVorlage, autosText, historieJahrEintragen, historieText, leereAutos, leereHistorie, arbeitSetzen } from '../../src/domain/autos.js';
+import { planQuellen } from '../../src/push/plan.js';
 import { apiAttrappe, speicherAttrappe } from './hilfen.js';
 
 const JETZT = new Date('2026-11-01T08:00:00+01:00');
@@ -60,7 +61,7 @@ const autos = (store) => store.getState().autos;
 describe('Autos laden', () => {
   test('vor dem Lesen leer (Status null); Demo: das Vorladen im Hintergrund bringt die zwei Beispiel-Autos samt Verlauf', async () => {
     const store = createStore(createDemoAdapter({ speicher: speicherAttrappe(), jetzt: () => JETZT }), { jetzt: () => JETZT });
-    assert.deepEqual(autos(store), { daten: leereAutos(), historie: {}, status: null, warnungen: [], unlesbar: { shards: [] } });
+    assert.deepEqual(autos(store), { daten: leereAutos(), historie: {}, status: null, warnungen: [], unlesbar: { shards: [] }, frisch: false });
     await store.laden();
     assert.equal(autos(store).status, null, 'laden() wartet nicht auf die Autos');
     await store.schichtVorladen();
@@ -72,7 +73,7 @@ describe('Autos laden', () => {
     assert.equal(store.getState().schicht.vorgeladen, '2026-11');
   });
 
-  test('Google: autosLaden() liest fkautos und alle Teile aus dem Jahres-Index; ein fehlender Teil zählt leer (Warnung)', async () => {
+  test('Google: autosLaden() liest fkautos und alle Teile aus dem Jahres-Index; ein nie angelegter Teil zählt still leer', async () => {
     const { daten: d0, id } = fiat();
     const daten = historieJahrEintragen(historieJahrEintragen(d0, id, 2025), id, 2026);
     const h25 = arbeitSetzen(leereHistorie(id, 2025), { ...oel(id, { datum: '2025-05-10', km: 80_000 }), id: 'arb00025' }, { heute: HEUTE });
@@ -83,10 +84,11 @@ describe('Autos laden', () => {
     assert.deepEqual(a.daten, daten);
     assert.deepEqual(a.historie[id][2025], h25);
     assert.deepEqual(a.historie[id][2026], leereHistorie(id, 2026));
-    assert.equal(a.warnungen.length, 1);
+    assert.deepEqual(a.warnungen, []);
+    assert.equal(a.frisch, true);
   });
 
-  test('scheitert das Lesen von fkautos (HTTP 500): der Start läuft, die Autos bleiben wie zuletzt gelesen (Status „fehler“), Ändern abgelehnt; Push-Tor zu', async () => {
+  test('scheitert das Lesen von fkautos (HTTP 500): der Start läuft, die Autos bleiben wie zuletzt gelesen (Status „fehler“, nicht frisch); das Push-Tor bleibt offen', async () => {
     const { daten } = fiat();
     let kaputt = false;
     const t = await google({
@@ -103,15 +105,33 @@ describe('Autos laden', () => {
     assert.equal(r.ok, false);
     assert.equal(autos(t.store).status, 'fehler');
     assert.equal(autos(t.store).daten.autos.length, 1, 'die zuletzt gelesenen bleiben');
-    assert.equal(await t.store.schichtFrischLesen(), false, 'ohne frisch gelesene Autos kein Push-Plan');
+    assert.equal(autos(t.store).frisch, false);
+    assert.equal(await t.store.schichtFrischLesen(), true, 'Termine, Schicht, Fixkosten und Kontostand warten nicht auf die Autos');
+    await t.store.autosFrischLesen();
+    assert.equal(autos(t.store).frisch, false);
+    // ein späteres gelungenes Lesen macht die Autos wieder frisch
+    kaputt = false;
+    assert.equal(await t.store.autosFrischLesen(), true);
+    assert.equal(autos(t.store).frisch, true);
+    kaputt = true;
+    await t.store.autosLaden();
+    assert.equal(autos(t.store).frisch, false);
+    kaputt = false;
+    assert.deepEqual(await t.store.autosLaden(), { ok: true });
+    assert.deepEqual([autos(t.store).status, autos(t.store).frisch], ['geladen', true]);
   });
 
-  test('erster Start mit kaputtem fkautos-Lesen: vorgeladen bleibt null, sonst läuft alles', async () => {
+  test('fkautos antwortet für immer mit HTTP 500: das Push-Tor öffnet wie bisher (vorgeladen, schichtFrischLesen), nur die Autos sind nicht frisch', async () => {
     const t = await google({ stoeren: (e) => ({ ...e, holen: async (k, id) => (id === 'fkautos' ? Promise.reject(new Error('HTTP 500')) : e.holen(k, id)) }) });
     assert.equal(t.store.getState().geladen, true);
     await t.store.schichtVorladen();
     assert.equal(autos(t.store).status, 'fehler');
-    assert.equal(t.store.getState().schicht.vorgeladen, null);
+    assert.equal(autos(t.store).frisch, false);
+    assert.equal(t.store.getState().schicht.vorgeladen, '2026-11');
+    assert.equal(await t.store.schichtFrischLesen(), true);
+    assert.equal(await t.store.schichtFrischLesen(), true);
+    assert.equal(t.store.getState().schicht.vorgeladen, '2026-11');
+    assert.equal(planQuellen(t.store.getState(), JETZT) !== null, true, 'der Plan geht hinaus');
     const r = await t.store.autoSpeichern(fiat().paket);
     assert.equal(r.ok, false);
     assert.equal(r.fehler, 'Die Autos konnten nicht gelesen werden. Bitte noch einmal versuchen.');
@@ -387,7 +407,7 @@ describe('Schnappschuss, Sicherung, Demo', () => {
       assert.ok(gelesen, String(autosFeld));
       const store = createStore({ laden: async () => ({}) }, { jetzt: () => JETZT });
       store.starteAusSnapshot(gelesen);
-      assert.deepEqual(autos(store), { daten: leereAutos(), historie: {}, status: null, warnungen: [], unlesbar: { shards: [] } });
+      assert.deepEqual(autos(store), { daten: leereAutos(), historie: {}, status: null, warnungen: [], unlesbar: { shards: [] }, frisch: false });
     }
   });
 
@@ -435,5 +455,178 @@ describe('Schnappschuss, Sicherung, Demo', () => {
     await store.kontoLeeren();
     await store.zuruecksetzen();
     assert.equal(autos(store).daten.autos.length, 2);
+  });
+});
+
+describe('Fix-Runde 1: abgelaufene Anmeldung, Nachholen', () => {
+  /** Google-Store, bei dem `regel(methode, id)` → Fehler-Fabrik oder null bestimmt, ob ein Schreibzugriff scheitert. */
+  async function mitStoerung(vorhanden, ids) {
+    let regel = () => null;
+    const t = await google({
+      vorhanden,
+      ids,
+      stoeren: (e) => ({
+        ...e,
+        einfuegen: async (k, body) => (regel('POST', body.id) ? Promise.reject(regel('POST', body.id)()) : e.einfuegen(k, body)),
+        schreibe: async (k, body) => (regel('PUT', body.id) ? Promise.reject(regel('PUT', body.id)()) : e.schreibe(k, body)),
+        aendere: async (k, id, f, o) => (regel('PATCH', id) ? Promise.reject(regel('PATCH', id)()) : e.aendere(k, id, f, o)),
+        holen: async (k, id) => (regel('GET', id) ? Promise.reject(regel('GET', id)()) : e.holen(k, id)),
+      }),
+    });
+    await t.store.autosLaden();
+    return { ...t, setze: (f) => (regel = f) };
+  }
+  const http500 = () => new Error('HTTP 500');
+
+  test('I1: erstes Jahr bei abgelaufener Anmeldung, beim Nachholen scheitert der Index (500) → der Teil wird NICHT geschrieben, Meldung', async () => {
+    const { daten, id } = fiat();
+    const t = await mitStoerung({ fkautos: autosText(daten) }, ['arb00001']);
+    t.setze(() => authFehler);
+    const r = await t.store.arbeitSpeichern(oel(id));
+    assert.equal(r.wartet, true);
+    t.setze((m, eid) => (eid === 'fkautos' && m !== 'GET' ? http500 : null));
+    await t.store.wiederholeAusstehende();
+    assert.equal(t.roh('kan', historieId(id, 2026)), null, 'kein unsichtbarer Teil ohne Index');
+    assert.deepEqual(JSON.parse(t.text('fkautos')).j, {});
+    assert.ok(t.store.getState().fehler, 'eine Meldung steht da');
+    t.setze(() => null);
+    await t.store.autosLaden();
+    assert.deepEqual(autos(t.store).historie, {}, 'angezeigt wie gespeichert: nichts');
+  });
+
+  test('I1: … und klappt der Index beim Nachholen, stehen Index und Teil sichtbar im Kalender', async () => {
+    const { daten, id } = fiat();
+    const t = await mitStoerung({ fkautos: autosText(daten) }, ['arb00001']);
+    t.setze(() => authFehler);
+    await t.store.arbeitSpeichern(oel(id));
+    t.setze(() => null);
+    await t.store.wiederholeAusstehende();
+    assert.deepEqual(JSON.parse(t.text('fkautos')).j, { [id]: [2026] });
+    await t.store.autosLaden();
+    assert.equal(autos(t.store).historie[id][2026].arbeiten.length, 1);
+  });
+
+  test('I1: auch ohne getrennten Index-Schritt (Index-Schreiben übersprungen) schreibt der Teil zuerst den Index', async () => {
+    const { daten, id } = fiat();
+    const t = await mitStoerung({ fkautos: autosText(daten) }, ['arb00001']);
+    // der Index-Schritt wartet auf die Anmeldung und scheitert beim Nachholen fachlich (Auto inzwischen gelöscht)
+    t.setze(() => authFehler);
+    await t.store.arbeitSpeichern(oel(id));
+    t.setze(() => null);
+    await t.api.ereignisse.schreibe('kan', { id: 'fkautos', description: autosText(leereAutos()) }); // das andere Telefon löscht das Auto
+    await t.store.wiederholeAusstehende();
+    assert.equal(t.roh('kan', historieId(id, 2026)), null);
+    assert.match(t.store.getState().fehler, /gibt es nicht mehr/);
+  });
+
+  test('I2: Jahr ändern bei abgelaufener Anmeldung → nach dem Nachholen genau einmal im neuen Jahr', async () => {
+    const { daten, id } = fiat();
+    const t = await mitStoerung({ fkautos: autosText(historieJahrEintragen(daten, id, 2026)) }, ['arb00001']);
+    await t.store.arbeitSpeichern(oel(id));
+    t.setze(() => authFehler);
+    const r = await t.store.arbeitSpeichern({ ...autos(t.store).historie[id][2026].arbeiten[0], datum: '2025-12-30' });
+    assert.equal(r.wartet, true);
+    t.setze(() => null);
+    await t.store.wiederholeAusstehende();
+    const zaehle = (j) => JSON.parse(t.text(historieId(id, j)) ?? '{"w":[]}').w.filter((w) => w.i === 'arb00001').length;
+    assert.deepEqual([zaehle(2025), zaehle(2026)], [1, 0]);
+    await t.store.autosLaden();
+    assert.deepEqual([autos(t.store).historie[id][2025].arbeiten.length, autos(t.store).historie[id][2026].arbeiten.length], [1, 0]);
+  });
+
+  test('I2: … scheitert beim Nachholen das neue Jahr, bleibt die Arbeit genau einmal im alten Jahr (nichts verloren)', async () => {
+    const { daten, id } = fiat();
+    const t = await mitStoerung({ fkautos: autosText(historieJahrEintragen(daten, id, 2026)) }, ['arb00001']);
+    await t.store.arbeitSpeichern(oel(id));
+    t.setze(() => authFehler);
+    await t.store.arbeitSpeichern({ ...autos(t.store).historie[id][2026].arbeiten[0], datum: '2025-12-30' });
+    t.setze((m, eid) => (eid === historieId(id, 2025) && m !== 'GET' ? http500 : null));
+    await t.store.wiederholeAusstehende();
+    const zaehle = (j) => JSON.parse(t.text(historieId(id, j)) ?? '{"w":[]}').w.filter((w) => w.i === 'arb00001').length;
+    assert.deepEqual([zaehle(2025), zaehle(2026)], [0, 1]);
+    assert.deepEqual(autos(t.store).historie[id][2026].arbeiten.map((a) => a.id), ['arb00001'], 'angezeigt im alten Jahr');
+    assert.deepEqual(autos(t.store).historie[id][2025]?.arbeiten ?? [], []);
+  });
+
+  test('M6: Jahr ändern, aber das andere Telefon hat die Arbeit inzwischen gelöscht → nicht im neuen Jahr wieder angelegt', async () => {
+    const { daten, id } = fiat();
+    const t = await mitStoerung({ fkautos: autosText(historieJahrEintragen(daten, id, 2026)) }, ['arb00001']);
+    await t.store.arbeitSpeichern(oel(id));
+    const alt = autos(t.store).historie[id][2026].arbeiten[0];
+    await t.api.ereignisse.schreibe('kan', { id: historieId(id, 2026), description: historieText(leereHistorie(id, 2026)) });
+    const r = await t.store.arbeitSpeichern({ ...alt, datum: '2025-12-30' });
+    assert.equal(r.ok, false);
+    assert.equal(r.fehler, 'Diese Arbeit gibt es nicht mehr – sie wurde wohl auf dem anderen Telefon gelöscht.');
+    assert.equal(t.roh('kan', historieId(id, 2025)), null);
+  });
+});
+
+describe('Fix-Runde 1: Minors', () => {
+  test('M2: ein gelöschter Teil (cancelled) bekommt den Hinweis, ein nie angelegter nicht', async () => {
+    const { daten, id } = fiat();
+    const t = await google({ vorhanden: { fkautos: autosText(historieJahrEintragen(historieJahrEintragen(daten, id, 2025), id, 2026)), [historieId(id, 2025)]: historieText(leereHistorie(id, 2025)) } });
+    await t.api.ereignisse.loeschen('kan', historieId(id, 2025));
+    await t.store.autosLaden();
+    assert.equal(autos(t.store).warnungen.length, 1);
+    assert.match(autos(t.store).warnungen[0], /2025.*gelöscht/);
+  });
+
+  test('M3: Sicherung nimmt auch Verlauf-Teile außerhalb des Index mit (gelöschtes Auto, Hauptteil unlesbar) – roh', async () => {
+    const { daten, id } = fiat();
+    const t = await google({ vorhanden: { fkautos: autosText(historieJahrEintragen(daten, id, 2026)) }, ids: ['arb00001'] });
+    await t.store.autosLaden();
+    await t.store.arbeitSpeichern(oel(id));
+    await t.store.autoLoeschen(id);
+    const s = sicherungErstellen({ state: await t.store.sicherungsDaten(), appVersion: '1.2.0', jetzt: JETZT });
+    assert.deepEqual(s.autos.weitereTeile.map((x) => x.id), [historieId(id, 2026)]);
+    assert.equal(JSON.parse(s.autos.weitereTeile[0].text).w[0].i, 'arb00001');
+    await t.api.ereignisse.schreibe('kan', { id: 'fkautos', description: '{kaputt' });
+    const s2 = sicherungErstellen({ state: await t.store.sicherungsDaten(), appVersion: '1.2.0', jetzt: JETZT });
+    assert.deepEqual(s2.autos.weitereTeile.map((x) => x.id), [historieId(id, 2026)]);
+    assert.match(sicherungAnzahlText(s2), /Autos unlesbar \(als Text gesichert\)/);
+    assert.doesNotMatch(sicherungAnzahlText(s2), /teilweise/);
+  });
+
+  test('M5: wartet eine Änderung auf die Anmeldung, nimmt der Schnappschuss den zuletzt gespeicherten Stand der Autos', async () => {
+    const { daten, id } = fiat();
+    let auth = false;
+    const t = await google({ vorhanden: { fkautos: autosText(historieJahrEintragen(daten, id, 2026)) }, stoeren: (e) => ({ ...e, einfuegen: async (k, b) => (auth ? Promise.reject(authFehler()) : e.einfuegen(k, b)), aendere: async (k, i, f, o) => (auth ? Promise.reject(authFehler()) : e.aendere(k, i, f, o)) }) });
+    await t.store.autosLaden();
+    auth = true;
+    await t.store.arbeitSpeichern(oel(id));
+    await t.store.autoSpeichern({ ...autos(t.store).daten.autos[0], notiz: 'wartet' });
+    assert.equal(autos(t.store).historie[id][2026].arbeiten.length, 1, 'angezeigt');
+    const speicher = speicherAttrappe();
+    const snapshot = createSnapshot({ speicher, jetzt: () => JETZT });
+    snapshot.speichern({ ...t.store.getState(), anmeldungNoetig: false }, HEUTE);
+    const g = snapshot.lesen().daten.autos;
+    assert.deepEqual(g.historie[id][2026].arbeiten, [], 'die wartende Arbeit gilt nicht als gespeichert');
+    assert.equal(g.daten.autos[0].notiz, undefined);
+  });
+
+  test('M1: sehr große Autos sprengen den Schnappschuss nicht: erst gekürzt (letzte 5 Jahre je Auto), sonst ohne Autos – der Rest wird gespeichert', async () => {
+    const { daten: d0, id } = fiat();
+    const zweit = autoAusVorlage('tesla3', { ezDatum: '2000-01-01' }, { zufall: folge(99) });
+    let daten = autoAnlegen(d0, zweit);
+    const historie = {};
+    const notiz = 'x'.repeat(120);
+    for (const a of [id, zweit.auto.id]) {
+      historie[a] = {};
+      for (let j = 2000; j <= 2026; j += 1) {
+        daten = historieJahrEintragen(daten, a, j);
+        let h = leereHistorie(a, j);
+        for (let i = 0; i < 28; i += 1) h = arbeitSetzen(h, { id: `a${j}${String(i).padStart(3, '0')}`, auto: a, typ: 'sonstiges', datum: `${j}-03-01`, notiz, kosten: 1000 }, { heute: HEUTE });
+        historie[a][j] = h;
+      }
+    }
+    const zustand = { settings: {}, tage: {}, urlaub: [], termine: [{ id: 't1', typ: 'familie', date: '2026-11-02', time: null, label: 'Test', mitnehmen: [], kosten: null }], autos: { daten, historie, status: 'geladen', warnungen: [], unlesbar: { shards: [] }, frisch: true } };
+    const speicher = speicherAttrappe();
+    const snapshot = createSnapshot({ speicher, jetzt: () => JETZT });
+    assert.equal(snapshot.speichern(zustand, HEUTE), true);
+    assert.ok(speicher.getItem(SNAPSHOT_KEY).length <= 200_000);
+    const g = snapshot.lesen().daten;
+    assert.equal(g.termine.length, 1, 'der Rest ist gespeichert');
+    for (const a of [id, zweit.auto.id]) assert.deepEqual(Object.keys(g.autos.historie[a]).map(Number), [2022, 2023, 2024, 2025, 2026]);
+    assert.deepEqual(g.autos.daten, daten, 'der Hauptteil bleibt ganz');
   });
 });

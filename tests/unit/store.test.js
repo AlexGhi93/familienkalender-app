@@ -394,7 +394,7 @@ describe('Einstellungen und Sicherung', () => {
     assert.deepEqual(Object.keys(schicht), ['katalog', 'monate']); // Inhalt: siehe „Schichtplan“
     assert.deepEqual(Object.keys(fixkosten), ['shards', 'unlesbar']); // Inhalt: siehe fixkosten-store.test.js
     assert.deepEqual(Object.keys(ziele), ['daten', 'unlesbar', 'text']); // Inhalt: siehe sparziele-store.test.js
-    assert.deepEqual(Object.keys(autos), ['daten', 'historie', 'rohtexte']); // Inhalt: siehe autos-store.test.js
+    assert.deepEqual(Object.keys(autos), ['daten', 'historie', 'rohtexte', 'weitereTeile']); // Inhalt: siehe autos-store.test.js
   });
 });
 

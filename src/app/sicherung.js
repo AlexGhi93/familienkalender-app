@@ -50,7 +50,8 @@ function zieleSicherung(ziele) {
 /**
  * Autos: Fahrzeuge, Regeln und Reifensätze (wie im Zustand, in ihrer Reihenfolge) und der Verlauf als Liste je Auto und Jahr (sortiert).
  * `autos` = { daten, historie, rohtexte? } wie aus store.sicherungsDaten; ohne → leer. Was diese Version nicht versteht, fehlt nicht
- * unbemerkt: `fremd` = solche Einträge roh (Hauptteil), je Verlauf-Teil `fremd`, `unlesbar` = [{ id, text }] Rohtexte unlesbarer Teile.
+ * unbemerkt: `fremd` = solche Einträge roh (Hauptteil), je Verlauf-Teil `fremd`, `unlesbar` = [{ id, text }] Rohtexte unlesbarer Teile,
+ * `weitereTeile` = [{ id, text }] Verlauf-Teile, die der Index nicht kennt (gelöschte Autos; bei unlesbarem Hauptteil alle), roh.
  */
 function autosSicherung(autos) {
   const d = autos?.daten ?? {};
@@ -59,7 +60,8 @@ function autosSicherung(autos) {
     .sort((a, b) => a.auto.localeCompare(b.auto) || a.jahr - b.jahr);
   const fremd = d.fremd && (d.fremd.a?.length > 0 || d.fremd.r?.length > 0 || d.fremd.s?.length > 0) ? { fremd: d.fremd } : {};
   const unlesbar = Array.isArray(autos?.rohtexte) && autos.rohtexte.length > 0 ? { unlesbar: autos.rohtexte.map(({ id, text }) => ({ id, text })) } : {};
-  return { autos: d.autos ?? [], regeln: d.regeln ?? [], reifensaetze: d.saetze ?? [], verlauf, ...fremd, ...unlesbar };
+  const weitere = Array.isArray(autos?.weitereTeile) && autos.weitereTeile.length > 0 ? { weitereTeile: autos.weitereTeile.map(({ id, text }) => ({ id, text })) } : {};
+  return { autos: d.autos ?? [], regeln: d.regeln ?? [], reifensaetze: d.saetze ?? [], verlauf, ...fremd, ...unlesbar, ...weitere };
 }
 
 const nachDatum = (a, b) => a.date.localeCompare(b.date) || (a.time ?? '').localeCompare(b.time ?? '');
@@ -112,6 +114,7 @@ export function sicherungAnzahlText(s) {
   if (s.ziele?.unlesbar !== undefined) teile.push('Sparziele unlesbar (als Text gesichert)');
   const autos = (s.autos?.autos?.length ?? 0) + (s.autos?.fremd?.a?.length ?? 0);
   if (autos > 0) teile.push(zahl(autos, 'Auto', 'Autos'));
-  if (s.autos?.unlesbar?.length > 0) teile.push('Autos teilweise unlesbar (als Text gesichert)');
+  if (s.autos?.unlesbar?.some((u) => u.id === 'fkautos')) teile.push('Autos unlesbar (als Text gesichert)');
+  else if (s.autos?.unlesbar?.length > 0) teile.push('Autos teilweise unlesbar (als Text gesichert)');
   return teile.join(' · ');
 }
