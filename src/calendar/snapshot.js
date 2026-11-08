@@ -173,6 +173,14 @@ function versicherungFuerSnapshot(v, { jahre = Infinity } = {}) {
   }
 }
 
+/** Nur die neuesten `jahre` Jahre eines schon gespeicherten (rohen) Versicherungs-Schnappschusses (Review M1: kürzen statt verwerfen). */
+function versicherungRohKuerzen(roh, jahre) {
+  if (!istObjekt(roh)) return null;
+  const behalten = new Set(Object.keys(istObjekt(roh.teile) ? roh.teile : {}).map(Number).filter(Number.isInteger).sort((a, b) => b - a).slice(0, jahre).map(String));
+  const nur = (o) => Object.fromEntries(Object.entries(istObjekt(o) ? o : {}).filter(([j]) => behalten.has(j)));
+  return { ...roh, teile: nur(roh.teile), geschrieben: nur(roh.geschrieben) };
+}
+
 /** So viele Jahre bleiben von der Versicherung im Schnappschuss, wenn er sonst zu groß wäre (das laufende und das vorige Jahr). */
 export const SNAPSHOT_VERSICHERUNG_JAHRE = 2;
 
@@ -265,7 +273,8 @@ export function createSnapshot({ speicher = globalThis.localStorage ?? null, jet
         text = JSON.stringify(roh);
       };
       kuerzen('autos', () => autosFuerSnapshot(state.autos, { jahre: SNAPSHOT_AUTOS_JAHRE }));
-      kuerzen('versicherung', () => versicherungFuerSnapshot(state.versicherung, { jahre: SNAPSHOT_VERSICHERUNG_JAHRE }));
+      // nicht gelesen (z. B. gerade am Lesen): die des bisherigen Schnappschusses kürzen, nicht verwerfen
+      kuerzen('versicherung', () => versicherungFuerSnapshot(state.versicherung, { jahre: SNAPSHOT_VERSICHERUNG_JAHRE }) ?? versicherungRohKuerzen(roh.versicherung, SNAPSHOT_VERSICHERUNG_JAHRE));
       kuerzen('autos', () => null);
       kuerzen('versicherung', () => null);
       if (text.length > MAX_SNAPSHOT_ZEICHEN) return false;

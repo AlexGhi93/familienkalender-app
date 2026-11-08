@@ -300,24 +300,20 @@ function autosDemo(heute) {
   return { daten, historie };
 }
 
-/** Beginn der Beispiel-Polizze (fest, wie die Polizze, die die Familie abgeschlossen hat – ohne Polizzennummer). */
-const DEMO_VERSICHERUNG_BEGINN = '2026-10-20';
+/** So viele Tage vor `heute` beginnt die Beispiel-Polizze (Entscheid D1: die Demo zeigt nie „vor dem Beginn“). */
+const DEMO_VERSICHERUNG_TAGE = 21;
 
 /**
- * Erfundene Versicherung für die Demo: Polizze „MedPLUS Privatarzt Basic“ aus der Vorlage für das Kind „Mia“ (Beginn 20.10.2026, keine
- * Polizzennummer) und zwei kleine Medikamenten-Rechnungen – eine schon erstattet (80 %), eine offen. Die Daten liegen relativ zu `heute`
- * (nie in der Zukunft) und, wenn möglich, nicht vor dem Beginn; liegt `heute` selbst davor (Aufnahmen vom 14.10.2026), einige Wochen
- * zurück. → { daten, teile: { [jahr]: { [quartal]: Teil } } } im Zustandsformat; der Demo-Adapter speichert es als Kalendertext.
+ * Erfundene Versicherung für die Demo: Polizze „MedPLUS Privatarzt Basic“ aus der Vorlage für das Kind „Mia“ (Beginn drei Wochen vor
+ * `heute`, keine Polizzennummer – D1) und zwei kleine Medikamenten-Rechnungen nach dem Beginn – eine schon erstattet (80 %), eine
+ * offen. Nie in der Zukunft. → { daten, teile: { [jahr]: { [quartal]: Teil } } } im Zustandsformat; der Demo-Adapter speichert es als
+ * Kalendertext.
  */
 function versicherungDemo(heute) {
-  const polizze = polizzeAusVorlage('medplusBasic', { person: 'Mia', beginn: DEMO_VERSICHERUNG_BEGINN }, { zufall: festerZufall(41) });
-  const frueheste = heute >= DEMO_VERSICHERUNG_BEGINN ? DEMO_VERSICHERUNG_BEGINN : addDays(heute, -60);
-  const tag = (n) => {
-    const d = addDays(heute, -n);
-    return d < frueheste ? frueheste : d;
-  };
+  const tag = (n) => addDays(heute, -n);
+  const polizze = polizzeAusVorlage('medplusBasic', { person: 'Mia', beginn: tag(DEMO_VERSICHERUNG_TAGE) }, { zufall: festerZufall(41) });
   const rechnungen = [
-    { id: 'demovr01', kategorie: 'medi', datum: tag(21), betragCent: 1520, eingereichtAm: tag(20), erstattetCent: 1216, erstattetAm: tag(6), stelle: 'Apotheke' },
+    { id: 'demovr01', kategorie: 'medi', datum: tag(14), betragCent: 1520, eingereichtAm: tag(13), erstattetCent: 1216, erstattetAm: tag(3), stelle: 'Apotheke' },
     { id: 'demovr02', kategorie: 'medi', datum: tag(5), betragCent: 1980, eingereichtAm: tag(4), stelle: 'Apotheke' },
   ];
   let daten = polizzeAnlegen(leereVersicherung(), polizze);

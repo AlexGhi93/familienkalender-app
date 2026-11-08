@@ -39,6 +39,21 @@ export const MAX_KATEGORIE_INFO = 80;
 export const MAX_STELLE = 40;
 export const MAX_RECHNUNG_NOTIZ = 120;
 export const MAX_BETRAG_CENT = 9_999_999; // 99.999,99 €
+export const MAX_FASSUNG = 99_999_999; // Minuten ab 2026 – reicht bis ins 22. Jahrhundert
+
+// ---------------------------------------------------------------- Fassung einer Rechnung (Fix-Runde 1 Task 2: I2, M3)
+//
+// Jede Rechnung trägt `fassung` (kurz `z`): die Minute ihres letzten Schreibens, gezählt ab 01.01.2026 (UTC), aber nie kleiner als die
+// vorige Fassung + 1 – so wächst sie mit jedem Schreiben, auch wenn die Uhr eines Telefons nachgeht. Steht dieselbe Rechnung in mehreren
+// Teilen (abgebrochenes Verschieben), gilt die höchste Fassung (versicherung-rechnung.js); Rechnungen ohne Fassung (ältere Daten) zählen
+// als die ältesten, dann gelten die bisherigen Regeln.
+const FASSUNG_AB_MS = Date.UTC(2026, 0, 1);
+
+/** Die Fassung „jetzt“ (Minuten ab 01.01.2026 UTC, nie negativ) für rechnungSetzen/erstattungSetzen/rechnungTeilWechseln. */
+export const fassungJetzt = (jetzt = new Date()) => Math.min(MAX_FASSUNG, Math.max(0, Math.floor((jetzt.getTime() - FASSUNG_AB_MS) / 60_000)));
+
+/** Neue Fassung: mindestens `jetzt`, und größer als jede der vorigen (fehlende zählen nicht). */
+const naechsteFassung = (jetzt, ...vorige) => Math.min(MAX_FASSUNG, Math.max(jetzt, ...vorige.filter(Number.isInteger).map((f) => f + 1)));
 
 /** Friert ein Objekt samt allem darin ein (Vorlagen sind fest). */
 function tiefFrieren(x) {
@@ -405,7 +420,7 @@ export const versicherungJahrBekannt = (daten, jahr) => istJahr(daten?.ab) && da
 
 // ---------------------------------------------------------------- Rechnung
 
-const RECHNUNG_SCHLUESSEL = new Set(['i', 'k', 'd', 'b', 'e', 'r', 't', 's', 'n']);
+const RECHNUNG_SCHLUESSEL = new Set(['i', 'k', 'd', 'b', 'e', 'r', 't', 's', 'n', 'z']);
 
 /** Aufbau einer Rechnung ohne „heute“ und ohne Polizze → { rechnung (bereinigt, ohne id) } oder { fehler }. */
 function rechnungLesen(e) {
@@ -425,6 +440,7 @@ function rechnungLesen(e) {
   if (!leer(e.stelle) && typeof e.stelle !== 'string') return { fehler: 'Ungültige Angabe bei „Arzt/Apotheke“.' };
   const stelle = sauber(e.stelle);
   if (zeichen(stelle) > MAX_STELLE) return { fehler: `„Arzt/Apotheke“ darf höchstens ${MAX_STELLE} Zeichen haben.` };
+  if (!leer(e.fassung) && !(Number.isInteger(e.fassung) && e.fassung >= 0 && e.fassung <= MAX_FASSUNG)) return { fehler: 'Ungültige Fassung.' };
   if (!leer(e.notiz) && typeof e.notiz !== 'string') return { fehler: 'Ungültige Notiz.' };
   const notiz = sauber(e.notiz);
   if (zeichen(notiz) > MAX_RECHNUNG_NOTIZ) return { fehler: `Die Notiz darf höchstens ${MAX_RECHNUNG_NOTIZ} Zeichen haben.` };
@@ -435,6 +451,7 @@ function rechnungLesen(e) {
   }
   if (stelle !== '') r.stelle = stelle;
   if (notiz !== '') r.notiz = notiz;
+  if (!leer(e.fassung)) r.fassung = e.fassung;
   return { rechnung: r };
 }
 
@@ -488,17 +505,18 @@ function kurzRechnung(r) {
   }
   if (r.stelle) k.s = r.stelle;
   if (r.notiz) k.n = r.notiz;
+  if (r.fassung !== undefined) k.z = r.fassung;
   return k;
 }
 function langRechnung(k) {
   if (!istObjekt(k) || Object.keys(k).some((s) => !RECHNUNG_SCHLUESSEL.has(s))) return null;
   // kurz gespeicherte Beträge und Daten müssen schon Zahlen sein (Text käme nur von einer fremden Version)
-  if (typeof k.b !== 'number' || (k.r !== undefined && typeof k.r !== 'number')) return null;
+  if (typeof k.b !== 'number' || (k.r !== undefined && typeof k.r !== 'number') || (k.z !== undefined && typeof k.z !== 'number')) return null;
   const datum = langDatum(k.d);
   const eingereichtAm = langDatum(k.e);
   const erstattetAm = k.t === undefined ? undefined : langDatum(k.t);
   if (!datum || !eingereichtAm || erstattetAm === null) return null;
-  return normalisiereRechnung({ id: k.i, kategorie: k.k, datum, betragCent: k.b, eingereichtAm, erstattetCent: k.r, erstattetAm, stelle: k.s, notiz: k.n });
+  return normalisiereRechnung({ id: k.i, kategorie: k.k, datum, betragCent: k.b, eingereichtAm, erstattetCent: k.r, erstattetAm, stelle: k.s, notiz: k.n, fassung: k.z });
 }
 
 // ---------------------------------------------------------------- Quartal-Teil: lesen und schreiben
@@ -576,13 +594,19 @@ function rechnungOderFehler(rechnung, opts) {
 /**
  * Trägt eine Rechnung ein oder ändert die mit derselben Kennung (an derselben Stelle). Sie muss in Jahr UND Quartal des Teils gehören
  * (ein geändertes Rechnungsdatum in einem anderen Quartal: rechnungTeilWechseln). Wirft mit der Meldung aus rechnungPruefen (`heute`
- * Pflicht, `polizze` freiwillig); Warnungen halten nicht auf. Gleich → derselbe Teil.
+ * Pflicht, `polizze` freiwillig); Warnungen halten nicht auf. Mit `fassung` (= fassungJetzt()) bekommt die Rechnung eine neue Fassung:
+ * mindestens `fassung` und größer als die der übergebenen Rechnung (die Fassung, die geändert wurde) und die der Rechnung, die schon im
+ * Teil steht. Ohne `fassung` bleibt die übergebene. Gleich → derselbe Teil.
  */
-export function rechnungSetzen(teil, rechnung, { heute, polizze } = {}) {
-  const neu = rechnungOderFehler(rechnung, { heute, polizze });
+export function rechnungSetzen(teil, rechnung, { heute, polizze, fassung } = {}) {
+  let neu = rechnungOderFehler(rechnung, { heute, polizze });
   if (!imTeil(neu, teil)) throw new Error('Diese Rechnung gehört in ein anderes Quartal.');
   const liste = teil.rechnungen ?? [];
   if (!liste.some((r) => r.id === neu.id) && fremdeKennung(teil.fremd?.r, neu.id)) throw new Error(TEXT_KENNUNG_NEUER);
+  if (fassung !== undefined) {
+    if (!Number.isInteger(fassung) || fassung < 0) throw new Error('Ungültige Fassung.');
+    neu = { ...neu, fassung: naechsteFassung(fassung, neu.fassung, liste.find((r) => r.id === neu.id)?.fassung) };
+  }
   const rechnungen = setzeIn(liste, neu);
   return rechnungen ? mitTeil(teil, rechnungen) : teil;
 }
@@ -591,12 +615,12 @@ export function rechnungSetzen(teil, rechnung, { heute, polizze } = {}) {
  * „Erstattung erhalten“: setzt NUR erstattetCent und erstattetAm der Rechnung `id` in der neuesten Fassung (was das andere Telefon an
  * ihr geändert hat, bleibt); `erstattung` null entfernt die Erstattung. Fehlt die Rechnung → TEXT_RECHNUNG_WEG. Gleich → derselbe Teil.
  */
-export function erstattungSetzen(teil, id, erstattung, { heute } = {}) {
+export function erstattungSetzen(teil, id, erstattung, { heute, fassung } = {}) {
   const alt = (teil.rechnungen ?? []).find((r) => r.id === id);
   if (!alt) throw new Error(TEXT_RECHNUNG_WEG);
   const { erstattetCent: _c, erstattetAm: _a, ...ohne } = alt;
   const neu = erstattung === null ? ohne : { ...ohne, erstattetCent: erstattung?.erstattetCent, erstattetAm: erstattung?.erstattetAm };
-  return rechnungSetzen(teil, neu, { heute });
+  return rechnungSetzen(teil, neu, { heute, fassung });
 }
 
 /** Löscht eine Rechnung; unbekannt → derselbe Teil. */
@@ -637,7 +661,7 @@ export function rechnungWiederherstellen(teil, spur) {
  * die Rechnung höchstens doppelt (gezählt wird sie einmal, siehe rechnungenDesJahres), nie gar nicht. Ohne Schritt 1 würde ein Teil vor
  * dem ersten Jahr nie gelesen. Gleicher Teil → null (rechnungSetzen genügt). Ungültige Rechnung oder ungültiges `von` → wirft sofort.
  */
-export function rechnungTeilWechseln(rechnung, von, { heute, polizze, daten } = {}) {
+export function rechnungTeilWechseln(rechnung, von, { heute, polizze, daten, fassung } = {}) {
   if (!istJahr(von?.jahr)) throw new Error('Ungültiges Jahr.');
   if (!istQuartal(von?.quartal)) throw new Error('Ungültiges Quartal.');
   const neu = rechnungOderFehler(rechnung, { heute, polizze });
@@ -648,7 +672,7 @@ export function rechnungTeilWechseln(rechnung, von, { heute, polizze, daten } = 
     von: { jahr: von.jahr, quartal: von.quartal },
     nach,
     jahrEintragen,
-    inNeu: (teil) => rechnungSetzen(teil, neu, { heute, polizze }),
+    inNeu: (teil) => rechnungSetzen(teil, neu, { heute, polizze, fassung }),
     ausAlt: (teil) => rechnungLoeschen(teil, neu.id),
   };
 }

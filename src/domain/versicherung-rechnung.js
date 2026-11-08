@@ -95,6 +95,7 @@ export function jahresStand(polizze, rechnungen, jahr) {
 // ebenso aus leseVersicherung (Google: `updated` des Ereignisses, ISO-Text; Demo: keine). Gesammelt wird über ALLE Teile; jede Rechnung
 // zählt nach ihrem EIGENEN Rechnungsdatum (eine falsch abgelegte zählt in ihrem echten Jahr) und jede Kennung nur einmal. Steht dieselbe
 // Kennung in mehreren Teilen (abgebrochenes Verschieben, beschädigter Schreiber), gilt diese Fassung – feste Rangfolge:
+//   0. die höchste `fassung` (Fix-Runde 1 Task 2: wächst mit jedem Schreiben der Rechnung; fehlend = am ältesten);
 //   1. richtig abgelegt (Jahr und Quartal des Teils = die ihres Rechnungsdatums) vor falsch abgelegt;
 //   2. der zuletzt geschriebene Teil (größerer Zeitstempel; Texte im ISO-Format vergleichen sich wie Zeiten; fehlend = am ältesten);
 //   3. Ersatzregel ohne/bei gleichem Zeitstempel: der spätere Teil (größeres Jahr, dann größeres Quartal).
@@ -111,12 +112,12 @@ function fassungen(teile, geschrieben) {
       const quartal = Number(q);
       const zeit = typeof geschrieben?.[j]?.[q] === 'string' ? geschrieben[j][q] : '';
       (teil?.rechnungen ?? []).forEach((rechnung, stelle) => {
-        const f = { rechnung, jahr, quartal, stelle, zeit, richtig: rechnungJahr(rechnung) === jahr && rechnungQuartal(rechnung) === quartal };
+        const f = { rechnung, jahr, quartal, stelle, zeit, fassung: Number.isInteger(rechnung.fassung) ? rechnung.fassung : -1, richtig: rechnungJahr(rechnung) === jahr && rechnungQuartal(rechnung) === quartal };
         je.set(rechnung.id, [...(je.get(rechnung.id) ?? []), f]);
       });
     }
   }
-  const rang = (a, b) => Number(b.richtig) - Number(a.richtig) || vergleiche(b.zeit, a.zeit) || b.jahr - a.jahr || b.quartal - a.quartal;
+  const rang = (a, b) => b.fassung - a.fassung || Number(b.richtig) - Number(a.richtig) || vergleiche(b.zeit, a.zeit) || b.jahr - a.jahr || b.quartal - a.quartal;
   for (const liste of je.values()) liste.sort(rang);
   return je;
 }

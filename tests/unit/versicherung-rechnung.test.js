@@ -265,3 +265,27 @@ describe('Fix-Runde 2: Rechnungen nach ihrem eigenen Datum, ohne Doppelte (Revie
     assert.deepEqual(alleRechnungen(teile).map((x) => x.datum), ['2026-01-05'], 'ohne Zeitstempel: der spätere Teil');
   });
 });
+
+describe('Fix-Runde 1 Task 2: die höchste Fassung gilt (I2)', () => {
+  const r1 = (mehr) => ({ id: 'rech0001', kategorie: 'physio', datum: '2026-10-28', betragCent: 9000, eingereichtAm: '2026-10-30', ...mehr });
+  const teilMit = (jahr, quartal, r) => rechnungSetzen(leererVersicherungTeil(jahr, quartal), r, { heute: '2026-11-08' });
+
+  test('zwei richtig abgelegte Fassungen: die höhere gewinnt – auch gegen einen neueren Zeitstempel des Teils und gegen die Ersatzregel', () => {
+    const teile = { 2026: { 3: teilMit(2026, 3, r1({ datum: '2026-09-30', betragCent: 7777, fassung: 11 })), 4: teilMit(2026, 4, r1({ fassung: 10 })) } };
+    const geschrieben = { 2026: { 3: '2026-11-08T07:00:00Z', 4: '2026-11-08T09:00:00Z' } };
+    for (const g of [undefined, geschrieben]) {
+      assert.deepEqual(rechnungenDesJahres(teile, 2026, { geschrieben: g }).map((x) => x.betragCent), [7777]);
+      assert.deepEqual(alleRechnungen(teile, { geschrieben: g }).length, 1);
+      const f = rechnungFinden(teile, 'rech0001', { geschrieben: g });
+      assert.deepEqual([f.von, f.weitere], [{ jahr: 2026, quartal: 3 }, [{ jahr: 2026, quartal: 4 }]]);
+    }
+  });
+
+  test('mit Fassung vor ohne (ältere Daten), sogar vor einer richtig abgelegten; ohne Fassung auf beiden Seiten die bisherigen Regeln', () => {
+    const falsch = { ...leererVersicherungTeil(2026, 3), rechnungen: [r1({ betragCent: 5, fassung: 0 })] };
+    const teile = { 2026: { 3: falsch, 4: teilMit(2026, 4, r1()) } };
+    assert.deepEqual(rechnungenDesJahres(teile, 2026).map((x) => x.betragCent), [5]);
+    const alt = { 2026: { 3: { ...falsch, rechnungen: [r1({ betragCent: 5 })] }, 4: teilMit(2026, 4, r1()) } };
+    assert.deepEqual(rechnungenDesJahres(alt, 2026).map((x) => x.betragCent), [9000], 'richtig abgelegt gilt wie bisher');
+  });
+});

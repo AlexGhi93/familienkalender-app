@@ -10,6 +10,8 @@ import { createGoogleAdapter } from '../../src/calendar/google-adapter.js';
 import { createSnapshot, SNAPSHOT_KEY } from '../../src/calendar/snapshot.js';
 import { sicherungAnzahlText, sicherungErstellen } from '../../src/app/sicherung.js';
 import { seedDemo } from '../../src/app/seed.js';
+import { addDays } from '../../src/domain/dates.js';
+import { fassungJetzt, rechnungPruefen } from '../../src/domain/versicherung.js';
 import { TEXT_RECHNUNG_WEG, TEXT_POLIZZE_WEG, TEXT_VERSICHERUNG_GESPERRT, TEXT_VERSICHERUNG_TEIL_GESPERRT, leererVersicherungTeil, leereVersicherung, polizzeAnlegen, polizzeAusVorlage, rechnungSetzen, versicherungJahrEintragen, versicherungTeilText, versicherungText } from '../../src/domain/versicherung.js';
 import { alleRechnungen, rechnungenDesJahres, rechnungFinden } from '../../src/domain/versicherung-rechnung.js';
 import { apiAttrappe, speicherAttrappe } from './hilfen.js';
@@ -72,7 +74,7 @@ describe('Versicherung laden', () => {
     await store.versicherungLaden();
     const v = vers(store);
     assert.deepEqual([v.status, v.frisch], ['geladen', true]);
-    assert.deepEqual([v.daten.polizze.name, v.daten.polizze.person, v.daten.polizze.beginn, v.daten.polizze.maximumCent], ['MedPLUS Privatarzt Basic', 'Mia', '2026-10-20', 314400]);
+    assert.deepEqual([v.daten.polizze.name, v.daten.polizze.person, v.daten.polizze.beginn, v.daten.polizze.maximumCent], ['MedPLUS Privatarzt Basic', 'Mia', '2026-10-18', 314400]);
     const alle = alleRechnungen(v.teile);
     assert.deepEqual(alle.map((r) => [r.kategorie, r.betragCent]), [['medi', 1520], ['medi', 1980]]);
     assert.equal(alle.filter((r) => r.erstattetCent !== undefined).length, 1, 'eine erstattet, eine offen');
@@ -607,10 +609,10 @@ describe('Schnappschuss, Sicherung, Demo', () => {
 
 describe('Demo-Beispieldaten (seedDemo)', () => {
   for (const heute of ['2026-11-08', '2026-10-14', '2027-01-03', '2026-10-20']) {
-    test(`am ${heute}: Polizze MedPLUS Basic für „Mia“ ab 20.10.2026, zwei Medikamenten-Rechnungen (eine erstattet), nichts in der Zukunft`, () => {
+    test(`am ${heute}: Polizze MedPLUS Basic für „Mia“ ab heute − 3 Wochen (D1), zwei Medikamenten-Rechnungen (eine erstattet), nie „vor dem Beginn“, nichts in der Zukunft`, () => {
       const { versicherung } = seedDemo(heute);
       const p = versicherung.daten.polizze;
-      assert.deepEqual([p.vorlage, p.person, p.beginn], ['medplusBasic', 'Mia', '2026-10-20']);
+      assert.deepEqual([p.vorlage, p.person, p.beginn], ['medplusBasic', 'Mia', addDays(heute, -21)]);
       const alle = alleRechnungen(versicherung.teile);
       assert.deepEqual(alle.map((r) => [r.kategorie, r.betragCent]), [['medi', 1520], ['medi', 1980]]);
       const [erstattet, offen] = alle;
@@ -619,8 +621,171 @@ describe('Demo-Beispieldaten (seedDemo)', () => {
       for (const r of alle) {
         for (const d of [r.datum, r.eingereichtAm, r.erstattetAm].filter(Boolean)) assert.ok(d <= heute, `${d} ≤ ${heute}`);
         assert.ok(r.datum <= r.eingereichtAm);
+        assert.ok(r.datum >= p.beginn, `${r.datum} ≥ Beginn ${p.beginn}`);
+        assert.deepEqual(rechnungPruefen(r, { heute, polizze: p }), { fehler: null, warnung: null });
       }
       for (const jahr of Object.keys(versicherung.teile).map(Number)) assert.ok(versicherung.daten.ab <= jahr);
     });
   }
+});
+
+describe('Fix-Runde 1 (Review Task 2)', () => {
+  const kopieQ3 = () => JSON.stringify({ v: 1, j: 2026, q: 3, r: [{ i: 'rech0001', k: 'physio', d: 20261028, b: 5000, e: 20261030 }] });
+  const fassung = (text, id = 'rech0001') => imText(text).find((x) => x.i === id)?.z;
+
+  test('jedes Schreiben einer Rechnung gibt ihr eine neue Fassung (neu, ändern, Erstattung, verschieben)', async () => {
+    const t = await google({ vorhanden: { fkversicherung: haupt(2026) }, ids: ['neu00001'] });
+    await t.store.versicherungLaden();
+    const jetzt = fassungJetzt(JETZT);
+    await t.store.rechnungSpeichern(rechnung({ id: undefined }));
+    assert.equal(fassung(t.text('fkvr20264'), 'neu00001'), jetzt);
+    await t.store.rechnungSpeichern({ ...rechnungen(t.store, 2026)[0], notiz: 'a' });
+    assert.equal(fassung(t.text('fkvr20264'), 'neu00001'), jetzt + 1, 'die Uhr steht (Test): trotzdem größer als die vorige');
+    await t.store.erstattungSpeichern('neu00001', { erstattetCent: 100, erstattetAm: HEUTE });
+    assert.equal(fassung(t.text('fkvr20264'), 'neu00001'), jetzt + 2);
+    await t.store.rechnungSpeichern({ ...rechnungen(t.store, 2026)[0], datum: '2026-09-30' });
+    assert.equal(fassung(t.text('fkvr20263'), 'neu00001'), jetzt + 3);
+  });
+
+  test('I2: abgebrochenes Verschieben, danach eine andere Rechnung im alten Quartal → die neue Fassung bleibt (auch frisch gelesen), Ändern räumt die alte auf', async () => {
+    let kaputt = false;
+    const t = await google({
+      zeitstempel: true,
+      vorhanden: { fkversicherung: haupt(2026), fkvr20264: teilText(2026, 4, rechnung()) },
+      ids: ['rech0002'],
+      stoeren: (e) => ({ ...e, aendere: async (k, id, f, o) => (kaputt && id === 'fkvr20264' ? Promise.reject(new Error('HTTP 500')) : e.aendere(k, id, f, o)) }),
+    });
+    await t.store.versicherungLaden();
+    kaputt = true;
+    assert.equal((await t.store.rechnungSpeichern(rechnung({ datum: '2026-09-30', betragCent: 7777 }))).ok, false);
+    kaputt = false;
+    assert.equal((await t.store.rechnungSpeichern({ kategorie: 'physio', datum: '2026-10-29', betragCent: 100, eingereichtAm: '2026-10-30' })).ok, true);
+    const zeige = () => rechnungen(t.store, 2026).filter((x) => x.id === 'rech0001').map((x) => [x.datum, x.betragCent]);
+    assert.deepEqual(zeige(), [['2026-09-30', 7777]], 'nach dem Schreiben in den alten Teil');
+    await t.store.versicherungLaden();
+    assert.deepEqual(zeige(), [['2026-09-30', 7777]], 'nach frischem Lesen (der alte Teil hat den neueren Zeitstempel)');
+    assert.equal((await t.store.erstattungSpeichern('rech0001', { erstattetCent: 6000, erstattetAm: HEUTE })).ok, true);
+    assert.deepEqual(imText(t.text('fkvr20263')).map((x) => [x.i, x.b, x.r]), [['rech0001', 7777, 6000]]);
+    assert.deepEqual(imText(t.text('fkvr20264')).map((x) => x.i), ['rech0002'], 'die alte Fassung ist aufgeräumt, nicht die neue');
+  });
+
+  test('I1: Aufräumen einer Kopie, während das andere Telefon die Rechnung genau dorthin verschiebt → nichts geht verloren', async () => {
+    const a = await google({ vorhanden: { fkversicherung: haupt(2026), fkvr20263: kopieQ3(), fkvr20264: teilText(2026, 4, rechnung()) } });
+    let zwischen = null;
+    const a2 = await google({
+      api: a,
+      stoeren: (e) => ({
+        ...e,
+        aendere: async (k, id, f, o) => {
+          if (id === 'fkvr20263' && zwischen) {
+            const z = zwischen;
+            zwischen = null;
+            await z();
+          }
+          return e.aendere(k, id, f, o);
+        },
+      }),
+    });
+    const b = await google({ api: a });
+    await Promise.all([a2.store.versicherungLaden(), b.store.versicherungLaden()]);
+    zwischen = async () => assert.equal((await b.store.rechnungSpeichern(rechnung({ datum: '2026-09-15' }))).ok, true);
+    await a2.store.rechnungSpeichern(rechnung({ notiz: 'Kontrolle' }));
+    const c = await google({ api: a });
+    await c.store.versicherungLaden();
+    assert.deepEqual(rechnungen(c.store, 2026).map((x) => [x.id, x.datum]), [['rech0001', '2026-09-15']], 'die Rechnung steht noch, mit dem Datum von B');
+  });
+
+  test('I1: … auch wenn das Aufräumen auf die Anmeldung wartet und erst Stunden später nachgeholt wird', async () => {
+    let auth = false;
+    const nein = (f) => async (...x) => (auth ? Promise.reject(authFehler()) : f(...x));
+    const a = await google({ vorhanden: { fkversicherung: haupt(2026), fkvr20263: kopieQ3(), fkvr20264: teilText(2026, 4, rechnung()) } });
+    const a2 = await google({
+      api: a,
+      stoeren: (e) => ({
+        ...e,
+        // nach dem Schreiben von Q4 läuft die Anmeldung ab: das Aufräumen in Q3 wartet
+        aendere: async (k, id, f, o) => {
+          if (auth) throw authFehler();
+          const r = await e.aendere(k, id, f, o);
+          if (id === 'fkvr20264') auth = true;
+          return r;
+        },
+        holen: nein(e.holen),
+      }),
+    });
+    await a2.store.versicherungLaden();
+    const r = await a2.store.rechnungSpeichern(rechnung({ notiz: 'Kontrolle' }));
+    assert.equal(r.ok, true, 'Q4 ist geschrieben; das Aufräumen von Q3 wartet');
+    assert.equal(a2.store.ausstehend(), 1);
+    const b = await google({ api: a });
+    await b.store.versicherungLaden();
+    assert.equal((await b.store.rechnungSpeichern(rechnung({ datum: '2026-09-15' }))).ok, true, 'B verschiebt nach Q3 (und entfernt aus Q4)');
+    auth = false;
+    await a2.store.wiederholeAusstehende();
+    assert.deepEqual(imText(a.text('fkvr20263')).map((x) => [x.i, x.d]), [['rech0001', 20260915]], 'nicht blind gelöscht');
+  });
+
+  test('M2: wird das Entfernen im alten Teil abgelehnt, weil die Rechnung im neuen fehlt, steht genau das in der Meldung', async () => {
+    const api = apiAttrappe();
+    for (const [id, description] of Object.entries({ fkversicherung: haupt(2026), fkvr20264: teilText(2026, 4, rechnung()) })) await api.api.ereignisse.schreibe('kan', { id, description });
+    let geleert = false;
+    // gleich nach Schritt 2 entfernt das andere Telefon sie wieder aus Q3 – die Prüfung von Schritt 3 findet sie dort nicht
+    const t = await google({ api, stoeren: (e) => ({ ...e, holen: async (k, id) => {
+      if (id === 'fkvr20263' && !geleert && api.roh('kan', id)) {
+        geleert = true;
+        await api.api.ereignisse.schreibe('kan', { id, description: teilText(2026, 3) });
+      }
+      return e.holen(k, id);
+    } }) });
+    await t.store.versicherungLaden();
+    const r = await t.store.rechnungSpeichern(rechnung({ datum: '2026-09-30' }));
+    assert.equal(geleert, true);
+    assert.equal(r.ok, false);
+    assert.doesNotMatch(r.fehler, /steht jetzt im/);
+    assert.match(r.fehler, /3\. Quartal 2026/);
+    assert.equal(imText(t.text('fkvr20264')).length, 1, 'im alten Teil bleibt sie');
+  });
+
+  test('M2: wartet Schritt 2 auf die Anmeldung, sagt die Meldung das (nicht „nicht verschoben“); nach dem Nachholen steht sie im neuen Quartal', async () => {
+    let auth = false;
+    const nein = (f) => async (...x) => (auth ? Promise.reject(authFehler()) : f(...x));
+    const t = await google({ vorhanden: { fkversicherung: haupt(2026), fkvr20264: teilText(2026, 4, rechnung()) }, stoeren: (e) => ({ ...e, einfuegen: nein(e.einfuegen), aendere: nein(e.aendere) }) });
+    await t.store.versicherungLaden();
+    auth = true; // nur das Schreiben scheitert, das Lesen (Prüfung von Schritt 3) noch nicht
+    const r = await t.store.rechnungSpeichern(rechnung({ datum: '2026-09-30' }));
+    assert.equal(r.wartet, true);
+    assert.doesNotMatch(t.store.getState().fehler ?? '', /nicht verschoben/);
+    auth = false;
+    await t.store.wiederholeAusstehende();
+    assert.deepEqual(imText(t.text('fkvr20263')).map((x) => x.i), ['rech0001']);
+    await t.store.versicherungLaden();
+    assert.deepEqual(rechnungen(t.store, 2026).map((x) => x.datum), ['2026-09-30'], 'angezeigt einmal, im neuen Quartal');
+  });
+
+  test('M1: zu großer Schnappschuss, Versicherung gerade nicht gelesen → die bisherige wird gekürzt (letzte 2 Jahre), nicht verworfen', () => {
+    const teile = {};
+    for (let j = 2017; j <= 2026; j += 1) {
+      teile[j] = {};
+      for (let q = 1; q <= 4; q += 1) {
+        const monat = String(q * 3 - 2).padStart(2, '0');
+        let teil = leererVersicherungTeil(j, q);
+        for (let i = 0; i < 20; i += 1) teil = rechnungSetzen(teil, rechnung({ id: `r${j}${q}${String(i).padStart(3, '0')}`, datum: `${j}-${monat}-01`, eingereichtAm: `${j}-${monat}-02`, notiz: 'x'.repeat(110) }), { heute: HEUTE });
+        teile[j][q] = teil;
+      }
+    }
+    const daten = versicherungJahrEintragen(polizzeAnlegen(leereVersicherung(), P), 2017);
+    const speicher = speicherAttrappe();
+    const snapshot = createSnapshot({ speicher, jetzt: () => JETZT });
+    const basis = { settings: {}, tage: {}, urlaub: [], termine: [] };
+    assert.equal(snapshot.speichern({ ...basis, versicherung: { daten, teile, geschrieben: {}, status: 'geladen', warnungen: [], unlesbar: { teile: [] }, frisch: true } }, HEUTE), true);
+    assert.equal(Object.keys(snapshot.lesen().daten.versicherung.teile).length, 10, 'zuerst ganz gespeichert');
+    // jetzt mehr Termine (zusammen zu groß), und die Versicherung wird gerade gelesen (Status „laedt“)
+    const zustand = { ...basis, termine: Array.from({ length: 400 }, (_, i) => ({ id: `t${i}`, typ: 'familie', date: '2026-11-09', time: null, label: 'x'.repeat(100), mitnehmen: [], kosten: null })), versicherung: { status: 'laedt' } };
+    assert.equal(snapshot.speichern(zustand, HEUTE), true);
+    assert.equal(snapshot.lesen().daten.termine.length, 400);
+    const g = snapshot.lesen().daten.versicherung;
+    assert.ok(g, 'die Versicherung ist noch da');
+    assert.deepEqual(Object.keys(g.teile).map(Number), [2025, 2026]);
+    assert.deepEqual(g.daten, daten);
+  });
 });

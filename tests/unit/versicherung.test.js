@@ -3,6 +3,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import * as domain from '../../src/domain/index.js';
+import { MAX_FASSUNG, fassungJetzt, versicherungTeilText as teilTextFuer } from '../../src/domain/versicherung.js';
 import {
   MAX_VERSICHERUNG_TEIL_ZEICHEN,
   MAX_VERSICHERUNG_ZEICHEN,
@@ -347,7 +348,7 @@ describe('Versicherung: Rechnungen je Quartal (C1)', () => {
     assert.throws(() => rechnungTeilWechseln(rechnung(), { jahr: 2026, quartal: 0 }, { heute: HEUTE }), /Quartal/);
   });
 
-  test('C1 Platz: ein Quartal-Teil fasst ≥ 45 Rechnungen mit Erstattung + 20 Zeichen „Arzt/Apotheke“ – ein Jahr also ≥ 180', () => {
+  test('C1 Platz: ein Quartal-Teil fasst ≥ 45 Rechnungen mit Erstattung + 20 Zeichen „Arzt/Apotheke“ + Fassung – ein Jahr also ≥ 180', () => {
     assert.equal(MAX_VERSICHERUNG_TEIL_ZEICHEN, 6000);
     const proQuartal = [];
     for (const q of [1, 2, 3, 4]) {
@@ -356,8 +357,8 @@ describe('Versicherung: Rechnungen je Quartal (C1)', () => {
       let n = 0;
       assert.throws(() => {
         for (;;) {
-          // ungünstig: lange Kategorie, sechsstellige Beträge, Kennungen mit 8 Zeichen
-          t = rechnungSetzen(t, { id: `${q}${String(n).padStart(7, '0')}`, kategorie: 'physio', datum: `2026-${monat}-28`, betragCent: 999_999, eingereichtAm: `2026-${monat}-29`, erstattetCent: 799_999, erstattetAm: `2026-${monat}-30`, stelle: 'Apotheke am Platz 12' }, { heute: '2026-12-31' });
+          // ungünstig: lange Kategorie, sechsstellige Beträge, Kennungen mit 8 Zeichen, siebenstellige Fassung (bis ins Jahr 2045)
+          t = rechnungSetzen(t, { id: `${q}${String(n).padStart(7, '0')}`, kategorie: 'physio', datum: `2026-${monat}-28`, betragCent: 999_999, eingereichtAm: `2026-${monat}-29`, erstattetCent: 799_999, erstattetAm: `2026-${monat}-30`, stelle: 'Apotheke am Platz 12', fassung: 9_999_999 }, { heute: '2026-12-31' });
           n += 1;
         }
       }, (e) => e.message === TEXT_VERSICHERUNG_TEIL_VOLL);
@@ -428,3 +429,35 @@ describe('Versicherung: Fix-Runde 2 (Review I1, M1, M5)', () => {
   });
 });
 
+describe('Versicherung: Fassung je Rechnung (Fix-Runde 1 Task 2: I2, M3)', () => {
+  const teil4 = (...rs) => rs.reduce((t, r) => rechnungSetzen(t, r, { heute: HEUTE }), leererVersicherungTeil(2026, 4));
+
+  test('fassungJetzt: Minuten ab 01.01.2026 (UTC), nie negativ', () => {
+    assert.equal(fassungJetzt(new Date('2026-01-01T00:00:00Z')), 0);
+    assert.equal(fassungJetzt(new Date('2026-01-01T01:30:59Z')), 90);
+    assert.equal(fassungJetzt(new Date('2025-06-01T00:00:00Z')), 0);
+    assert.equal(fassungJetzt(new Date('2026-11-08T07:00:00Z')), 448_260);
+  });
+
+  test('wird kurz als `z` gespeichert und gelesen; ungültig → Fehler bzw. fremd', () => {
+    const t = teil4(rechnung({ fassung: 1234 }));
+    const text = teilTextFuer(t);
+    assert.equal(JSON.parse(text).r[0].z, 1234);
+    assert.equal(pruefeVersicherungTeil(text, { jahr: 2026, quartal: 4 }).teil.rechnungen[0].fassung, 1234);
+    for (const f of [-1, 1.5, '12', MAX_FASSUNG + 1]) assert.match(rechnungPruefen(rechnung({ fassung: f }), { heute: HEUTE }).fehler, /Fassung/, String(f));
+    const alsText = JSON.stringify({ v: 1, j: 2026, q: 4, r: [{ i: 'rech0001', k: 'physio', d: 20261028, b: 1, e: 20261030, z: '12' }] });
+    assert.equal(pruefeVersicherungTeil(alsText, { jahr: 2026, quartal: 4 }).teil.fremd.r.length, 1);
+    assert.equal(pruefeVersicherungTeil(teilTextFuer(teil4(rechnung())), { jahr: 2026, quartal: 4 }).teil.rechnungen[0].fassung, undefined, 'ohne Fassung (ältere Daten) bleibt ohne');
+  });
+
+  test('rechnungSetzen mit `fassung`: mindestens jetzt, größer als die geänderte und die im Teil stehende (Uhr, die nachgeht)', () => {
+    const r = (t) => t.rechnungen[0].fassung;
+    assert.equal(r(rechnungSetzen(leererVersicherungTeil(2026, 4), rechnung(), { heute: HEUTE, fassung: 500 })), 500);
+    assert.equal(r(rechnungSetzen(leererVersicherungTeil(2026, 4), rechnung({ fassung: 800 }), { heute: HEUTE, fassung: 500 })), 801, 'Uhr hinter der vorigen Fassung');
+    assert.equal(r(rechnungSetzen(teil4(rechnung({ fassung: 900 })), rechnung({ fassung: 800 }), { heute: HEUTE, fassung: 500 })), 901, 'neuer als die im Teil');
+    assert.equal(r(rechnungSetzen(teil4(rechnung({ fassung: 7 })), rechnung({ betragCent: 1 }), { heute: HEUTE })), undefined, 'ohne `fassung` bleibt die übergebene');
+    assert.equal(r(erstattungSetzen(teil4(rechnung({ fassung: 40 })), 'rech0001', { erstattetCent: 1, erstattetAm: HEUTE }, { heute: HEUTE, fassung: 10 })), 41);
+    const plan = rechnungTeilWechseln(rechnung({ fassung: 60, datum: '2026-09-30' }), { jahr: 2026, quartal: 4 }, { heute: HEUTE, fassung: 50 });
+    assert.equal(r(plan.inNeu(leererVersicherungTeil(2026, 3))), 61, 'die verschobene Fassung ist neuer als die alte');
+  });
+});
