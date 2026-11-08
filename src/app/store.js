@@ -1498,11 +1498,16 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     return null;
   }
 
-  /** Steht die Rechnung `id` (frisch gelesen) im Teil `t`? Sonst fachliche Ablehnung mit `text` – für die Schritte beim Verschieben. */
-  const rechnungSteht = (id, t, text) =>
+  /**
+   * Steht die Rechnung `id` (frisch gelesen) im Teil `t`? Sonst fachliche Ablehnung mit `text` – für die Schritte beim Verschieben.
+   * `merke(fassung)` bekommt die frisch gelesene Fassung (fehlend = −1), auch beim Nachholen nach der Anmeldung (Fix-Runde 2).
+   */
+  const rechnungSteht = (id, t, text, merke = null) =>
     fachlichAsync(async () => {
       const g = await adapter.leseVersicherungTeil(t.jahr, t.quartal);
-      if (!(g.teil?.rechnungen ?? []).some((r) => r.id === id)) throw Object.assign(new Error(text), { fachlich: true });
+      const x = (g.teil?.rechnungen ?? []).find((r) => r.id === id);
+      if (!x) throw Object.assign(new Error(text), { fachlich: true });
+      merke?.(fassungVon(x));
     });
 
   /** Eine Meldung, die die Shell zeigt (auch wenn sie gleich lautet wie die vorige). */
@@ -2961,13 +2966,23 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
         const j = await versHauptSicher((d) => versicherungJahrEintragen(d, plan.jahrEintragen));
         if (!j.ok && !j.wartet) return j;
       }
-      const r = await versInTeilAendern(plan.nach, (t) => plan.inNeu(t), { vorher: rechnungSteht(id, von, TEXT_RECHNUNG_WEG) });
+      // Schritt 2: neuer als die frisch gelesene Fassung im alten Teil (Fix-Runde 2 a) – ein Verschieben ersetzt nie eine neuere Fassung
+      let vonFrisch;
+      const r = await versInTeilAendern(plan.nach, (t) => plan.inNeu(t, { vorigeFassung: vonFrisch }), { vorher: rechnungSteht(id, von, TEXT_RECHNUNG_WEG, (f) => (vonFrisch = f)) });
       if (!r.ok && !r.wartet) {
         await versHolen(); // z. B. inzwischen gelöscht: auch der alte Teil soll den neuesten Stand zeigen
         return r;
       }
       const nichtImNeuen = `Die Rechnung steht nicht mehr im ${quartalText(plan.nach)} (wohl auf dem anderen Telefon geändert oder gelöscht) – im ${quartalText(von)} bleibt sie stehen. Bitte noch einmal ansehen.`;
-      const weg = await versInTeilAendern(von, (t) => plan.ausAlt(t), { vorher: rechnungSteht(id, plan.nach, nichtImNeuen) });
+      // Schritt 3: die alte Fassung nur löschen, wenn sie älter ist als die frisch gelesene im neuen Teil (Fix-Runde 2 b); sonst bleibt sie
+      const altGeaendert = `Die Rechnung wurde inzwischen auf dem anderen Telefon geändert – sie steht jetzt im ${quartalText(plan.nach)} und im ${quartalText(von)}. Bitte noch einmal ansehen.`;
+      let nachFrisch = fassungVon((state.versicherung.teile[plan.nach.jahr]?.[plan.nach.quartal]?.rechnungen ?? []).find((x) => x.id === id));
+      const ausAlt = (t) => {
+        const neu = plan.ausAlt(t, { nurAelterAls: nachFrisch });
+        if (neu === t && (t.rechnungen ?? []).some((x) => x.id === id)) throw new Error(altGeaendert);
+        return neu;
+      };
+      const weg = await versInTeilAendern(von, ausAlt, { vorher: rechnungSteht(id, plan.nach, nichtImNeuen, (f) => (nachFrisch = f)) });
       if (r.wartet) {
         if (weg.ok || weg.wartet) return r;
         // Schritt 2 wartet auf die Anmeldung, Schritt 3 fand sie darum (noch) nicht im neuen Teil (Review M2 a)
@@ -2977,7 +2992,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       }
       if (weg.ok) return ok(weg);
       if (weg.wartet) return weg;
-      if (weg.fehler === nichtImNeuen) {
+      if (weg.fehler === nichtImNeuen || weg.fehler === altGeaendert) {
         await versHolen(); // Review M2 b: die Meldung der Prüfung stimmt und steht schon da; den neuesten Stand zeigen
         return weg;
       }

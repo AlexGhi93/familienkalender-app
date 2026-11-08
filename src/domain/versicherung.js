@@ -655,8 +655,10 @@ export function rechnungWiederherstellen(teil, spur) {
  *                                   null = nicht nötig. Mit `daten` (Hauptteil) genau: null, wenn versicherungJahrBekannt; ohne `daten`
  *                                   vorsichtig: das neue Jahr, sobald es sich vom alten unterscheidet (der Schritt ist wiederholbar und
  *                                   schreibt nichts, wenn das Jahr schon bekannt ist),
- *     inNeu:  (Teil von `nach`) → Teil mit der Rechnung,
- *     ausAlt: (Teil von `von`)  → Teil ohne sie }
+ *     inNeu:  (Teil von `nach`, { vorigeFassung }) → Teil mit der Rechnung; `vorigeFassung` = die frisch gelesene Fassung im alten
+ *             Teil (Fix-Runde 2 Task 2): die neue Fassung wird größer als sie – ein Verschieben ist immer neuer als, was es ersetzt,
+ *     ausAlt: (Teil von `von`, { nurAelterAls }) → Teil ohne sie; mit `nurAelterAls` (frisch gelesene Fassung im neuen Teil) nur, wenn
+ *             die alte Fassung kleiner ist – sonst derselbe Teil (sie wurde inzwischen geändert und bleibt) }
  * Reihenfolge beim Schreiben: 1) jahrEintragen (falls nicht null) im Hauptteil, 2) inNeu, 3) ausAlt – bricht es dazwischen ab, steht
  * die Rechnung höchstens doppelt (gezählt wird sie einmal, siehe rechnungenDesJahres), nie gar nicht. Ohne Schritt 1 würde ein Teil vor
  * dem ersten Jahr nie gelesen. Gleicher Teil → null (rechnungSetzen genügt). Ungültige Rechnung oder ungültiges `von` → wirft sofort.
@@ -672,7 +674,11 @@ export function rechnungTeilWechseln(rechnung, von, { heute, polizze, daten, fas
     von: { jahr: von.jahr, quartal: von.quartal },
     nach,
     jahrEintragen,
-    inNeu: (teil) => rechnungSetzen(teil, neu, { heute, polizze, fassung }),
-    ausAlt: (teil) => rechnungLoeschen(teil, neu.id),
+    inNeu: (teil, { vorigeFassung } = {}) => rechnungSetzen(teil, Number.isInteger(vorigeFassung) && vorigeFassung > (neu.fassung ?? -1) ? { ...neu, fassung: vorigeFassung } : neu, { heute, polizze, fassung }),
+    ausAlt: (teil, { nurAelterAls } = {}) => {
+      const alt = (teil.rechnungen ?? []).find((r) => r.id === neu.id);
+      if (alt && nurAelterAls !== undefined && !((Number.isInteger(alt.fassung) ? alt.fassung : -1) < nurAelterAls)) return teil;
+      return rechnungLoeschen(teil, neu.id);
+    },
   };
 }

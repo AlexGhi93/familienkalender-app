@@ -460,4 +460,17 @@ describe('Versicherung: Fassung je Rechnung (Fix-Runde 1 Task 2: I2, M3)', () =>
     const plan = rechnungTeilWechseln(rechnung({ fassung: 60, datum: '2026-09-30' }), { jahr: 2026, quartal: 4 }, { heute: HEUTE, fassung: 50 });
     assert.equal(r(plan.inNeu(leererVersicherungTeil(2026, 3))), 61, 'die verschobene Fassung ist neuer als die alte');
   });
+
+  test('Fix-Runde 2: Verschieben ist neuer als die frisch gelesene alte Fassung; das Löschen im alten Teil nur, wenn die alte älter ist', () => {
+    const plan = rechnungTeilWechseln(rechnung({ fassung: 60, datum: '2026-09-30' }), { jahr: 2026, quartal: 4 }, { heute: HEUTE, fassung: 50 });
+    assert.equal(plan.inNeu(leererVersicherungTeil(2026, 3), { vorigeFassung: 90 }).rechnungen[0].fassung, 91, 'frisch gelesen 90 (anderes Telefon) → 91');
+    assert.equal(plan.inNeu(leererVersicherungTeil(2026, 3), { vorigeFassung: 10 }).rechnungen[0].fassung, 61, 'kleiner als die angezeigte: zählt nicht');
+    const alt = (f) => teil4(rechnung(f === undefined ? {} : { fassung: f }));
+    assert.deepEqual(plan.ausAlt(alt(60), { nurAelterAls: 61 }).rechnungen, [], 'älter → gelöscht');
+    for (const [f, grenze] of [[61, 61], [70, 61], [undefined, -1]]) {
+      const t = alt(f);
+      assert.equal(plan.ausAlt(t, { nurAelterAls: grenze }), t, `${f} gegen ${grenze}: bleibt`);
+    }
+    assert.deepEqual(plan.ausAlt(alt(99)).rechnungen, [], 'ohne Grenze wie bisher');
+  });
 });

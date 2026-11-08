@@ -40,12 +40,12 @@ const kennungen = (...liste) => {
  * Google-Modus auf der API-Attrappe; `vorhanden` = { ereignisId: description } in „Anwesenheit“. `api` = gemeinsame Attrappe (zweites
  * Telefon). `stoeren(ereignisse)` darf Methoden der API ersetzen. `zeitstempel` = jedes Schreiben trägt `updated` ein (wie Google).
  */
-async function google({ vorhanden = {}, api = null, ids = [], stoeren = null, zeitstempel = false, frist } = {}) {
+async function google({ vorhanden = {}, api = null, ids = [], stoeren = null, zeitstempel = false, frist, jetzt = JETZT } = {}) {
   const t = api ?? apiAttrappe({ zeitstempel });
   if (!api) for (const [id, description] of Object.entries(vorhanden)) await t.api.ereignisse.schreibe('kan', { id, description });
   const ereignisse = stoeren ? stoeren({ ...t.api.ereignisse }) : t.api.ereignisse;
-  const adapter = createGoogleAdapter({ api: { ereignisse }, kalender: KALENDER, jetzt: () => JETZT });
-  const store = createStore(adapter, { jetzt: () => JETZT, versicherungId: kennungen(...ids), ...(frist ? { versicherungFristMs: frist } : {}) });
+  const adapter = createGoogleAdapter({ api: { ereignisse }, kalender: KALENDER, jetzt: () => jetzt });
+  const store = createStore(adapter, { jetzt: () => jetzt, versicherungId: kennungen(...ids), ...(frist ? { versicherungFristMs: frist } : {}) });
   await store.laden();
   const schreibLog = () => t.log.filter((x) => !x.startsWith('GET'));
   let marke = 0;
@@ -787,5 +787,122 @@ describe('Fix-Runde 1 (Review Task 2)', () => {
     assert.ok(g, 'die Versicherung ist noch da');
     assert.deepEqual(Object.keys(g.teile).map(Number), [2025, 2026]);
     assert.deepEqual(g.daten, daten);
+  });
+});
+
+describe('Fix-Runde 2 (Re-Review Task 2): Verschieben und Aufräumen nach Fassung geordnet', () => {
+  const kopieQ3 = JSON.stringify({ v: 1, j: 2026, q: 3, r: [{ i: 'rech0001', k: 'physio', d: 20260915, b: 5000, e: 20260916 }] });
+  const inTeil = (t, ev) => JSON.parse(t.text(ev) ?? '{"r":[]}').r;
+  const alle = (t) => [...inTeil(t, 'fkvr20263'), ...inTeil(t, 'fkvr20264')];
+
+  /** A räumt nach dem Ändern die Kopie in Q3 auf; genau vor diesem Schreiben verschiebt Telefon B (Uhr `bUhr`) die Rechnung Q4→Q3. */
+  async function aufraeumenGegenVerschieben({ bUhr = JETZT, vorab = null } = {}) {
+    const a = await google({ vorhanden: { fkversicherung: haupt(2026), fkvr20263: kopieQ3, fkvr20264: teilText(2026, 4, rechnung()) } });
+    let zwischen = null;
+    const a2 = await google({
+      api: a,
+      stoeren: (e) => ({
+        ...e,
+        aendere: async (k, id, f, o) => {
+          if (id === 'fkvr20263' && zwischen) {
+            const z = zwischen;
+            zwischen = null;
+            await z();
+          }
+          return e.aendere(k, id, f, o);
+        },
+      }),
+    });
+    const b = await google({ api: a, jetzt: bUhr });
+    await Promise.all([a2.store.versicherungLaden(), b.store.versicherungLaden()]);
+    if (vorab) await vorab(a, a2);
+    zwischen = async () => assert.equal((await b.store.rechnungSpeichern(rechnung({ datum: '2026-09-15' }))).ok, true);
+    await a2.store.rechnungSpeichern(rechnung({ notiz: 'Kontrolle' }));
+    assert.equal(zwischen, null, 'B hat dazwischen verschoben');
+    return a;
+  }
+
+  test('I1: B verschiebt mit 10 Minuten nachgehender Uhr und alter Anzeige → die Rechnung bleibt (mit dem Datum von B)', async () => {
+    const a = await aufraeumenGegenVerschieben({ bUhr: new Date(JETZT.getTime() - 10 * 60_000) });
+    assert.deepEqual(alle(a).map((x) => [x.i, x.d]), [['rech0001', 20260915]]);
+    assert.ok(inTeil(a, 'fkvr20263')[0].z > fassungJetzt(JETZT), 'neuer als die Fassung, die es ersetzt');
+  });
+
+  test('I1: ohne Uhrversatz – A ändert zweimal in derselben Minute (Fassung läuft der Uhr voraus), B mit alter Anzeige → die Rechnung bleibt', async () => {
+    const a = await aufraeumenGegenVerschieben({
+      vorab: async (api, a2) => {
+        await a2.store.rechnungSpeichern(rechnung({ notiz: 'eins' })); // räumt Q3 schon auf …
+        await api.api.ereignisse.schreibe('kan', { id: 'fkvr20263', description: kopieQ3 }); // … die alte Kopie kommt zurück
+        await a2.store.versicherungLaden();
+      },
+    });
+    assert.deepEqual(alle(a).map((x) => [x.i, x.d]), [['rech0001', 20260915]]);
+  });
+
+  for (const nurQ3 of [false, true]) {
+    test(`I1: Verschieben Q4→Q3 mit alter Kopie in Q3, Anmeldung läuft ab (${nurQ3 ? 'nur für Schritt 2' : 'für alle Schreibvorgänge'}) → nach dem Nachholen gilt die neue Fassung, die gültige alte ist nie weg`, async () => {
+      let auth = false;
+      const nein = (f) => async (k, id, ...x) => (auth && (!nurQ3 || id === 'fkvr20263') ? Promise.reject(authFehler()) : f(k, id, ...x));
+      const t = await google({ vorhanden: { fkversicherung: haupt(2026), fkvr20263: kopieQ3, fkvr20264: teilText(2026, 4, rechnung({ betragCent: 12345 })) }, stoeren: (e) => ({ ...e, einfuegen: nein(e.einfuegen), aendere: nein(e.aendere) }) });
+      await t.store.versicherungLaden();
+      auth = true;
+      const r = await t.store.rechnungSpeichern(rechnung({ datum: '2026-09-30', betragCent: 7777 }));
+      assert.equal(r.wartet, true);
+      assert.ok(alle(t).some((x) => x.b === 12345), 'vor dem Nachholen steht die gültige Fassung noch');
+      auth = false;
+      await t.store.wiederholeAusstehende();
+      assert.ok(alle(t).some((x) => x.b === 7777), 'die Änderung ist gespeichert');
+      await t.store.versicherungLaden();
+      assert.deepEqual(rechnungen(t.store, 2026).map((x) => [x.datum, x.betragCent]), [['2026-09-30', 7777]]);
+    });
+  }
+
+  test('M1: Uhr nach, Anzeige alt, das andere Telefon hat die Rechnung im alten Teil geändert, Schritt 3 scheitert → die Verschiebung gilt trotzdem', async () => {
+    let kaputt = false;
+    const a = await google({
+      jetzt: new Date(JETZT.getTime() - 10 * 60_000),
+      vorhanden: { fkversicherung: haupt(2026), fkvr20264: teilText(2026, 4, rechnung()) },
+      stoeren: (e) => ({ ...e, aendere: async (k, id, f, o) => (kaputt && id === 'fkvr20264' ? Promise.reject(new Error('HTTP 500')) : e.aendere(k, id, f, o)) }),
+    });
+    const b = await google({ api: a });
+    await Promise.all([a.store.versicherungLaden(), b.store.versicherungLaden()]);
+    assert.equal((await b.store.rechnungSpeichern(rechnung({ notiz: 'von B' }))).ok, true);
+    kaputt = true;
+    const r = await a.store.rechnungSpeichern(rechnung({ datum: '2026-09-30', betragCent: 7777 }));
+    assert.deepEqual([r.ok, r.gemeldet], [false, true]);
+    assert.match(r.fehler, /zählt nicht mit/);
+    const c = await google({ api: a });
+    await c.store.versicherungLaden();
+    assert.deepEqual(rechnungen(c.store, 2026).map((x) => [x.datum, x.betragCent]), [['2026-09-30', 7777]], 'nicht still zurückgekippt');
+    assert.ok(inTeil(a, 'fkvr20263')[0].z > inTeil(a, 'fkvr20264')[0].z);
+  });
+
+  test('Schritt 3 lässt eine inzwischen geänderte (gleich neue oder neuere) alte Fassung stehen und sagt es', async () => {
+    const a = await google({ vorhanden: { fkversicherung: haupt(2026), fkvr20264: teilText(2026, 4, rechnung()) } });
+    let zwischen = null;
+    // gleich nach Schritt 2 (die Prüfung von Schritt 3 liest Q3) ändert B die alte Fassung in Q4 mit vorgehender Uhr
+    const b = await google({ api: a, jetzt: new Date(JETZT.getTime() + 60 * 60_000) });
+    const a2 = await google({
+      api: a,
+      stoeren: (e) => ({
+        ...e,
+        holen: async (k, id) => {
+          if (id === 'fkvr20263' && zwischen && a.roh('kan', id)) {
+            const z = zwischen;
+            zwischen = null;
+            await z();
+          }
+          return e.holen(k, id);
+        },
+      }),
+    });
+    await Promise.all([a2.store.versicherungLaden(), b.store.versicherungLaden()]);
+    zwischen = async () => assert.equal((await b.store.rechnungSpeichern(rechnung({ notiz: 'neuer' }))).ok, true);
+    const r = await a2.store.rechnungSpeichern(rechnung({ datum: '2026-09-30' }));
+    assert.equal(zwischen, null);
+    assert.equal(r.ok, false);
+    assert.match(r.fehler, /anderen Telefon geändert/);
+    assert.deepEqual(inTeil(a, 'fkvr20264').map((x) => x.n), ['neuer'], 'die neuere alte Fassung bleibt');
+    assert.equal(inTeil(a, 'fkvr20263').length, 1);
   });
 });
