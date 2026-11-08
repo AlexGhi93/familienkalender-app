@@ -6,7 +6,8 @@ import { katalogText, leererMonat, monatText, normalisiereKatalog, normalisiereM
 import { FIX_SHARDS, leererShard, normalisiereShard, shardText, teilGesperrtFehler } from '../domain/fixkosten.js';
 import { zieleGesperrtFehler, zieleLesen, zieleText, zieleWarnungen } from '../domain/sparziele.js';
 import { autosGesperrtFehler, autosLesen, autosText, historieGesperrtFehler, historieLesen, historieText, leereHistorie } from '../domain/autos.js';
-import { autosAusTexten, autosBisJahr, autosTeile, historieAusEreignis, historieId } from '../calendar/mapping.js';
+import { jahrGesperrtFehler, jahrText, leeresJahr, pruefeJahr, pruefeVersicherung, versicherungGesperrtFehler, versicherungText } from '../domain/versicherung.js';
+import { autosAusTexten, autosBisJahr, autosTeile, historieAusEreignis, historieId, versicherungAusTexten, versicherungBisJahr, versicherungJahrAusEreignis, versicherungJahre, versicherungJahrId } from '../calendar/mapping.js';
 import { seedDemo } from './seed.js';
 
 const KEY = 'fk.demo.v1';
@@ -29,6 +30,18 @@ function autosZuSpeicher({ daten, historie }) {
 
 /** Wie leseAutos beim Google-Adapter, aus den Texten im Speicher. */
 const autosGelesen = (autos, bisJahr) => autosAusTexten(autos?.text ?? null, (auto, jahr) => autos?.teile?.[historieId(auto, jahr)] ?? null, { bisJahr });
+
+/**
+ * Versicherung im Speicher wie im Kalender als Texte: { text (Hauptteil „fkversicherung“, null = noch keiner), jahre: { 'fkvr<JJJJ>': Text } }
+ * – so verhalten sich „unlesbar“ und fremde Einträge wie bei Google. Fehlt es (älterer Speicher) oder ist es unbrauchbar → leer.
+ */
+function versicherungAusSpeicher(roh) {
+  const ok = roh !== null && typeof roh === 'object' && !Array.isArray(roh) && (roh.text === null || typeof roh.text === 'string') && roh.jahre && typeof roh.jahre === 'object';
+  return ok ? { text: roh.text, jahre: Object.fromEntries(Object.entries(roh.jahre).filter(([, t]) => typeof t === 'string')) } : { text: null, jahre: {} };
+}
+
+/** Wie leseVersicherung beim Google-Adapter, aus den Texten im Speicher. */
+const versicherungGelesen = (v, bisJahr) => versicherungAusTexten(v?.text ?? null, (jahr) => v?.jahre?.[versicherungJahrId(jahr)] ?? null, { bisJahr });
 
 /** Schichtdaten aus dem Speicher nachsichtig lesen: { katalog | null, monate: { 'JJJJ-MM': Monat } }; Unbrauchbares fällt weg. */
 function schichtAusSpeicher(roh) {
@@ -85,7 +98,7 @@ export function createDemoAdapter({ speicher = globalThis.localStorage, jetzt = 
 
   function neuErzeugen() {
     const seed = seedDemo(todayVienna(jetzt()));
-    daten = { ...seed, ziele: zieleText(seed.ziele), autos: autosZuSpeicher(seed.autos) }; // Sparziele und Autos wie im Kalender als Text (so verhält sich „unlesbar“ wie bei Google)
+    daten = { ...seed, ziele: zieleText(seed.ziele), autos: autosZuSpeicher(seed.autos), versicherung: versicherungAusSpeicher(null) }; // Sparziele und Autos wie im Kalender als Text (so verhält sich „unlesbar“ wie bei Google)
     sichern();
   }
 
@@ -118,6 +131,7 @@ export function createDemoAdapter({ speicher = globalThis.localStorage, jetzt = 
           // unlesbar und bleibt stehen: wie bei Google wird es nie überschrieben.
           if (daten.ziele === undefined) daten.ziele = null;
           daten.autos = autosAusSpeicher(daten.autos); // … und noch keine Autos
+          daten.versicherung = versicherungAusSpeicher(daten.versicherung); // … und noch keine Versicherung
         }
       }
       return nachAussen();
@@ -273,6 +287,49 @@ export function createDemoAdapter({ speicher = globalThis.localStorage, jetzt = 
       const neu = aenderung(structuredClone(alt.historie));
       if (!neu) return null;
       daten.autos.teile[id] = historieText(neu);
+      sichern();
+      return structuredClone(neu);
+    },
+    /** Versicherung und ihre Rechnungen lesen (wie beim Google-Adapter): { daten, jahre, warnungen, unlesbar, rohtexte }. */
+    async leseVersicherung() {
+      return versicherungGelesen(daten?.versicherung, versicherungBisJahr(jetzt()));
+    },
+    /** Für die Sicherung (wie beim Google-Adapter): leseVersicherung plus `weitereJahre` = Jahr-Teile, die nicht gelesen wurden (roh). */
+    async leseVersicherungSicherung() {
+      const bisJahr = versicherungBisJahr(jetzt());
+      const g = versicherungGelesen(daten?.versicherung, bisJahr);
+      const bekannt = new Set(g.unlesbar.main ? [] : versicherungJahre(g.daten, bisJahr).map(versicherungJahrId));
+      const weitereJahre = Object.entries(daten?.versicherung?.jahre ?? {})
+        .filter(([id]) => !bekannt.has(id))
+        .map(([id, text]) => ({ id, text }))
+        .sort((a, b) => a.id.localeCompare(b.id));
+      return { ...g, weitereJahre };
+    },
+    /** Ein Jahr-Teil allein (wie beim Google-Adapter): { teil, unlesbar, warnungen, text, fehlt }. */
+    async leseVersicherungJahr(jahr) {
+      const text = daten?.versicherung?.jahre?.[versicherungJahrId(jahr)];
+      const g = versicherungJahrAusEreignis(text === undefined ? null : { description: text }, jahr);
+      return { ...g, text: g.unlesbar ? text : null, fehlt: text === undefined };
+    },
+    /** Hauptteil ändern (wie beim Google-Adapter): unlesbar → „VersicherungGesperrt“, nichts geschrieben; zu voll → abgelehnt. */
+    async aendereVersicherung(aenderung) {
+      const alt = pruefeVersicherung(daten.versicherung.text);
+      if (alt.unlesbar) throw versicherungGesperrtFehler();
+      const neu = aenderung(structuredClone(alt.daten));
+      if (!neu) return null;
+      daten.versicherung.text = versicherungText(neu); // wirft, wenn es nicht in den Kalender passen würde
+      sichern();
+      return structuredClone(neu);
+    },
+    /** Nur den Jahr-Teil `jahr` ändern (wie beim Google-Adapter): unlesbar → „VersicherungJahrGesperrt“; ungültiges Jahr → abgelehnt. */
+    async aendereVersicherungJahr(jahr, aenderung) {
+      const id = versicherungJahrId(jahr);
+      const text = daten.versicherung.jahre[id];
+      const alt = text === undefined ? { teil: leeresJahr(jahr), unlesbar: false } : pruefeJahr(text, { jahr });
+      if (alt.unlesbar) throw jahrGesperrtFehler();
+      const neu = aenderung(structuredClone(alt.teil));
+      if (!neu) return null;
+      daten.versicherung.jahre[id] = jahrText({ ...neu, jahr });
       sichern();
       return structuredClone(neu);
     },

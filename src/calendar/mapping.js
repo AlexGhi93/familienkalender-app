@@ -14,6 +14,7 @@ import { katalogAusText, katalogText, monatAusText, monatText } from '../domain/
 import { FIX_SHARDS, shardLesen, shardText } from '../domain/fixkosten.js';
 import { zieleLesen, zieleText, zieleWarnungen } from '../domain/sparziele.js';
 import { autosLesen, autosText, autosWarnungen, historieLesen, historieText, historieWarnungen, leereHistorie } from '../domain/autos.js';
+import { jahrText, jahrWarnungen, leeresJahr, pruefeJahr, pruefeVersicherung, versicherungText, versicherungWarnungen } from '../domain/versicherung.js';
 import { classifyEvent } from '../domain/classify.js';
 import { zeitAusDateTime } from '../domain/format.js';
 import { DEFAULT_SETTINGS, normalizeSettings } from '../domain/settings.js';
@@ -27,6 +28,7 @@ export const KONTO_ID = 'fkkonto'; // monatliche Kontostände von Papa und Mama 
 export const SCHICHTARTEN_ID = 'fkschichtarten'; // Schichtarten von Papa und Mama (siehe domain/schicht.js)
 export const ZIELE_ID = 'fksparen'; // Sparziele und Verschiebungen aus „Frei“ (siehe domain/sparziele.js); nicht „fkziele“: z liegt außerhalb von 0-9 und a-v
 export const AUTOS_ID = 'fkautos'; // Autos, Regeln, Reifensätze und Jahres-Index (siehe domain/autos.js); der Verlauf liegt in „fkah<auto><JJJJ>“
+export const VERSICHERUNG_ID = 'fkversicherung'; // Polizze und erstes Jahr (siehe domain/versicherung.js); die Rechnungen liegen je Jahr in „fkvr<JJJJ>“
 export const TEST_ID = 'fktest'; // „🔔 Test-Erinnerung“ aus Konto & App → Erinnerungen: für die App unsichtbar
 export const MAX_EINSTELLUNGEN_ZEICHEN = 6000; // Google kürzt `description` still bei 8192 Zeichen (Vertragsprobe C11b)
 const TERMIN_MINUTEN = 30;
@@ -408,6 +410,96 @@ export function autosAusTexten(hauptText, teilText, { bisJahr } = {}) {
   return { daten: haupt.daten, historie, warnungen, unlesbar: { shards }, rohtexte };
 }
 
+/** Hauptteil der Versicherung als verstecktes Ereignis „fkversicherung“ (wie die Autos); der Titel nennt weder Person noch Beträge, zu volle Daten werden abgelehnt. */
+export function versicherungZuEreignis(daten) {
+  return schichtEreignis(VERSICHERUNG_ID, '🩺 fk Versicherung (nicht löschen)', versicherungText(daten), 'versicherung');
+}
+
+/**
+ * Liest den Hauptteil → { daten, unlesbar, warnungen } (siehe pruefeVersicherung): fehlender Text → leere Daten; unlesbarer Text →
+ * leere, gesperrte Daten (nie überschreiben); nicht verstandene Kategorien bleiben als `fremd` erhalten.
+ */
+export function versicherungAusEreignis(event) {
+  const { daten, unlesbar } = pruefeVersicherung(event?.description);
+  return { daten, unlesbar, warnungen: versicherungWarnungen({ daten, unlesbar }) };
+}
+
+/** ID des Jahr-Teils mit den Rechnungen eines Kalenderjahres: `fkvr<JJJJ>` (z. B. fkvr2026; nur 0-9 und a-v). */
+export function versicherungJahrId(jahr) {
+  if (!Number.isInteger(jahr) || jahr < 2000 || jahr > 2100) throw new Error(`Ungültiges Jahr: ${jahr}`);
+  return `fkvr${jahr}`;
+}
+
+const VERSICHERUNG_JAHR_KENNUNG = /^fkvr(\d{4})$/;
+
+/** Hat `id` genau das Muster eines Jahr-Teils (fkvr + Jahr 2000–2100)? Eine zufällige Google-ID mit „fkvr…“ zählt nicht. */
+export function istVersicherungJahrId(id) {
+  const m = typeof id === 'string' ? VERSICHERUNG_JAHR_KENNUNG.exec(id) : null;
+  return !!m && Number(m[1]) >= 2000 && Number(m[1]) <= 2100;
+}
+
+/** „fkversicherung“ und die Jahr-Teile „fkvr<JJJJ>“ sind für die übrige App unsichtbar – streng nach Muster, nicht nur nach dem Anfang. */
+export const istVersicherungId = (id) => id === VERSICHERUNG_ID || istVersicherungJahrId(id);
+
+/** Ein Jahr-Teil ({ jahr, rechnungen }) als verstecktes Ereignis „fkvr<JJJJ>“; ein zu voller Teil wird abgelehnt. */
+export function versicherungJahrZuEreignis(teil) {
+  return schichtEreignis(versicherungJahrId(teil?.jahr), '🩺 fk Versicherung-Rechnungen (nicht löschen)', jahrText(teil), 'versicherungjahr');
+}
+
+/** Liest den Jahr-Teil `jahr` → { teil, unlesbar, warnungen } (siehe pruefeJahr). */
+export function versicherungJahrAusEreignis(event, jahr) {
+  const { teil, unlesbar } = pruefeJahr(event?.description, { jahr });
+  return { teil, unlesbar, warnungen: jahrWarnungen({ teil, unlesbar }) };
+}
+
+/** Bis zu welchem Jahr die Rechnungen gelesen werden: das Jahr von morgen in Wien (wie bei den Autos – ein Datum darf 1 Tag voraus sein). */
+export const versicherungBisJahr = (jetzt = new Date()) => Number(addDays(todayVienna(jetzt), 1).slice(0, 4));
+
+/**
+ * Alle Jahre, die zu lesen sind: vom ersten Jahr des Hauptteils bis `bisJahr` (aufsteigend); ohne erstes Jahr keins. Liegt das erste
+ * Jahr nach `bisJahr` (falsche Uhr), wenigstens das erste Jahr.
+ */
+export function versicherungJahre(daten, bisJahr) {
+  const ab = daten?.ab;
+  if (!Number.isInteger(ab)) return [];
+  const bis = Number.isInteger(bisJahr) ? Math.max(bisJahr, ab) : ab;
+  return Array.from({ length: bis - ab + 1 }, (_, i) => ab + i);
+}
+
+/**
+ * Versicherung aus den Texten im Kalender (Google und Demo gleich): `hauptText` = Beschreibung von „fkversicherung“ (null = fehlt),
+ * `jahrTextVon(jahr)` = Beschreibung des Jahr-Teils, null (nie angelegt) oder { geloescht: true } (im Kalender gelöscht). → { daten,
+ * jahre: { [jahr]: Jahr-Teil }, warnungen, unlesbar: { main?: true, jahre: [jahr] }, rohtexte: [{ id, text }] }. Gefragt werden die
+ * Jahre aus versicherungJahre; ein nie angelegtes zählt als leeres Jahr (fehlt still in `jahre`, ist NICHT unlesbar), ein gelöschtes
+ * leer mit Hinweis. Ein Lesefehler ist kein „fehlt“: den meldet der Adapter, indem er selbst scheitert (dann wird nichts geschrieben).
+ * Ist der Hauptteil unlesbar, kennt man kein erstes Jahr: alles leer und gesperrt. `rohtexte` = die Texte der unlesbaren Teile (Sicherung).
+ */
+export function versicherungAusTexten(hauptText, jahrTextVon, { bisJahr } = {}) {
+  const haupt = versicherungAusEreignis(hauptText == null ? null : { description: hauptText });
+  if (haupt.unlesbar) return { daten: haupt.daten, jahre: {}, warnungen: haupt.warnungen, unlesbar: { main: true, jahre: [] }, rohtexte: [{ id: VERSICHERUNG_ID, text: hauptText }] };
+  const jahre = {};
+  const warnungen = [...haupt.warnungen];
+  const unlesbar = [];
+  const rohtexte = [];
+  for (const jahr of versicherungJahre(haupt.daten, bisJahr)) {
+    const text = jahrTextVon(jahr);
+    if (text == null) continue; // nie angelegt: ein leeres Jahr
+    if (typeof text !== 'string') {
+      jahre[jahr] = leeresJahr(jahr);
+      if (text?.geloescht) warnungen.push(`Die Rechnungen ${jahr} der Versicherung wurden im Kalender gelöscht (wohl von Hand); sie werden leer gezeigt.`);
+      continue;
+    }
+    const g = versicherungJahrAusEreignis({ description: text }, jahr);
+    jahre[jahr] = g.teil;
+    warnungen.push(...g.warnungen);
+    if (g.unlesbar) {
+      unlesbar.push(jahr);
+      rohtexte.push({ id: versicherungJahrId(jahr), text });
+    }
+  }
+  return { daten: haupt.daten, jahre, warnungen, unlesbar: { jahre: unlesbar }, rohtexte };
+}
+
 /** Liest das Register; unbrauchbares JSON ergibt `register: null` (nichts wird gelöscht oder erraten). */
 export function geraeteAusEreignis(event) {
   const text = event?.description;
@@ -458,7 +550,7 @@ export function einstellungenAusEreignis(event) {
 export function ereignisZuEintrag(event, kalender, settings) {
   if (event.status === 'cancelled' || !event.start) return { art: 'ignorieren' };
   if (event.id === EINSTELLUNGEN_ID) return { art: 'einstellungen', ...einstellungenAusEreignis(event) };
-  if (event.id === TEST_ID || event.id === GERAETE_ID || event.id === EINKAUF_ID || event.id === KONTO_ID || event.id === ZIELE_ID || istSchichtId(event.id) || istFixId(event.id) || istAutosId(event.id)) return { art: 'ignorieren' };
+  if (event.id === TEST_ID || event.id === GERAETE_ID || event.id === EINKAUF_ID || event.id === KONTO_ID || event.id === ZIELE_ID || istSchichtId(event.id) || istFixId(event.id) || istAutosId(event.id) || istVersicherungId(event.id)) return { art: 'ignorieren' };
 
   const { typ, subtyp, quelle } = classifyEvent(event, kalender);
   if (TAGES_TYPEN.includes(typ)) return { art: 'tag', id: event.id, typ, tage: spanDays(eventSpan(event)), quelle };

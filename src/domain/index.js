@@ -22,6 +22,8 @@ export * from './fixkosten.js';
 export * from './sparziele.js';
 export * from './autos.js';
 export * from './autos-rechnung.js';
+export * from './versicherung.js';
+export * from './versicherung-rechnung.js';
 // notiz.js und schicht.js haben beide MAX_NOTIZ: der ausdrückliche Export gewinnt über `export *` (Termin-Notiz = 300 wie bisher).
 export { MAX_NOTIZ } from './notiz.js';
 export { MAX_NOTIZ as MAX_SCHICHT_NOTIZ } from './schicht.js';
