@@ -225,4 +225,69 @@ test.describe('Versicherung im Konto-Tab (Demo)', () => {
     await expect(page.locator('.vs-liste')).toContainText('Für 2026 ist noch keine Rechnung eingereicht.');
     await expect(page.locator('.vs-kat')).toHaveCount(5);
   });
+
+  test('sehr schmale Telefone (Review T3 M1): unter 360 px „Versich.“, voller Name vorgelesen; nichts läuft über; ab 360 px unverändert', async ({ page }) => {
+    await starteDemo(page, { route: '#/konto' });
+    const versicherung = umschalter(page).getByRole('button', { name: 'Versicherung', exact: true });
+    for (const breite of [320, 359, 360, 375]) {
+      await page.setViewportSize({ width: breite, height: 740 });
+      const kurz = breite < 360;
+      await expect(versicherung, `${breite} px`).toHaveAttribute('title', 'Versicherung');
+      const knopf = await versicherung.evaluate((b) => ({
+        nach: getComputedStyle(b, '::after').display,
+        inhalt: getComputedStyle(b, '::after').content,
+        lang: getComputedStyle(b.querySelector('.konto-segment-lang')).display,
+      }));
+      expect(knopf, `${breite} px`).toEqual(kurz ? { nach: 'inline', inhalt: '"Versich."', lang: 'none' } : { nach: 'none', inhalt: '"Versich."', lang: 'inline' });
+      const masse = await umschalter(page).getByRole('button').evaluateAll((l) => l.map((b) => [b.getAttribute('aria-label') ?? b.textContent, b.scrollWidth - b.clientWidth, b.getBoundingClientRect().height, parseFloat(getComputedStyle(b).fontSize)]));
+      for (const [name, ueber, hoehe, schrift] of masse) {
+        expect(ueber, `${name} bei ${breite} px`).toBeLessThanOrEqual(kurz ? 0 : 1);
+        expect(hoehe, `${name} bei ${breite} px`).toBeGreaterThanOrEqual(44);
+        expect(schrift, `${name} bei ${breite} px`).toBeGreaterThanOrEqual(13);
+      }
+    }
+    await page.setViewportSize({ width: 320, height: 740 });
+    await versicherung.click();
+    await expect(page.getByRole('heading', { name: 'Versicherung 🩺' })).toBeVisible();
+    await expect(versicherung).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  test('alle Blätter (Review T3 M4): Bedienelemente ≥ 44 px hoch, Knöpfe ≥ 44 px breit, Schrift in Feldern und Knöpfen ≥ 16 px', async ({ page }) => {
+    const pruefe = async (name) => {
+      const b = blatt(page, name);
+      await expect(b).toBeVisible();
+      const masse = await b.locator('button:visible, input:visible, select:visible, textarea:visible').evaluateAll((l) =>
+        l.map((el) => [el.getAttribute('aria-label') ?? el.textContent ?? el.name, el.tagName, el.getBoundingClientRect().height, el.getBoundingClientRect().width, parseFloat(getComputedStyle(el).fontSize)]),
+      );
+      expect(masse.length, name).toBeGreaterThan(1);
+      for (const [text, tag, hoehe, breite, schrift] of masse) {
+        expect(hoehe, `${name}: ${text}`).toBeGreaterThanOrEqual(44);
+        if (tag === 'BUTTON') expect(breite, `${name}: ${text}`).toBeGreaterThanOrEqual(44);
+        expect(schrift, `${name}: ${text}`).toBeGreaterThanOrEqual(16);
+      }
+    };
+    await oeffne(page);
+    await page.getByRole('button', { name: '＋ Rechnung einreichen' }).click();
+    await pruefe('＋ Rechnung einreichen');
+    await page.keyboard.press('Escape');
+    await zeilen(page).first().click();
+    await pruefe('🧾 Rechnung ändern');
+    await blatt(page, '🧾 Rechnung ändern').getByRole('button', { name: '✓ Erstattung erhalten' }).click();
+    await pruefe('✓ Erstattung erhalten');
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Polizze bearbeiten' }).click();
+    await pruefe('Polizze bearbeiten');
+    await page.keyboard.press('Escape');
+    await starteDemo(page, { route: '#/konto/kontostand' });
+    await page.getByRole('button', { name: 'Beispieldaten entfernen' }).click();
+    await page.getByRole('dialog', { name: 'Beispieldaten entfernen?' }).getByRole('button', { name: 'Entfernen' }).click();
+    await umschalter(page).getByRole('button', { name: 'Versicherung' }).click();
+    const leer = await page.locator('.vs-leer button:visible').evaluateAll((l) => l.map((x) => [x.textContent, x.getBoundingClientRect().height]));
+    expect(leer.length).toBe(2);
+    for (const [text, hoehe] of leer) expect(hoehe, text).toBeGreaterThanOrEqual(44);
+    await page.getByRole('button', { name: 'MedPLUS Privatarzt Basic anlegen' }).click();
+    await pruefe('MedPLUS Privatarzt Basic anlegen');
+  });
 });

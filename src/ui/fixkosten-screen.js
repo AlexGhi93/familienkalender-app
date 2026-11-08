@@ -12,7 +12,7 @@ const ANSICHTEN = [
   ['kontostand', 'Kontostand'],
   ['fixkosten', 'Fixkosten'],
   ['sparziele', 'Sparziele'],
-  ['versicherung', 'Versicherung'],
+  ['versicherung', 'Versicherung', 'Versich.'],
 ];
 
 let gezeichneteAnsicht = null; // zuletzt gezeichnete Ansicht im Konto-Tab (für data-von)
@@ -69,8 +69,20 @@ export function kontoUmschalter(ui, { jetzt = jetztMs(), bild = naechstesBild, t
       'data-von': laeuft?.von,
       style: stil,
     },
-    ANSICHTEN.map(([wert, text]) =>
-      h('button', { class: `konto-segment-knopf${aktuell === wert ? ' aktiv' : ''}`, type: 'button', 'aria-pressed': aktuell === wert ? 'true' : 'false', onClick: () => aktuell !== wert && ui.setzeKontoAnsicht?.(wert) }, text),
+    // Mit Kurzform (Review T3 M1): unter 360 px zeigt theme.css statt des Namens die Kurzform (::after), der volle Name bleibt der Text
+    // im Knopf, in aria-label (Vorlesen) und title.
+    ANSICHTEN.map(([wert, text, kurz]) =>
+      h(
+        'button',
+        {
+          class: `konto-segment-knopf${aktuell === wert ? ' aktiv' : ''}`,
+          type: 'button',
+          'aria-pressed': aktuell === wert ? 'true' : 'false',
+          ...(kurz ? { 'aria-label': text, title: text, 'data-kurz': kurz } : {}),
+          onClick: () => aktuell !== wert && ui.setzeKontoAnsicht?.(wert),
+        },
+        kurz ? h('span', { class: 'konto-segment-lang' }, text) : text,
+      ),
     ),
   );
 }

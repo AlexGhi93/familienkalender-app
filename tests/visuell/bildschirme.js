@@ -184,6 +184,19 @@ export const BILDSCHIRME = [
     },
   },
   {
+    name: 'versicherung-anlegen',
+    titel: 'Versicherung: Polizze aus der Vorlage anlegen',
+    blatt: true,
+    oeffne: async (p) => {
+      await starteDemo(p, { route: '#/konto/kontostand' });
+      await p.getByRole('button', { name: 'Beispieldaten entfernen' }).click();
+      await p.getByRole('dialog', { name: 'Beispieldaten entfernen?' }).getByRole('button', { name: 'Entfernen' }).click();
+      await ansichtKonto(p, 'Versicherung').click();
+      await p.getByRole('button', { name: 'MedPLUS Privatarzt Basic anlegen' }).click();
+      await p.getByRole('dialog', { name: 'MedPLUS Privatarzt Basic anlegen' }).waitFor();
+    },
+  },
+  {
     name: 'fixkosten-formular',
     titel: 'Konto: Fixkosten-Formular',
     blatt: true,

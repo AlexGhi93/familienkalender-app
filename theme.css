@@ -1105,6 +1105,7 @@ html:has(.blatt-huelle > .blatt[role='dialog']) body {
 }
 
 .blatt-zu {
+  flex: none; /* nie schmaler als 44 px, auch neben einem langen Titel („MedPLUS Privatarzt Basic anlegen“; Glas/Bento ebenso) */
   width: 44px;
   height: 44px;
   border-radius: 50%;
@@ -4083,6 +4084,28 @@ html:has(.screen.einkauf) {
   color: var(--akzent-ink);
 }
 
+/* Sehr schmale Telefone (≤ 359 px, Review T3 M1): „Versicherung“ passt dort in keinem Aussehen, also die Kurzform „Versich.“ (data-kurz);
+   der volle Name bleibt Text, aria-label und title, und die Schrift rückt etwas enger. Ab 360 px ändert sich nichts. */
+.konto-segment-knopf[data-kurz]::after {
+  content: attr(data-kurz);
+  display: none;
+}
+
+@media (max-width: 359px) {
+  /* „Kontostand“ ist bei 320 px in Klassisch sonst 2 px zu breit; Glas setzt seinen eigenen Abstand */
+  .konto-segment-knopf {
+    letter-spacing: -0.035em;
+  }
+
+  .konto-segment-knopf[data-kurz] > .konto-segment-lang {
+    display: none;
+  }
+
+  .konto-segment-knopf[data-kurz]::after {
+    display: inline;
+  }
+}
+
 /* Der Untertitel steht hier unter dem Umschalter, nicht direkt unter der Überschrift */
 .konto-segment + .datum {
   margin-top: 0;
@@ -5414,6 +5437,20 @@ html:has(.screen.einkauf) {
 
 .vs-kat {
   gap: 6px;
+}
+
+/* Platzhalter in den Blättern der Versicherung: wie bei den Autos --ink-2, damit sie auch in Klassisch-Dunkel ≥ 4,5:1 haben (der
+   Standard des Browsers, #757575, kommt dort nur auf 3,2:1). Glas und Bento haben ihre eigenen Platzhalter. */
+.vs-felder input::placeholder,
+.vs-felder textarea::placeholder {
+  color: var(--ink-2);
+  opacity: 1;
+}
+
+/* „Limit X €“: kleine Etiketten ≥ 13 px (Review T3 M2); nur hier, die Sparziele (.sz-ziel-titel small, 0,8rem) bleiben, wie sie sind.
+   Glas und Bento setzen ihre eigene, größere Schrift (themes/konto.css) und gewinnen dort. */
+.vs-kat-titel small {
+  font-size: 0.8125rem;
 }
 
 .vs-info {

@@ -127,8 +127,19 @@ describe('Konto-Umschalter: data-von nur direkt nach dem Umschalten', () => {
   test('die vier Knöpfe bleiben gleich (Reihenfolge, aria-pressed; 1.4.0: „Versicherung“ als vierter)', () => {
     const el = kontoUmschalter({ kontoAnsicht: 'fixkosten', seiteBetreten: true });
     assert.deepEqual(
-      el.kinder.map((k) => [k.kinder[0].text, k.getAttribute('aria-pressed')]),
+      el.kinder.map((k) => [k.kinder[0].text ?? k.kinder[0].kinder[0].text, k.getAttribute('aria-pressed')]),
       [['Kontostand', 'false'], ['Fixkosten', 'true'], ['Sparziele', 'false'], ['Versicherung', 'false']],
     );
+  });
+
+  test('Review T3 M1: „Versicherung“ hat die Kurzform „Versich.“ für ≤ 359 px (CSS), der volle Name bleibt in aria-label und title', () => {
+    const el = kontoUmschalter({ kontoAnsicht: 'versicherung', seiteBetreten: true });
+    const knopf = el.kinder[3];
+    assert.equal(knopf.getAttribute('data-kurz'), 'Versich.');
+    assert.equal(knopf.getAttribute('aria-label'), 'Versicherung');
+    assert.equal(knopf.getAttribute('title'), 'Versicherung');
+    assert.equal(knopf.kinder[0].getAttribute('class'), 'konto-segment-lang');
+    assert.equal(knopf.kinder[0].kinder[0].text, 'Versicherung', 'der Text im Knopf bleibt der volle Name');
+    for (const k of el.kinder.slice(0, 3)) assert.equal(k.getAttribute('data-kurz'), null, 'die anderen drei passen auch bei 320 px');
   });
 });
