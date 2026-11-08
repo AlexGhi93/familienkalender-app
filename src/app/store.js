@@ -1510,6 +1510,17 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       merke?.(fassungVon(x));
     });
 
+  /**
+   * Nach einem gescheiterten Schreiben einer Rechnung (abgelehnt oder Netzfehler; nicht „wartet auf die Anmeldung“) ALLES neu lesen,
+   * nicht nur den einen Teil (Fix-Runde 3 Task 2): sonst stünde eine alte Kopie aus einem anderen Quartal als die Rechnung da – das
+   * andere Telefon hat sie vielleicht gerade dorthin verschoben – und das nächste Ändern schriebe ihren veralteten Inhalt über die
+   * gültige Fassung. → `r` unverändert.
+   */
+  async function versNachFehlerLesen(r) {
+    if (!r.ok && !r.wartet) await versHolen();
+    return r;
+  }
+
   /** Eine Meldung, die die Shell zeigt (auch wenn sie gleich lautet wie die vorige). */
   function versMelden(text) {
     fehlerNr += 1;
@@ -1819,6 +1830,8 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
           return;
         }
       }
+      // Versicherung danach ganz neu lesen (Fix-Runde 3): ein beim Nachholen abgelehnter Schritt hat nur seinen Teil neu gelesen
+      if (versGelesen && adapter.leseVersicherung) await versHolen();
     },
 
     /**
@@ -2952,7 +2965,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       };
       if (!von || gleicherTeil(von, nach)) {
         const setzen = von ? (t) => (eintragVorhanden(t.rechnungen, t.fremd?.r, id, TEXT_RECHNUNG_WEG), rechnungSetzen(t, rechnung, { heute, polizze, fassung })) : (t) => rechnungSetzen(t, rechnung, { heute, polizze, fassung });
-        return ok(await versInTeilAendern(nach, setzen));
+        return ok(await versNachFehlerLesen(await versInTeilAendern(nach, setzen)));
       }
       // Verschieben (Review Focus 2): jeder Schritt prüft in seinem eigenen Schreibvorgang (auch beim Nachholen nach der Anmeldung), dass
       // der andere passt – eingetragen wird nur, was im alten Teil noch steht, gelöscht nur, was im neuen schon gespeichert ist.
@@ -3022,7 +3035,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       const { fehler, warnung } = rechnungPruefen(neu, { heute });
       if (fehler) return { ok: false, fehler };
       if (versTeilGesperrt(f.von)) return { ok: false, fehler: TEXT_VERSICHERUNG_TEIL_GESPERRT };
-      const r = await versInTeilAendern(f.von, (t) => erstattungSetzen(t, id, e, { heute, fassung: fassungJetzt(jetzt()) }));
+      const r = await versNachFehlerLesen(await versInTeilAendern(f.von, (t) => erstattungSetzen(t, id, e, { heute, fassung: fassungJetzt(jetzt()) })));
       if (r.ok) await versKopienEntfernen(id, f.weitere.filter((w) => !gleicherTeil(w, f.von)), { gueltigIn: f.von });
       return r.ok ? { ok: true, warnung } : r;
     },
@@ -3039,13 +3052,13 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       if (!f) return { ok: false, fehler: TEXT_RECHNUNG_WEG };
       if (versTeilGesperrt(f.von)) return { ok: false, fehler: TEXT_VERSICHERUNG_TEIL_GESPERRT };
       let spur = null;
-      const r = await versInTeilAendern(f.von, (t) => {
+      const r = await versNachFehlerLesen(await versInTeilAendern(f.von, (t) => {
         const s = rechnungSpur(t, id);
         if (!s) throw new Error(TEXT_RECHNUNG_WEG);
         const neu = rechnungLoeschenRein(t, id);
         spur = s; // auf der neuesten Fassung: das wirklich Gelöschte
         return neu;
-      });
+      }));
       if (r.ok) await versKopienEntfernen(id, f.weitere);
       const zurueck = async () => {
         const nb = await versBereit();

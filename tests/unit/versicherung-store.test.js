@@ -906,3 +906,79 @@ describe('Fix-Runde 2 (Re-Review Task 2): Verschieben und Aufräumen nach Fassun
     assert.equal(inTeil(a, 'fkvr20263').length, 1);
   });
 });
+
+describe('Fix-Runde 3 (Re-Review 2 Task 2): nach einem gescheiterten Schreiben alles neu lesen', () => {
+  const V = 448100;
+  const P26 = polizzeAusVorlage('medplusBasic', { person: 'Mia', beginn: '2026-01-01' }, { zufall: () => 0 });
+  const haupt26 = versicherungText(versicherungJahrEintragen(polizzeAnlegen(leereVersicherung(), P26), 2026));
+  /** Q3 hält die gültige Fassung (90 €), Q4 eine liegengebliebene ältere (50 €); B verschiebt die gültige nach Q4. A sieht noch den alten Stand. */
+  async function aufbau({ stoeren = null } = {}) {
+    const a = await google({
+      vorhanden: { fkversicherung: haupt26, fkvr20263: teilText(2026, 3, rechnung({ datum: '2026-09-15', eingereichtAm: '2026-09-16', fassung: V })), fkvr20264: teilText(2026, 4, rechnung({ betragCent: 5000, fassung: V - 9 })) },
+      stoeren,
+    });
+    const b = await google({ api: a });
+    await Promise.all([a.store.versicherungLaden(), b.store.versicherungLaden()]);
+    assert.equal(rechnungen(a.store, 2026)[0].betragCent, 9000);
+    assert.equal((await b.store.rechnungSpeichern({ ...rechnungen(b.store, 2026)[0], datum: '2026-10-28', eingereichtAm: '2026-10-30', notiz: 'B' })).ok, true);
+    return a;
+  }
+  /** Danach ändert A die Notiz an dem, was A zeigt: B's Verschiebung und die 90 € müssen bleiben. */
+  async function pruefeNachher(a) {
+    const gezeigt = rechnungen(a.store, 2026);
+    assert.deepEqual(gezeigt.map((x) => [x.datum, x.betragCent, x.notiz]), [['2026-10-28', 9000, 'B']], 'A zeigt B‘s Fassung, nicht die alte Kopie');
+    assert.equal((await a.store.rechnungSpeichern({ ...gezeigt[0], notiz: 'A' })).ok, true);
+    const q4 = imText(a.text('fkvr20264')).filter((x) => x.i === 'rech0001');
+    assert.deepEqual(q4.map((x) => [x.b, x.n]), [[9000, 'A']], 'nichts kippt auf 50 € zurück');
+    assert.deepEqual(imText(a.text('fkvr20263')).filter((x) => x.i === 'rech0001'), []);
+  }
+
+  test('Erstattung abgelehnt („gibt es nicht mehr“) → alles neu gelesen', async () => {
+    const a = await aufbau();
+    const r = await a.store.erstattungSpeichern('rech0001', { erstattetCent: 4000, erstattetAm: '2026-11-05' });
+    assert.deepEqual([r.ok, r.fehler], [false, TEXT_RECHNUNG_WEG]);
+    await pruefeNachher(a);
+  });
+
+  test('Ändern im selben Quartal abgelehnt → alles neu gelesen', async () => {
+    const a = await aufbau();
+    const r = await a.store.rechnungSpeichern({ ...rechnungen(a.store, 2026)[0], notiz: 'A0' });
+    assert.equal(r.ok, false);
+    await pruefeNachher(a);
+  });
+
+  test('Löschen abgelehnt → alles neu gelesen', async () => {
+    const a = await aufbau();
+    assert.equal((await a.store.rechnungLoeschen('rech0001')).ok, false);
+    await pruefeNachher(a);
+  });
+
+  test('Erstattung scheitert mit HTTP 500 → alles neu gelesen', async () => {
+    const kaputt = { an: false };
+    const a = await aufbau({ stoeren: (e) => ({ ...e, aendere: async (...x) => (kaputt.an ? Promise.reject(new Error('HTTP 500')) : e.aendere(...x)) }) });
+    kaputt.an = true;
+    const r = await a.store.erstattungSpeichern('rech0001', { erstattetCent: 4000, erstattetAm: '2026-11-05' });
+    kaputt.an = false;
+    assert.deepEqual([r.ok, r.gemeldet], [false, true]);
+    await pruefeNachher(a);
+  });
+
+  test('beim Nachholen nach der Anmeldung abgelehnt → danach alles neu gelesen', async () => {
+    let auth = false;
+    const nein = (f) => async (...x) => (auth ? Promise.reject(authFehler()) : f(...x));
+    const a = await google({
+      vorhanden: { fkversicherung: haupt26, fkvr20263: teilText(2026, 3, rechnung({ datum: '2026-09-15', eingereichtAm: '2026-09-16', fassung: V })), fkvr20264: teilText(2026, 4, rechnung({ betragCent: 5000, fassung: V - 9 })) },
+      stoeren: (e) => ({ ...e, holen: nein(e.holen), einfuegen: nein(e.einfuegen), aendere: nein(e.aendere) }),
+    });
+    await a.store.versicherungLaden();
+    auth = true;
+    assert.equal((await a.store.erstattungSpeichern('rech0001', { erstattetCent: 4000, erstattetAm: '2026-11-05' })).wartet, true);
+    const b = await google({ api: a });
+    await b.store.versicherungLaden();
+    assert.equal((await b.store.rechnungSpeichern({ ...rechnungen(b.store, 2026)[0], datum: '2026-10-28', eingereichtAm: '2026-10-30', notiz: 'B' })).ok, true);
+    auth = false;
+    await a.store.wiederholeAusstehende();
+    assert.equal(a.store.getState().fehler, TEXT_RECHNUNG_WEG, 'beim Nachholen abgelehnt');
+    await pruefeNachher(a);
+  });
+});
