@@ -1,8 +1,8 @@
 // Versicherung – die Rechnung: Verbrauch, Rest und Überschreitung je Kategorie und Kalenderjahr (Spec §5), offene Erstattungen.
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { ERSTATTUNG_ERINNERUNG_TAGE, jahresStand, offeneErstattungen } from '../../src/domain/versicherung-rechnung.js';
-import { POLIZZE_VORLAGEN, polizzeAusVorlage } from '../../src/domain/versicherung.js';
+import { ERSTATTUNG_ERINNERUNG_TAGE, alleRechnungen, jahresStand, offeneErstattungen, rechnungenDesJahres } from '../../src/domain/versicherung-rechnung.js';
+import { POLIZZE_VORLAGEN, leererVersicherungTeil, polizzeAusVorlage, rechnungSetzen } from '../../src/domain/versicherung.js';
 
 const POLIZZE = polizzeAusVorlage('medplusBasic', { person: 'Mia', beginn: '2026-10-20' }, { zufall: () => 0.5 });
 
@@ -44,7 +44,7 @@ describe('jahresStand: Verbrauch und Rest (Spec §5)', () => {
     s = jahresStand(POLIZZE, [mehr], 2026);
     assert.deepEqual(kat(s, 'heil'), { id: 'heil', limitCent: 22400, verbrauchtCent: 30000, eingereichtCent: 0, erstattetCent: 30000, restCent: 0, ueberschrittenCent: 7600 });
     for (const k of s.kategorien) assert.ok(k.restCent >= 0 && k.ueberschrittenCent >= 0, k.id);
-    assert.ok(s.gesamt.restCent >= 0);
+    assert.equal(s.gesamt.restCent, 314400 - 22400, 'C2: nur bis zum Limit angerechnet');
   });
 
   test('nur das gefragte Jahr zählt (Jahr = Jahr des Rechnungsdatums, nicht des Einreichens)', () => {
@@ -74,6 +74,7 @@ describe('jahresStand: Überschreitung (Review Focus 3)', () => {
     assert.deepEqual([kat(s, 'physio').restCent, kat(s, 'physio').ueberschrittenCent], [0, 10000]);
     assert.deepEqual(s.rechnungen, [{ id: r.id, kategorie: 'physio', verbrauchtCent: 30000, ueberschrittenCent: 10000 }]);
     assert.equal(s.gesamt.ueberschrittenCent, 10000);
+    assert.equal(s.gesamt.restCent, 314400 - 20000, 'C2: was über dem Limit liegt, frisst den Gesamtrest nicht');
   });
 
   test('Maximum unter den Verbrauch gesenkt → Gesamtrest 0, die Rechnung, die das Maximum sprengt, trägt den Anteil', () => {
@@ -121,9 +122,27 @@ describe('jahresStand: Überschreitung (Review Focus 3)', () => {
   test('Rechnung einer Kategorie, die es in der Polizze nicht (mehr) gibt: zählt im Gesamt, ganz als nicht erstattet', () => {
     const r = rechnung('weg', 5000);
     const s = jahresStand(POLIZZE, [r], 2026);
-    assert.deepEqual(s.gesamt, { maximumCent: 314400, verbrauchtCent: 5000, restCent: 309400, ueberschrittenCent: 5000, ohneKategorieCent: 5000 });
+    assert.deepEqual(s.gesamt, { maximumCent: 314400, verbrauchtCent: 5000, restCent: 314400, ueberschrittenCent: 5000, ohneKategorieCent: 5000 });
     assert.ok(s.kategorien.every((k) => k.verbrauchtCent === 0));
     assert.deepEqual(s.rechnungen, [{ id: r.id, kategorie: 'weg', verbrauchtCent: 5000, ueberschrittenCent: 5000 }]);
+  });
+
+  test('C2: Gesamtrest = max(0, Maximum − Σ min(Verbrauch, Limit)); Rest + angerechnet + überschritten = Verbrauch', () => {
+    // Arzt 2.000 € bei Limit 1.600 €: 400 € werden nie erstattet und zählen nicht gegen das Maximum
+    const s = jahresStand(POLIZZE, [rechnung('arzt', 200000)], 2026);
+    assert.deepEqual([s.gesamt.restCent, s.gesamt.ueberschrittenCent, kat(s, 'arzt').restCent, kat(s, 'physio').restCent], [314400 - 160000, 40000, 0, 49000]);
+    // alle Kategorien je 100 € über dem Limit (Σ Limits = 3.144 €), Maximum 2.144 € → Rest 0, über dem Maximum 1.000 €
+    const voll = POLIZZE.kategorien.map((k) => rechnung(k.id, k.limitCent + 10000));
+    assert.equal(jahresStand(POLIZZE, voll, 2026).gesamt.ueberschrittenCent, 5 * 10000, 'bei 3.144 €: nur die Limit-Überschreitungen');
+    const s2 = jahresStand({ ...POLIZZE, maximumCent: 214400 }, voll, 2026);
+    assert.equal(s2.gesamt.restCent, 0);
+    assert.equal(s2.gesamt.ueberschrittenCent, 5 * 10000 + 100000);
+    for (const liste of [voll, [rechnung('arzt', 200000), rechnung('heil', 1000), rechnung('weg', 700)], [rechnung('medi', 41500)]]) {
+      const x = jahresStand({ ...POLIZZE, maximumCent: 250000 }, liste, 2026);
+      const angerechnet = Math.min(x.gesamt.maximumCent, x.kategorien.reduce((a, k) => a + Math.min(k.verbrauchtCent, k.limitCent), 0));
+      assert.equal(x.gesamt.restCent, x.gesamt.maximumCent - angerechnet);
+      assert.equal(angerechnet + x.gesamt.ueberschrittenCent, x.gesamt.verbrauchtCent, 'jeder Cent ist entweder angerechnet oder überschritten');
+    }
   });
 
   test('ohne Polizze → null; ungültiges Jahr wirft', () => {
@@ -135,6 +154,28 @@ describe('jahresStand: Überschreitung (Review Focus 3)', () => {
     const v = POLIZZE_VORLAGEN.medplusBasic;
     assert.deepEqual(v.kategorien.map((k) => k.limitCent), [160000, 49000, 41500, 41500, 22400]);
     assert.equal(v.maximumCent, 314400);
+  });
+});
+
+describe('rechnungenDesJahres / alleRechnungen (C1: Rechnungen aus den Quartal-Teilen)', () => {
+  const HEUTE = '2026-12-31';
+  const teil = (jahr, quartal, ...liste) => liste.reduce((t, r) => rechnungSetzen(t, r, { heute: HEUTE }), leererVersicherungTeil(jahr, quartal));
+  const a = rechnung('arzt', 1000, { datum: '2026-02-01', eingereichtAm: '2026-02-02' });
+  const b = rechnung('arzt', 2000, { datum: '2026-11-01', eingereichtAm: '2026-11-02' });
+  const c = rechnung('physio', 3000, { datum: '2025-12-30', eingereichtAm: '2026-01-02' });
+  const teile = { 2025: { 4: teil(2025, 4, c) }, 2026: { 1: teil(2026, 1, a), 4: teil(2026, 4, b) } };
+
+  test('alle Quartale eines Jahres in Reihenfolge der Quartale; fehlende Quartale/Jahre zählen leer', () => {
+    assert.deepEqual(rechnungenDesJahres(teile, 2026).map((r) => r.id), [a.id, b.id]);
+    assert.deepEqual(rechnungenDesJahres(teile, 2025).map((r) => r.id), [c.id]);
+    assert.deepEqual(rechnungenDesJahres(teile, 2024), []);
+    assert.deepEqual(rechnungenDesJahres(undefined, 2026), []);
+    assert.equal(kat(jahresStand(POLIZZE, rechnungenDesJahres(teile, 2026), 2026), 'arzt').verbrauchtCent, 3000);
+  });
+
+  test('alleRechnungen: über alle Jahre (für offene Erstattungen und Erinnerungen)', () => {
+    assert.deepEqual(alleRechnungen(teile).map((r) => r.id).sort(), [a.id, b.id, c.id].sort());
+    assert.deepEqual(alleRechnungen({}), []);
   });
 });
 

@@ -14,7 +14,7 @@ import { katalogAusText, katalogText, monatAusText, monatText } from '../domain/
 import { FIX_SHARDS, shardLesen, shardText } from '../domain/fixkosten.js';
 import { zieleLesen, zieleText, zieleWarnungen } from '../domain/sparziele.js';
 import { autosLesen, autosText, autosWarnungen, historieLesen, historieText, historieWarnungen, leereHistorie } from '../domain/autos.js';
-import { jahrText, jahrWarnungen, leeresJahr, pruefeJahr, pruefeVersicherung, versicherungText, versicherungWarnungen } from '../domain/versicherung.js';
+import { leererVersicherungTeil, pruefeVersicherung, pruefeVersicherungTeil, versicherungTeilText, versicherungTeilWarnungen, versicherungText, versicherungWarnungen } from '../domain/versicherung.js';
 import { classifyEvent } from '../domain/classify.js';
 import { zeitAusDateTime } from '../domain/format.js';
 import { DEFAULT_SETTINGS, normalizeSettings } from '../domain/settings.js';
@@ -28,7 +28,7 @@ export const KONTO_ID = 'fkkonto'; // monatliche Kontostände von Papa und Mama 
 export const SCHICHTARTEN_ID = 'fkschichtarten'; // Schichtarten von Papa und Mama (siehe domain/schicht.js)
 export const ZIELE_ID = 'fksparen'; // Sparziele und Verschiebungen aus „Frei“ (siehe domain/sparziele.js); nicht „fkziele“: z liegt außerhalb von 0-9 und a-v
 export const AUTOS_ID = 'fkautos'; // Autos, Regeln, Reifensätze und Jahres-Index (siehe domain/autos.js); der Verlauf liegt in „fkah<auto><JJJJ>“
-export const VERSICHERUNG_ID = 'fkversicherung'; // Polizze und erstes Jahr (siehe domain/versicherung.js); die Rechnungen liegen je Jahr in „fkvr<JJJJ>“
+export const VERSICHERUNG_ID = 'fkversicherung'; // Polizze und erstes Jahr (siehe domain/versicherung.js); die Rechnungen liegen je Quartal in „fkvr<JJJJ><Q>“
 export const TEST_ID = 'fktest'; // „🔔 Test-Erinnerung“ aus Konto & App → Erinnerungen: für die App unsichtbar
 export const MAX_EINSTELLUNGEN_ZEICHEN = 6000; // Google kürzt `description` still bei 8192 Zeichen (Vertragsprobe C11b)
 const TERMIN_MINUTEN = 30;
@@ -424,80 +424,95 @@ export function versicherungAusEreignis(event) {
   return { daten, unlesbar, warnungen: versicherungWarnungen({ daten, unlesbar }) };
 }
 
-/** ID des Jahr-Teils mit den Rechnungen eines Kalenderjahres: `fkvr<JJJJ>` (z. B. fkvr2026; nur 0-9 und a-v). */
-export function versicherungJahrId(jahr) {
-  if (!Number.isInteger(jahr) || jahr < 2000 || jahr > 2100) throw new Error(`Ungültiges Jahr: ${jahr}`);
-  return `fkvr${jahr}`;
+const istTeilJahr = (j) => Number.isInteger(j) && j >= 2000 && j <= 2100;
+const istTeilQuartal = (q) => Number.isInteger(q) && q >= 1 && q <= 4;
+
+/** ID des Teils mit den Rechnungen eines Quartals (C1): `fkvr<JJJJ><Q>` (z. B. fkvr20264; nur 0-9 und a-v). */
+export function versicherungTeilId(jahr, quartal) {
+  if (!istTeilJahr(jahr)) throw new Error(`Ungültiges Jahr: ${jahr}`);
+  if (!istTeilQuartal(quartal)) throw new Error(`Ungültiges Quartal: ${quartal}`);
+  return `fkvr${jahr}${quartal}`;
 }
 
-const VERSICHERUNG_JAHR_KENNUNG = /^fkvr(\d{4})$/;
+const VERSICHERUNG_TEIL_KENNUNG = /^fkvr(\d{4})([1-4])$/;
 
-/** Hat `id` genau das Muster eines Jahr-Teils (fkvr + Jahr 2000–2100)? Eine zufällige Google-ID mit „fkvr…“ zählt nicht. */
-export function istVersicherungJahrId(id) {
-  const m = typeof id === 'string' ? VERSICHERUNG_JAHR_KENNUNG.exec(id) : null;
-  return !!m && Number(m[1]) >= 2000 && Number(m[1]) <= 2100;
+/** Hat `id` genau das Muster eines Quartal-Teils (fkvr + Jahr 2000–2100 + Quartal 1–4)? Eine zufällige Google-ID mit „fkvr…“ zählt nicht. */
+export function istVersicherungTeilId(id) {
+  const m = typeof id === 'string' ? VERSICHERUNG_TEIL_KENNUNG.exec(id) : null;
+  return !!m && istTeilJahr(Number(m[1]));
 }
 
-/** „fkversicherung“ und die Jahr-Teile „fkvr<JJJJ>“ sind für die übrige App unsichtbar – streng nach Muster, nicht nur nach dem Anfang. */
-export const istVersicherungId = (id) => id === VERSICHERUNG_ID || istVersicherungJahrId(id);
+/** „fkversicherung“ und die Quartal-Teile „fkvr<JJJJ><Q>“ sind für die übrige App unsichtbar – streng nach Muster, nicht nur nach dem Anfang. */
+export const istVersicherungId = (id) => id === VERSICHERUNG_ID || istVersicherungTeilId(id);
 
-/** Ein Jahr-Teil ({ jahr, rechnungen }) als verstecktes Ereignis „fkvr<JJJJ>“; ein zu voller Teil wird abgelehnt. */
-export function versicherungJahrZuEreignis(teil) {
-  return schichtEreignis(versicherungJahrId(teil?.jahr), '🩺 fk Versicherung-Rechnungen (nicht löschen)', jahrText(teil), 'versicherungjahr');
+/** Ein Quartal-Teil ({ jahr, quartal, rechnungen }) als verstecktes Ereignis „fkvr<JJJJ><Q>“; ein zu voller Teil wird abgelehnt. */
+export function versicherungTeilZuEreignis(teil) {
+  return schichtEreignis(versicherungTeilId(teil?.jahr, teil?.quartal), '🩺 fk Versicherung-Rechnungen (nicht löschen)', versicherungTeilText(teil), 'versicherungteil');
 }
 
-/** Liest den Jahr-Teil `jahr` → { teil, unlesbar, warnungen } (siehe pruefeJahr). */
-export function versicherungJahrAusEreignis(event, jahr) {
-  const { teil, unlesbar } = pruefeJahr(event?.description, { jahr });
-  return { teil, unlesbar, warnungen: jahrWarnungen({ teil, unlesbar }) };
+/** Liest den Teil `jahr`/`quartal` → { teil, unlesbar, warnungen } (siehe pruefeVersicherungTeil). */
+export function versicherungTeilAusEreignis(event, jahr, quartal) {
+  const { teil, unlesbar } = pruefeVersicherungTeil(event?.description, { jahr, quartal });
+  return { teil, unlesbar, warnungen: versicherungTeilWarnungen({ teil, unlesbar }) };
 }
-
-/** Bis zu welchem Jahr die Rechnungen gelesen werden: das Jahr von morgen in Wien (wie bei den Autos – ein Datum darf 1 Tag voraus sein). */
-export const versicherungBisJahr = (jetzt = new Date()) => Number(addDays(todayVienna(jetzt), 1).slice(0, 4));
 
 /**
- * Alle Jahre, die zu lesen sind: vom ersten Jahr des Hauptteils bis `bisJahr` (aufsteigend); ohne erstes Jahr keins. Liegt das erste
- * Jahr nach `bisJahr` (falsche Uhr), wenigstens das erste Jahr.
+ * Bis zu welchem Teil die Rechnungen gelesen werden: Jahr und Quartal von morgen in Wien (wie bei den Autos darf ein Datum 1 Tag voraus
+ * sein – am 31.12. also schon das 1. Quartal des nächsten Jahres). → { jahr, quartal }.
  */
-export function versicherungJahre(daten, bisJahr) {
+export function versicherungBis(jetzt = new Date()) {
+  const morgen = addDays(todayVienna(jetzt), 1);
+  return { jahr: Number(morgen.slice(0, 4)), quartal: Math.floor((Number(morgen.slice(5, 7)) - 1) / 3) + 1 };
+}
+
+/**
+ * Alle Teile, die zu lesen sind: jedes Quartal vom 1. Quartal des ersten Jahres (Hauptteil `ab`) bis `bis` = { jahr, quartal }
+ * einschließlich, aufsteigend → [{ jahr, quartal }]. Ohne erstes Jahr keins. Liegt `bis` vor dem ersten Jahr (falsche Uhr) oder fehlt
+ * es, wenigstens die vier Quartale des ersten Jahres.
+ */
+export function versicherungTeile(daten, bis) {
   const ab = daten?.ab;
-  if (!Number.isInteger(ab)) return [];
-  const bis = Number.isInteger(bisJahr) ? Math.max(bisJahr, ab) : ab;
-  return Array.from({ length: bis - ab + 1 }, (_, i) => ab + i);
+  if (!istTeilJahr(ab)) return [];
+  const ende = istTeilJahr(bis?.jahr) && istTeilQuartal(bis?.quartal) && bis.jahr >= ab ? bis : { jahr: ab, quartal: 4 };
+  const liste = [];
+  for (let jahr = ab; jahr <= ende.jahr; jahr += 1) for (let quartal = 1; quartal <= (jahr === ende.jahr ? ende.quartal : 4); quartal += 1) liste.push({ jahr, quartal });
+  return liste;
 }
 
 /**
  * Versicherung aus den Texten im Kalender (Google und Demo gleich): `hauptText` = Beschreibung von „fkversicherung“ (null = fehlt),
- * `jahrTextVon(jahr)` = Beschreibung des Jahr-Teils, null (nie angelegt) oder { geloescht: true } (im Kalender gelöscht). → { daten,
- * jahre: { [jahr]: Jahr-Teil }, warnungen, unlesbar: { main?: true, jahre: [jahr] }, rohtexte: [{ id, text }] }. Gefragt werden die
- * Jahre aus versicherungJahre; ein nie angelegtes zählt als leeres Jahr (fehlt still in `jahre`, ist NICHT unlesbar), ein gelöschtes
- * leer mit Hinweis. Ein Lesefehler ist kein „fehlt“: den meldet der Adapter, indem er selbst scheitert (dann wird nichts geschrieben).
- * Ist der Hauptteil unlesbar, kennt man kein erstes Jahr: alles leer und gesperrt. `rohtexte` = die Texte der unlesbaren Teile (Sicherung).
+ * `teilTextVon(jahr, quartal)` = Beschreibung des Quartal-Teils, null (nie angelegt) oder { geloescht: true } (im Kalender gelöscht).
+ * → { daten, teile: { [jahr]: { [quartal]: Teil } }, warnungen, unlesbar: { main?: true, teile: [{ jahr, quartal }] }, rohtexte: [{ id, text }] }.
+ * Gefragt werden die Teile aus versicherungTeile(daten, bis); ein nie angelegter zählt als leeres Quartal (fehlt still in `teile`, ist
+ * NICHT unlesbar), ein gelöschter leer mit Hinweis. Ein Lesefehler ist kein „fehlt“: den meldet der Adapter, indem er selbst scheitert
+ * (dann wird nichts geschrieben). Ist der Hauptteil unlesbar, kennt man kein erstes Jahr: alles leer und gesperrt. `rohtexte` = die
+ * Texte der unlesbaren Teile (für die Sicherung). Die Rechnungen eines Jahres: rechnungenDesJahres(teile, jahr).
  */
-export function versicherungAusTexten(hauptText, jahrTextVon, { bisJahr } = {}) {
+export function versicherungAusTexten(hauptText, teilTextVon, { bis } = {}) {
   const haupt = versicherungAusEreignis(hauptText == null ? null : { description: hauptText });
-  if (haupt.unlesbar) return { daten: haupt.daten, jahre: {}, warnungen: haupt.warnungen, unlesbar: { main: true, jahre: [] }, rohtexte: [{ id: VERSICHERUNG_ID, text: hauptText }] };
-  const jahre = {};
+  if (haupt.unlesbar) return { daten: haupt.daten, teile: {}, warnungen: haupt.warnungen, unlesbar: { main: true, teile: [] }, rohtexte: [{ id: VERSICHERUNG_ID, text: hauptText }] };
+  const teile = {};
   const warnungen = [...haupt.warnungen];
   const unlesbar = [];
   const rohtexte = [];
-  for (const jahr of versicherungJahre(haupt.daten, bisJahr)) {
-    const text = jahrTextVon(jahr);
-    if (text == null) continue; // nie angelegt: ein leeres Jahr
+  for (const { jahr, quartal } of versicherungTeile(haupt.daten, bis)) {
+    const text = teilTextVon(jahr, quartal);
+    if (text == null) continue; // nie angelegt: ein leeres Quartal
+    teile[jahr] ??= {};
     if (typeof text !== 'string') {
-      jahre[jahr] = leeresJahr(jahr);
-      if (text?.geloescht) warnungen.push(`Die Rechnungen ${jahr} der Versicherung wurden im Kalender gelöscht (wohl von Hand); sie werden leer gezeigt.`);
+      teile[jahr][quartal] = leererVersicherungTeil(jahr, quartal);
+      if (text?.geloescht) warnungen.push(`Die Rechnungen im ${quartal}. Quartal ${jahr} der Versicherung wurden im Kalender gelöscht (wohl von Hand); sie werden leer gezeigt.`);
       continue;
     }
-    const g = versicherungJahrAusEreignis({ description: text }, jahr);
-    jahre[jahr] = g.teil;
+    const g = versicherungTeilAusEreignis({ description: text }, jahr, quartal);
+    teile[jahr][quartal] = g.teil;
     warnungen.push(...g.warnungen);
     if (g.unlesbar) {
-      unlesbar.push(jahr);
-      rohtexte.push({ id: versicherungJahrId(jahr), text });
+      unlesbar.push({ jahr, quartal });
+      rohtexte.push({ id: versicherungTeilId(jahr, quartal), text });
     }
   }
-  return { daten: haupt.daten, jahre, warnungen, unlesbar: { jahre: unlesbar }, rohtexte };
+  return { daten: haupt.daten, teile, warnungen, unlesbar: { teile: unlesbar }, rohtexte };
 }
 
 /** Liest das Register; unbrauchbares JSON ergibt `register: null` (nichts wird gelöscht oder erraten). */

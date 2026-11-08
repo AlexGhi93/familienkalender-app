@@ -1,34 +1,36 @@
-// Versicherung (Privatarzt): eine Polizze mit Jahres-Limits je Kategorie und einem Maximum, dazu die eingereichten Rechnungen – je
-// Kalenderjahr. Rein, ohne DOM und ohne Netz. Beträge GANZE CENT (≥ 0), Daten 'JJJJ-MM-TT' (Wiener Datum). Die Rechnung (Verbrauch,
-// Rest, Überschreitung, offene Erstattungen) steht in versicherung-rechnung.js.
+// Versicherung (Privatarzt): eine Polizze mit Jahres-Limits je Kategorie und einem Maximum, dazu die eingereichten Rechnungen –
+// gespeichert je Quartal, gerechnet je Kalenderjahr. Rein, ohne DOM und ohne Netz. Beträge GANZE CENT (≥ 0), Daten 'JJJJ-MM-TT'
+// (Wiener Datum). Die Rechnung (Verbrauch, Rest, Überschreitung, offene Erstattungen) steht in versicherung-rechnung.js.
 //
 // Im Speicher (lesbare Namen):
 //   Versicherung { v: 1, polizze: Polizze | null, ab: erstes Jahr mit Rechnungen | null, fremd?: { k: [Kategorie roh] } }
 //   Polizze      { id, name, person?, beginn, kategorien: [Kategorie], maximumCent, vorlage? }   vorlage = Schlüssel in POLIZZE_VORLAGEN
 //   Kategorie    { id, name, info?, limitCent }   id = kurzer Schlüssel (a-z, 0-9), auf den die Rechnungen zeigen
-//   Jahr-Teil    { v: 1, jahr, rechnungen: [Rechnung], fremd?: { r: [Rechnung roh] } }
+//   Teil         { v: 1, jahr, quartal (1–4), rechnungen: [Rechnung], fremd?: { r: [Rechnung roh] } }
 //   Rechnung     { id, kategorie, datum (Rechnungsdatum), betragCent, eingereichtAm, erstattetCent?, erstattetAm?, stelle?, notiz? }
-//                erstattetCent und erstattetAm gibt es nur zusammen („Erstattung erhalten“). Das Jahr einer Rechnung = Jahr von `datum`.
+//                erstattetCent und erstattetAm gibt es nur zusammen („Erstattung erhalten“). Jahr und Quartal einer Rechnung = die
+//                ihres Rechnungsdatums; sie liegt immer im Teil dieses Quartals.
 //
 // Im Kalender zwei Arten versteckter Ereignisse (calendar/mapping.js), je ein JSON ≤ 6000 Zeichen mit KURZEN Schlüsseln:
 //  1) Hauptteil „fkversicherung“: { v: 1, p?: Polizze, j?: erstes Jahr }
 //     Polizze:   i=id n=name w=person b=beginn k=[Kategorie] m=maximumCent v=vorlage
 //     Kategorie: i=id n=name o=info l=limitCent
-//     j = das ERSTE Jahr mit einem Jahr-Teil – gelesen werden alle Jahre von dort bis heute, ein fehlender Teil zählt leer. So wächst
-//     der Hauptteil nicht mit den Jahren (Lehre M3 aus den Autos).
-//  2) Rechnungen je Jahr „fkvr<JJJJ>“: { v: 1, j: Jahr, r: [Rechnung] }
+//     j = das ERSTE Jahr mit einem Teil – gelesen werden alle Quartale von dort bis heute, ein fehlender Teil zählt leer. So wächst der
+//     Hauptteil nicht mit der Zeit (Lehre M3 aus den Autos).
+//  2) Rechnungen je Quartal „fkvr<JJJJ><Q>“ (C1: je Jahr hätten nur ~46 Rechnungen Platz gehabt): { v: 1, j: Jahr, q: Quartal, r: [Rechnung] }
 //     Rechnung:  i=id k=kategorie d=datum b=betragCent e=eingereichtAm r=erstattetCent t=erstattetAm s=stelle n=notiz
+//                Daten als ZAHL JJJJMMTT (20261028 statt "2026-10-28": 4 Zeichen weniger je Datum, ≈ 50 statt 46 Rechnungen je Teil).
 // Wie bei Fixkosten/Sparziele/Autos: Kategorien und Rechnungen, die diese Version nicht versteht (unbekanntes Feld – neuere Version –,
 // beschädigt oder doppelte Kennung), bleiben roh in `fremd` und werden unverändert mitgeschrieben; unlesbarer Text (kein JSON, andere
-// Version `v`, falscher Aufbau, eine Polizze, die selbst nicht verstanden wird, ein anderes Jahr im Text) ergibt `unlesbar: true` und
-// darf NIE überschrieben werden. Neue Felder auf oberster Ebene oder in der Polizze → `v` erhöhen.
+// Version `v`, falscher Aufbau, eine Polizze, die selbst nicht verstanden wird, ein anderes Jahr/Quartal im Text) ergibt
+// `unlesbar: true` und darf NIE überschrieben werden. Neue Felder auf oberster Ebene oder in der Polizze → `v` erhöhen.
 // Jede Änderung ist eine reine Funktion Daten → Daten (das Argument bleibt unverändert, zweimal angewendet = einmal angewendet), die
-// nach HTTP 412 auf die NEUESTE Fassung angewendet wird. Zwei Telefone, die im selben Jahr Rechnungen eintragen, behalten beide.
+// nach HTTP 412 auf die NEUESTE Fassung angewendet wird. Zwei Telefone, die im selben Quartal Rechnungen eintragen, behalten beide.
 
 import { addDays, heutePruefen, isValidDate } from './dates.js';
 
 export const MAX_VERSICHERUNG_ZEICHEN = 6000; // wie Kontostand/Fixkosten/Sparziele/Autos: Google kürzt Beschreibungen still bei 8192 Zeichen
-export const MAX_JAHR_ZEICHEN = 6000;
+export const MAX_VERSICHERUNG_TEIL_ZEICHEN = 6000;
 export const MAX_KATEGORIEN = 12;
 export const MAX_POLIZZE_NAME = 40;
 export const MAX_PERSON = 30;
@@ -74,9 +76,9 @@ export const POLIZZE_VORLAGEN = tiefFrieren({
 // ---------------------------------------------------------------- Meldungen
 
 export const TEXT_VERSICHERUNG_VOLL = 'Im Kalender ist kein Platz mehr für die Polizze – bitte Namen oder Hinweise der Kategorien kürzen.';
-export const TEXT_JAHR_VOLL = 'In diesem Jahr ist kein Platz mehr für weitere Rechnungen – bitte Notizen oder „Arzt/Apotheke“ kürzen.';
+export const TEXT_VERSICHERUNG_TEIL_VOLL = 'In diesem Quartal ist kein Platz mehr für weitere Rechnungen – bitte Notizen oder „Arzt/Apotheke“ kürzen.';
 export const TEXT_VERSICHERUNG_GESPERRT = 'Die Versicherung ist unlesbar (beschädigt oder von einer neueren App-Version). Damit nichts verloren geht, lässt sie sich hier nicht ändern – bitte die App auf beiden Telefonen aktualisieren.';
-export const TEXT_JAHR_GESPERRT = 'Die Rechnungen dieses Jahres sind unlesbar (beschädigt oder von einer neueren App-Version). Damit nichts verloren geht, lassen sie sich hier nicht ändern – bitte die App auf beiden Telefonen aktualisieren.';
+export const TEXT_VERSICHERUNG_TEIL_GESPERRT = 'Die Rechnungen dieses Quartals sind unlesbar (beschädigt oder von einer neueren App-Version). Damit nichts verloren geht, lassen sie sich hier nicht ändern – bitte die App auf beiden Telefonen aktualisieren.';
 export const TEXT_POLIZZE_WEG = 'Diese Polizze gibt es nicht mehr.';
 export const TEXT_RECHNUNG_WEG = 'Diese Rechnung gibt es nicht mehr.';
 const TEXT_KENNUNG_NEUER = 'Diese Kennung gehört einem Eintrag einer neueren App-Version – bitte die App aktualisieren.';
@@ -84,8 +86,8 @@ const TEXT_BETRAG = 'Bitte einen Betrag von 0 € bis 99.999,99 € eingeben.';
 
 /** Fehler „Versicherung gesperrt“ (Name 'VersicherungGesperrt'): ein Adapter wirft ihn, statt einen unlesbaren Hauptteil zu überschreiben. */
 export const versicherungGesperrtFehler = () => Object.assign(new Error(TEXT_VERSICHERUNG_GESPERRT), { name: 'VersicherungGesperrt' });
-/** Fehler „Jahr gesperrt“ (Name 'VersicherungJahrGesperrt'): ein Adapter wirft ihn, statt einen unlesbaren Jahr-Teil zu überschreiben. */
-export const jahrGesperrtFehler = () => Object.assign(new Error(TEXT_JAHR_GESPERRT), { name: 'VersicherungJahrGesperrt' });
+/** Fehler „Teil gesperrt“ (Name 'VersicherungTeilGesperrt'): ein Adapter wirft ihn, statt einen unlesbaren Quartal-Teil zu überschreiben. */
+export const versicherungTeilGesperrtFehler = () => Object.assign(new Error(TEXT_VERSICHERUNG_TEIL_GESPERRT), { name: 'VersicherungTeilGesperrt' });
 
 // ---------------------------------------------------------------- Hilfen
 
@@ -107,6 +109,7 @@ const istDatum = (x) => typeof x === 'string' && isValidDate(x);
 const leer = (x) => x === undefined || x === null || x === '';
 const istCent = (x) => Number.isInteger(x) && x >= 0 && x <= MAX_BETRAG_CENT;
 const istJahr = (j) => Number.isInteger(j) && j >= MIN_JAHR && j <= MAX_JAHR;
+const istQuartal = (q) => Number.isInteger(q) && q >= 1 && q <= 4;
 const fremdeKennung = (liste, id) => (liste ?? []).some((k) => k?.i === id);
 const gleich = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const datumText = (d) => `${d.slice(8, 10)}.${d.slice(5, 7)}.${d.slice(0, 4)}`;
@@ -118,8 +121,13 @@ export function neueVersicherungId(zufall = Math.random) {
   return id;
 }
 
+/** Das Quartal (1–4) eines Datums 'JJJJ-MM-TT'. */
+export const quartalVon = (datum) => Math.floor((Number(datum.slice(5, 7)) - 1) / 3) + 1;
 /** Das Jahr einer Rechnung = das Jahr ihres Rechnungsdatums. */
 export const rechnungJahr = (rechnung) => Number(rechnung.datum.slice(0, 4));
+/** Das Quartal einer Rechnung = das Quartal ihres Rechnungsdatums (sie liegt im Teil fkvr<JJJJ><Q>). */
+export const rechnungQuartal = (rechnung) => quartalVon(rechnung.datum);
+const imTeil = (r, teil) => rechnungJahr(r) === teil.jahr && rechnungQuartal(r) === teil.quartal;
 
 /** Gültige Einträge (der erste je Kennung gilt) und die nicht verstandenen roh – auch doppelte Kennungen: sie bleiben so erhalten. */
 function trenne(liste, lang) {
@@ -454,11 +462,20 @@ export function normalisiereRechnung(roh) {
   return r.fehler ? null : { id: roh.id, ...r.rechnung };
 }
 
+/** 'JJJJ-MM-TT' → Zahl JJJJMMTT (kurzes Datum im Kalender). */
+const kurzDatum = (d) => Number(d.replaceAll('-', ''));
+/** Zahl JJJJMMTT → 'JJJJ-MM-TT'; alles andere (auch Text) → null (→ fremd). */
+const langDatum = (n) => {
+  if (!Number.isInteger(n) || n < 10000101 || n > 99991231) return null;
+  const s = String(n);
+  return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
+};
+
 function kurzRechnung(r) {
-  const k = { i: r.id, k: r.kategorie, d: r.datum, b: r.betragCent, e: r.eingereichtAm };
+  const k = { i: r.id, k: r.kategorie, d: kurzDatum(r.datum), b: r.betragCent, e: kurzDatum(r.eingereichtAm) };
   if (r.erstattetCent !== undefined) {
     k.r = r.erstattetCent;
-    k.t = r.erstattetAm;
+    k.t = kurzDatum(r.erstattetAm);
   }
   if (r.stelle) k.s = r.stelle;
   if (r.notiz) k.n = r.notiz;
@@ -466,33 +483,42 @@ function kurzRechnung(r) {
 }
 function langRechnung(k) {
   if (!istObjekt(k) || Object.keys(k).some((s) => !RECHNUNG_SCHLUESSEL.has(s))) return null;
-  // kurz gespeicherte Beträge müssen schon Zahlen sein (Text „100“ käme nur von einer fremden Version)
+  // kurz gespeicherte Beträge und Daten müssen schon Zahlen sein (Text käme nur von einer fremden Version)
   if (typeof k.b !== 'number' || (k.r !== undefined && typeof k.r !== 'number')) return null;
-  return normalisiereRechnung({ id: k.i, kategorie: k.k, datum: k.d, betragCent: k.b, eingereichtAm: k.e, erstattetCent: k.r, erstattetAm: k.t, stelle: k.s, notiz: k.n });
+  const datum = langDatum(k.d);
+  const eingereichtAm = langDatum(k.e);
+  const erstattetAm = k.t === undefined ? undefined : langDatum(k.t);
+  if (!datum || !eingereichtAm || erstattetAm === null) return null;
+  return normalisiereRechnung({ id: k.i, kategorie: k.k, datum, betragCent: k.b, eingereichtAm, erstattetCent: k.r, erstattetAm, stelle: k.s, notiz: k.n });
 }
 
-// ---------------------------------------------------------------- Jahr-Teil: lesen und schreiben
+// ---------------------------------------------------------------- Quartal-Teil: lesen und schreiben
 
-export const leeresJahr = (jahr) => ({ v: 1, jahr, rechnungen: [] });
-const baueJahr = (alt, rechnungen) => (alt.fremd?.r?.length > 0 ? { v: 1, jahr: alt.jahr, rechnungen, fremd: { r: alt.fremd.r } } : { v: 1, jahr: alt.jahr, rechnungen });
+export const leererVersicherungTeil = (jahr, quartal) => ({ v: 1, jahr, quartal, rechnungen: [] });
+const baueTeil = (alt, rechnungen) => {
+  const t = { v: 1, jahr: alt.jahr, quartal: alt.quartal, rechnungen };
+  return alt.fremd?.r?.length > 0 ? { ...t, fremd: { r: alt.fremd.r } } : t;
+};
 
-/** Der Jahr-Teil als Text für „fkvr<JJJJ>“ (kurze Schlüssel, fremde Rechnungen am Ende); zu voll → TEXT_JAHR_VOLL. */
-export function jahrText(teil) {
+/** Der Teil als Text für „fkvr<JJJJ><Q>“ (kurze Schlüssel, fremde Rechnungen am Ende); zu voll → TEXT_VERSICHERUNG_TEIL_VOLL. */
+export function versicherungTeilText(teil) {
   const t = teil ?? {};
   if (!istJahr(t.jahr)) throw new Error('Ungültiges Jahr.');
+  if (!istQuartal(t.quartal)) throw new Error('Ungültiges Quartal.');
   const rechnungen = (t.rechnungen ?? []).map(normalisiereRechnung).filter(Boolean);
-  const text = JSON.stringify({ v: 1, j: t.jahr, r: [...rechnungen.map(kurzRechnung), ...(t.fremd?.r ?? [])] });
-  if (text.length > MAX_JAHR_ZEICHEN) throw new Error(TEXT_JAHR_VOLL);
+  const text = JSON.stringify({ v: 1, j: t.jahr, q: t.quartal, r: [...rechnungen.map(kurzRechnung), ...(t.fremd?.r ?? [])] });
+  if (text.length > MAX_VERSICHERUNG_TEIL_ZEICHEN) throw new Error(TEXT_VERSICHERUNG_TEIL_VOLL);
   return text;
 }
 
 /**
- * Text eines Jahr-Teils → { teil, unlesbar }. Wirft nie. `jahr` = welches Jahr der Teil sein soll (aus der Ereignis-Kennung): fehlender
- * Text → leerer Teil; kein JSON, andere Version, falscher Aufbau oder ein anderes Jahr im Text → leerer Teil mit `unlesbar: true` (NIE
- * überschreiben, siehe jahrGesperrtFehler). Nicht verstandene oder doppelte Rechnungen → `teil.fremd.r` (roh, bleiben erhalten).
+ * Text eines Quartal-Teils → { teil, unlesbar }. Wirft nie. `jahr`/`quartal` = welcher Teil es sein soll (aus der Ereignis-Kennung):
+ * fehlender Text → leerer Teil; kein JSON, andere Version, falscher Aufbau oder ein anderes Jahr/Quartal im Text → leerer Teil mit
+ * `unlesbar: true` (NIE überschreiben, siehe versicherungTeilGesperrtFehler). Nicht verstandene oder doppelte Rechnungen →
+ * `teil.fremd.r` (roh, bleiben erhalten).
  */
-export function pruefeJahr(text, { jahr } = {}) {
-  const leerTeil = leeresJahr(jahr);
+export function pruefeVersicherungTeil(text, { jahr, quartal } = {}) {
+  const leerTeil = leererVersicherungTeil(jahr, quartal);
   if (typeof text !== 'string' || text.trim() === '') return { teil: leerTeil, unlesbar: false };
   let roh;
   try {
@@ -500,24 +526,26 @@ export function pruefeJahr(text, { jahr } = {}) {
   } catch {
     roh = null;
   }
-  const ok = istObjekt(roh) && roh.v === 1 && istJahr(roh.j) && Array.isArray(roh.r) && Object.keys(roh).every((s) => ['v', 'j', 'r'].includes(s));
-  if (!ok || (jahr !== undefined && roh.j !== jahr)) return { teil: leerTeil, unlesbar: true };
+  const ok = istObjekt(roh) && roh.v === 1 && istJahr(roh.j) && istQuartal(roh.q) && Array.isArray(roh.r) && Object.keys(roh).every((s) => ['v', 'j', 'q', 'r'].includes(s));
+  if (!ok || (jahr !== undefined && roh.j !== jahr) || (quartal !== undefined && roh.q !== quartal)) return { teil: leerTeil, unlesbar: true };
   const r = trenne(roh.r, langRechnung);
-  return { teil: baueJahr({ jahr: roh.j, fremd: { r: JSON.parse(JSON.stringify(r.fremd)) } }, r.gut), unlesbar: false };
+  return { teil: baueTeil({ jahr: roh.j, quartal: roh.q, fremd: { r: JSON.parse(JSON.stringify(r.fremd)) } }, r.gut), unlesbar: false };
 }
 
-/** Hinweis, wenn in einem Jahr-Teil etwas nicht verstanden wurde (bleibt gespeichert) oder er unlesbar ist; sonst []. */
-export function jahrWarnungen({ teil, unlesbar } = {}) {
-  if (unlesbar) return [`Die Rechnungen${teil?.jahr ? ` ${teil.jahr}` : ''} sind unlesbar (beschädigt oder von einer neueren App-Version); sie werden leer gezeigt und lassen sich nicht ändern.`];
+const teilName = (teil) => (teil?.jahr ? `${teil.quartal ? `${teil.quartal}. Quartal ` : ''}${teil.jahr}` : '');
+
+/** Hinweis, wenn in einem Teil etwas nicht verstanden wurde (bleibt gespeichert) oder er unlesbar ist; sonst []. */
+export function versicherungTeilWarnungen({ teil, unlesbar } = {}) {
+  if (unlesbar) return [`Die Rechnungen${teil?.jahr ? ` im ${teilName(teil)}` : ''} sind unlesbar (beschädigt oder von einer neueren App-Version); sie werden leer gezeigt und lassen sich nicht ändern.`];
   const n = teil?.fremd?.r?.length ?? 0;
-  return n > 0 ? [`${anzahl(n, 'Eintrag', 'Einträge')} im Jahr ${teil.jahr} ${n === 1 ? 'konnte' : 'konnten'} nicht gelesen werden; ${n === 1 ? 'er bleibt' : 'sie bleiben'} gespeichert.`] : [];
+  return n > 0 ? [`${anzahl(n, 'Eintrag', 'Einträge')} im ${teilName(teil)} ${n === 1 ? 'konnte' : 'konnten'} nicht gelesen werden; ${n === 1 ? 'er bleibt' : 'sie bleiben'} gespeichert.`] : [];
 }
 
-// ---------------------------------------------------------------- Änderungen am Jahr-Teil (rein, wiederholbar)
+// ---------------------------------------------------------------- Änderungen am Quartal-Teil (rein, wiederholbar)
 
-function mitJahr(alt, rechnungen) {
-  const neu = baueJahr(alt, rechnungen);
-  jahrText(neu);
+function mitTeil(alt, rechnungen) {
+  const neu = baueTeil(alt, rechnungen);
+  versicherungTeilText(neu);
   return neu;
 }
 
@@ -529,17 +557,17 @@ function rechnungOderFehler(rechnung, opts) {
 }
 
 /**
- * Trägt eine Rechnung ein oder ändert die mit derselben Kennung (an derselben Stelle). Sie muss ins Jahr des Teils gehören (ein
- * geändertes Jahr: rechnungJahrWechseln). Wirft mit der Meldung aus rechnungPruefen (`heute` Pflicht, `polizze` freiwillig);
- * Warnungen halten nicht auf. Gleich → derselbe Teil.
+ * Trägt eine Rechnung ein oder ändert die mit derselben Kennung (an derselben Stelle). Sie muss in Jahr UND Quartal des Teils gehören
+ * (ein geändertes Rechnungsdatum in einem anderen Quartal: rechnungTeilWechseln). Wirft mit der Meldung aus rechnungPruefen (`heute`
+ * Pflicht, `polizze` freiwillig); Warnungen halten nicht auf. Gleich → derselbe Teil.
  */
 export function rechnungSetzen(teil, rechnung, { heute, polizze } = {}) {
   const neu = rechnungOderFehler(rechnung, { heute, polizze });
-  if (rechnungJahr(neu) !== teil.jahr) throw new Error('Diese Rechnung gehört in ein anderes Jahr.');
+  if (!imTeil(neu, teil)) throw new Error('Diese Rechnung gehört in ein anderes Quartal.');
   const liste = teil.rechnungen ?? [];
   if (!liste.some((r) => r.id === neu.id) && fremdeKennung(teil.fremd?.r, neu.id)) throw new Error(TEXT_KENNUNG_NEUER);
   const rechnungen = setzeIn(liste, neu);
-  return rechnungen ? mitJahr(teil, rechnungen) : teil;
+  return rechnungen ? mitTeil(teil, rechnungen) : teil;
 }
 
 /**
@@ -558,7 +586,7 @@ export function erstattungSetzen(teil, id, erstattung, { heute } = {}) {
 export function rechnungLoeschen(teil, id) {
   const liste = teil.rechnungen ?? [];
   if (!liste.some((r) => r.id === id)) return teil;
-  return baueJahr(teil, liste.filter((r) => r.id !== id));
+  return baueTeil(teil, liste.filter((r) => r.id !== id));
 }
 
 /** Was rechnungLoeschen entfernt – für „Rückgängig“: { rechnung, stelle }; unbekannt → null. */
@@ -570,29 +598,30 @@ export function rechnungSpur(teil, id) {
 /** „Rückgängig“ nach rechnungLoeschen: dieselbe Rechnung an ihrer alten Stelle (ohne Zukunfts-Prüfung). Schon da → derselbe Teil. */
 export function rechnungWiederherstellen(teil, spur) {
   const r = normalisiereRechnung(spur?.rechnung);
-  if (!r || rechnungJahr(r) !== teil.jahr) throw new Error('Ungültige Rechnung.');
+  if (!r || !imTeil(r, teil)) throw new Error('Ungültige Rechnung.');
   const liste = teil.rechnungen ?? [];
   if (liste.some((x) => x.id === r.id)) return teil;
   if (fremdeKennung(teil.fremd?.r, r.id)) throw new Error(TEXT_KENNUNG_NEUER);
-  return mitJahr(teil, eingefuegt(liste, r, spur.stelle));
+  return mitTeil(teil, eingefuegt(liste, r, spur.stelle));
 }
 
 /**
- * Eine Rechnung, deren Rechnungsdatum jetzt in einem anderen Jahr liegt als `vonJahr` (dem Teil, in dem sie steht), wandert dorthin.
- * Zwei Ereignisse sind betroffen, darum kommt ein Plan aus zwei reinen, wiederholbaren Schritten zurück:
- *   { vonJahr, nachJahr, inNeu: (teil von nachJahr) → teil mit der Rechnung, ausAlt: (teil von vonJahr) → teil ohne sie }
- * Reihenfolge beim Schreiben: ERST inNeu, DANN ausAlt – bricht es dazwischen ab, steht die Rechnung höchstens doppelt (sichtbar), nie
- * gar nicht. Vor inNeu muss der Hauptteil das neue Jahr kennen (versicherungJahrEintragen). Gleiches Jahr → null (rechnungSetzen
- * genügt). Ungültige Rechnung → wirft sofort (Meldung aus rechnungPruefen).
+ * Eine Rechnung, deren Rechnungsdatum jetzt in einem anderen Quartal (oder Jahr) liegt als `von` = { jahr, quartal } (der Teil, in dem
+ * sie steht), wandert dorthin. Zwei Ereignisse sind betroffen, darum kommt ein Plan aus zwei reinen, wiederholbaren Schritten zurück:
+ *   { von, nach: { jahr, quartal }, inNeu: (Teil von `nach`) → Teil mit der Rechnung, ausAlt: (Teil von `von`) → Teil ohne sie }
+ * Reihenfolge beim Schreiben: ERST (falls nötig) der Hauptteil versicherungJahrEintragen(nach.jahr), DANN inNeu, DANN ausAlt – bricht
+ * es dazwischen ab, steht die Rechnung höchstens doppelt (sichtbar), nie gar nicht. Gleicher Teil → null (rechnungSetzen genügt).
+ * Ungültige Rechnung oder ungültiges `von` → wirft sofort.
  */
-export function rechnungJahrWechseln(rechnung, vonJahr, { heute, polizze } = {}) {
-  if (!istJahr(vonJahr)) throw new Error('Ungültiges Jahr.');
+export function rechnungTeilWechseln(rechnung, von, { heute, polizze } = {}) {
+  if (!istJahr(von?.jahr)) throw new Error('Ungültiges Jahr.');
+  if (!istQuartal(von?.quartal)) throw new Error('Ungültiges Quartal.');
   const neu = rechnungOderFehler(rechnung, { heute, polizze });
-  const nachJahr = rechnungJahr(neu);
-  if (nachJahr === vonJahr) return null;
+  const nach = { jahr: rechnungJahr(neu), quartal: rechnungQuartal(neu) };
+  if (nach.jahr === von.jahr && nach.quartal === von.quartal) return null;
   return {
-    vonJahr,
-    nachJahr,
+    von: { jahr: von.jahr, quartal: von.quartal },
+    nach,
     inNeu: (teil) => rechnungSetzen(teil, neu, { heute, polizze }),
     ausAlt: (teil) => rechnungLoeschen(teil, neu.id),
   };

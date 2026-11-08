@@ -4,13 +4,13 @@ import { addDays, todayVienna } from '../domain/dates.js';
 import { kindergartenjahr } from '../domain/urlaub.js';
 import { normalizeSettings } from '../domain/settings.js';
 import { beendeTestErinnerung, pruefeErinnerungen, repariereErinnerungen, starteTestErinnerung } from './erinnerungen.js';
-import { AUTOS_ID, autosAusTexten, autosBisJahr, autosTeile, autosZuEreignis, historieAusEreignis, historieId, historieZuEreignis, istHistorieId, EINKAUF_ID, EINSTELLUNGEN_ID, FIX_IDS, GERAETE_ID, KONTO_ID, SCHICHTARTEN_ID, ZIELE_ID, einkaufAusEreignis, einkaufZuEreignis, kontoAusEreignis, kontoZuEreignis, einstellungenAusEreignis, einstellungenZuEreignis, fixShardAusEreignis, fixShardId, fixShardZuEreignis, geraeteAusEreignis, geraeteZuEreignis, schichtartenAusEreignis, schichtartenZuEreignis, schichtMonatAusEreignis, schichtMonatId, schichtMonatZuEreignis, tagZuEreignis, terminZuEreignis, urlaubCheckZuEreignis, urlaubZuEreignis, zieleAusEreignis, zieleZuEreignis, VERSICHERUNG_ID, istVersicherungJahrId, versicherungAusTexten, versicherungBisJahr, versicherungJahrAusEreignis, versicherungJahre, versicherungJahrId, versicherungJahrZuEreignis, versicherungZuEreignis } from './mapping.js';
+import { AUTOS_ID, autosAusTexten, autosBisJahr, autosTeile, autosZuEreignis, historieAusEreignis, historieId, historieZuEreignis, istHistorieId, EINKAUF_ID, EINSTELLUNGEN_ID, FIX_IDS, GERAETE_ID, KONTO_ID, SCHICHTARTEN_ID, ZIELE_ID, einkaufAusEreignis, einkaufZuEreignis, kontoAusEreignis, kontoZuEreignis, einstellungenAusEreignis, einstellungenZuEreignis, fixShardAusEreignis, fixShardId, fixShardZuEreignis, geraeteAusEreignis, geraeteZuEreignis, schichtartenAusEreignis, schichtartenZuEreignis, schichtMonatAusEreignis, schichtMonatId, schichtMonatZuEreignis, tagZuEreignis, terminZuEreignis, urlaubCheckZuEreignis, urlaubZuEreignis, zieleAusEreignis, zieleZuEreignis, VERSICHERUNG_ID, istVersicherungTeilId, versicherungAusTexten, versicherungBis, versicherungTeilAusEreignis, versicherungTeile, versicherungTeilId, versicherungTeilZuEreignis, versicherungZuEreignis } from './mapping.js';
 import { leererMonat, standardKatalog } from '../domain/schicht.js';
 import { leererShard, teilGesperrtFehler } from '../domain/fixkosten.js';
 import { leereZiele, zieleGesperrtFehler } from '../domain/sparziele.js';
 import { istUrlaubCheckId } from '../domain/ids.js';
 import { autosGesperrtFehler, autosLesen, historieGesperrtFehler, leereAutos, leereHistorie } from '../domain/autos.js';
-import { jahrGesperrtFehler, leeresJahr, leereVersicherung, pruefeVersicherung, versicherungGesperrtFehler } from '../domain/versicherung.js';
+import { leererVersicherungTeil, leereVersicherung, pruefeVersicherung, versicherungGesperrtFehler, versicherungTeilGesperrtFehler } from '../domain/versicherung.js';
 import { ereignisseZuZustand } from './zustand.js';
 
 const TAGE_ZURUECK = 31;
@@ -382,41 +382,41 @@ export function createGoogleAdapter({ api, kalender, jetzt = () => new Date(), a
     },
 
     /**
-     * Versicherung (verstecktes Ereignis „fkversicherung“) und ihre Rechnungen („fkvr<JJJJ>“ je Jahr): erst der Hauptteil, dann alle
-     * Jahre vom ersten bis morgen gleichzeitig. → { daten, jahre, warnungen, unlesbar: { main?, jahre }, rohtexte } (siehe
-     * versicherungAusTexten). Nicht beim Start geladen.
+     * Versicherung (verstecktes Ereignis „fkversicherung“) und ihre Rechnungen („fkvr<JJJJ><Q>“ je Quartal): erst der Hauptteil, dann
+     * alle Quartale vom ersten Jahr bis morgen gleichzeitig. → { daten, teile: { [jahr]: { [quartal]: Teil } }, warnungen, unlesbar:
+     * { main?, teile }, rohtexte } (siehe versicherungAusTexten). Nicht beim Start geladen.
      */
     async leseVersicherung() {
       const e = await api.ereignisse.holen(kalender.anwesenheit, VERSICHERUNG_ID);
       const hauptText = !e || e.status === 'cancelled' ? null : (e.description ?? '');
       const vorab = pruefeVersicherung(hauptText);
-      const bisJahr = versicherungBisJahr(jetzt());
-      const jahre = vorab.unlesbar ? [] : versicherungJahre(vorab.daten, bisJahr);
-      // holen: nur 404 → null (nie angelegt = leeres Jahr); jeder andere Fehler wirft und lässt das ganze Lesen scheitern – nie „leer“
-      const ereignisse = await Promise.all(jahre.map((jahr) => api.ereignisse.holen(kalender.anwesenheit, versicherungJahrId(jahr))));
-      const texte = new Map(jahre.map((jahr, i) => [jahr, !ereignisse[i] ? null : ereignisse[i].status === 'cancelled' ? { geloescht: true } : (ereignisse[i].description ?? '')]));
-      return versicherungAusTexten(hauptText, (jahr) => texte.get(jahr) ?? null, { bisJahr });
+      const bis = versicherungBis(jetzt());
+      const teile = vorab.unlesbar ? [] : versicherungTeile(vorab.daten, bis);
+      // holen: nur 404 → null (nie angelegt = leeres Quartal); jeder andere Fehler wirft und lässt das ganze Lesen scheitern – nie „leer“
+      const ereignisse = await Promise.all(teile.map(({ jahr, quartal }) => api.ereignisse.holen(kalender.anwesenheit, versicherungTeilId(jahr, quartal))));
+      const texte = new Map(teile.map(({ jahr, quartal }, i) => [versicherungTeilId(jahr, quartal), !ereignisse[i] ? null : ereignisse[i].status === 'cancelled' ? { geloescht: true } : (ereignisse[i].description ?? '')]));
+      return versicherungAusTexten(hauptText, (jahr, quartal) => texte.get(versicherungTeilId(jahr, quartal)) ?? null, { bis });
     },
 
     /**
-     * Für die Sicherung: wie leseVersicherung, dazu `weitereJahre` = [{ id, text }] aller Jahr-Teile („fkvr…“ am 2000-01-01 in
+     * Für die Sicherung: wie leseVersicherung, dazu `weitereTeile` = [{ id, text }] aller Quartal-Teile („fkvr…“ am 2000-01-01 in
      * „Anwesenheit“), die nicht gelesen wurden – bei unlesbarem Hauptteil alle. Nichts davon wird je geschrieben.
      */
     async leseVersicherungSicherung() {
       const [g, versteckt] = await Promise.all([this.leseVersicherung(), api.ereignisse.liste(kalender.anwesenheit, { von: '2000-01-01', bis: '2000-01-02' })]);
-      const bekannt = new Set(g.unlesbar.main ? [] : versicherungJahre(g.daten, versicherungBisJahr(jetzt())).map(versicherungJahrId));
-      const weitereJahre = versteckt
-        .filter((e) => istVersicherungJahrId(e?.id) && e.status !== 'cancelled' && !bekannt.has(e.id))
+      const bekannt = new Set(g.unlesbar.main ? [] : versicherungTeile(g.daten, versicherungBis(jetzt())).map(({ jahr, quartal }) => versicherungTeilId(jahr, quartal)));
+      const weitereTeile = versteckt
+        .filter((e) => istVersicherungTeilId(e?.id) && e.status !== 'cancelled' && !bekannt.has(e.id))
         .map((e) => ({ id: e.id, text: e.description ?? '' }))
         .sort((a, b) => a.id.localeCompare(b.id));
-      return { ...g, weitereJahre };
+      return { ...g, weitereTeile };
     },
 
-    /** Ein Jahr-Teil allein (z. B. nach einem Speicherfehler): { teil, unlesbar, warnungen, text (Rohtext, nur wenn unlesbar), fehlt }. Nur 404 = fehlt. */
-    async leseVersicherungJahr(jahr) {
-      const e = await api.ereignisse.holen(kalender.anwesenheit, versicherungJahrId(jahr));
+    /** Ein Quartal-Teil allein (z. B. nach einem Speicherfehler): { teil, unlesbar, warnungen, text (Rohtext, nur wenn unlesbar), fehlt }. Nur 404 = fehlt. */
+    async leseVersicherungTeil(jahr, quartal) {
+      const e = await api.ereignisse.holen(kalender.anwesenheit, versicherungTeilId(jahr, quartal));
       const fehlt = !e || e.status === 'cancelled';
-      const g = versicherungJahrAusEreignis(fehlt ? null : e, jahr);
+      const g = versicherungTeilAusEreignis(fehlt ? null : e, jahr, quartal);
       return { ...g, text: g.unlesbar ? e.description : null, fehlt };
     },
 
@@ -434,17 +434,17 @@ export function createGoogleAdapter({ api, kalender, jetzt = () => new Date(), a
     },
 
     /**
-     * Ändert NUR den Jahr-Teil `jahr` (wie aendereVersicherung; fehlt er: leerer Teil). Unlesbar → nichts geschrieben (Fehler
-     * „VersicherungJahrGesperrt“). Ungültiges Jahr → abgelehntes Versprechen.
+     * Ändert NUR den Quartal-Teil `jahr`/`quartal` (wie aendereVersicherung; fehlt er: leerer Teil). Unlesbar → nichts geschrieben (Fehler
+     * „VersicherungTeilGesperrt“). Ungültiges Jahr oder Quartal → abgelehntes Versprechen.
      */
-    async aendereVersicherungJahr(jahr, aenderung) {
-      const id = versicherungJahrId(jahr);
+    async aendereVersicherungTeil(jahr, quartal, aenderung) {
+      const id = versicherungTeilId(jahr, quartal);
       const lesen = (e) => {
-        const g = versicherungJahrAusEreignis(e, jahr);
-        if (g.unlesbar) throw jahrGesperrtFehler();
+        const g = versicherungTeilAusEreignis(e, jahr, quartal);
+        if (g.unlesbar) throw versicherungTeilGesperrtFehler();
         return g.teil;
       };
-      return aendereVersteckt({ id, lesen, bauen: versicherungJahrZuEreignis, fehler: 'Die Rechnungen konnten nicht gespeichert werden. Bitte noch einmal versuchen.', leer: () => leeresJahr(jahr) }, aenderung);
+      return aendereVersteckt({ id, lesen, bauen: versicherungTeilZuEreignis, fehler: 'Die Rechnungen konnten nicht gespeichert werden. Bitte noch einmal versuchen.', leer: () => leererVersicherungTeil(jahr, quartal) }, aenderung);
     },
 
     /** Erinnerungen dieses Kontos prüfen/reparieren und eine Test-Erinnerung auslösen (siehe erinnerungen.js). */
