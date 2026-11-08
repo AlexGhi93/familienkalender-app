@@ -30,9 +30,11 @@ test.describe('Versicherung im Konto-Tab (Demo)', () => {
   test('Umschalter mit vier Stellungen, passt in eine Zeile; gemerkt nach dem Neuladen; #/konto/versicherung', async ({ page }) => {
     await starteDemo(page, { route: '#/konto' });
     await expect(umschalter(page).getByRole('button')).toHaveText(['Kontostand', 'Fixkosten', 'Sparziele', 'Versicherung']);
-    const masse = await umschalter(page).getByRole('button').evaluateAll((l) => l.map((b) => [b.scrollWidth <= b.clientWidth, b.getBoundingClientRect().height, parseFloat(getComputedStyle(b).fontSize)]));
-    for (const [passt, hoehe, schrift] of masse) {
-      expect(passt).toBe(true);
+    // erst nach dem ersten Messen (ResizeObserver) stabil – auf langsamen Rechnern (CI) also abwarten
+    const knoepfe = umschalter(page).getByRole('button');
+    await expect.poll(() => knoepfe.evaluateAll((l) => l.every((b) => b.scrollWidth <= b.clientWidth))).toBe(true);
+    const masse = await knoepfe.evaluateAll((l) => l.map((b) => [b.getBoundingClientRect().height, parseFloat(getComputedStyle(b).fontSize)]));
+    for (const [hoehe, schrift] of masse) {
       expect(hoehe).toBeGreaterThanOrEqual(44);
       expect(schrift).toBeGreaterThanOrEqual(13);
     }
