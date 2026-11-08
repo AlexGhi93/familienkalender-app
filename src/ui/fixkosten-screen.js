@@ -8,10 +8,11 @@ import { oeffneFixArchiviert, oeffneFixFormular } from './fixkosten-formular.js'
 import { betragText } from '../domain/konto.js';
 import { effekteAn, hochzaehlen } from './bewegung.js';
 
+// [Ansicht, Name, Kurzform]: die Kurzform erscheint nur, wenn der Name im Knopf nicht ganz Platz hat (gemessen, siehe kurzformenPruefen)
 const ANSICHTEN = [
-  ['kontostand', 'Kontostand'],
-  ['fixkosten', 'Fixkosten'],
-  ['sparziele', 'Sparziele'],
+  ['kontostand', 'Kontostand', 'Stand'],
+  ['fixkosten', 'Fixkosten', 'Kosten'],
+  ['sparziele', 'Sparziele', 'Ziele'],
   ['versicherung', 'Versicherung', 'Versich.'],
 ];
 
@@ -25,6 +26,54 @@ export const OHNE_BILD_MS = 5000;
 
 const jetztMs = () => globalThis.performance?.now?.() ?? Date.now();
 const naechstesBild = (fn) => globalThis.requestAnimationFrame?.(fn);
+
+const KURZ_KNOEPFE = '.konto-segment-knopf[data-kurz]';
+
+/**
+ * Abschluss-Review I1: ob ein Name passt, hängt an der Schrift des Telefons (Klassisch hat keine eigene: Segoe UI unter Windows, SF Pro
+ * Rounded am iPhone, Roboto/Samsung One, unter Linux DejaVu) – deshalb wird gemessen statt an einer festen Breite entschieden. Jeder
+ * Knopf mit Kurzform bekommt die Klasse `kurz` genau dann, wenn sein VOLLER Name breiter ist als der Knopf (scrollWidth > clientWidth;
+ * dafür kurz ohne `kurz` gemessen – im selben Bild, es flackert nichts). theme.css zeigt dann die Kurzform (::after aus data-kurz).
+ */
+export function kurzformenPruefen(knoepfe) {
+  for (const knopf of knoepfe ?? []) {
+    knopf.classList.remove('kurz');
+    if (knopf.scrollWidth > knopf.clientWidth) knopf.classList.add('kurz');
+  }
+}
+
+let kurzBeobachtet = false;
+/** Neu messen, sobald nachgeladene Schriften fertig sind (andere Breite des Namens bei gleicher Knopfbreite). Einmal je Seite. */
+function schriftenBeobachten(dokument) {
+  if (kurzBeobachtet || !dokument?.fonts) return;
+  kurzBeobachtet = true;
+  const alle = () => kurzformenPruefen(dokument.querySelectorAll?.(KURZ_KNOEPFE));
+  dokument.fonts.addEventListener?.('loadingdone', alle);
+  dokument.fonts.ready?.then?.(alle, () => {});
+}
+
+let groesse = null; // ein ResizeObserver für den jeweils gezeichneten Umschalter
+let beobachtet = null;
+/**
+ * Messen, sobald der Umschalter steht, und jedes Mal, wenn sich seine Breite ändert (Drehen, Fenster, Schriftgröße): der ResizeObserver
+ * meldet sich nach dem Layout und vor dem Malen – es flackert nichts, und gemessen wird immer die fertige Breite (beim `resize` des
+ * Fensters war das in WebKit nicht sicher). Ohne ResizeObserver: einmal nach dem Einhängen.
+ */
+function kurzformenEinplanen(el) {
+  if (typeof el?.querySelectorAll !== 'function') return;
+  const messen = () => kurzformenPruefen(el.querySelectorAll(KURZ_KNOEPFE));
+  schriftenBeobachten(globalThis.document);
+  if (typeof globalThis.ResizeObserver === 'function') {
+    groesse ??= new globalThis.ResizeObserver((eintraege) => {
+      for (const e of eintraege) kurzformenPruefen(e.target.querySelectorAll(KURZ_KNOEPFE));
+    });
+    if (beobachtet) groesse.unobserve(beobachtet);
+    beobachtet = el;
+    groesse.observe(el); // meldet sich auch gleich nach dem ersten Layout
+  } else if (typeof globalThis.queueMicrotask === 'function') {
+    globalThis.queueMicrotask(() => el.isConnected && messen());
+  }
+}
 
 /** Wo der Tropfen/Blob gerade steht (px, auch mitten im Gleiten) – nur in Glas/Bento mit Bewegung, sonst null. */
 function tropfenJetzt() {
@@ -60,7 +109,7 @@ export function kontoUmschalter(ui, { jetzt = jetztMs(), bild = naechstesBild, t
     wechsel && wechsel.nach === aktuell && (wechsel.zeit === null ? jetzt - wechsel.erstellt < OHNE_BILD_MS : jetzt - wechsel.zeit < GLEITEN_MS) ? wechsel : null;
   const seit = laeuft && laeuft.zeit !== null ? Math.max(0, jetzt - laeuft.zeit) : 0;
   const stil = laeuft ? { '--kt-seit': `${-Math.round(seit)}ms`, ...(laeuft.x === null ? {} : { '--kt-von': `${laeuft.x}px` }) } : null;
-  return h(
+  const el = h(
     'div',
     {
       class: 'konto-segment',
@@ -69,8 +118,8 @@ export function kontoUmschalter(ui, { jetzt = jetztMs(), bild = naechstesBild, t
       'data-von': laeuft?.von,
       style: stil,
     },
-    // Mit Kurzform (Review T3 M1): unter 360 px zeigt theme.css statt des Namens die Kurzform (::after), der volle Name bleibt der Text
-    // im Knopf, in aria-label (Vorlesen) und title.
+    // Mit Kurzform (Abschluss-Review I1): passt der Name nicht (gemessen), zeigt theme.css die Kurzform (::after); der volle Name bleibt
+    // der Text im Knopf, in aria-label (Vorlesen) und title.
     ANSICHTEN.map(([wert, text, kurz]) =>
       h(
         'button',
@@ -85,6 +134,8 @@ export function kontoUmschalter(ui, { jetzt = jetztMs(), bild = naechstesBild, t
       ),
     ),
   );
+  kurzformenEinplanen(el);
+  return el;
 }
 
 /** „~ ungefähr“ und „~ 89 €“ brechen nicht nach der Tilde um. */

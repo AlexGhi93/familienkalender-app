@@ -27,7 +27,7 @@ const JETZT = () => new Date('2026-11-08T08:00:00+01:00');
 const HEUTE = '2026-11-08';
 const KEY = 'fk.demo.v1';
 const KALENDER = { termine: 'kt', abwesenheit: 'kab', anwesenheit: 'kan' };
-const P = polizzeAusVorlage('medplusBasic', { person: 'Mia', beginn: '2026-10-20' }, { zufall: () => 0 });
+const P = polizzeAusVorlage('medplusBasic', { person: 'Mia', beginn: '2026-09-01' }, { zufall: () => 0 });
 const rechnung = (mehr = {}) => ({ id: 'rech0001', kategorie: 'physio', datum: '2026-10-28', betragCent: 9000, eingereichtAm: '2026-10-30', ...mehr });
 const mitJahren = (...jahre) => jahre.reduce((d, j) => versicherungJahrEintragen(d, j), polizzeAnlegen(leereVersicherung(), P));
 /** Ein Quartal-Teil mit einer Rechnung am 1. Tag des zweiten Quartalsmonats. */
@@ -239,7 +239,7 @@ describe('Google-Adapter: Versicherung', () => {
   });
 
   test('Fix-Runde 2 (I1): neuere Version gibt jeder Kategorie ein Feld, das alte Telefon trägt ein Jahr ein → gesperrt, Polizze bleibt', async () => {
-    const neuere = JSON.stringify({ v: 1, p: { i: 'abcd1234', n: 'MedPLUS', b: '2026-10-20', k: [{ i: 'arzt', n: 'Arzt', l: 160000, x: 1 }], m: 314400 }, j: 2026 });
+    const neuere = JSON.stringify({ v: 1, p: { i: 'abcd1234', n: 'MedPLUS', b: '2026-09-01', k: [{ i: 'arzt', n: 'Arzt', l: 160000, x: 1 }], m: 314400 }, j: 2026 });
     const t = await aufbau({ fkversicherung: neuere });
     const g = await t.adapter.leseVersicherung();
     assert.deepEqual([g.unlesbar, g.rohtexte], [{ main: true, teile: [] }, [{ id: 'fkversicherung', text: neuere }]]);

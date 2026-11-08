@@ -30,7 +30,7 @@ test.describe('Versicherung im Konto-Tab (Demo)', () => {
   test('Umschalter mit vier Stellungen, passt in eine Zeile; gemerkt nach dem Neuladen; #/konto/versicherung', async ({ page }) => {
     await starteDemo(page, { route: '#/konto' });
     await expect(umschalter(page).getByRole('button')).toHaveText(['Kontostand', 'Fixkosten', 'Sparziele', 'Versicherung']);
-    const masse = await umschalter(page).getByRole('button').evaluateAll((l) => l.map((b) => [b.scrollWidth <= b.clientWidth + 1, b.getBoundingClientRect().height, parseFloat(getComputedStyle(b).fontSize)]));
+    const masse = await umschalter(page).getByRole('button').evaluateAll((l) => l.map((b) => [b.scrollWidth <= b.clientWidth, b.getBoundingClientRect().height, parseFloat(getComputedStyle(b).fontSize)]));
     for (const [passt, hoehe, schrift] of masse) {
       expect(passt).toBe(true);
       expect(hoehe).toBeGreaterThanOrEqual(44);
@@ -100,6 +100,26 @@ test.describe('Versicherung im Konto-Tab (Demo)', () => {
     await expect(zeilen(page).first().locator('.vs-warnung')).toHaveText('⚠ Limit überschritten – ca. 6 € werden nicht erstattet');
     await page.reload();
     await expect(zeilen(page)).toHaveCount(3);
+  });
+
+  test('Abschluss-Review M2: ein Rechnungsdatum mehr als ein Jahr vor dem Beginn (Tippfehler im Jahr) wird abgelehnt, das Vorjahr nicht', async ({ page }) => {
+    await oeffne(page);
+    await page.getByRole('button', { name: '＋ Rechnung einreichen' }).click();
+    const b = blatt(page, '＋ Rechnung einreichen');
+    const datum = b.getByRole('textbox', { name: 'Rechnungsdatum', exact: true });
+    await datum.fill('12.10.2016');
+    await datum.press('Enter');
+    await b.getByRole('textbox', { name: 'Betrag in Euro' }).fill('12');
+    await b.getByRole('button', { name: 'Einreichen' }).click();
+    await erwarteToast(page, `Das Rechnungsdatum liegt mehr als ein Jahr vor dem Beginn der Polizze (${POLIZZE.beginn.split('-').reverse().join('.')}). Bitte das Jahr prüfen.`);
+    await expect(b).toBeVisible();
+    await expect(zeilen(page)).toHaveCount(2);
+    await datum.fill('12.10.2025');
+    await datum.press('Enter');
+    await b.getByRole('button', { name: 'Einreichen' }).click();
+    await erwarteToast(page, 'vor dem Beginn der Polizze');
+    await expect(b).toBeHidden();
+    await expect(page.getByRole('button', { name: 'Vorheriges Jahr' })).toBeEnabled();
   });
 
   test('Erstattung erhalten: Betrag + Datum; die Rechnung zählt danach mit der Erstattung, ändern und entfernen', async ({ page }) => {
@@ -226,30 +246,79 @@ test.describe('Versicherung im Konto-Tab (Demo)', () => {
     await expect(page.locator('.vs-kat')).toHaveCount(5);
   });
 
-  test('sehr schmale Telefone (Review T3 M1): unter 360 px „Versich.“, voller Name vorgelesen; nichts läuft über; ab 360 px unverändert', async ({ page }) => {
+  // Abschluss-Review I1: Klassisch hat keine eigene Schrift – ob „Kontostand“/„Versicherung“ passen, hängt am Telefon (iPhone, Samsung)
+  // bzw. am Rechner (Windows schmal, Linux/CI breit). Die Kurzform wird gemessen: sie erscheint genau dann, wenn der volle Name nicht passt.
+  async function umschalterMasse(page) {
+    return umschalter(page)
+      .getByRole('button')
+      .evaluateAll((l) =>
+        l.map((b) => {
+          const kurz = b.classList.contains('kurz');
+          b.classList.remove('kurz');
+          const passtLang = b.scrollWidth <= b.clientWidth;
+          if (kurz) b.classList.add('kurz');
+          const nach = getComputedStyle(b, '::after');
+          return {
+            name: b.getAttribute('aria-label') ?? b.textContent,
+            kurzform: b.getAttribute('data-kurz'),
+            kurz,
+            passtLang,
+            sichtbar: kurz ? nach.display !== 'none' && nach.content === `"${b.getAttribute('data-kurz')}"` : b.querySelector('.konto-segment-lang') ? getComputedStyle(b.querySelector('.konto-segment-lang')).display !== 'none' : true,
+            ueber: b.scrollWidth - b.clientWidth,
+            hoehe: b.getBoundingClientRect().height,
+            schrift: parseFloat(getComputedStyle(b).fontSize),
+          };
+        }),
+      );
+  }
+
+  async function umschalterPruefen(page, breite, { breiteSchrift = false } = {}) {
+    await page.setViewportSize({ width: breite, height: 740 });
+    const ort = `${breite} px${breiteSchrift ? ' (breite Schrift)' : ''}`;
+    // die App misst nach dem Layout (ResizeObserver) – so lange warten, bis nichts überläuft und jede Form zur Messung passt
+    await expect
+      .poll(async () => (await umschalterMasse(page)).map((m) => `${m.name}:${Math.max(0, m.ueber)}:${m.kurz === !m.passtLang ? 'richtig' : 'falsch'}`), { message: ort })
+      .toEqual(['Kontostand', 'Fixkosten', 'Sparziele', 'Versicherung'].map((n) => `${n}:0:richtig`));
+    const masse = await umschalterMasse(page);
+    for (const m of masse) {
+      expect(m.ueber, `${m.name} bei ${ort}`).toBeLessThanOrEqual(0);
+      expect(m.hoehe, `${m.name} bei ${ort}`).toBeGreaterThanOrEqual(44);
+      expect(m.schrift, `${m.name} bei ${ort}`).toBeGreaterThanOrEqual(13);
+      expect(m.sichtbar, `${m.name} bei ${ort}: die gewählte Form ist zu sehen`).toBe(true);
+      expect(m.kurzform, m.name).not.toBeNull();
+      expect(m.kurz, `${m.name} bei ${ort}: kurz genau dann, wenn der volle Name nicht passt`).toBe(!m.passtLang);
+    }
+    return masse;
+  }
+
+  test('Umschalter (Abschluss-Review I1): Kurzform nur, wenn der Name nicht passt (gemessen); nie Überlauf; voller Name vorgelesen', async ({ page }) => {
     await starteDemo(page, { route: '#/konto' });
     const versicherung = umschalter(page).getByRole('button', { name: 'Versicherung', exact: true });
-    for (const breite of [320, 359, 360, 375]) {
-      await page.setViewportSize({ width: breite, height: 740 });
-      const kurz = breite < 360;
-      await expect(versicherung, `${breite} px`).toHaveAttribute('title', 'Versicherung');
-      const knopf = await versicherung.evaluate((b) => ({
-        nach: getComputedStyle(b, '::after').display,
-        inhalt: getComputedStyle(b, '::after').content,
-        lang: getComputedStyle(b.querySelector('.konto-segment-lang')).display,
-      }));
-      expect(knopf, `${breite} px`).toEqual(kurz ? { nach: 'inline', inhalt: '"Versich."', lang: 'none' } : { nach: 'none', inhalt: '"Versich."', lang: 'inline' });
-      const masse = await umschalter(page).getByRole('button').evaluateAll((l) => l.map((b) => [b.getAttribute('aria-label') ?? b.textContent, b.scrollWidth - b.clientWidth, b.getBoundingClientRect().height, parseFloat(getComputedStyle(b).fontSize)]));
-      for (const [name, ueber, hoehe, schrift] of masse) {
-        expect(ueber, `${name} bei ${breite} px`).toBeLessThanOrEqual(kurz ? 0 : 1);
-        expect(hoehe, `${name} bei ${breite} px`).toBeGreaterThanOrEqual(44);
-        expect(schrift, `${name} bei ${breite} px`).toBeGreaterThanOrEqual(13);
-      }
-    }
+    await expect(versicherung).toHaveAttribute('title', 'Versicherung');
+    for (const name of ['Kontostand', 'Fixkosten', 'Sparziele']) await expect(umschalter(page).getByRole('button', { name, exact: true })).toHaveAttribute('title', name);
+    for (const breite of [320, 359, 360, 375, 390]) await umschalterPruefen(page, breite);
     await page.setViewportSize({ width: 320, height: 740 });
     await versicherung.click();
     await expect(page.getByRole('heading', { name: 'Versicherung 🩺' })).toBeVisible();
     await expect(versicherung).toHaveAttribute('aria-pressed', 'true');
+    await umschalterPruefen(page, 320);
+  });
+
+  test('Umschalter mit breiter Schrift (wie Linux/CI und manche Telefone): bei 320, 360, 375 und 390 px nie Überlauf', async ({ page }) => {
+    await starteDemo(page, { route: '#/konto/versicherung' });
+    await expect(page.getByRole('heading', { name: 'Versicherung 🩺' })).toBeVisible();
+    // über CSSOM (die CSP erlaubt keine eingefügten <style>): Verdana, sonst DejaVu Sans – beide breiter als Segoe UI
+    await page.evaluate(() => {
+      const blatt = [...document.styleSheets].at(-1);
+      blatt.insertRule(`.konto-segment-knopf { font-family: Verdana, 'DejaVu Sans', sans-serif !important; }`, blatt.cssRules.length);
+    });
+    for (const breite of [320, 360, 375, 390]) {
+      const masse = await umschalterPruefen(page, breite, { breiteSchrift: true });
+      expect(masse[3].kurz, `Versicherung bei ${breite} px mit breiter Schrift: Kurzform`).toBe(true);
+    }
+    await umschalter(page).getByRole('button', { name: 'Kontostand', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Kontostand 💶' })).toBeVisible();
+    await umschalterPruefen(page, 360, { breiteSchrift: true });
   });
 
   test('alle Blätter (Review T3 M4): Bedienelemente ≥ 44 px hoch, Knöpfe ≥ 44 px breit, Schrift in Feldern und Knöpfen ≥ 16 px', async ({ page }) => {

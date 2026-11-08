@@ -30,7 +30,7 @@ import { jahresStand } from '../../src/domain/versicherung-rechnung.js';
 import { apiAttrappe, zustand } from './hilfen.js';
 
 const HEUTE = '2026-11-08';
-const P = polizzeAusVorlage('medplusBasic', { person: 'Mia', beginn: '2026-10-20' }, { zufall: () => 0 });
+const P = polizzeAusVorlage('medplusBasic', { person: 'Mia', beginn: '2026-09-01' }, { zufall: () => 0 });
 const r = (id, mehr = {}) => ({ id, kategorie: 'medi', datum: '2026-10-25', betragCent: 1520, eingereichtAm: '2026-10-26', ...mehr });
 
 /** state.versicherung wie im Store: Polizze `polizze`, Rechnungen richtig je Quartal abgelegt, frisch gelesen (Standard). */
@@ -54,7 +54,7 @@ const nurArt = (art, plan) => plan.filter((p) => p.art === art);
 describe('Versicherungs-Erinnerungen im Push-Plan (Spec §6)', () => {
   test('„noch offen?“ 30 Tage nach dem Einreichen um 09:00 Wien, an beide Telefone, öffnet die Versicherung', async () => {
     const plan = nurArt('versOffen', await versPlan(mitVers(versTeil({ rechnungen: [r('rech0001')] })), '2026-11-08T08:00:00+01:00'));
-    assert.deepEqual(kurz(plan), [['2026-11-25T08:00:00.000Z', 'versOffen', 'Erstattung für Rechnung vom 25.10. (Medikamente) noch offen?']]);
+    assert.deepEqual(kurz(plan), [['2026-11-25T08:00:00.000Z', 'versOffen', 'Erstattung für Rechnung vom 25.10. noch offen?']]);
     assert.equal(plan[0].ziel, VERSICHERUNG_ZIEL);
     assert.equal(VERSICHERUNG_ZIEL, '#/konto/versicherung');
     assert.equal('nur' in plan[0], false, 'ohne nur: beide Telefone');
@@ -75,7 +75,7 @@ describe('Versicherungs-Erinnerungen im Push-Plan (Spec §6)', () => {
     const state = mitVers(versTeil({ rechnungen: [r('rech0001'), r('rech0002', { datum: '2026-09-01', eingereichtAm: '2026-09-02' })] }));
     const a = nurArt('versOffen', await versPlan(state, '2026-11-08T08:00:00+01:00'));
     const b = nurArt('versOffen', await versPlan(state, '2026-11-10T20:00:00+01:00'));
-    assert.deepEqual(a.map((p) => p.text), ['Erstattung für Rechnung vom 25.10. (Medikamente) noch offen?'], 'rech0002 war am 02.10. fällig');
+    assert.deepEqual(a.map((p) => p.text), ['Erstattung für Rechnung vom 25.10. noch offen?'], 'rech0002 war am 02.10. fällig');
     assert.equal(a[0].id, b[0].id);
     assert.match(a[0].id, /^[A-Za-z0-9_-]{22}$/);
     const nachher = await versPlan(state, '2026-11-25T10:00:00+01:00');
@@ -95,6 +95,12 @@ describe('Versicherungs-Erinnerungen im Push-Plan (Spec §6)', () => {
       assert.doesNotMatch(p.text, /€|EUR/, p.text);
       assert.doesNotMatch(p.text.replace(/\d{2}\.\d{2}\./g, ''), /\d/, `nur Daten als Ziffern: ${p.text}`);
     }
+  });
+
+  test('Abschluss-Review M5: „noch offen?“ nennt keine Kategorie (keine Gesundheitsangabe auf dem Sperrbildschirm)', async () => {
+    const plan = nurArt('versOffen', await versPlan(mitVers(versTeil({ rechnungen: [r('rech0001', { kategorie: 'psycho' })] })), '2026-11-08T08:00:00+01:00'));
+    assert.deepEqual(plan.map((p) => p.text), ['Erstattung für Rechnung vom 25.10. noch offen?']);
+    for (const k of P.kategorien) assert.equal(plan[0].text.includes(kategorieKurz(P, k.id)), false, k.id);
   });
 
   test('M3: das Jahresende nutzt dieselben Schreibzeiten wie „noch offen“, auch aus dem gespeicherten Stand (bestaetigt)', () => {
@@ -207,7 +213,7 @@ describe('Seite „Versicherung“ (versicherungModel)', () => {
     const m = versicherungModel(mitVers(versTeil({ rechnungen: [r('rech0001', { erstattetCent: 1216, erstattetAm: '2026-11-05', stelle: 'Apotheke' }), r('rech0002', { datum: '2026-11-03', eingereichtAm: '2026-11-04', betragCent: 1980, notiz: 'Saft' })] })), HEUTE);
     assert.equal(m.zustand, 'da');
     assert.equal(m.titel, 'MedPLUS Privatarzt Basic');
-    assert.equal(m.untertitel, 'Mia · seit 20.10.2026');
+    assert.equal(m.untertitel, 'Mia · seit 01.09.2026');
     assert.match(m.hinweis, /80 %.*ÖGK/);
     assert.equal(m.jahr, 2026);
     assert.equal(m.istAktuell, true);

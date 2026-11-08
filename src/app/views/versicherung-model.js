@@ -357,7 +357,7 @@ export function versicherungTermine(v, heute) {
     const termine = [];
     for (const o of offeneErstattungen(alleRechnungen(teil.teile ?? {}, { geschrieben: v.geschrieben }), heute)) {
       if (o.erinnerungAm < heute) continue;
-      termine.push({ schluessel: `vers-offen-${o.rechnung.id}`, art: 'versOffen', tag: o.erinnerungAm, titel: '🩺 Versicherung', text: offenText(polizze, o.rechnung) });
+      termine.push({ schluessel: `vers-offen-${o.rechnung.id}`, art: 'versOffen', tag: o.erinnerungAm, titel: '🩺 Versicherung', text: offenText(o.rechnung) });
     }
     const jetzt = Number(heute.slice(0, 4));
     for (const jahr of [jetzt, jetzt + 1]) {
@@ -372,8 +372,8 @@ export function versicherungTermine(v, heute) {
   }
 }
 
-/** „Erstattung für Rechnung vom 12.10. (Medikamente) noch offen?“ */
-export const offenText = (polizze, rechnung) => `Erstattung für Rechnung vom ${kurzDatum(rechnung.datum)} (${kategorieKurz(polizze, rechnung.kategorie)}) noch offen?`;
+/** „Erstattung für Rechnung vom 12.10. noch offen?“ – ohne Kategorie: keine Gesundheitsangabe auf dem Sperrbildschirm (Abschluss-Review M5). */
+export const offenText = (rechnung) => `Erstattung für Rechnung vom ${kurzDatum(rechnung.datum)} noch offen?`;
 
 /** „Bis 31.12. noch Rest bei Privatarzt, Physiotherapie, Psychotherapie …“ – ohne Betrag (E1); null, wenn nichts mehr erstattbar ist. */
 export function jahresendeText(polizze, s) {

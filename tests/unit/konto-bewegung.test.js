@@ -3,7 +3,7 @@
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { zuFeiern } from '../../src/ui/sparziele-screen.js';
-import { GLEITEN_MS, OHNE_BILD_MS, kontoUmschalter } from '../../src/ui/fixkosten-screen.js';
+import { GLEITEN_MS, OHNE_BILD_MS, kontoUmschalter, kurzformenPruefen } from '../../src/ui/fixkosten-screen.js';
 
 /** Kleinstes DOM für h(): Elemente mit Attributen, Stil, Kindern und Ereignissen. */
 class Knoten {}
@@ -132,14 +132,45 @@ describe('Konto-Umschalter: data-von nur direkt nach dem Umschalten', () => {
     );
   });
 
-  test('Review T3 M1: „Versicherung“ hat die Kurzform „Versich.“ für ≤ 359 px (CSS), der volle Name bleibt in aria-label und title', () => {
+  test('Abschluss-Review I1: jeder Knopf hat eine Kurzform („Stand“, „Kosten“, „Ziele“, „Versich.“); der volle Name bleibt Text, aria-label und title', () => {
     const el = kontoUmschalter({ kontoAnsicht: 'versicherung', seiteBetreten: true });
-    const knopf = el.kinder[3];
-    assert.equal(knopf.getAttribute('data-kurz'), 'Versich.');
-    assert.equal(knopf.getAttribute('aria-label'), 'Versicherung');
-    assert.equal(knopf.getAttribute('title'), 'Versicherung');
-    assert.equal(knopf.kinder[0].getAttribute('class'), 'konto-segment-lang');
-    assert.equal(knopf.kinder[0].kinder[0].text, 'Versicherung', 'der Text im Knopf bleibt der volle Name');
-    for (const k of el.kinder.slice(0, 3)) assert.equal(k.getAttribute('data-kurz'), null, 'die anderen drei passen auch bei 320 px');
+    const erwartet = [['Kontostand', 'Stand'], ['Fixkosten', 'Kosten'], ['Sparziele', 'Ziele'], ['Versicherung', 'Versich.']];
+    el.kinder.forEach((knopf, i) => {
+      const [name, kurz] = erwartet[i];
+      assert.equal(knopf.getAttribute('data-kurz'), kurz, name);
+      if (!kurz) return;
+      assert.equal(knopf.getAttribute('aria-label'), name);
+      assert.equal(knopf.getAttribute('title'), name);
+      assert.equal(knopf.kinder[0].getAttribute('class'), 'konto-segment-lang');
+      assert.equal(knopf.kinder[0].kinder[0].text, name, 'der Text im Knopf bleibt der volle Name');
+    });
+  });
+
+  test('Abschluss-Review I1: kurzformenPruefen misst – Kurzform genau dann, wenn der volle Name nicht passt (jede Schrift), immer neu gemessen', () => {
+    const knopf = (breiteLang, platz) => {
+      const klassen = new Set(['konto-segment-knopf']);
+      return {
+        klassen,
+        classList: { add: (k) => klassen.add(k), remove: (k) => klassen.delete(k), contains: (k) => klassen.has(k) },
+        get clientWidth() {
+          return platz;
+        },
+        // gemessen wird der volle Name: mit „kurz“ wäre er schmaler – das darf die Messung nicht täuschen
+        get scrollWidth() {
+          return klassen.has('kurz') ? Math.min(platz, 40) : Math.max(platz, breiteLang);
+        },
+      };
+    };
+    const passt = knopf(77, 77);
+    const zuBreit = knopf(78, 77);
+    const war = knopf(70, 77);
+    war.classList.add('kurz');
+    kurzformenPruefen([passt, zuBreit, war]);
+    assert.equal(passt.classList.contains('kurz'), false, 'passt genau: voller Name');
+    assert.equal(zuBreit.classList.contains('kurz'), true, '1 px zu breit: Kurzform');
+    assert.equal(war.classList.contains('kurz'), false, 'wieder Platz (breiter oder andere Schrift): zurück zum vollen Namen');
+    kurzformenPruefen([zuBreit]);
+    assert.equal(zuBreit.classList.contains('kurz'), true, 'zweimal gemessen: bleibt kurz');
+    kurzformenPruefen(null);
   });
 });

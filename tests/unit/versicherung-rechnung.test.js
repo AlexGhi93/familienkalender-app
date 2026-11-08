@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { ERSTATTUNG_ERINNERUNG_TAGE, alleRechnungen, jahresStand, offeneErstattungen, rechnungFinden, rechnungenDesJahres } from '../../src/domain/versicherung-rechnung.js';
 import { POLIZZE_VORLAGEN, leererVersicherungTeil, polizzeAusVorlage, pruefeVersicherungTeil, rechnungSetzen, rechnungTeilWechseln } from '../../src/domain/versicherung.js';
 
-const POLIZZE = polizzeAusVorlage('medplusBasic', { person: 'Mia', beginn: '2026-10-20' }, { zufall: () => 0.5 });
+const POLIZZE = polizzeAusVorlage('medplusBasic', { person: 'Mia', beginn: '2026-09-01' }, { zufall: () => 0.5 });
 
 let nr = 0;
 /** Eine Rechnung (Kennung fortlaufend); `mehr` überschreibt. */

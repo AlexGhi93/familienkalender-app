@@ -459,8 +459,21 @@ function rechnungLesen(e) {
 const zukunft = (datum, heute, text) => (datum !== undefined && istDatum(datum) && datum > addDays(heute, 1) ? text : null);
 
 /**
+ * Abschluss-Review M2: ein Rechnungsdatum mehr als ein Jahr vor dem JAHR des Beginns ist fast sicher ein Tippfehler im Jahr (2016 statt
+ * 2026). Gespeichert würde es das erste Jahr (`ab`) für immer senken, und jedes Lesen holte dann alle Quartale dazwischen. Das Vorjahr
+ * des Beginns geht noch (nur Warnung „vor dem Beginn“).
+ */
+function zuFrueh(datum, polizze) {
+  if (!polizze || !istDatum(polizze.beginn) || !istDatum(datum)) return null;
+  return Number(datum.slice(0, 4)) < Number(polizze.beginn.slice(0, 4)) - 1
+    ? `Das Rechnungsdatum liegt mehr als ein Jahr vor dem Beginn der Polizze (${datumText(polizze.beginn)}). Bitte das Jahr prüfen.`
+    : null;
+}
+
+/**
  * Prüft eine Rechnung am Tag `heute` (Pflicht) → { fehler, warnung }: fehler = erste Meldung oder null (ein Datum mehr als 1 Tag in der
- * Zukunft ist ein Fehler; mit `polizze` muss die Kategorie eine ihrer Kategorien sein); warnung = Hinweis, der nicht aufhält (Erstattung
+ * Zukunft ist ein Fehler; mit `polizze` muss die Kategorie eine ihrer Kategorien sein, und das Rechnungsdatum darf höchstens im
+ * Vorjahr des Beginns liegen); warnung = Hinweis, der nicht aufhält (Erstattung
  * höher als der Rechnungsbetrag; Rechnungsdatum vor dem Beginn der Polizze) oder null.
  */
 export function rechnungPruefen(entwurf, { heute, polizze } = {}) {
@@ -473,7 +486,8 @@ export function rechnungPruefen(entwurf, { heute, polizze } = {}) {
     zukunft(e.eingereichtAm, heute, 'Das Einreichdatum liegt in der Zukunft.') ??
     zukunft(e.erstattetAm, heute, 'Das Datum der Erstattung liegt in der Zukunft.') ??
     (polizze && !(polizze.kategorien ?? []).some((k) => k.id === e.kategorie) ? 'Bitte eine Kategorie aus der Polizze wählen.' : null) ??
-    (e.id !== undefined && !istKennung(e.id) ? 'Ungültige Kennung.' : null);
+    (e.id !== undefined && !istKennung(e.id) ? 'Ungültige Kennung.' : null) ??
+    zuFrueh(e.datum, polizze);
   if (fehler) return { fehler, warnung: null };
   let warnung = null;
   if (r.rechnung.erstattetCent !== undefined && r.rechnung.erstattetCent > r.rechnung.betragCent) warnung = 'Die Erstattung ist höher als der Rechnungsbetrag – bitte prüfen. Gespeichert wird sie trotzdem.';

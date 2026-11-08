@@ -23,7 +23,7 @@ const KALENDER = { termine: 'kt', abwesenheit: 'kab', anwesenheit: 'kan' };
 const authFehler = () => Object.assign(new Error('abgelaufen'), { name: 'AuthAbgelaufen' });
 const TEXT_NICHT_GELESEN = 'Die Versicherung konnte nicht gelesen werden. Bitte noch einmal versuchen.';
 
-const P = polizzeAusVorlage('medplusBasic', { person: 'Mia', beginn: '2026-10-20' }, { zufall: () => 0 });
+const P = polizzeAusVorlage('medplusBasic', { person: 'Mia', beginn: '2026-09-01' }, { zufall: () => 0 });
 const haupt = (...jahre) => versicherungText(jahre.reduce((d, j) => versicherungJahrEintragen(d, j), polizzeAnlegen(leereVersicherung(), P)));
 const rechnung = (mehr = {}) => ({ id: 'rech0001', kategorie: 'physio', datum: '2026-10-28', betragCent: 9000, eingereichtAm: '2026-10-30', ...mehr });
 /** Text eines Quartal-Teils mit diesen Rechnungen (richtig abgelegt). */

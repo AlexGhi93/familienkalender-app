@@ -4084,26 +4084,20 @@ html:has(.screen.einkauf) {
   color: var(--akzent-ink);
 }
 
-/* Sehr schmale Telefone (≤ 359 px, Review T3 M1): „Versicherung“ passt dort in keinem Aussehen, also die Kurzform „Versich.“ (data-kurz);
-   der volle Name bleibt Text, aria-label und title, und die Schrift rückt etwas enger. Ab 360 px ändert sich nichts. */
+/* Kurzform (Abschluss-Review I1): passt der volle Name nicht in seinen Knopf – das hängt an der Schrift des Telefons –, setzt
+   fixkosten-screen.js (kurzformenPruefen, gemessen) die Klasse `kurz`, und statt des Namens steht seine Kurzform (data-kurz: „Stand“,
+   „Kosten“, „Ziele“, „Versich.“). Der volle Name bleibt Text, aria-label und title. */
 .konto-segment-knopf[data-kurz]::after {
   content: attr(data-kurz);
   display: none;
 }
 
-@media (max-width: 359px) {
-  /* „Kontostand“ ist bei 320 px in Klassisch sonst 2 px zu breit; Glas setzt seinen eigenen Abstand */
-  .konto-segment-knopf {
-    letter-spacing: -0.035em;
-  }
+.konto-segment-knopf.kurz > .konto-segment-lang {
+  display: none;
+}
 
-  .konto-segment-knopf[data-kurz] > .konto-segment-lang {
-    display: none;
-  }
-
-  .konto-segment-knopf[data-kurz]::after {
-    display: inline;
-  }
+.konto-segment-knopf.kurz::after {
+  display: inline;
 }
 
 /* Der Untertitel steht hier unter dem Umschalter, nicht direkt unter der Überschrift */

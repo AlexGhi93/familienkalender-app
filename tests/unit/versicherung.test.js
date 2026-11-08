@@ -43,7 +43,7 @@ import {
 } from '../../src/domain/versicherung.js';
 
 const HEUTE = '2026-11-08';
-const P = polizzeAusVorlage('medplusBasic', { person: 'Mia', beginn: '2026-10-20' }, { zufall: () => 0 });
+const P = polizzeAusVorlage('medplusBasic', { person: 'Mia', beginn: '2026-09-01' }, { zufall: () => 0 });
 const MIT = polizzeAnlegen(leereVersicherung(), P);
 
 const rechnung = (mehr = {}) => ({ id: 'rech0001', kategorie: 'physio', datum: '2026-10-28', betragCent: 9000, eingereichtAm: '2026-10-30', ...mehr });
@@ -89,14 +89,14 @@ describe('Versicherung: Vorlage, Kennungen, leere Daten', () => {
       id: '00000000',
       name: 'MedPLUS Privatarzt Basic',
       person: 'Mia',
-      beginn: '2026-10-20',
+      beginn: '2026-09-01',
       kategorien: POLIZZE_VORLAGEN.medplusBasic.kategorien.map((k) => ({ ...k })),
       maximumCent: 314400,
       vorlage: 'medplusBasic',
     });
     assert.equal(polizzeVorlage(P), POLIZZE_VORLAGEN.medplusBasic);
     assert.equal(polizzeVorlage({ ...P, vorlage: undefined }), null);
-    assert.throws(() => polizzeAusVorlage('gibtsnicht', { beginn: '2026-10-20' }), /Vorlage/);
+    assert.throws(() => polizzeAusVorlage('gibtsnicht', { beginn: '2026-09-01' }), /Vorlage/);
     assert.throws(() => polizzeAusVorlage('medplusBasic', {}), /Beginn/);
   });
 
@@ -214,7 +214,7 @@ describe('Versicherung: Polizze anlegen und ändern (rein, wiederholbar)', () =>
 
   test('normalisierePolizze: bereinigt Leerzeichen, leere Felder fallen weg, Zusatzfelder fallen weg', () => {
     const n = normalisierePolizze({ ...P, name: '  MedPLUS   Basic ', person: '  ', egal: 1, kategorien: [{ id: 'arzt', name: ' Arzt ', info: '', limitCent: 5, extra: 2 }] });
-    assert.deepEqual(n, { id: P.id, name: 'MedPLUS Basic', beginn: '2026-10-20', kategorien: [{ id: 'arzt', name: 'Arzt', limitCent: 5 }], maximumCent: 314400, vorlage: 'medplusBasic' });
+    assert.deepEqual(n, { id: P.id, name: 'MedPLUS Basic', beginn: '2026-09-01', kategorien: [{ id: 'arzt', name: 'Arzt', limitCent: 5 }], maximumCent: 314400, vorlage: 'medplusBasic' });
     assert.equal(normalisierePolizze({ ...P, id: undefined }), null);
   });
 });
@@ -247,8 +247,21 @@ describe('Versicherung: Rechnungen je Quartal (C1)', () => {
     assert.equal(rechnungPruefen(rechnung({ betragCent: 0 }), { heute: HEUTE }).fehler, null, '0 € geht');
     assert.equal(rechnungPruefen(rechnung({ kategorie: 'zahn' }), { heute: HEUTE }).fehler, null, 'ohne Polizze: nur das Format');
     assert.match(rechnungPruefen(rechnung({ erstattetCent: 9500, erstattetAm: '2026-11-05' }), { heute: HEUTE, polizze: P }).warnung, /höher als der Rechnungsbetrag/);
-    assert.match(rechnungPruefen(rechnung({ datum: '2026-10-01', eingereichtAm: '2026-10-02' }), { heute: HEUTE, polizze: P }).warnung, /vor dem Beginn/);
+    assert.match(rechnungPruefen(rechnung({ datum: '2026-08-15', eingereichtAm: '2026-08-16' }), { heute: HEUTE, polizze: P }).warnung, /vor dem Beginn/);
     assert.throws(() => rechnungPruefen(rechnung(), {}), /heute/i);
+  });
+
+  test('Abschluss-Review M2: Rechnungsdatum mehr als ein Jahr vor dem Jahr des Beginns → Fehler (Tippfehler im Jahr); das Vorjahr nur Warnung', () => {
+    // P beginnt 2026: 2025 geht (mit Warnung), 2024 und früher nicht – sonst sinkt `ab` für immer und jedes Lesen holt alle Jahre dazwischen
+    const vorjahr = rechnungPruefen(rechnung({ datum: '2025-01-01', eingereichtAm: '2025-01-02' }), { heute: HEUTE, polizze: P });
+    assert.equal(vorjahr.fehler, null);
+    assert.match(vorjahr.warnung, /vor dem Beginn/);
+    for (const datum of ['2024-12-31', '2016-10-12']) {
+      const r = rechnungPruefen(rechnung({ datum, eingereichtAm: '2026-10-28' }), { heute: HEUTE, polizze: P });
+      assert.equal(r.fehler, 'Das Rechnungsdatum liegt mehr als ein Jahr vor dem Beginn der Polizze (01.09.2026). Bitte das Jahr prüfen.', datum);
+      assert.equal(r.warnung, null);
+    }
+    assert.equal(rechnungPruefen(rechnung({ datum: '2016-10-12', eingereichtAm: '2026-10-28' }), { heute: HEUTE }).fehler, null, 'ohne Polizze: nur das Format');
   });
 
   test('Teil: hin und zurück mit kurzen Schlüsseln, Daten als Zahl JJJJMMTT; anderes Jahr/Quartal im Text → unlesbar', () => {
@@ -373,7 +386,7 @@ describe('Versicherung: Rechnungen je Quartal (C1)', () => {
 
 describe('Versicherung: Fix-Runde 2 (Review I1, M1, M5)', () => {
   /** Hauptteil wie von einer neueren App-Version: jede Kategorie hat ein Feld `x`, das diese Version nicht kennt. */
-  const NEUERE_VERSION = JSON.stringify({ v: 1, p: { i: 'abcd1234', n: 'MedPLUS', b: '2026-10-20', k: [{ i: 'arzt', n: 'Arzt', l: 160000, x: 1 }, { i: 'heil', n: 'Heil', l: 22400, x: 2 }], m: 314400 }, j: 2026 });
+  const NEUERE_VERSION = JSON.stringify({ v: 1, p: { i: 'abcd1234', n: 'MedPLUS', b: '2026-09-01', k: [{ i: 'arzt', n: 'Arzt', l: 160000, x: 1 }, { i: 'heil', n: 'Heil', l: 22400, x: 2 }], m: 314400 }, j: 2026 });
 
   test('I1: keine verstandene Kategorie (neuere Version gibt jeder ein Feld) → ganzer Hauptteil unlesbar, nie überschrieben', () => {
     assert.deepEqual(pruefeVersicherung(NEUERE_VERSION), { daten: leereVersicherung(), unlesbar: true });
@@ -388,7 +401,7 @@ describe('Versicherung: Fix-Runde 2 (Review I1, M1, M5)', () => {
 
   test('I1: mehr als 12 verstandene Kategorien → unlesbar; genau 12 → lesbar', () => {
     const kategorien = (n) => Array.from({ length: n }, (_, i) => ({ i: `k${i}`, n: `K${i}`, l: 100 }));
-    const text = (n) => JSON.stringify({ v: 1, p: { i: 'abcd1234', n: 'Eigene', b: '2026-10-20', k: kategorien(n), m: 1000 }, j: 2026 });
+    const text = (n) => JSON.stringify({ v: 1, p: { i: 'abcd1234', n: 'Eigene', b: '2026-09-01', k: kategorien(n), m: 1000 }, j: 2026 });
     assert.equal(pruefeVersicherung(text(13)).unlesbar, true);
     assert.equal(pruefeVersicherung(text(12)).unlesbar, false);
     assert.equal(pruefeVersicherung(text(12)).daten.polizze.kategorien.length, 12);
