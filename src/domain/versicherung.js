@@ -256,12 +256,17 @@ function kurzPolizze(p, fremdeKategorien = []) {
 
 const POLIZZE_SCHLUESSEL = new Set(['i', 'n', 'w', 'b', 'k', 'm', 'v']);
 
-/** Polizze aus dem Kalender → { polizze, fremd: [Kategorie roh] } oder null (dann ist der ganze Hauptteil unlesbar). */
+/**
+ * Polizze aus dem Kalender → { polizze, fremd: [Kategorie roh] } oder null (dann ist der ganze Hauptteil unlesbar). Review I1: auch null,
+ * wenn 0 oder mehr als MAX_KATEGORIEN Kategorien verstanden werden – so eine Polizze könnte diese Version nicht zurückschreiben
+ * (polizzePruefen verlangt 1–12) und würde beim nächsten Schreiben verloren gehen; gesperrt bleibt sie für die neuere Version erhalten.
+ */
 function langPolizze(k) {
   if (!istObjekt(k) || Object.keys(k).some((s) => !POLIZZE_SCHLUESSEL.has(s)) || !Array.isArray(k.k)) return null;
   const roh = { id: k.i, name: k.n, person: k.w, beginn: k.b, maximumCent: k.m, vorlage: k.v };
   if (!istKennung(roh.id) || kopfPruefen(roh) !== null) return null;
   const kat = trenne(k.k, langKategorie);
+  if (kat.gut.length === 0 || kat.gut.length > MAX_KATEGORIEN) return null;
   const polizze = normalisiereKopf(roh);
   polizze.kategorien = kat.gut;
   return { polizze: mitSchluss(polizze, roh), fremd: kat.fremd };
@@ -293,9 +298,13 @@ export const leereVersicherung = () => ({ v: 1, polizze: null, ab: null });
 const mitFremd = (d, fremd) => (fremd?.k?.length > 0 ? { ...d, fremd: { k: fremd.k } } : d);
 const baueVersicherung = (alt, polizze, ab) => mitFremd({ v: 1, polizze, ab }, polizze ? alt?.fremd : undefined);
 
-/** Die Daten als Text für das Ereignis „fkversicherung“ (kurze Schlüssel, fremde Kategorien am Ende); zu voll → TEXT_VERSICHERUNG_VOLL. */
+/**
+ * Die Daten als Text für das Ereignis „fkversicherung“ (kurze Schlüssel, fremde Kategorien am Ende); zu voll → TEXT_VERSICHERUNG_VOLL.
+ * Eine Polizze, die sich nicht normalisieren lässt, wirft (Review I1) – sie fällt nie still weg.
+ */
 export function versicherungText(daten) {
   const polizze = daten?.polizze ? normalisierePolizze(daten.polizze) : null;
+  if (daten?.polizze && !polizze) throw new Error(`Ungültige Polizze: ${polizzePruefen(daten.polizze) ?? 'Ungültige Kennung.'}`);
   const roh = { v: 1 };
   if (polizze) roh.p = kurzPolizze(polizze, daten.fremd?.k ?? []);
   if (istJahr(daten?.ab)) roh.j = daten.ab;
@@ -534,11 +543,19 @@ export function pruefeVersicherungTeil(text, { jahr, quartal } = {}) {
 
 const teilName = (teil) => (teil?.jahr ? `${teil.quartal ? `${teil.quartal}. Quartal ` : ''}${teil.jahr}` : '');
 
-/** Hinweis, wenn in einem Teil etwas nicht verstanden wurde (bleibt gespeichert) oder er unlesbar ist; sonst []. */
+/**
+ * Hinweise zu einem Teil; sonst []: unlesbar; nicht verstandene Einträge (bleiben gespeichert); Rechnungen, deren Datum nicht zum Teil
+ * passt (Review M1: sie bleiben lesbar, zählen in ihrem eigenen Jahr – rechnungenDesJahres – und wandern beim nächsten Ändern über
+ * rechnungTeilWechseln an den richtigen Ort).
+ */
 export function versicherungTeilWarnungen({ teil, unlesbar } = {}) {
   if (unlesbar) return [`Die Rechnungen${teil?.jahr ? ` im ${teilName(teil)}` : ''} sind unlesbar (beschädigt oder von einer neueren App-Version); sie werden leer gezeigt und lassen sich nicht ändern.`];
+  const w = [];
   const n = teil?.fremd?.r?.length ?? 0;
-  return n > 0 ? [`${anzahl(n, 'Eintrag', 'Einträge')} im ${teilName(teil)} ${n === 1 ? 'konnte' : 'konnten'} nicht gelesen werden; ${n === 1 ? 'er bleibt' : 'sie bleiben'} gespeichert.`] : [];
+  if (n > 0) w.push(`${anzahl(n, 'Eintrag', 'Einträge')} im ${teilName(teil)} ${n === 1 ? 'konnte' : 'konnten'} nicht gelesen werden; ${n === 1 ? 'er bleibt' : 'sie bleiben'} gespeichert.`);
+  const falsch = (teil?.rechnungen ?? []).filter((r) => !imTeil(r, teil)).length;
+  if (falsch > 0) w.push(`${anzahl(falsch, 'Rechnung', 'Rechnungen')} im ${teilName(teil)} ${falsch === 1 ? 'trägt' : 'tragen'} ein Datum aus einem anderen Quartal; ${falsch === 1 ? 'sie zählt' : 'sie zählen'} in ${falsch === 1 ? 'ihrem' : 'ihrem jeweiligen'} Jahr und ${falsch === 1 ? 'wird' : 'werden'} beim nächsten Ändern dorthin verschoben.`);
+  return w;
 }
 
 // ---------------------------------------------------------------- Änderungen am Quartal-Teil (rein, wiederholbar)
@@ -607,21 +624,30 @@ export function rechnungWiederherstellen(teil, spur) {
 
 /**
  * Eine Rechnung, deren Rechnungsdatum jetzt in einem anderen Quartal (oder Jahr) liegt als `von` = { jahr, quartal } (der Teil, in dem
- * sie steht), wandert dorthin. Zwei Ereignisse sind betroffen, darum kommt ein Plan aus zwei reinen, wiederholbaren Schritten zurück:
- *   { von, nach: { jahr, quartal }, inNeu: (Teil von `nach`) → Teil mit der Rechnung, ausAlt: (Teil von `von`) → Teil ohne sie }
- * Reihenfolge beim Schreiben: ERST (falls nötig) der Hauptteil versicherungJahrEintragen(nach.jahr), DANN inNeu, DANN ausAlt – bricht
- * es dazwischen ab, steht die Rechnung höchstens doppelt (sichtbar), nie gar nicht. Gleicher Teil → null (rechnungSetzen genügt).
- * Ungültige Rechnung oder ungültiges `von` → wirft sofort.
+ * sie steht – auch ein falscher, siehe rechnungFinden), wandert dorthin. Bis zu drei Ereignisse sind betroffen, darum kommt ein Plan
+ * aus reinen, wiederholbaren Schritten zurück:
+ *   { von, nach: { jahr, quartal },
+ *     jahrEintragen: Jahr | null  – Review M5: dieses Jahr muss der Hauptteil zuerst kennen (versicherungJahrEintragen(daten, jahrEintragen));
+ *                                   null = nicht nötig. Mit `daten` (Hauptteil) genau: null, wenn versicherungJahrBekannt; ohne `daten`
+ *                                   vorsichtig: das neue Jahr, sobald es sich vom alten unterscheidet (der Schritt ist wiederholbar und
+ *                                   schreibt nichts, wenn das Jahr schon bekannt ist),
+ *     inNeu:  (Teil von `nach`) → Teil mit der Rechnung,
+ *     ausAlt: (Teil von `von`)  → Teil ohne sie }
+ * Reihenfolge beim Schreiben: 1) jahrEintragen (falls nicht null) im Hauptteil, 2) inNeu, 3) ausAlt – bricht es dazwischen ab, steht
+ * die Rechnung höchstens doppelt (gezählt wird sie einmal, siehe rechnungenDesJahres), nie gar nicht. Ohne Schritt 1 würde ein Teil vor
+ * dem ersten Jahr nie gelesen. Gleicher Teil → null (rechnungSetzen genügt). Ungültige Rechnung oder ungültiges `von` → wirft sofort.
  */
-export function rechnungTeilWechseln(rechnung, von, { heute, polizze } = {}) {
+export function rechnungTeilWechseln(rechnung, von, { heute, polizze, daten } = {}) {
   if (!istJahr(von?.jahr)) throw new Error('Ungültiges Jahr.');
   if (!istQuartal(von?.quartal)) throw new Error('Ungültiges Quartal.');
   const neu = rechnungOderFehler(rechnung, { heute, polizze });
   const nach = { jahr: rechnungJahr(neu), quartal: rechnungQuartal(neu) };
   if (nach.jahr === von.jahr && nach.quartal === von.quartal) return null;
+  const jahrEintragen = daten ? (versicherungJahrBekannt(daten, nach.jahr) ? null : nach.jahr) : nach.jahr === von.jahr ? null : nach.jahr;
   return {
     von: { jahr: von.jahr, quartal: von.quartal },
     nach,
+    jahrEintragen,
     inNeu: (teil) => rechnungSetzen(teil, neu, { heute, polizze }),
     ausAlt: (teil) => rechnungLoeschen(teil, neu.id),
   };

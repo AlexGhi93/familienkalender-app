@@ -384,7 +384,8 @@ export function createGoogleAdapter({ api, kalender, jetzt = () => new Date(), a
     /**
      * Versicherung (verstecktes Ereignis „fkversicherung“) und ihre Rechnungen („fkvr<JJJJ><Q>“ je Quartal): erst der Hauptteil, dann
      * alle Quartale vom ersten Jahr bis morgen gleichzeitig. → { daten, teile: { [jahr]: { [quartal]: Teil } }, warnungen, unlesbar:
-     * { main?, teile }, rohtexte } (siehe versicherungAusTexten). Nicht beim Start geladen.
+     * { main?, teile }, rohtexte, geschrieben } (siehe versicherungAusTexten). `geschrieben` = { [jahr]: { [quartal]: `updated` } } der
+     * vorhandenen Teile – entscheidet bei doppelt stehenden Rechnungen, welche Fassung gilt (rechnungenDesJahres). Nicht beim Start geladen.
      */
     async leseVersicherung() {
       const e = await api.ereignisse.holen(kalender.anwesenheit, VERSICHERUNG_ID);
@@ -395,7 +396,12 @@ export function createGoogleAdapter({ api, kalender, jetzt = () => new Date(), a
       // holen: nur 404 → null (nie angelegt = leeres Quartal); jeder andere Fehler wirft und lässt das ganze Lesen scheitern – nie „leer“
       const ereignisse = await Promise.all(teile.map(({ jahr, quartal }) => api.ereignisse.holen(kalender.anwesenheit, versicherungTeilId(jahr, quartal))));
       const texte = new Map(teile.map(({ jahr, quartal }, i) => [versicherungTeilId(jahr, quartal), !ereignisse[i] ? null : ereignisse[i].status === 'cancelled' ? { geloescht: true } : (ereignisse[i].description ?? '')]));
-      return versicherungAusTexten(hauptText, (jahr, quartal) => texte.get(versicherungTeilId(jahr, quartal)) ?? null, { bis });
+      const geschrieben = {};
+      teile.forEach(({ jahr, quartal }, i) => {
+        const t = ereignisse[i];
+        if (t && t.status !== 'cancelled' && typeof t.updated === 'string') (geschrieben[jahr] ??= {})[quartal] = t.updated;
+      });
+      return { ...versicherungAusTexten(hauptText, (jahr, quartal) => texte.get(versicherungTeilId(jahr, quartal)) ?? null, { bis }), geschrieben };
     },
 
     /**

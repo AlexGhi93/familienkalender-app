@@ -3,7 +3,7 @@
 // alles hier wird bei jedem Aufruf neu gerechnet, ein geändertes Limit oder eine eingetragene Erstattung wirkt also sofort.
 
 import { addDays, diffDays, heutePruefen } from './dates.js';
-import { rechnungJahr } from './versicherung.js';
+import { rechnungJahr, rechnungQuartal } from './versicherung.js';
 
 /** Nach so vielen Tagen ohne Erstattung erinnert die App an eine eingereichte Rechnung (Spec §6). */
 export const ERSTATTUNG_ERINNERUNG_TAGE = 30;
@@ -89,25 +89,71 @@ export function jahresStand(polizze, rechnungen, jahr) {
   };
 }
 
-const nachQuartal = (teileDesJahres) =>
-  Object.entries(teileDesJahres ?? {})
-    .sort(([a], [b]) => Number(a) - Number(b))
-    .flatMap(([, teil]) => teil?.rechnungen ?? []);
+// ---------------------------------------------------------------- Rechnungen aus den Quartal-Teilen sammeln (Review M1, M3)
+//
+// `teile` = { [jahr]: { [quartal]: Teil } } wie aus leseVersicherung; `geschrieben` (freiwillig) = { [jahr]: { [quartal]: Zeitstempel } }
+// ebenso aus leseVersicherung (Google: `updated` des Ereignisses, ISO-Text; Demo: keine). Gesammelt wird über ALLE Teile; jede Rechnung
+// zählt nach ihrem EIGENEN Rechnungsdatum (eine falsch abgelegte zählt in ihrem echten Jahr) und jede Kennung nur einmal. Steht dieselbe
+// Kennung in mehreren Teilen (abgebrochenes Verschieben, beschädigter Schreiber), gilt diese Fassung – feste Rangfolge:
+//   1. richtig abgelegt (Jahr und Quartal des Teils = die ihres Rechnungsdatums) vor falsch abgelegt;
+//   2. der zuletzt geschriebene Teil (größerer Zeitstempel; Texte im ISO-Format vergleichen sich wie Zeiten; fehlend = am ältesten);
+//   3. Ersatzregel ohne/bei gleichem Zeitstempel: der spätere Teil (größeres Jahr, dann größeres Quartal).
+// Innerhalb eines Teils gibt es keine Doppelten (pruefeVersicherungTeil legt sie nach `fremd`).
 
-/**
- * Alle Rechnungen des Kalenderjahres `jahr` aus den gelesenen Quartal-Teilen `teile` = { [jahr]: { [quartal]: Teil } } (so liefert sie
- * leseVersicherung), in der Reihenfolge der Quartale; fehlende Quartale oder Jahre zählen leer. Für jahresStand. Steht eine Rechnung
- * nach einem abgebrochenen Verschieben in zwei Teilen, kommt sie zweimal (vorsichtig gerechnet und sichtbar, siehe rechnungTeilWechseln).
- */
-export function rechnungenDesJahres(teile, jahr) {
-  return nachQuartal(teile?.[jahr]);
+const vergleiche = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+
+/** Alle Fassungen aller Rechnungen: Map id → [{ rechnung, jahr, quartal, stelle, richtig, zeit }], die gültige zuerst. */
+function fassungen(teile, geschrieben) {
+  const je = new Map();
+  for (const [j, quartale] of Object.entries(teile ?? {})) {
+    for (const [q, teil] of Object.entries(quartale ?? {})) {
+      const jahr = Number(j);
+      const quartal = Number(q);
+      const zeit = typeof geschrieben?.[j]?.[q] === 'string' ? geschrieben[j][q] : '';
+      (teil?.rechnungen ?? []).forEach((rechnung, stelle) => {
+        const f = { rechnung, jahr, quartal, stelle, zeit, richtig: rechnungJahr(rechnung) === jahr && rechnungQuartal(rechnung) === quartal };
+        je.set(rechnung.id, [...(je.get(rechnung.id) ?? []), f]);
+      });
+    }
+  }
+  const rang = (a, b) => Number(b.richtig) - Number(a.richtig) || vergleiche(b.zeit, a.zeit) || b.jahr - a.jahr || b.quartal - a.quartal;
+  for (const liste of je.values()) liste.sort(rang);
+  return je;
 }
 
-/** Alle Rechnungen aller gelesenen Quartal-Teile (Jahre aufsteigend) – z. B. für offeneErstattungen und die Erinnerungen. */
-export function alleRechnungen(teile) {
-  return Object.keys(teile ?? {})
-    .sort((a, b) => Number(a) - Number(b))
-    .flatMap((jahr) => nachQuartal(teile[jahr]));
+/** Die gültige Fassung je Kennung, in der Reihenfolge ihrer Teile (Jahr, Quartal) und Stellen. */
+function gueltige(teile, geschrieben) {
+  return [...fassungen(teile, geschrieben).values()]
+    .map((liste) => liste[0])
+    .sort((a, b) => a.jahr - b.jahr || a.quartal - b.quartal || a.stelle - b.stelle);
+}
+
+/**
+ * Alle Rechnungen mit Rechnungsdatum im Kalenderjahr `jahr`, aus allen gelesenen Teilen, je Kennung einmal (Rangfolge oben). Für
+ * jahresStand(polizze, rechnungenDesJahres(g.teile, jahr, { geschrieben: g.geschrieben }), jahr).
+ */
+export function rechnungenDesJahres(teile, jahr, { geschrieben } = {}) {
+  return gueltige(teile, geschrieben)
+    .filter((f) => rechnungJahr(f.rechnung) === jahr)
+    .map((f) => f.rechnung);
+}
+
+/** Alle Rechnungen aller gelesenen Teile, je Kennung einmal (Rangfolge oben) – z. B. für offeneErstattungen und die Erinnerungen. */
+export function alleRechnungen(teile, { geschrieben } = {}) {
+  return gueltige(teile, geschrieben).map((f) => f.rechnung);
+}
+
+/**
+ * Wo steht die Rechnung `id`? → { rechnung (gültige Fassung), von: { jahr, quartal } (ihr Teil), richtig (Teil passt zum Datum),
+ * weitere: [{ jahr, quartal }] (Teile mit einer weiteren Fassung – zum Aufräumen mit rechnungLoeschen) } oder null. Zum Ändern einer
+ * Rechnung: passt das (neue) Datum zu `von`, genügt rechnungSetzen dort; sonst rechnungTeilWechseln(rechnung, von) – so lässt sich auch
+ * eine falsch abgelegte Rechnung ändern (sie wandert dabei an den richtigen Ort).
+ */
+export function rechnungFinden(teile, id, { geschrieben } = {}) {
+  const liste = fassungen(teile, geschrieben).get(id);
+  if (!liste) return null;
+  const [gilt, ...rest] = liste;
+  return { rechnung: gilt.rechnung, von: { jahr: gilt.jahr, quartal: gilt.quartal }, richtig: gilt.richtig, weitere: rest.map(({ jahr, quartal }) => ({ jahr, quartal })) };
 }
 
 /**

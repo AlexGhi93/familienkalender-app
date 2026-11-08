@@ -40,8 +40,11 @@ function versicherungAusSpeicher(roh) {
   return ok ? { text: roh.text, teile: Object.fromEntries(Object.entries(roh.teile).filter(([, t]) => typeof t === 'string')) } : { text: null, teile: {} };
 }
 
-/** Wie leseVersicherung beim Google-Adapter, aus den Texten im Speicher. */
-const versicherungGelesen = (v, bis) => versicherungAusTexten(v?.text ?? null, (jahr, quartal) => v?.teile?.[versicherungTeilId(jahr, quartal)] ?? null, { bis });
+/**
+ * Wie leseVersicherung beim Google-Adapter, aus den Texten im Speicher. `geschrieben` bleibt leer: die Demo kennt keine Zeitstempel (nur
+ * ein Telefon), bei doppelt stehenden Rechnungen gilt dann die Ersatzregel von rechnungenDesJahres.
+ */
+const versicherungGelesen = (v, bis) => ({ ...versicherungAusTexten(v?.text ?? null, (jahr, quartal) => v?.teile?.[versicherungTeilId(jahr, quartal)] ?? null, { bis }), geschrieben: {} });
 
 /** Schichtdaten aus dem Speicher nachsichtig lesen: { katalog | null, monate: { 'JJJJ-MM': Monat } }; Unbrauchbares fällt weg. */
 function schichtAusSpeicher(roh) {
@@ -290,7 +293,7 @@ export function createDemoAdapter({ speicher = globalThis.localStorage, jetzt = 
       sichern();
       return structuredClone(neu);
     },
-    /** Versicherung und ihre Rechnungen lesen (wie beim Google-Adapter): { daten, teile, warnungen, unlesbar, rohtexte }. */
+    /** Versicherung und ihre Rechnungen lesen (wie beim Google-Adapter): { daten, teile, warnungen, unlesbar, rohtexte, geschrieben }. */
     async leseVersicherung() {
       return versicherungGelesen(daten?.versicherung, versicherungBis(jetzt()));
     },

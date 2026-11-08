@@ -143,7 +143,7 @@ describe('Google-Adapter: Versicherung', () => {
 
   test('nichts da: leer, ohne Warnung; laden() fragt die Versicherung nicht', async () => {
     const t = await aufbau();
-    assert.deepEqual(await t.adapter.leseVersicherung(), { daten: leereVersicherung(), teile: {}, warnungen: [], unlesbar: { teile: [] }, rohtexte: [] });
+    assert.deepEqual(await t.adapter.leseVersicherung(), { daten: leereVersicherung(), teile: {}, warnungen: [], unlesbar: { teile: [] }, rohtexte: [], geschrieben: {} });
     t.log.length = 0;
     const geladen = await t.adapter.laden();
     assert.equal(geladen.versicherung, undefined);
@@ -228,6 +228,29 @@ describe('Google-Adapter: Versicherung', () => {
     const u = await aufbau({ fkversicherung: '{kaputt', fkvr20251: versicherungTeilText(teil(2025, 1)) });
     assert.deepEqual((await u.adapter.leseVersicherungSicherung()).weitereTeile, [{ id: 'fkvr20251', text: versicherungTeilText(teil(2025, 1)) }]);
   });
+
+  test('Fix-Runde 2 (M3): geschrieben = Zeitstempel `updated` je gelesenem Teil, für rechnungenDesJahres/alleRechnungen', async () => {
+    const t = apiAttrappe();
+    await t.api.ereignisse.schreibe('kan', { id: 'fkversicherung', description: versicherungText(mitJahren(2026)), start: { date: '2000-01-01' } });
+    await t.api.ereignisse.schreibe('kan', { id: 'fkvr20261', description: versicherungTeilText(teil(2026, 1)), updated: '2026-03-01T10:00:00.000Z' });
+    await t.api.ereignisse.schreibe('kan', { id: 'fkvr20262', description: versicherungTeilText(teil(2026, 2)) }); // ohne Zeitstempel
+    const adapter = createGoogleAdapter({ api: t.api, kalender: KALENDER, jetzt: JETZT });
+    assert.deepEqual((await adapter.leseVersicherung()).geschrieben, { 2026: { 1: '2026-03-01T10:00:00.000Z' } });
+  });
+
+  test('Fix-Runde 2 (I1): neuere Version gibt jeder Kategorie ein Feld, das alte Telefon trägt ein Jahr ein → gesperrt, Polizze bleibt', async () => {
+    const neuere = JSON.stringify({ v: 1, p: { i: 'abcd1234', n: 'MedPLUS', b: '2026-10-20', k: [{ i: 'arzt', n: 'Arzt', l: 160000, x: 1 }], m: 314400 }, j: 2026 });
+    const t = await aufbau({ fkversicherung: neuere });
+    const g = await t.adapter.leseVersicherung();
+    assert.deepEqual([g.unlesbar, g.rohtexte], [{ main: true, teile: [] }, [{ id: 'fkversicherung', text: neuere }]]);
+    await assert.rejects(t.adapter.aendereVersicherung((d) => versicherungJahrEintragen(d, 2025)), (e) => e.name === 'VersicherungGesperrt');
+    assert.deepEqual([t.geschrieben(), t.text('fkversicherung')], [[], neuere]);
+    const speicher = speicherAttrappe({ [KEY]: JSON.stringify({ settings: {}, tage: {}, urlaub: [], termine: [], versicherung: { text: neuere, teile: {} } }) });
+    const demo = createDemoAdapter({ speicher, jetzt: JETZT });
+    await demo.laden();
+    await assert.rejects(demo.aendereVersicherung((d) => versicherungJahrEintragen(d, 2025)), (e) => e.name === 'VersicherungGesperrt');
+    assert.equal(JSON.parse(speicher.getItem(KEY)).versicherung.text, neuere);
+  });
 });
 
 describe('Demo-Adapter: Versicherung', () => {
@@ -235,7 +258,7 @@ describe('Demo-Adapter: Versicherung', () => {
     const speicher = speicherAttrappe({ [KEY]: JSON.stringify({ settings: {}, tage: {}, urlaub: [], termine: [] }) });
     const a = createDemoAdapter({ speicher, jetzt: JETZT });
     await a.laden();
-    assert.deepEqual(await a.leseVersicherung(), { daten: leereVersicherung(), teile: {}, warnungen: [], unlesbar: { teile: [] }, rohtexte: [] });
+    assert.deepEqual(await a.leseVersicherung(), { daten: leereVersicherung(), teile: {}, warnungen: [], unlesbar: { teile: [] }, rohtexte: [], geschrieben: {} });
     await a.aendereVersicherung((d) => versicherungJahrEintragen(polizzeAnlegen(d, P), 2026));
     await a.aendereVersicherungTeil(2026, 4, (x) => rechnungSetzen(x, rechnung(), { heute: HEUTE }));
     const g = await a.leseVersicherung();

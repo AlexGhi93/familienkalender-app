@@ -1,8 +1,8 @@
 // Versicherung – die Rechnung: Verbrauch, Rest und Überschreitung je Kategorie und Kalenderjahr (Spec §5), offene Erstattungen.
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { ERSTATTUNG_ERINNERUNG_TAGE, alleRechnungen, jahresStand, offeneErstattungen, rechnungenDesJahres } from '../../src/domain/versicherung-rechnung.js';
-import { POLIZZE_VORLAGEN, leererVersicherungTeil, polizzeAusVorlage, rechnungSetzen } from '../../src/domain/versicherung.js';
+import { ERSTATTUNG_ERINNERUNG_TAGE, alleRechnungen, jahresStand, offeneErstattungen, rechnungFinden, rechnungenDesJahres } from '../../src/domain/versicherung-rechnung.js';
+import { POLIZZE_VORLAGEN, leererVersicherungTeil, polizzeAusVorlage, pruefeVersicherungTeil, rechnungSetzen, rechnungTeilWechseln } from '../../src/domain/versicherung.js';
 
 const POLIZZE = polizzeAusVorlage('medplusBasic', { person: 'Mia', beginn: '2026-10-20' }, { zufall: () => 0.5 });
 
@@ -197,5 +197,71 @@ describe('offeneErstattungen', () => {
 
   test('ohne gültiges „heute“ wirft sie', () => {
     assert.throws(() => offeneErstattungen([], undefined));
+  });
+});
+
+describe('Fix-Runde 2: Rechnungen nach ihrem eigenen Datum, ohne Doppelte (Review M1, M3)', () => {
+  const HEUTE = '2026-12-31';
+  const r = (id, datum, mehr = {}) => ({ id, kategorie: 'arzt', datum, betragCent: 1000, eingereichtAm: datum, ...mehr });
+  const teil = (jahr, quartal, ...liste) => liste.reduce((t, x) => rechnungSetzen(t, x, { heute: HEUTE }), leererVersicherungTeil(jahr, quartal));
+  /** Teil mit Rechnungen, die nicht hineingehören (wie von einem beschädigten oder fremden Schreiber), über den Text gelesen. */
+  const falschAbgelegt = (jahr, quartal, ...liste) => {
+    const kurz = (x) => ({ i: x.id, k: x.kategorie, d: Number(x.datum.replaceAll('-', '')), b: x.betragCent, e: Number(x.eingereichtAm.replaceAll('-', '')) });
+    return pruefeVersicherungTeil(JSON.stringify({ v: 1, j: jahr, q: quartal, r: liste.map(kurz) }), { jahr, quartal }).teil;
+  };
+
+  test('M1: Rechnung im falschen Teil zählt in ihrem echten Jahr, nicht im Jahr des Teils', () => {
+    const falsch = r('falsch01', '2025-01-15');
+    const teile = { 2026: { 4: falschAbgelegt(2026, 4, falsch) } };
+    assert.deepEqual(rechnungenDesJahres(teile, 2025).map((x) => x.id), ['falsch01']);
+    assert.deepEqual(rechnungenDesJahres(teile, 2026), []);
+    assert.equal(jahresStand(POLIZZE, rechnungenDesJahres(teile, 2025), 2025).gesamt.verbrauchtCent, 1000);
+  });
+
+  test('M1: und bleibt änderbar – rechnungFinden nennt den Teil, in dem sie steht; Ändern = Verschieben an den richtigen Ort', () => {
+    const falsch = r('falsch01', '2025-01-15');
+    const teile = { 2026: { 4: falschAbgelegt(2026, 4, falsch) } };
+    const f = rechnungFinden(teile, 'falsch01');
+    assert.deepEqual([f.rechnung.datum, f.von, f.richtig, f.weitere], ['2025-01-15', { jahr: 2026, quartal: 4 }, false, []]);
+    assert.equal(rechnungFinden(teile, 'gibtsnix'), null);
+    const plan = rechnungTeilWechseln({ ...f.rechnung, betragCent: 1200 }, f.von, { heute: HEUTE });
+    assert.deepEqual([plan.nach, plan.jahrEintragen], [{ jahr: 2025, quartal: 1 }, 2025]);
+    const neu = plan.inNeu(leererVersicherungTeil(2025, 1));
+    const alt = plan.ausAlt(teile[2026][4]);
+    assert.deepEqual([neu.rechnungen.map((x) => x.betragCent), alt.rechnungen], [[1200], []]);
+  });
+
+  test('M3: abgebrochenes Verschieben (in beiden Teilen richtig abgelegt) → einmal; die zuletzt geschriebene Fassung gilt (Zeitstempel)', () => {
+    const alt = r('dopp0001', '2026-02-10');
+    const neu = r('dopp0001', '2026-05-10', { betragCent: 2000 });
+    const teile = { 2026: { 1: teil(2026, 1, alt), 2: teil(2026, 2, neu) } };
+    // ohne Zeitstempel: Ersatzregel – der spätere Teil (Jahr, dann Quartal) gilt
+    assert.deepEqual(rechnungenDesJahres(teile, 2026).map((x) => [x.id, x.betragCent]), [['dopp0001', 2000]]);
+    const s = jahresStand(POLIZZE, rechnungenDesJahres(teile, 2026), 2026);
+    assert.deepEqual([s.gesamt.verbrauchtCent, s.rechnungen.map((x) => x.id)], [2000, ['dopp0001']]);
+    // mit Zeitstempeln: der zuletzt geschriebene Teil gilt, auch wenn er früher im Jahr liegt
+    const geschrieben = { 2026: { 1: '2026-12-02T10:00:00.000Z', 2: '2026-12-01T10:00:00.000Z' } };
+    assert.deepEqual(rechnungenDesJahres(teile, 2026, { geschrieben }).map((x) => x.betragCent), [1000]);
+    const f = rechnungFinden(teile, 'dopp0001', { geschrieben });
+    assert.deepEqual([f.von, f.richtig, f.weitere], [{ jahr: 2026, quartal: 1 }, true, [{ jahr: 2026, quartal: 2 }]], 'weitere = wo noch eine Kopie steht (zum Aufräumen)');
+  });
+
+  test('M3: richtig abgelegt schlägt falsch abgelegt – auch wenn der falsche Teil jünger ist', () => {
+    const richtig = r('dopp0002', '2026-02-10');
+    const daneben = r('dopp0002', '2026-02-10', { betragCent: 9999 });
+    const teile = { 2026: { 1: teil(2026, 1, richtig), 3: falschAbgelegt(2026, 3, daneben) } };
+    const geschrieben = { 2026: { 1: '2026-01-01T00:00:00.000Z', 3: '2026-12-01T00:00:00.000Z' } };
+    assert.deepEqual(rechnungenDesJahres(teile, 2026, { geschrieben }).map((x) => x.betragCent), [1000]);
+    assert.deepEqual(rechnungFinden(teile, 'dopp0002', { geschrieben }).weitere, [{ jahr: 2026, quartal: 3 }]);
+  });
+
+  test('M3: über Jahresgrenzen – dieselbe Kennung in 2025 und 2026 zählt nur einmal (in einem Jahr)', () => {
+    const alt = r('dopp0003', '2026-01-05');
+    const neu = r('dopp0003', '2025-12-30', { eingereichtAm: '2026-01-05' });
+    const teile = { 2025: { 4: teil(2025, 4, neu) }, 2026: { 1: teil(2026, 1, alt) } };
+    const geschrieben = { 2025: { 4: '2026-01-06T00:00:00.000Z' }, 2026: { 1: '2026-01-05T00:00:00.000Z' } };
+    assert.deepEqual([rechnungenDesJahres(teile, 2025, { geschrieben }).length, rechnungenDesJahres(teile, 2026, { geschrieben }).length], [1, 0]);
+    assert.deepEqual(alleRechnungen(teile, { geschrieben }).map((x) => x.datum), ['2025-12-30']);
+    assert.deepEqual(alleRechnungen(teile).map((x) => x.datum), ['2026-01-05'], 'ohne Zeitstempel: der spätere Teil');
   });
 });

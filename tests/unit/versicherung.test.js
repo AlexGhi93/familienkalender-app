@@ -370,3 +370,61 @@ describe('Versicherung: Rechnungen je Quartal (C1)', () => {
   });
 });
 
+describe('Versicherung: Fix-Runde 2 (Review I1, M1, M5)', () => {
+  /** Hauptteil wie von einer neueren App-Version: jede Kategorie hat ein Feld `x`, das diese Version nicht kennt. */
+  const NEUERE_VERSION = JSON.stringify({ v: 1, p: { i: 'abcd1234', n: 'MedPLUS', b: '2026-10-20', k: [{ i: 'arzt', n: 'Arzt', l: 160000, x: 1 }, { i: 'heil', n: 'Heil', l: 22400, x: 2 }], m: 314400 }, j: 2026 });
+
+  test('I1: keine verstandene Kategorie (neuere Version gibt jeder ein Feld) → ganzer Hauptteil unlesbar, nie überschrieben', () => {
+    assert.deepEqual(pruefeVersicherung(NEUERE_VERSION), { daten: leereVersicherung(), unlesbar: true });
+    // eine verstandene und eine fremde Kategorie bleibt lesbar (fremd wird mitgeschrieben)
+    const gemischt = JSON.parse(NEUERE_VERSION);
+    delete gemischt.p.k[1].x;
+    const g = pruefeVersicherung(JSON.stringify(gemischt));
+    assert.deepEqual([g.unlesbar, g.daten.polizze.kategorien.map((k) => k.id), g.daten.fremd.k.length], [false, ['heil'], 1]);
+    const geschrieben = JSON.parse(versicherungText(versicherungJahrEintragen(g.daten, 2025)));
+    assert.deepEqual([geschrieben.j, geschrieben.p.k], [2025, [{ i: 'heil', n: 'Heil', l: 22400 }, gemischt.p.k[0]]], 'altes Telefon trägt ein Jahr ein: Polizze und fremde Kategorie bleiben');
+  });
+
+  test('I1: mehr als 12 verstandene Kategorien → unlesbar; genau 12 → lesbar', () => {
+    const kategorien = (n) => Array.from({ length: n }, (_, i) => ({ i: `k${i}`, n: `K${i}`, l: 100 }));
+    const text = (n) => JSON.stringify({ v: 1, p: { i: 'abcd1234', n: 'Eigene', b: '2026-10-20', k: kategorien(n), m: 1000 }, j: 2026 });
+    assert.equal(pruefeVersicherung(text(13)).unlesbar, true);
+    assert.equal(pruefeVersicherung(text(12)).unlesbar, false);
+    assert.equal(pruefeVersicherung(text(12)).daten.polizze.kategorien.length, 12);
+  });
+
+  test('I1: versicherungText wirft bei einer Polizze, die nicht normalisierbar ist, statt sie still wegzulassen', () => {
+    for (const kaputt of [{ ...P, kategorien: [] }, { ...P, name: '' }, { ...P, id: 'X' }, { ...P, kategorien: Array.from({ length: 13 }, (_, i) => ({ id: `k${i}`, name: 'K', limitCent: 1 })) }]) {
+      assert.throws(() => versicherungText({ v: 1, polizze: kaputt, ab: 2026 }), /Polizze/, JSON.stringify(kaputt).slice(0, 60));
+      assert.throws(() => versicherungJahrEintragen({ v: 1, polizze: kaputt, ab: 2026 }, 2025), /Polizze/);
+    }
+    assert.equal(versicherungText({ v: 1, polizze: null, ab: 2026 }), '{"v":1,"j":2026}', 'ohne Polizze bleibt es erlaubt');
+  });
+
+  test('M1: eine Rechnung, deren Datum nicht zum Teil passt, bleibt lesbar – mit Hinweis', () => {
+    const roh = { v: 1, j: 2026, q: 4, r: [{ i: 'falsch01', k: 'physio', d: 20250115, b: 100, e: 20250116 }] };
+    const g = pruefeVersicherungTeil(JSON.stringify(roh), { jahr: 2026, quartal: 4 });
+    assert.deepEqual([g.unlesbar, g.teil.rechnungen.map((r) => r.datum)], [false, ['2025-01-15']]);
+    assert.match(versicherungTeilWarnungen(g).join(' | '), /1 Rechnung im 4\. Quartal 2026 .*anderen Quartal/);
+    assert.deepEqual(JSON.parse(versicherungTeilText(g.teil)), roh, 'unverändert mitgeschrieben');
+    assert.deepEqual(rechnungLoeschen(g.teil, 'falsch01').rechnungen, [], 'löschbar am falschen Ort');
+  });
+
+  test('M5: der Plan sagt, welches Jahr der Hauptteil zuerst kennen muss (jahrEintragen)', () => {
+    const zurueck = rechnungTeilWechseln(rechnung({ datum: '2025-12-30', eingereichtAm: '2026-01-02' }), { jahr: 2026, quartal: 4 }, { heute: HEUTE });
+    assert.equal(zurueck.jahrEintragen, 2025, 'ohne Daten: immer das neue Jahr, wenn es wechselt (versicherungJahrEintragen ist wiederholbar)');
+    const ab2026 = versicherungJahrEintragen(MIT, 2026);
+    assert.equal(rechnungTeilWechseln(rechnung({ datum: '2025-12-30', eingereichtAm: '2026-01-02' }), { jahr: 2026, quartal: 4 }, { heute: HEUTE, daten: ab2026 }).jahrEintragen, 2025);
+    const ab2024 = versicherungJahrEintragen(MIT, 2024);
+    assert.equal(rechnungTeilWechseln(rechnung({ datum: '2025-12-30', eingereichtAm: '2026-01-02' }), { jahr: 2026, quartal: 4 }, { heute: HEUTE, daten: ab2024 }).jahrEintragen, null, 'schon bekannt');
+    const vor = rechnungTeilWechseln(rechnung(), { jahr: 2025, quartal: 4 }, { heute: HEUTE });
+    assert.deepEqual([vor.nach, vor.jahrEintragen], [{ jahr: 2026, quartal: 4 }, 2026]);
+    assert.equal(rechnungTeilWechseln(rechnung(), { jahr: 2025, quartal: 4 }, { heute: HEUTE, daten: ab2024 }).jahrEintragen, null);
+    const gleichesJahr = rechnungTeilWechseln(rechnung({ datum: '2026-09-29', eingereichtAm: '2026-10-30' }), { jahr: 2026, quartal: 4 }, { heute: HEUTE });
+    assert.equal(gleichesJahr.jahrEintragen, null);
+    // so wendet Task 2 den Plan an
+    const haupt = zurueck.jahrEintragen === null ? ab2026 : versicherungJahrEintragen(ab2026, zurueck.jahrEintragen);
+    assert.equal(versicherungJahrBekannt(haupt, zurueck.nach.jahr), true);
+  });
+});
+
