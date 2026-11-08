@@ -25,9 +25,12 @@ export function zustand({ settings = {}, ...rest } = {}) {
 /**
  * Google-Kalender-API im Arbeitsspeicher (nur `ereignisse`: holen, liste, einfuegen, schreibe, aendere); `roh(k, id)` = gespeichertes
  * Ereignis, `log` = Zugriffe (ohne `liste`). `liste` liefert die Ereignisse eines Kalenders, die im Zeitfenster [von, bis) beginnen.
+ * `zeitstempel: true` = wie Google trägt jedes Schreiben `updated` ein (ISO-Text, je Schreiben eine Sekunde später).
  */
-export function apiAttrappe() {
+export function apiAttrappe({ zeitstempel = false } = {}) {
   const kalender = new Map();
+  let uhr = Date.UTC(2026, 10, 8, 7, 0, 0);
+  const stempel = () => (zeitstempel ? { updated: new Date((uhr += 1000)).toISOString() } : {});
   const von = (k) => (kalender.has(k) || kalender.set(k, new Map()), kalender.get(k));
   const log = [];
   let laufend = 0;
@@ -50,12 +53,12 @@ export function apiAttrappe() {
     async einfuegen(k, body) {
       if (von(k).has(body.id)) return { bereitsVorhanden: true };
       log.push(`POST ${body.id}`);
-      von(k).set(body.id, { status: 'confirmed', ...structuredClone(body) });
+      von(k).set(body.id, { status: 'confirmed', ...structuredClone(body), ...stempel() });
       return {};
     },
     async schreibe(k, body) {
       log.push(`PUT ${body.id}`);
-      von(k).set(body.id, { status: 'confirmed', ...structuredClone(body) });
+      von(k).set(body.id, { status: 'confirmed', ...structuredClone(body), ...stempel() });
     },
     /** Wie Google: das Ereignis bleibt mit Status „cancelled“ (samt Inhalt) erhalten; fehlt es oder ist es schon gelöscht → { geloescht: false }. */
     async loeschen(k, id) {
@@ -69,7 +72,7 @@ export function apiAttrappe() {
       const patch = aenderung(await ereignisse.holen(k, id));
       if (patch) {
         log.push(`PATCH ${id}`);
-        von(k).set(id, { ...von(k).get(id), ...patch });
+        von(k).set(id, { ...von(k).get(id), ...patch, ...stempel() });
       }
     },
   };

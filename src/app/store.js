@@ -12,6 +12,8 @@ import { FIX_SHARDS, TEXT_FIX_UNLESBAR, TEXT_FIX_VOLL, TEXT_TEIL_GESPERRT, leere
 import { MAX_SERIEN_WOCHEN, naechsterWochentag, wochenSerie } from './serie.js';
 import { TEXT_AUTOS_GESPERRT, TEXT_AUTO_WEG, TEXT_HISTORIE_GESPERRT, arbeitLoeschen as arbeitLoeschenRein, arbeitPruefen, arbeitSetzen, arbeitSpur, arbeitWiederherstellen, autoAnlegen, autoLoeschen as autoLoeschenRein, autoSetzen, autoSpur, autoWiederherstellen, autosWarnungen, historieJahrBekannt, historieJahrEintragen, historieWarnungen, kmEintragen, kmLoeschen as kmLoeschenRein, kmPruefen, kmSpur, kmWiederherstellen, leereAutos, leereHistorie, neueAutoId, regelLoeschen as regelLoeschenRein, regelSetzen, regelSpur, regelWiederherstellen, satzLoeschen as satzLoeschenRein, satzSetzen, satzSpur, satzVerwendet, satzVerwendetText, satzWiederherstellen } from '../domain/autos.js';
 import { autosHistorien, kmPunkte } from '../domain/autos-rechnung.js';
+import { TEXT_POLIZZE_WEG, TEXT_RECHNUNG_WEG, TEXT_VERSICHERUNG_GESPERRT, TEXT_VERSICHERUNG_TEIL_GESPERRT, erstattungSetzen, leererVersicherungTeil, leereVersicherung, neueVersicherungId, polizzeAendern, polizzeAnlegen, rechnungJahr, rechnungLoeschen as rechnungLoeschenRein, rechnungPruefen, rechnungQuartal, rechnungSetzen, rechnungSpur, rechnungTeilWechseln, rechnungWiederherstellen, versicherungJahrBekannt, versicherungJahrEintragen, versicherungTeilWarnungen, versicherungWarnungen } from '../domain/versicherung.js';
+import { rechnungFinden } from '../domain/versicherung-rechnung.js';
 import { TEXT_ZIELE_GESPERRT, TEXT_ZIELE_NICHT_GELADEN, freiVerschieben as zielFreiVerschieben, leereZiele, neueZielId, startMonat, verschiebungLoeschen as verschiebungLoeschenRein, verschiebungWiederherstellen as verschiebungWiederherstellenRein, zielAusblenden as zielAusblendenRein, zielBeenden as zielBeendenRein, zielLoeschen as zielLoeschenRein, zielSchluss, zielSetzen, zielSpur, zielWiederherstellen as zielWiederherstellenRein, zieleWarnungen } from '../domain/sparziele.js';
 
 const KITA_TYPEN = ['kita_essen', 'kita_ohne'];
@@ -47,6 +49,11 @@ const TEXT_ARBEIT_WEG = 'Diese Arbeit gibt es nicht mehr – sie wurde wohl auf 
 const TEXT_KM_WEG = 'Diesen Kilometerstand gibt es nicht mehr – er wurde wohl auf dem anderen Telefon gelöscht.';
 const TEXT_SATZ_VERLAUF_GESPERRT = 'Ein Teil des Verlaufs dieses Autos ist unlesbar – ob der Reifensatz dort noch vorkommt, lässt sich nicht prüfen. Bitte die App auf beiden Telefonen aktualisieren.';
 const TEXT_KENNUNG_BELEGT = 'Diese Kennung ist schon vergeben. Bitte noch einmal versuchen.';
+const TEXT_VERSICHERUNG_NICHT_GELESEN = 'Die Versicherung konnte nicht gelesen werden. Bitte noch einmal versuchen.';
+const TEXT_VERSICHERUNG_ANMELDEN = 'Bitte zuerst neu anmelden; danach lässt sich die Versicherung ändern.';
+const TEXT_KEINE_POLIZZE = 'Bitte zuerst die Polizze anlegen.';
+const TEXT_POLIZZE_SCHON_DA = 'Auf dem anderen Telefon wurde inzwischen schon eine Polizze angelegt – sie wird jetzt gezeigt. Bitte dort ändern, was nicht passt.';
+const TEXT_KATEGORIE_UNPRUEFBAR = 'Ein Teil der Rechnungen ist unlesbar – ob die Kategorie dort noch vorkommt, lässt sich nicht prüfen. Bitte die App auf beiden Telefonen aktualisieren.';
 
 /**
  * Lässt sich ein gelöschter Termin (oder Urlaub) genau so wieder anlegen? Nicht, wenn er ein Termin einer in Google Kalender
@@ -158,6 +165,39 @@ function autosZustand(gelesen, status) {
 }
 
 /**
+ * Versicherung im Zustand (wie die Autos): `daten` = Hauptteil { v, polizze, ab, fremd? } (domain/versicherung.js; unlesbar → leer),
+ * `teile` = { [jahr]: { [quartal]: { v, jahr, quartal, rechnungen, fremd? } } } (die gelesenen Quartal-Teile; ein nie angelegter fehlt),
+ * `geschrieben` = { [jahr]: { [quartal]: Zeitstempel } } (Google: `updated`; entscheidet bei doppelt stehenden Rechnungen, siehe
+ * rechnungenDesJahres(teile, jahr, { geschrieben })), `status` null | 'gespeichert' | 'laedt' | 'geladen' | 'fehler' wie bei den Autos,
+ * `warnungen` = Hinweise für die Anzeige, `unlesbar` = { main?: true, teile: [{ jahr, quartal }] } (leer gezeigt und gesperrt), `frisch`
+ * = das LETZTE Lesen aus dem Kalender in dieser Sitzung ist gelungen – nur dann gehören Versicherungs-Erinnerungen in den Push-Plan
+ * (Task 3); der übrige Plan wartet nie auf die Versicherung. `bestaetigt` = { daten, teile } des zuletzt GESPEICHERTEN Stands, nur
+ * solange eigene Änderungen offen sind (für den Schnappschuss).
+ */
+const leererVersicherungZustand = () => ({ daten: leereVersicherung(), teile: {}, geschrieben: {}, status: null, warnungen: [], unlesbar: { teile: [] }, frisch: false });
+
+/** Unlesbare Teile aus dem, was Adapter oder Schnappschuss liefern: { main?: true, teile: [{ jahr, quartal }] } (Ungültiges fällt weg). */
+function unlesbareVersicherung(roh) {
+  const teile = (Array.isArray(roh?.teile) ? roh.teile : []).filter((x) => Number.isInteger(x?.jahr) && Number.isInteger(x?.quartal) && x.quartal >= 1 && x.quartal <= 4).map(({ jahr, quartal }) => ({ jahr, quartal }));
+  return { ...(roh?.main === true ? { main: true } : {}), teile };
+}
+
+/** Zustand der Versicherung aus dem, was Adapter ({ daten, teile, geschrieben, warnungen, unlesbar }) oder Schnappschuss liefern. */
+function versicherungZustand(gelesen, status) {
+  const unlesbar = unlesbareVersicherung(gelesen?.unlesbar);
+  const lesbar = !unlesbar.main;
+  return {
+    daten: istObjekt(gelesen?.daten) && lesbar ? gelesen.daten : leereVersicherung(),
+    teile: istObjekt(gelesen?.teile) && lesbar ? gelesen.teile : {},
+    geschrieben: istObjekt(gelesen?.geschrieben) && lesbar ? gelesen.geschrieben : {},
+    status,
+    warnungen: Array.isArray(gelesen?.warnungen) ? gelesen.warnungen : [],
+    unlesbar,
+    frisch: status === 'geladen',
+  };
+}
+
+/**
  * `zusage` mit Frist: antwortet sie nicht binnen `ms`, wird abgelehnt (Name 'Zeitueberschreitung'); eine spätere Antwort zählt nicht mehr.
  * api.js kennt kein Timeout – ohne Frist bliebe ein hängendes Lesen der Autos für immer „laufend“ und würde nie wiederholt (Review T3 M3).
  */
@@ -173,7 +213,7 @@ function mitFrist(zusage, ms) {
 /** Alle Verlauf-Teile der Autos als Liste – liegt jetzt in domain/autos-rechnung.js (rein); hier weiter angeboten für bisherige Aufrufer. */
 export { autosHistorien };
 
-/** Wie gleichOder, aber je Verlauf-Teil: unveränderte Teile (und, ist alles gleich, das ganze Objekt) behalten ihre Identität. */
+/** Wie gleichOder, aber je Verlauf-Teil (zweistufig – auch für die Quartal-Teile der Versicherung): unveränderte Teile (und, ist alles gleich, das ganze Objekt) behalten ihre Identität. */
 function historieGleichOder(alt, neu) {
   let gleich = Object.keys(alt ?? {}).length === Object.keys(neu).length;
   const ergebnis = {};
@@ -235,8 +275,8 @@ function ladeFelder(daten, state) {
  *   speichert sie nach dem erneuten Anmelden.
  * - Mehr als drei Schreibvorgänge melden ihren Fortschritt (`state.fortschritt`).
  */
-export function createStore(adapter, { jetzt = () => new Date(), neueId = zufaelligeId, fixId = neueFixId, zielId = neueZielId, autoId = neueAutoId, autosFristMs = 20_000 } = {}) {
-  let state = { geladen: false, settings: normalizeSettings(), tage: {}, urlaub: [], termine: [], einkauf: leereListe(), konto: leeresKonto(), schicht: leererSchichtplan(), fixkosten: leereFixkosten(), ziele: leererZieleZustand(), autos: leererAutosZustand(), fehler: null, fortschritt: null, anmeldungNoetig: false, fenster: null };
+export function createStore(adapter, { jetzt = () => new Date(), neueId = zufaelligeId, fixId = neueFixId, zielId = neueZielId, autoId = neueAutoId, autosFristMs = 20_000, versicherungId = () => neueVersicherungId(), versicherungFristMs = 20_000 } = {}) {
+  let state = { geladen: false, settings: normalizeSettings(), tage: {}, urlaub: [], termine: [], einkauf: leereListe(), konto: leeresKonto(), schicht: leererSchichtplan(), fixkosten: leereFixkosten(), ziele: leererZieleZustand(), autos: leererAutosZustand(), versicherung: leererVersicherungZustand(), fehler: null, fortschritt: null, anmeldungNoetig: false, fenster: null };
   const hoerer = new Set();
   const wartend = []; // Schreibvorgänge, die wegen abgelaufener Anmeldung noch fehlen
   const geladeneBereiche = [];
@@ -1168,6 +1208,378 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     );
   }
 
+  // ---------------------------------------------------------------- Versicherung
+  // Je Teil eine Warteschlange (wie bei den Autos, siehe teilAendern): 'haupt' (fkversicherung: Polizze + erstes Jahr) und
+  // 't:<jahr>:<quartal>' (Quartal-Teil fkvr<JJJJ><Q> mit den Rechnungen).
+  const versOffen = new Map();
+  const versSchreibtNoch = () => versOffen.size > 0;
+  let versGelesen = false; // seit dem Start (oder dem Zurücksetzen) schon einmal aus dem Kalender gelesen? Erst dann wird geschrieben.
+  let versHolenLaeuft = null; // laufendes Lesen: mehrfaches Anstoßen fragt nur einmal
+  let versFrischLaeuft = null; // laufendes Frisch-Lesen vor dem Push-Plan (siehe versicherungFrischLesen)
+  const versSchluessel = ({ jahr, quartal }) => `t:${jahr}:${quartal}`;
+  const gleicherTeil = (a, b) => a.jahr === b.jahr && a.quartal === b.quartal;
+  const versTeilGesperrt = (t) => state.versicherung.unlesbar.teile.some((x) => gleicherTeil(x, t));
+  const teilVonRechnung = (r) => ({ jahr: rechnungJahr(r), quartal: rechnungQuartal(r) });
+  const quartalText = ({ jahr, quartal }) => `${quartal}. Quartal ${jahr}`;
+  /** Der zuletzt GESPEICHERTE Hauptteil (offene eigene Änderungen nicht mitgezählt). */
+  const versHauptBasis = () => versOffen.get('haupt')?.basis ?? state.versicherung.daten;
+
+  /** Leert die Warteschlange eines Teils (nach „unlesbar“: ihr Speichern würde ohnehin abgelehnt). */
+  function versOffenLeeren(schluessel, basis) {
+    const e = versOffen.get(schluessel);
+    if (e) {
+      e.basis = basis;
+      e.offen.length = 0;
+    }
+  }
+
+  /**
+   * `versicherung` mit `bestaetigt` = { daten, teile } (der zuletzt GESPEICHERTE Stand), solange eigene Änderungen offen sind: für den
+   * Schnappschuss – eine Änderung, die auf die Anmeldung wartet, darf nach einem Neustart nicht als gespeichert erscheinen.
+   */
+  function mitVersBestaetigt(v) {
+    const { bestaetigt: _alt, ...rest } = v;
+    const offen = [...versOffen.entries()].filter(([, e]) => e.offen.length > 0);
+    if (offen.length === 0) return rest;
+    let daten = rest.daten;
+    let teile = rest.teile;
+    for (const [schluessel, e] of offen) {
+      if (schluessel === 'haupt') daten = e.basis;
+      else {
+        const [, jahr, quartal] = schluessel.split(':');
+        teile = { ...teile, [jahr]: { ...(teile[jahr] ?? {}), [quartal]: e.basis } };
+      }
+    }
+    return { ...rest, bestaetigt: { daten, teile } };
+  }
+
+  /** Zustand mit dem Quartal-Teil `t` = `teil` (die anderen bleiben). */
+  const mitVersTeil = (t, teil) => ({ ...state, versicherung: mitVersBestaetigt({ ...state.versicherung, teile: { ...state.versicherung.teile, [t.jahr]: { ...(state.versicherung.teile[t.jahr] ?? {}), [t.quartal]: teil } } }) });
+
+  /**
+   * Nach einem eigenen Schreiben ist dieser Teil der zuletzt geschriebene (wie `updated` bei Google): so gilt bei doppelt stehenden
+   * Rechnungen (abgebrochenes Verschieben) schon vor dem nächsten Lesen dieselbe Fassung wie danach (rechnungenDesJahres).
+   */
+  function versGeschriebenMerken(t) {
+    const g = state.versicherung.geschrieben ?? {};
+    // später als jeder bekannte Zeitstempel (die Uhr des Telefons kann hinter der von Google liegen): eben geschrieben ist am neuesten
+    const bekannt = Object.values(g).flatMap((q) => Object.values(q ?? {})).filter((z) => typeof z === 'string' && !Number.isNaN(Date.parse(z)));
+    const neuester = bekannt.reduce((a, b) => (b > a ? b : a), '');
+    if (neuester !== '' && g[t.jahr]?.[t.quartal] === neuester && bekannt.filter((z) => z === neuester).length === 1) return;
+    const uhr = jetzt().toISOString();
+    const zeit = neuester >= uhr ? new Date(Date.parse(neuester) + 1).toISOString() : uhr;
+    state ={ ...state, versicherung: { ...state.versicherung, geschrieben: { ...g, [t.jahr]: { ...(g[t.jahr] ?? {}), [t.quartal]: zeit } } } };
+  }
+
+  /** Der Hauptteil ist (inzwischen) unlesbar: alles leer und gesperrt. */
+  function versHauptSperren() {
+    versOffenLeeren('haupt', leereVersicherung());
+    state = { ...state, versicherung: { ...state.versicherung, daten: leereVersicherung(), teile: {}, warnungen: versicherungWarnungen({ unlesbar: true }), unlesbar: { main: true, teile: state.versicherung.unlesbar.teile } } };
+  }
+
+  /** Ein Quartal-Teil ist (inzwischen) unlesbar: leer gezeigt und gesperrt. */
+  function versTeilSperren(t) {
+    const leer = leererVersicherungTeil(t.jahr, t.quartal);
+    versOffenLeeren(versSchluessel(t), leer);
+    const v = state.versicherung;
+    const teile = versTeilGesperrt(t) ? v.unlesbar.teile : [...v.unlesbar.teile, { jahr: t.jahr, quartal: t.quartal }];
+    state = { ...state, versicherung: { ...v, teile: { ...v.teile, [t.jahr]: { ...(v.teile[t.jahr] ?? {}), [t.quartal]: leer } }, warnungen: [...v.warnungen, ...versicherungTeilWarnungen({ teil: leer, unlesbar: true })], unlesbar: { ...v.unlesbar, teile } } };
+  }
+
+  /**
+   * Übernimmt frisch Gelesenes (`g` wie aus adapter.leseVersicherung). `eigene` = inzwischen selbst etwas geändert: dann bleiben
+   * angezeigter Hauptteil und angezeigte Teile (die Antwort könnte älter sein), neu gefundene Teile kommen dazu. Unlesbares gilt immer
+   * (leer, gesperrt). Unverändert Gelesenes behält seine Identität (der Push-Plan vergleicht nach Identität).
+   */
+  function versUebernehmen(g, eigene) {
+    const frisch = versicherungZustand(g, 'geladen');
+    if (frisch.unlesbar.main) {
+      versOffenLeeren('haupt', leereVersicherung());
+      state = { ...state, versicherung: frisch };
+      return;
+    }
+    const v = state.versicherung;
+    let teile = frisch.teile;
+    let geschrieben = frisch.geschrieben;
+    if (eigene) {
+      teile = { ...frisch.teile };
+      for (const [jahr, quartale] of Object.entries(v.teile)) teile[jahr] = { ...(teile[jahr] ?? {}), ...quartale };
+      geschrieben = { ...frisch.geschrieben };
+      for (const [jahr, quartale] of Object.entries(v.geschrieben ?? {})) geschrieben[jahr] = { ...(geschrieben[jahr] ?? {}), ...quartale };
+    }
+    for (const t of frisch.unlesbar.teile) {
+      teile = { ...teile, [t.jahr]: { ...(teile[t.jahr] ?? {}), [t.quartal]: leererVersicherungTeil(t.jahr, t.quartal) } };
+      versOffenLeeren(versSchluessel(t), leererVersicherungTeil(t.jahr, t.quartal));
+    }
+    state = {
+      ...state,
+      versicherung: mitVersBestaetigt({ daten: eigene ? v.daten : gleichOder(v.daten, frisch.daten), teile: historieGleichOder(v.teile, teile), geschrieben: historieGleichOder(v.geschrieben, geschrieben), status: 'geladen', warnungen: gleichOder(v.warnungen, frisch.warnungen), unlesbar: gleichOder(v.unlesbar, frisch.unlesbar), frisch: true }),
+    };
+  }
+
+  /**
+   * Liest Hauptteil und alle Quartal-Teile (ab dem ersten Jahr bis morgen). Status 'laedt' → 'geladen' bzw. 'fehler' (die zuletzt
+   * gelesenen Daten bleiben; abgelaufene Anmeldung setzt zusätzlich `anmeldungNoetig`). Mit Frist (api.js kennt kein Timeout): ein
+   * hängendes Lesen gilt danach als Fehler und wird beim nächsten Anstoßen wiederholt. → true, wenn gelesen. Höchstens eines gleichzeitig; wirft nicht.
+   */
+  function versHolen() {
+    if (versHolenLaeuft) return versHolenLaeuft;
+    if (!adapter.leseVersicherung) return Promise.resolve(false);
+    versHolenLaeuft = (async () => {
+      const stand = schreibStand;
+      state = { ...state, versicherung: { ...state.versicherung, status: 'laedt' } };
+      melden();
+      let g;
+      try {
+        g = await mitFrist(adapter.leseVersicherung(), versicherungFristMs);
+      } catch (fehler) {
+        state = { ...state, versicherung: { ...state.versicherung, status: 'fehler', frisch: false, warnungen: [TEXT_VERSICHERUNG_NICHT_GELESEN] }, ...(istAuthFehler(fehler) ? { anmeldungNoetig: true } : {}) };
+        melden();
+        return false;
+      }
+      versUebernehmen(g, stand !== schreibStand || schreibend > 0 || wartend.length > 0 || versSchreibtNoch());
+      versGelesen = true;
+      melden();
+      return true;
+    })()
+      .catch(() => false)
+      .finally(() => {
+        versHolenLaeuft = null;
+      });
+    return versHolenLaeuft;
+  }
+
+  /** Vor dem Schreiben: einmal gelesen und der Hauptteil lesbar? → Fehlertext oder null. */
+  async function versBereit() {
+    if (!adapter.aendereVersicherung) return TEXT_FEHLER;
+    if (!versGelesen && !(await versHolen())) return state.anmeldungNoetig ? TEXT_VERSICHERUNG_ANMELDEN : TEXT_VERSICHERUNG_NICHT_GELESEN;
+    return state.versicherung.unlesbar.main ? TEXT_VERSICHERUNG_GESPERRT : null;
+  }
+
+  /** Ändert den Hauptteil (siehe teilAendern) mit `fn(daten)`; → wie teilErgebnis. Wirft, wenn `fn` schon am angezeigten Stand ablehnt. */
+  async function versHauptAendern(fn) {
+    return teilErgebnis(
+      await teilAendern(versOffen, 'haupt', fn, {
+        leer: leereVersicherung,
+        aktuell: () => state.versicherung.daten,
+        mit: (daten) => ({ ...state, versicherung: mitVersBestaetigt({ ...state.versicherung, daten }) }),
+        async speichern(f) {
+          try {
+            return await adapter.aendereVersicherung(f);
+          } catch (e) {
+            if (e?.name === 'VersicherungGesperrt') {
+              FACHLICH.add(e);
+              versHauptSperren();
+            }
+            throw e;
+          }
+        },
+        async lesen() {
+          const g = await adapter.leseVersicherung();
+          if (g.unlesbar?.main) {
+            versHauptSperren();
+            return null;
+          }
+          return g.daten;
+        },
+        normalisiere: (d) => d ?? leereVersicherung(),
+      }),
+    );
+  }
+
+  /**
+   * Vor dem Schreiben eines Quartal-Teils: kennt der zuletzt GESPEICHERTE Hauptteil sein Jahr? Sonst zuerst dort eintragen – in DEMSELBEN
+   * Schreibvorgang wie der Teil (auch beim Nachholen nach der Anmeldung): scheitert das, wird der Teil nicht geschrieben; es entsteht nie
+   * ein Teil vor dem ersten Jahr (er würde nie gelesen).
+   */
+  async function versJahrSichern(jahr) {
+    const e = versOffen.get('haupt');
+    if (versicherungJahrBekannt(e?.basis ?? state.versicherung.daten, jahr)) return;
+    let gespeichert;
+    try {
+      gespeichert = await adapter.aendereVersicherung(fachlich((d) => versicherungJahrEintragen(d, jahr)));
+    } catch (fehler) {
+      if (fehler?.name === 'VersicherungGesperrt') {
+        FACHLICH.add(fehler);
+        versHauptSperren();
+      }
+      throw fehler;
+    }
+    if (!gespeichert) return;
+    if (e) e.basis = gespeichert;
+    else state = { ...state, versicherung: { ...state.versicherung, daten: gleichOder(state.versicherung.daten, gespeichert) } };
+  }
+
+  /**
+   * Ändert NUR den Quartal-Teil `t` = { jahr, quartal } mit `fn(teil)`; → wie teilErgebnis. Wirft wie versHauptAendern. `vorher()`
+   * (optional, async) läuft in jedem Schreibvorgang (auch beim Nachholen) vor dem Schreiben und darf fachlich ablehnen.
+   */
+  async function versTeilAendern(t, fn, { vorher = null } = {}) {
+    return teilErgebnis(
+      await teilAendern(versOffen, versSchluessel(t), fn, {
+        leer: () => leererVersicherungTeil(t.jahr, t.quartal),
+        aktuell: () => state.versicherung.teile[t.jahr]?.[t.quartal] ?? null,
+        mit: (teil) => mitVersTeil(t, teil),
+        async speichern(f) {
+          let gespeichert;
+          try {
+            if (vorher) await vorher();
+            await versJahrSichern(t.jahr);
+            gespeichert = await adapter.aendereVersicherungTeil(t.jahr, t.quartal, f);
+          } catch (e) {
+            if (e?.name === 'VersicherungTeilGesperrt') {
+              FACHLICH.add(e);
+              versTeilSperren(t);
+            }
+            throw e;
+          }
+          versGeschriebenMerken(t);
+          return gespeichert;
+        },
+        async lesen() {
+          const g = await adapter.leseVersicherungTeil(t.jahr, t.quartal);
+          if (g.unlesbar) {
+            versTeilSperren(t);
+            return null;
+          }
+          return g.teil;
+        },
+        normalisiere: (teil) => teil ?? leererVersicherungTeil(t.jahr, t.quartal),
+      }),
+    );
+  }
+
+  /**
+   * Ändert den Quartal-Teil `t` mit `fn(teil)`. Kennt der zuletzt GESPEICHERTE Hauptteil das Jahr noch nicht, wird es zuerst dort
+   * eingetragen und erst danach der Teil geschrieben (beim Nachholen sichert das versJahrSichern im Teil selbst). Gesperrt (unlesbar)
+   * → Meldung. `optionen` siehe versTeilAendern. → wie teilErgebnis; wirft nie.
+   */
+  async function versInTeilAendern(t, fn, optionen) {
+    if (versTeilGesperrt(t)) return { ok: false, fehler: TEXT_VERSICHERUNG_TEIL_GESPERRT };
+    try {
+      if (!versicherungJahrBekannt(versHauptBasis(), t.jahr)) {
+        const r = await versHauptAendern((d) => versicherungJahrEintragen(d, t.jahr));
+        if (!r.ok && !r.wartet) return r;
+      }
+      return await versTeilAendern(t, fn, optionen);
+    } catch (e) {
+      return { ok: false, fehler: e?.message || TEXT_FEHLER }; // schon am angezeigten Stand abgelehnt: nichts geändert
+    }
+  }
+
+  /** Änderung am Hauptteil für die Oberfläche: erst bereit, dann `fn`; nie ein Wurf. */
+  async function versHauptSicher(fn) {
+    const nichtBereit = await versBereit();
+    if (nichtBereit) return { ok: false, fehler: nichtBereit };
+    try {
+      return await versHauptAendern(fn);
+    } catch (e) {
+      return { ok: false, fehler: e?.message || TEXT_FEHLER }; // schon am angezeigten Stand abgelehnt: nichts geändert
+    }
+  }
+
+  /** Wo steht die Rechnung `id` im angezeigten Stand? (rechnungFinden: gültige Fassung, ihr Teil, weitere Fassungen) */
+  const versRechnungFinden = (id) => rechnungFinden(state.versicherung.teile, id, { geschrieben: state.versicherung.geschrieben });
+
+  /** Alle vergebenen Kennungen von Rechnungen in allen angezeigten Teilen (auch fremde und doppelte). */
+  function rechnungKennungen() {
+    const ids = new Set();
+    for (const quartale of Object.values(state.versicherung.teile)) {
+      for (const teil of Object.values(quartale ?? {})) {
+        for (const r of teil?.rechnungen ?? []) ids.add(r.id);
+        for (const k of teil?.fremd?.r ?? []) ids.add(k?.i);
+      }
+    }
+    return ids;
+  }
+
+  /** Kennungen der Kategorien, auf die eine Rechnung in einem angezeigten Teil zeigt (auch fremde Rechnungen, roh mit `k`). */
+  function benutzteKategorien() {
+    const ids = new Set();
+    for (const quartale of Object.values(state.versicherung.teile)) {
+      for (const teil of Object.values(quartale ?? {})) {
+        for (const r of teil?.rechnungen ?? []) ids.add(r.kategorie);
+        for (const k of teil?.fremd?.r ?? []) ids.add(k?.k);
+      }
+    }
+    return ids;
+  }
+
+  /** Neue Kennung (über `versicherungId`, 0-9a-v), die in `vergeben` noch nicht vorkommt; sonst null. */
+  function neueVersKennung(vergeben) {
+    for (let versuch = 0; versuch < 20; versuch += 1) {
+      const id = versicherungId();
+      if (typeof id !== 'string' || id === '') return null;
+      if (!vergeben.has(id)) return id;
+    }
+    return null;
+  }
+
+  /** Steht die Rechnung `id` (frisch gelesen) im Teil `t`? Sonst fachliche Ablehnung mit `text` – für die Schritte beim Verschieben. */
+  const rechnungSteht = (id, t, text) =>
+    fachlichAsync(async () => {
+      const g = await adapter.leseVersicherungTeil(t.jahr, t.quartal);
+      if (!(g.teil?.rechnungen ?? []).some((r) => r.id === id)) throw Object.assign(new Error(text), { fachlich: true });
+    });
+
+  /** Eine Meldung, die die Shell zeigt (auch wenn sie gleich lautet wie die vorige). */
+  function versMelden(text) {
+    fehlerNr += 1;
+    state = { ...state, fehler: text, fehlerNr };
+    melden();
+  }
+
+  /**
+   * Weitere Fassungen der Rechnung `id` (siehe rechnungFinden: abgebrochenes Verschieben, alte Kopie) in den Teilen `weitere` entfernen –
+   * beim nächsten Ändern dieser Rechnung. Unlesbare Teile bleiben unberührt. Scheitert es, zählt sie trotzdem nur einmal (Meldung).
+   */
+  async function versKopienEntfernen(id, weitere) {
+    for (const t of weitere) {
+      if (versTeilGesperrt(t)) continue;
+      const r = await versTeilAendern(t, (teil) => rechnungLoeschenRein(teil, id)).catch(() => ({ ok: false }));
+      if (!r.ok && !r.wartet) {
+        versMelden(`Gespeichert. Eine alte Kopie der Rechnung im ${quartalText(t)} konnte nicht entfernt werden – sie zählt nicht doppelt und wird beim nächsten Ändern entfernt.`);
+        return;
+      }
+    }
+  }
+
+  /**
+   * Versicherung für die Sicherung: frisch aus dem Kalender (Anmeldefehler laufen nach oben), dazu roh alle Quartal-Teile, die nicht
+   * gelesen wurden (`weitereTeile`); ohne passenden Adapter der angezeigte Stand.
+   */
+  async function versicherungFuerSicherung() {
+    const v = state.versicherung;
+    if (!adapter.leseVersicherung) return { daten: v.daten, teile: v.teile, geschrieben: v.geschrieben, rohtexte: [], weitereTeile: [] };
+    const g = adapter.leseVersicherungSicherung ? await adapter.leseVersicherungSicherung() : await adapter.leseVersicherung();
+    return { daten: g.daten, teile: g.teile, geschrieben: g.geschrieben ?? {}, rohtexte: g.rohtexte ?? [], weitereTeile: g.weitereTeile ?? [] };
+  }
+
+  /**
+   * „Beispieldaten entfernen“ für die Versicherung: erst jeden Quartal-Teil mit Rechnungen leeren (fremde Einträge bleiben), dann die
+   * Polizze (das erste Jahr bleibt nur, wenn ein Teil noch Fremdes trägt oder unlesbar ist). Unlesbares bleibt unangetastet. Wirft mit
+   * deutscher Meldung, wenn etwas scheitert.
+   */
+  async function versicherungLeeren() {
+    const nichtBereit = await versBereit();
+    if (nichtBereit === TEXT_VERSICHERUNG_GESPERRT) return;
+    if (nichtBereit) throw new Error(nichtBereit);
+    const pruefe = (r) => {
+      if (!r.ok && !r.wartet) throw new Error(r.fehler ?? TEXT_FEHLER);
+    };
+    let bleibt = state.versicherung.unlesbar.teile.length > 0;
+    for (const quartale of Object.values(state.versicherung.teile)) {
+      for (const teil of Object.values(quartale ?? {})) {
+        const t = { jahr: teil.jahr, quartal: teil.quartal };
+        if (teil.fremd) bleibt = true;
+        if (versTeilGesperrt(t) || (teil.rechnungen ?? []).length === 0) continue;
+        pruefe(await versTeilAendern(t, (x) => (x.fremd ? { ...leererVersicherungTeil(t.jahr, t.quartal), fremd: x.fremd } : leererVersicherungTeil(t.jahr, t.quartal))));
+      }
+    }
+    if (!state.versicherung.daten.polizze) return;
+    pruefe(await versHauptAendern((d) => ({ ...leereVersicherung(), ab: bleibt ? d.ab : null })));
+  }
+
   /** Ändert einen Monat des Schichtplans (siehe `schichtAendern`): → { neu, ergebnis, fehler }. */
   const schichtMonatSchreiben = (jm, fn) =>
     schichtAendern(jm, fn, {
@@ -1312,7 +1724,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
 
     /** Startet mit zuletzt gespeicherten Daten (nur zum Anzeigen, bis die Anmeldung da ist). `stand` = Zeitpunkt der Speicherung. */
     starteAusSnapshot({ daten, gespeichertAm }) {
-      state = { ...state, ...ladeFelder(daten, state), ...(daten.schicht ? { schicht: schichtAusDaten(daten.schicht) } : {}), ...(daten.fixkosten ? { fixkosten: fixAusDaten(daten.fixkosten) } : {}), ...(daten.ziele ? { ziele: zieleZustand(daten.ziele, 'gespeichert') } : {}), ...(daten.autos ? { autos: autosZustand(daten.autos, 'gespeichert') } : {}), geladen: true, nurSnapshot: true, stand: gespeichertAm, anmeldungNoetig: true };
+      state = { ...state, ...ladeFelder(daten, state), ...(daten.schicht ? { schicht: schichtAusDaten(daten.schicht) } : {}), ...(daten.fixkosten ? { fixkosten: fixAusDaten(daten.fixkosten) } : {}), ...(daten.ziele ? { ziele: zieleZustand(daten.ziele, 'gespeichert') } : {}), ...(daten.autos ? { autos: autosZustand(daten.autos, 'gespeichert') } : {}), ...(daten.versicherung ? { versicherung: versicherungZustand(daten.versicherung, 'gespeichert') } : {}), geladen: true, nurSnapshot: true, stand: gespeichertAm, anmeldungNoetig: true };
       melden();
     },
 
@@ -1423,7 +1835,8 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     /**
      * Alle Daten für die Sicherung. Mit Google wird der gesamte Verlauf aus den Kalendern geholt (Anmeldefehler laufen nach oben);
      * in der Demo steht ohnehin alles im Zustand. Der Schichtplan wird in beiden Fällen Monat für Monat gelesen, die Fixkosten (alle vier
-     * Teile), die Sparziele (`ziele` = { daten, unlesbar, text }) und die Autos (`autos` = { daten, historie, rohtexte }) frisch. Der Zustand
+     * Teile), die Sparziele (`ziele` = { daten, unlesbar, text }), die Autos (`autos` = { daten, historie, rohtexte }) und die Versicherung
+     * (`versicherung` = { daten, teile, geschrieben, rohtexte, weitereTeile }) frisch. Der Zustand
      * der App bleibt dabei unverändert.
      */
     async sicherungsDaten() {
@@ -1432,7 +1845,8 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       const fixkosten = await fixFuerSicherung();
       const ziele = await zieleFuerSicherung();
       const autos = await autosFuerSicherung();
-      return { settings: state.settings, tage: roh.tage, urlaub: roh.urlaub, termine: roh.termine, einkauf: state.einkauf, konto: state.konto, schicht, fixkosten, ziele, autos };
+      const versicherung = await versicherungFuerSicherung();
+      return { settings: state.settings, tage: roh.tage, urlaub: roh.urlaub, termine: roh.termine, einkauf: state.einkauf, konto: state.konto, schicht, fixkosten, ziele, autos, versicherung };
     },
 
     /**
@@ -1641,7 +2055,8 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
 
     /**
      * Nur Demo („Beispieldaten entfernen“): löscht alle Kontostände, Sonderbeträge, Sparziele (samt Verschiebungen), Fixkosten-Posten
-     * (Teil für Teil) und Autos samt Verlauf (erst die Verlauf-Teile, dann der Hauptteil); fremde Einträge einer neueren Version, unlesbare
+     * (Teil für Teil), Autos samt Verlauf (erst die Verlauf-Teile, dann der Hauptteil) und die Versicherung (erst die Rechnungen je
+     * Quartal, dann die Polizze); fremde Einträge einer neueren Version, unlesbare
      * Sparziele und unlesbare Teile bleiben unangetastet. Mit einem
      * anderen Adapter (Google) wird nichts getan. Wirft mit deutscher Meldung, wenn etwas nicht geklappt hat.
      */
@@ -1663,6 +2078,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
         }
       }
       if (adapter.aendereAutos) await autosLeeren();
+      if (adapter.aendereVersicherung) await versicherungLeeren();
     },
 
     /** Löscht genau einen Sonderbetrag. → wie `loescheTag`; `rueckgaengig()` bringt denselben Sonderbetrag an seine Stelle zurück. */
@@ -1887,6 +2303,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
         // angestoßen, NIE abgewartet: eine hängende Auto-Anfrage (api.js kennt kein Timeout) hielte sonst dieses Vorladen belegt, und das
         // Tor für den nächsten Monat ginge nicht auf. Wer die Autos braucht, wartet auf `autosLaden()` (dasselbe laufende Lesen).
         if (adapter.leseAutos) autosHolen();
+        if (adapter.leseVersicherung) versHolen(); // ebenso die Versicherung: nur angestoßen, nie abgewartet (eigener Vorlader in der Shell)
         const [{ katalogGelesen, monateGelesen }, fixOk] = await Promise.all([schichtLesen(vorladeMonate(jm), { katalogNeu: true }), adapter.leseFixkosten ? fixLesen() : true]);
         if (katalogGelesen && monateGelesen && fixOk && state.schicht.vorgeladen !== jm) {
           state = { ...state, schicht: { ...state.schicht, vorgeladen: jm } };
@@ -1907,7 +2324,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
      * die zwei danach) frisch aus dem Kalender. Der Plan ersetzt beim Push-Dienst den der ganzen Familie; aus einem veralteten Stand
      * würde er Zusätze löschen (oder zurückbringen), die das andere Telefon inzwischen eingetragen (oder entfernt) hat – und für sie gibt
      * es keine Erinnerung von Google Kalender. Ebenso, gleichzeitig, die vier Teile der Fixkosten (`fixFrischLesen`: Erinnerungen an
-     * Kündigungsfristen gehen an beide Telefone). Die Autos (`autosFrischLesen`) werden nur angestoßen, nicht abgewartet. Gemeldet wird nur eine echte Änderung (siehe `schichtAktualisieren`); danach gilt der
+     * Kündigungsfristen gehen an beide Telefone). Die Autos (`autosFrischLesen`) und die Versicherung (`versicherungFrischLesen`) werden nur angestoßen, nicht abgewartet. Gemeldet wird nur eine echte Änderung (siehe `schichtAktualisieren`); danach gilt der
      * laufende Monat als vorgeladen. Ergebnis: true = beides aktuell, false = ging gerade nicht (nicht geladen, Lesefehler, eigene
      * Änderung wird noch gespeichert) – dann nicht senden. Höchstens ein Lesen gleichzeitig; wirft nicht.
      */
@@ -1916,6 +2333,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       const jm = todayVienna(jetzt()).slice(0, 7);
       schichtFrischLaeuft = (async () => {
         if (adapter.leseAutos) store.autosFrischLesen(); // nebenher, ohne zu warten: ändert es etwas, löst das einen neuen Plan aus (planQuellen)
+        if (adapter.leseVersicherung) store.versicherungFrischLesen(); // ebenso
         const [schichtOk, fixOk] = await Promise.all([store.schichtAktualisieren(vorladeMonate(jm)), adapter.leseFixkosten ? store.fixFrischLesen() : true]);
         const ok = schichtOk && fixOk;
         if (ok && state.schicht.vorgeladen !== jm) {
@@ -2417,6 +2835,195 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       return mitRueckgaengig(r, spur ? () => autosHauptSicher((d) => regelWiederherstellen(d, spur)) : null);
     },
 
+    /** Versicherung (Polizze und alle Quartal-Teile) neu lesen, z. B. beim Öffnen ihrer Ansicht. → { ok: true } | { ok: false, fehler }; wirft nie. */
+    async versicherungLaden() {
+      if (await versHolen()) return { ok: true };
+      return { ok: false, fehler: state.anmeldungNoetig ? TEXT_VERSICHERUNG_ANMELDEN : TEXT_VERSICHERUNG_NICHT_GELESEN };
+    },
+
+    /**
+     * Versicherung frisch aus dem Kalender vor dem Senden des Push-Plans (siehe `schichtFrischLesen`, wie `autosFrischLesen`): eigene
+     * Änderungen gehen vor, gemeldet wird nur eine echte Änderung. → true = aktuell, false = ging gerade nicht. Wirft nicht.
+     */
+    versicherungFrischLesen() {
+      if (versFrischLaeuft) return versFrischLaeuft;
+      const moeglich = () => adapter.leseVersicherung && state.geladen && !state.nurSnapshot && !state.anmeldungNoetig;
+      const eigene = () => schreibend > 0 || wartend.length > 0 || versSchreibtNoch();
+      if (!moeglich() || eigene()) return Promise.resolve(false);
+      versFrischLaeuft = (async () => {
+        const stand = schreibStand;
+        let g;
+        try {
+          g = await mitFrist(adapter.leseVersicherung(), versicherungFristMs);
+        } catch (fehler) {
+          state = { ...state, versicherung: { ...state.versicherung, frisch: false }, ...(istAuthFehler(fehler) ? { anmeldungNoetig: true } : {}) };
+          melden();
+          return false;
+        }
+        if (stand !== schreibStand || eigene()) return false;
+        const vorher = state;
+        versUebernehmen(g, false);
+        versGelesen = true;
+        if (JSON.stringify(state.versicherung) !== JSON.stringify(vorher.versicherung)) melden();
+        else state = vorher; // nichts geändert: derselbe Zustand (kein Neuzeichnen, kein neuer Push-Plan)
+        return true;
+      })()
+        .catch(() => false)
+        .finally(() => {
+          versFrischLaeuft = null;
+        });
+      return versFrischLaeuft;
+    },
+
+    /**
+     * Polizze anlegen oder ändern. Gibt es noch keine (angezeigt): anlegen – fehlt `id`, vergibt sie der Store (z. B. für das Ergebnis
+     * von polizzeAusVorlage ohne Kennung oder eine „Eigene Polizze“). Hat das andere Telefon inzwischen schon eine angelegt, gilt die
+     * zuerst gespeicherte (sie wird gezeigt) und das Ergebnis ist { ok: false, fehler }. Gibt es eine: ändern (gleiche `id`, sonst
+     * TEXT_POLIZZE_WEG). Eine Kategorie, auf die noch Rechnungen zeigen, lässt sich nicht entfernen (C4).
+     * → { ok: true, id } | { ok: false, fehler, gemeldet? } | { ok: false, wartet: true, fehler }. Wirft nie.
+     */
+    async polizzeSpeichern(eingabe) {
+      const x = istObjekt(eingabe) ? eingabe : {};
+      const nichtBereit = await versBereit();
+      if (nichtBereit) return { ok: false, fehler: nichtBereit };
+      const alt = state.versicherung.daten.polizze;
+      if (!alt) {
+        const id = x.id ?? neueVersKennung(new Set());
+        if (!id) return { ok: false, fehler: TEXT_FEHLER };
+        const r = await versHauptSicher((d) => polizzeAnlegen(d, { ...x, id }));
+        if (!r.ok) return r;
+        return state.versicherung.daten.polizze?.id === id ? { ok: true, id } : { ok: false, fehler: TEXT_POLIZZE_SCHON_DA };
+      }
+      if (x.id !== alt.id) return { ok: false, fehler: TEXT_POLIZZE_WEG };
+      const bleiben = new Set((Array.isArray(x.kategorien) ? x.kategorien : []).map((k) => k?.id));
+      const entfernt = alt.kategorien.filter((k) => !bleiben.has(k.id));
+      if (entfernt.length > 0) {
+        if (state.versicherung.unlesbar.teile.length > 0) return { ok: false, fehler: TEXT_KATEGORIE_UNPRUEFBAR };
+        const benutzt = benutzteKategorien();
+        const k = entfernt.find((e) => benutzt.has(e.id));
+        if (k) return { ok: false, fehler: `Die Kategorie „${k.name}“ hat noch Rechnungen – bitte diese zuerst einer anderen Kategorie zuordnen oder löschen.` };
+      }
+      const r = await versHauptSicher((d) => polizzeAendern(d, x));
+      return r.ok ? { ok: true, id: alt.id } : r;
+    },
+
+    /**
+     * Rechnung einreichen (ohne `id`: neue Kennung) oder ändern (mit `id`). `entwurf` = { kategorie, datum, betragCent, eingereichtAm,
+     * erstattetCent?, erstattetAm?, stelle?, notiz? }; „heute“ (Wiener Datum) bestimmt der Store; die Kategorie muss zur Polizze gehören.
+     * Geschrieben wird NUR der Quartal-Teil des Rechnungsdatums (und, ist das Jahr neu, vorher das erste Jahr im Hauptteil), als reine
+     * Änderung auf der neuesten Fassung: zwei Telefone behalten beide Rechnungen. Liegt das neue Datum in einem anderen Quartal (oder
+     * Jahr) als die Rechnung steht: rechnungTeilWechseln – 1) Jahr im Hauptteil, 2) im neuen Teil eintragen (nur, wenn sie im alten noch
+     * steht), 3) im alten löschen (nur, wenn sie im neuen gespeichert ist); scheitert 3, sagt die Meldung, wo sie jetzt steht (gezählt
+     * wird sie einmal). Weitere Fassungen derselben Rechnung (rechnungFinden(…).weitere) werden danach entfernt.
+     * → { ok: true, id, warnung } (warnung = Hinweis aus rechnungPruefen oder null) | { ok: false, fehler, gemeldet? } |
+     * { ok: false, wartet: true, fehler }. Wirft nie.
+     */
+    async rechnungSpeichern(entwurf) {
+      const heute = todayVienna(jetzt());
+      const x = istObjekt(entwurf) ? entwurf : {};
+      const nichtBereit = await versBereit();
+      if (nichtBereit) return { ok: false, fehler: nichtBereit };
+      const polizze = state.versicherung.daten.polizze;
+      if (!polizze) return { ok: false, fehler: TEXT_KEINE_POLIZZE };
+      const f = x.id == null ? null : versRechnungFinden(x.id);
+      if (x.id != null && !f) return { ok: false, fehler: TEXT_RECHNUNG_WEG };
+      const id = x.id ?? neueVersKennung(rechnungKennungen());
+      if (!id) return { ok: false, fehler: TEXT_FEHLER };
+      const rechnung = { ...x, id };
+      const { fehler, warnung } = rechnungPruefen(rechnung, { heute, polizze });
+      if (fehler) return { ok: false, fehler };
+      const nach = teilVonRechnung(rechnung);
+      const von = f?.von ?? null;
+      if (versTeilGesperrt(nach) || (von && versTeilGesperrt(von))) return { ok: false, fehler: TEXT_VERSICHERUNG_TEIL_GESPERRT };
+      const ok = async (r) => {
+        if (r.ok && f) await versKopienEntfernen(id, f.weitere.filter((w) => !gleicherTeil(w, nach) && !gleicherTeil(w, von)));
+        return r.ok ? { ok: true, id, warnung } : r;
+      };
+      if (!von || gleicherTeil(von, nach)) {
+        const setzen = von ? (t) => (eintragVorhanden(t.rechnungen, t.fremd?.r, id, TEXT_RECHNUNG_WEG), rechnungSetzen(t, rechnung, { heute, polizze })) : (t) => rechnungSetzen(t, rechnung, { heute, polizze });
+        return ok(await versInTeilAendern(nach, setzen));
+      }
+      // Verschieben (Review Focus 2): jeder Schritt prüft in seinem eigenen Schreibvorgang (auch beim Nachholen nach der Anmeldung), dass
+      // der andere passt – eingetragen wird nur, was im alten Teil noch steht, gelöscht nur, was im neuen schon gespeichert ist.
+      let plan;
+      try {
+        plan = rechnungTeilWechseln(rechnung, von, { heute, polizze, daten: versHauptBasis() });
+      } catch (e) {
+        return { ok: false, fehler: e?.message || TEXT_FEHLER };
+      }
+      if (plan.jahrEintragen !== null) {
+        const j = await versHauptSicher((d) => versicherungJahrEintragen(d, plan.jahrEintragen));
+        if (!j.ok && !j.wartet) return j;
+      }
+      const r = await versInTeilAendern(plan.nach, (t) => plan.inNeu(t), { vorher: rechnungSteht(id, von, TEXT_RECHNUNG_WEG) });
+      if (!r.ok && !r.wartet) {
+        await versHolen(); // z. B. inzwischen gelöscht: auch der alte Teil soll den neuesten Stand zeigen
+        return r;
+      }
+      const weg = await versInTeilAendern(von, (t) => plan.ausAlt(t), { vorher: rechnungSteht(id, plan.nach, `Die Rechnung wurde nicht verschoben – sie steht weiter im ${quartalText(von)}.`) });
+      if (r.wartet) return weg.ok ? r : weg;
+      if (weg.ok || weg.wartet) return weg.ok ? ok(weg) : weg;
+      const text = `Die Rechnung steht jetzt im ${quartalText(plan.nach)}, im ${quartalText(von)} konnte sie aber nicht entfernt werden – sie zählt nur einmal; beim nächsten Speichern wird die alte Fassung entfernt.`;
+      versMelden(text);
+      return { ok: false, fehler: text, gemeldet: true };
+    },
+
+    /**
+     * „Erstattung erhalten“: setzt NUR erstattetCent und erstattetAm der Rechnung `id` (`erstattung` = { erstattetCent, erstattetAm }; null
+     * entfernt die Erstattung) auf der neuesten Fassung ihres Teils – was das andere Telefon an ihr geändert hat, bleibt. Eine falsch
+     * abgelegte Rechnung wandert dabei an ihren richtigen Ort (wie rechnungSpeichern). → { ok: true, warnung } | wie rechnungSpeichern.
+     */
+    async erstattungSpeichern(id, erstattung) {
+      const heute = todayVienna(jetzt());
+      const nichtBereit = await versBereit();
+      if (nichtBereit) return { ok: false, fehler: nichtBereit };
+      const f = versRechnungFinden(id);
+      if (!f) return { ok: false, fehler: TEXT_RECHNUNG_WEG };
+      const { erstattetCent: _c, erstattetAm: _a, ...ohne } = f.rechnung;
+      const e = erstattung === null ? null : { erstattetCent: erstattung?.erstattetCent, erstattetAm: erstattung?.erstattetAm };
+      const neu = e ? { ...ohne, ...e } : ohne;
+      if (!f.richtig) {
+        const r = await store.rechnungSpeichern(neu);
+        return r.ok ? { ok: true, warnung: r.warnung } : r;
+      }
+      const { fehler, warnung } = rechnungPruefen(neu, { heute });
+      if (fehler) return { ok: false, fehler };
+      if (versTeilGesperrt(f.von)) return { ok: false, fehler: TEXT_VERSICHERUNG_TEIL_GESPERRT };
+      const r = await versInTeilAendern(f.von, (t) => erstattungSetzen(t, id, e, { heute }));
+      if (r.ok) await versKopienEntfernen(id, f.weitere.filter((w) => !gleicherTeil(w, f.von)));
+      return r.ok ? { ok: true, warnung } : r;
+    },
+
+    /**
+     * Rechnung `id` löschen (in ihrem Teil, dazu weitere Fassungen derselben Rechnung in anderen Teilen – sonst tauchte eine wieder
+     * auf). → { ok: true, rueckgaengig } | wie rechnungSpeichern; `rueckgaengig()` bringt genau diese Rechnung (wie sie im Kalender stand)
+     * an ihre alte Stelle im Teil ihres Rechnungsdatums zurück.
+     */
+    async rechnungLoeschen(id) {
+      const nichtBereit = await versBereit();
+      if (nichtBereit) return { ok: false, fehler: nichtBereit };
+      const f = versRechnungFinden(id);
+      if (!f) return { ok: false, fehler: TEXT_RECHNUNG_WEG };
+      if (versTeilGesperrt(f.von)) return { ok: false, fehler: TEXT_VERSICHERUNG_TEIL_GESPERRT };
+      let spur = null;
+      const r = await versInTeilAendern(f.von, (t) => {
+        const s = rechnungSpur(t, id);
+        if (!s) throw new Error(TEXT_RECHNUNG_WEG);
+        const neu = rechnungLoeschenRein(t, id);
+        spur = s; // auf der neuesten Fassung: das wirklich Gelöschte
+        return neu;
+      });
+      if (r.ok) await versKopienEntfernen(id, f.weitere);
+      const zurueck = async () => {
+        const nb = await versBereit();
+        if (nb) return { ok: false, fehler: nb };
+        const ziel = teilVonRechnung(spur.rechnung);
+        const stelle = gleicherTeil(ziel, f.von) ? spur : { rechnung: spur.rechnung, stelle: null };
+        return versInTeilAendern(ziel, (t) => rechnungWiederherstellen(t, stelle));
+      };
+      return mitRueckgaengig(r, spur ? zurueck : null);
+    },
+
     async einstellungen(teil) {
       const settings = normalizeSettings({ ...state.settings, ...teil });
       await aendere({ settings }, () => adapter.speichereSettings(teil));
@@ -2430,9 +3037,10 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
 
     async zuruecksetzen() {
       const daten = await adapter.zuruecksetzen();
-      state = { ...state, ...daten, schicht: daten.schicht ? schichtAusDaten(daten.schicht) : leererSchichtplan(), fixkosten: fixAusDaten(daten.fixkosten), ziele: daten.ziele ? zieleZustand(daten.ziele, 'geladen') : leererZieleZustand(), autos: daten.autos ? autosZustand(daten.autos, 'gespeichert') : leererAutosZustand(), geladen: true, fehler: null };
+      state = { ...state, ...daten, schicht: daten.schicht ? schichtAusDaten(daten.schicht) : leererSchichtplan(), fixkosten: fixAusDaten(daten.fixkosten), ziele: daten.ziele ? zieleZustand(daten.ziele, 'geladen') : leererZieleZustand(), autos: daten.autos ? autosZustand(daten.autos, 'gespeichert') : leererAutosZustand(), versicherung: daten.versicherung ? versicherungZustand(daten.versicherung, 'gespeichert') : leererVersicherungZustand(), geladen: true, fehler: null };
       fixGelesen = false; // vor dem nächsten Ändern erst aus dem (neuen) Speicher lesen
       autosGelesen = false;
+      versGelesen = false;
       melden();
       store.schichtVorladen(); // neue Beispieldaten: im Hintergrund wieder vorladen (wirft nicht)
     },

@@ -3,6 +3,8 @@
 import { leereListe, normalisiereListe } from '../domain/einkauf.js';
 import { leeresKonto, normalisiereKonto } from '../domain/konto.js';
 import { normalisiereShard } from '../domain/fixkosten.js';
+import { alleRechnungen } from '../domain/versicherung-rechnung.js';
+import { versicherungTeilId } from '../calendar/mapping.js';
 import { terminAnzeige } from './views/gemeinsam.js';
 
 export const SICHERUNG_VERSION = 1;
@@ -64,9 +66,34 @@ function autosSicherung(autos) {
   return { autos: d.autos ?? [], regeln: d.regeln ?? [], reifensaetze: d.saetze ?? [], verlauf, ...fremd, ...unlesbar, ...weitere };
 }
 
+/**
+ * Versicherung: die Polizze (wie im Zustand) und alle Rechnungen aller gelesenen Quartale in einer Liste, je Kennung einmal (die
+ * gültige Fassung, siehe rechnungenDesJahres), nach Rechnungsdatum sortiert. `versicherung` = { daten, teile, geschrieben?, rohtexte?,
+ * weitereTeile? } wie aus store.sicherungsDaten; ohne → leer. Was diese Version nicht versteht, fehlt nicht unbemerkt: `fremdeKategorien`
+ * (roh, Hauptteil), `fremdeRechnungen` = [{ id (Teil), eintraege }] (roh), `unlesbar` = [{ id, text }] Rohtexte unlesbarer Teile,
+ * `weitereTeile` = [{ id, text }] Quartal-Teile, die nicht gelesen wurden (bei unlesbarem Hauptteil alle), roh.
+ */
+function versicherungSicherung(v) {
+  const d = v?.daten ?? {};
+  const rechnungen = alleRechnungen(v?.teile ?? {}, { geschrieben: v?.geschrieben }).sort((a, b) => a.datum.localeCompare(b.datum) || a.id.localeCompare(b.id));
+  const fremdeRechnungen = Object.values(v?.teile ?? {})
+    .flatMap((quartale) => Object.values(quartale ?? {}))
+    .filter((t) => t?.fremd?.r?.length > 0)
+    .map((t) => ({ id: versicherungTeilId(t.jahr, t.quartal), eintraege: t.fremd.r }))
+    .sort((a, b) => a.id.localeCompare(b.id));
+  return {
+    polizze: d.polizze ?? null,
+    rechnungen,
+    ...(d.fremd?.k?.length > 0 ? { fremdeKategorien: d.fremd.k } : {}),
+    ...(fremdeRechnungen.length > 0 ? { fremdeRechnungen } : {}),
+    ...(Array.isArray(v?.rohtexte) && v.rohtexte.length > 0 ? { unlesbar: v.rohtexte.map(({ id, text }) => ({ id, text })) } : {}),
+    ...(Array.isArray(v?.weitereTeile) && v.weitereTeile.length > 0 ? { weitereTeile: v.weitereTeile.map(({ id, text }) => ({ id, text })) } : {}),
+  };
+}
+
 const nachDatum = (a, b) => a.date.localeCompare(b.date) || (a.time ?? '').localeCompare(b.time ?? '');
 
-/** Sicherung aus dem Zustand (`tage`, `urlaub`, `termine`, `settings`, `einkauf`, `konto`, `schicht`, `fixkosten`, `ziele`, `autos`); flüchtige Felder (Fehler, Fortschritt …) fehlen bewusst. */
+/** Sicherung aus dem Zustand (`tage`, `urlaub`, `termine`, `settings`, `einkauf`, `konto`, `schicht`, `fixkosten`, `ziele`, `autos`, `versicherung`); flüchtige Felder (Fehler, Fortschritt …) fehlen bewusst. */
 export function sicherungErstellen({ state, appVersion, jetzt = new Date() }) {
   return {
     app: 'familienkalender',
@@ -87,6 +114,7 @@ export function sicherungErstellen({ state, appVersion, jetzt = new Date() }) {
     fixkosten: fixSicherung(state.fixkosten),
     ziele: zieleSicherung(state.ziele),
     autos: autosSicherung(state.autos),
+    versicherung: versicherungSicherung(state.versicherung),
   };
 }
 
@@ -98,7 +126,7 @@ const zahl = (n, einzahl, mehrzahl) => `${n} ${n === 1 ? einzahl : mehrzahl}`;
 
 /**
  * „12 Tage · 3 Urlaube · 5 Termine · 4 Artikel auf der Einkaufsliste · 6 Kontostände · 4 Monate Schichtplan · 9 Fixkosten-Posten · 3 Sparziele“
- * (Schichtplan, Fixkosten, Sparziele und Autos nur, wenn es welche gibt)
+ * (Schichtplan, Fixkosten, Sparziele, Autos und Versicherung nur, wenn es welche gibt)
  */
 export function sicherungAnzahlText(s) {
   const kontoEintraege = Object.values(s.konto.p).reduce((summe, monate) => summe + Object.keys(monate).length, 0);
@@ -116,5 +144,9 @@ export function sicherungAnzahlText(s) {
   if (autos > 0) teile.push(zahl(autos, 'Auto', 'Autos'));
   if (s.autos?.unlesbar?.some((u) => u.id === 'fkautos')) teile.push('Autos unlesbar (als Text gesichert)');
   else if (s.autos?.unlesbar?.length > 0) teile.push('Autos teilweise unlesbar (als Text gesichert)');
+  const rechnungen = s.versicherung?.rechnungen?.length ?? 0;
+  if (s.versicherung?.polizze || rechnungen > 0) teile.push(`Versicherung (${zahl(rechnungen, 'Rechnung', 'Rechnungen')})`);
+  if (s.versicherung?.unlesbar?.some((u) => u.id === 'fkversicherung')) teile.push('Versicherung unlesbar (als Text gesichert)');
+  else if (s.versicherung?.unlesbar?.length > 0) teile.push('Versicherung teilweise unlesbar (als Text gesichert)');
   return teile.join(' · ');
 }

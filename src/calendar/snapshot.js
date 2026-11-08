@@ -8,6 +8,7 @@ import { normalisiereKatalog, normalisiereMonat } from '../domain/schicht.js';
 import { FIX_SHARDS, normalisiereShard } from '../domain/fixkosten.js';
 import { zieleLesen, zieleText } from '../domain/sparziele.js';
 import { autosLesen, autosText, historieLesen, historieText } from '../domain/autos.js';
+import { pruefeVersicherung, pruefeVersicherungTeil, versicherungTeilText, versicherungText } from '../domain/versicherung.js';
 import { TAGES_TYPEN, TYPES } from '../domain/types.js';
 
 export const SNAPSHOT_KEY = 'fk.snapshot.v1';
@@ -127,6 +128,54 @@ function autosFuerSnapshot(autos, { jahre = Infinity } = {}) {
   }
 }
 
+/**
+ * Versicherung nachsichtig lesen (nur eine Kopie; das Vorladen holt sie neu): gespeichert sind die Kalendertexte { text, teile: { [jahr]:
+ * { [quartal]: Text } }, geschrieben, unlesbar }, gelesen wie aus dem Kalender. Fehlt das (alter Schnappschuss) oder ist der Hauptteil
+ * unbrauchbar → null (= noch nicht gelesen), ohne den Rest zu verwerfen; ein unbrauchbarer Quartal-Teil fällt weg. `unlesbar` = beim
+ * letzten Lesen Unlesbares (nur zur Anzeige: auch offline gesperrt).
+ */
+function pruefeVersicherungSnapshot(roh) {
+  if (!istObjekt(roh) || typeof roh.text !== 'string') return null;
+  const haupt = pruefeVersicherung(roh.text);
+  if (haupt.unlesbar) return null;
+  const teile = {};
+  const geschrieben = {};
+  for (const [j, quartale] of Object.entries(istObjekt(roh.teile) ? roh.teile : {})) {
+    for (const [q, text] of Object.entries(istObjekt(quartale) ? quartale : {})) {
+      const jahr = Number(j);
+      const quartal = Number(q);
+      const g = typeof text === 'string' ? pruefeVersicherungTeil(text, { jahr, quartal }) : { unlesbar: true };
+      if (g.unlesbar) continue;
+      (teile[jahr] ??= {})[quartal] = g.teil;
+      const zeit = istObjekt(roh.geschrieben?.[j]) ? roh.geschrieben[j][q] : undefined;
+      if (typeof zeit === 'string') (geschrieben[jahr] ??= {})[quartal] = zeit;
+    }
+  }
+  const u = istObjekt(roh.unlesbar) ? roh.unlesbar : {};
+  const unlesbareTeile = (Array.isArray(u.teile) ? u.teile : []).filter((x) => Number.isInteger(x?.jahr) && Number.isInteger(x?.quartal)).map(({ jahr, quartal }) => ({ jahr, quartal }));
+  return { daten: haupt.daten, teile, geschrieben, unlesbar: { ...(u.main === true ? { main: true } : {}), teile: unlesbareTeile } };
+}
+
+/**
+ * Versicherung für den Schnappschuss: als Kalendertexte (kurz, mit fremden Einträgen); nur gelesene (Status 'geladen' oder
+ * 'gespeichert') – sonst null: dann behält speichern() die Versicherung des bisherigen Schnappschusses. `jahre` = nur die neuesten Jahre.
+ */
+function versicherungFuerSnapshot(v, { jahre = Infinity } = {}) {
+  if (v?.status !== 'geladen' && v?.status !== 'gespeichert') return null;
+  const stand = v.bestaetigt ?? v; // offene (z. B. auf die Anmeldung wartende) Änderungen gelten nicht als gespeichert
+  try {
+    const teile = {};
+    const neueste = Object.keys(stand.teile ?? {}).map(Number).sort((a, b) => b - a).slice(0, jahre);
+    for (const jahr of neueste) for (const [quartal, teil] of Object.entries(stand.teile[jahr] ?? {})) (teile[jahr] ??= {})[quartal] = versicherungTeilText(teil);
+    return { text: versicherungText(stand.daten), teile, geschrieben: v.geschrieben ?? {}, unlesbar: v.unlesbar ?? { teile: [] } };
+  } catch {
+    return null;
+  }
+}
+
+/** So viele Jahre bleiben von der Versicherung im Schnappschuss, wenn er sonst zu groß wäre (das laufende und das vorige Jahr). */
+export const SNAPSHOT_VERSICHERUNG_JAHRE = 2;
+
 /** So viele Jahre je Auto bleiben im Schnappschuss, wenn er sonst zu groß wäre (die längste Regel rechnet mit 48 Monaten). */
 export const SNAPSHOT_AUTOS_JAHRE = 5;
 
@@ -150,14 +199,14 @@ function pruefe(roh) {
     if (!istObjekt(t) || typeof t.id !== 'string' || !TERMIN_TYPEN.includes(t.typ) || !TYPES[t.typ] || !gueltigesDatum(t.date) || !Array.isArray(t.mitnehmen ?? [])) return null;
   }
   const fenster = istObjekt(roh.fenster) && gueltigesDatum(roh.fenster.von) && gueltigesDatum(roh.fenster.bis) ? { von: roh.fenster.von, bis: roh.fenster.bis } : null;
-  return { daten: { settings, tage: roh.tage, urlaub: roh.urlaub, termine: roh.termine, fenster, einkauf: normalisiereListe(roh.einkauf), konto: normalisiereKonto(roh.konto), schicht: pruefeSchicht(roh.schicht, new Date(roh.gespeichertAm).toISOString()), fixkosten: pruefeFixkosten(roh.fixkosten), ziele: pruefeZiele(roh.ziele), autos: pruefeAutos(roh.autos) }, gespeichertAm: roh.gespeichertAm };
+  return { daten: { settings, tage: roh.tage, urlaub: roh.urlaub, termine: roh.termine, fenster, einkauf: normalisiereListe(roh.einkauf), konto: normalisiereKonto(roh.konto), schicht: pruefeSchicht(roh.schicht, new Date(roh.gespeichertAm).toISOString()), fixkosten: pruefeFixkosten(roh.fixkosten), ziele: pruefeZiele(roh.ziele), autos: pruefeAutos(roh.autos), versicherung: pruefeVersicherungSnapshot(roh.versicherung) }, gespeichertAm: roh.gespeichertAm };
 }
 
 export function createSnapshot({ speicher = globalThis.localStorage ?? null, jetzt = () => new Date() } = {}) {
   return {
     /**
      * Speichert Tage, Urlaub, Termine und Einstellungen der letzten zwölf Monate, dazu die Schichtarten und von den geladenen Monaten
-     * des Schichtplans die sechs am nächsten zu `heute`, die vier Teile der Fixkosten, die Sparziele und die Autos (jeweils falls schon gelesen).
+     * des Schichtplans die sechs am nächsten zu `heute`, die vier Teile der Fixkosten, die Sparziele, die Autos und die Versicherung (jeweils falls schon gelesen).
      * Gibt true zurück, wenn gespeichert wurde.
      */
     speichern(state, heute) {
@@ -180,6 +229,15 @@ export function createSnapshot({ speicher = globalThis.localStorage ?? null, jet
           return null;
         }
       };
+      /** Die Versicherung des bisherigen Schnappschusses (roh, nur wenn brauchbar): solange keine frisch gelesene da ist, bleibt sie. */
+      const letzteVersicherung = () => {
+        try {
+          const alt = JSON.parse(speicher.getItem(SNAPSHOT_KEY))?.versicherung;
+          return pruefeVersicherungSnapshot(alt) ? alt : null;
+        } catch {
+          return null;
+        }
+      };
       const grenze = addDays(heute, -TAGE_ZURUECK);
       const roh = {
         v: 1,
@@ -196,11 +254,20 @@ export function createSnapshot({ speicher = globalThis.localStorage ?? null, jet
         fixkosten: state.fixkosten?.shards ? { shards: state.fixkosten.shards, unlesbar: state.fixkosten.unlesbar ?? [] } : null,
         ziele: zieleFuerSnapshot(state.ziele) ?? (state.ziele?.status === 'fehler' ? letzteZiele() : null), // höchstens ~6000 Zeichen (Kalendertext)
         autos: autosFuerSnapshot(state.autos) ?? letzteAutos(), // Kalendertexte: Hauptteil + je Auto und Jahr ein Teil (je ≤ 6000 Zeichen)
+        versicherung: versicherungFuerSnapshot(state.versicherung) ?? letzteVersicherung(), // Kalendertexte: Hauptteil + je Quartal ein Teil (je ≤ 6000 Zeichen)
       };
       let text = JSON.stringify(roh);
-      // zu groß (viele Jahre Verlauf): erst nur die neuesten Jahre je Auto, sonst ohne Autos – der Rest des Abbilds bleibt aktuell
-      if (text.length > MAX_SNAPSHOT_ZEICHEN && roh.autos) text = JSON.stringify({ ...roh, autos: autosFuerSnapshot(state.autos, { jahre: SNAPSHOT_AUTOS_JAHRE }) });
-      if (text.length > MAX_SNAPSHOT_ZEICHEN && roh.autos) text = JSON.stringify({ ...roh, autos: null });
+      // zu groß (viele Jahre Verlauf bzw. Rechnungen): erst nur die neuesten Jahre (je Auto, bei der Versicherung), sonst ohne Autos
+      // bzw. ohne Versicherung – der Rest des Abbilds bleibt aktuell
+      const kuerzen = (feld, wert) => {
+        if (text.length <= MAX_SNAPSHOT_ZEICHEN || !roh[feld]) return;
+        roh[feld] = wert();
+        text = JSON.stringify(roh);
+      };
+      kuerzen('autos', () => autosFuerSnapshot(state.autos, { jahre: SNAPSHOT_AUTOS_JAHRE }));
+      kuerzen('versicherung', () => versicherungFuerSnapshot(state.versicherung, { jahre: SNAPSHOT_VERSICHERUNG_JAHRE }));
+      kuerzen('autos', () => null);
+      kuerzen('versicherung', () => null);
       if (text.length > MAX_SNAPSHOT_ZEICHEN) return false;
       try {
         speicher.setItem(SNAPSHOT_KEY, text);

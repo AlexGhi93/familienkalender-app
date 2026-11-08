@@ -40,6 +40,13 @@ function versicherungAusSpeicher(roh) {
   return ok ? { text: roh.text, teile: Object.fromEntries(Object.entries(roh.teile).filter(([, t]) => typeof t === 'string')) } : { text: null, teile: {} };
 }
 
+/** Beispiel-Versicherung ({ daten, teile } im Zustandsformat) als Texte für den Speicher. */
+function versicherungZuSpeicher({ daten, teile }) {
+  const texte = {};
+  for (const quartale of Object.values(teile ?? {})) for (const t of Object.values(quartale)) texte[versicherungTeilId(t.jahr, t.quartal)] = versicherungTeilText(t);
+  return { text: versicherungText(daten), teile: texte };
+}
+
 /**
  * Wie leseVersicherung beim Google-Adapter, aus den Texten im Speicher. `geschrieben` bleibt leer: die Demo kennt keine Zeitstempel (nur
  * ein Telefon), bei doppelt stehenden Rechnungen gilt dann die Ersatzregel von rechnungenDesJahres.
@@ -101,12 +108,12 @@ export function createDemoAdapter({ speicher = globalThis.localStorage, jetzt = 
 
   function neuErzeugen() {
     const seed = seedDemo(todayVienna(jetzt()));
-    daten = { ...seed, ziele: zieleText(seed.ziele), autos: autosZuSpeicher(seed.autos), versicherung: versicherungAusSpeicher(null) }; // Sparziele und Autos wie im Kalender als Text (so verhält sich „unlesbar“ wie bei Google)
+    daten = { ...seed, ziele: zieleText(seed.ziele), autos: autosZuSpeicher(seed.autos), versicherung: versicherungZuSpeicher(seed.versicherung) }; // Sparziele, Autos und Versicherung wie im Kalender als Text (so verhält sich „unlesbar“ wie bei Google)
     sichern();
   }
 
-  /** Was laden() und zuruecksetzen() liefern: eine Kopie, Sparziele und Autos gelesen wie beim Google-Adapter. */
-  const nachAussen = () => ({ ...structuredClone(daten), ziele: zieleGelesen(daten.ziele), autos: autosGelesen(daten.autos) });
+  /** Was laden() und zuruecksetzen() liefern: eine Kopie, Sparziele, Autos und Versicherung gelesen wie beim Google-Adapter. */
+  const nachAussen = () => ({ ...structuredClone(daten), ziele: zieleGelesen(daten.ziele), autos: autosGelesen(daten.autos), versicherung: versicherungGelesen(daten.versicherung, versicherungBis(jetzt())) });
 
   return {
     istDemo: true, // der Store erlaubt „Beispieldaten entfernen“ nur mit einem Adapter, der das von sich sagt

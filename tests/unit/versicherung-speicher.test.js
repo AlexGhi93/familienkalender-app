@@ -285,11 +285,15 @@ describe('Demo-Adapter: Versicherung', () => {
     assert.equal(JSON.parse(speicher.getItem(KEY)).versicherung.text, '{kaputt');
   });
 
-  test('zuruecksetzen: die Versicherung ist danach leer (Beispieldaten folgen in Task 2)', async () => {
+  test('zuruecksetzen: die Versicherung ist danach wieder die der Beispieldaten (Polizze „Mia“, zwei Rechnungen)', async () => {
     const a = createDemoAdapter({ speicher: speicherAttrappe(), jetzt: JETZT });
     await a.laden();
-    await a.aendereVersicherung((d) => polizzeAnlegen(d, P));
-    await a.zuruecksetzen();
+    await a.aendereVersicherung(() => leereVersicherung());
     assert.equal((await a.leseVersicherung()).daten.polizze, null);
+    const z = await a.zuruecksetzen();
+    assert.equal(z.versicherung.daten.polizze.person, 'Mia', 'zuruecksetzen liefert sie gelesen wie leseVersicherung');
+    const g = await a.leseVersicherung();
+    assert.equal(g.daten.polizze.person, 'Mia');
+    assert.equal(Object.values(g.teile).flatMap((q) => Object.values(q)).flatMap((t) => t.rechnungen).length, 2);
   });
 });

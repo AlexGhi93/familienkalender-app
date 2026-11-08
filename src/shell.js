@@ -84,6 +84,7 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
   let zumAnfang = false; // nach dem Wechsel auf eine Seite der Autos oben beginnen
   let fixAngefragt = false; // wurden die Fixkosten beim Öffnen ihrer Ansicht schon gelesen? (zurückgesetzt beim Verlassen)
   let zieleAngefragt = false; // wurden die Sparziele beim Öffnen ihrer Ansicht schon gelesen? (zurückgesetzt beim Verlassen)
+  let versicherungAngefragt = false; // wurde die Versicherung beim Öffnen ihrer Ansicht schon frisch gelesen? (zurückgesetzt beim Verlassen)
   let autosAngefragt = false; // wurden die Autos beim Öffnen ihrer Seite schon frisch gelesen? (zurückgesetzt beim Verlassen)
   const versionPruefen = async () => {
     if (neueVersion || !(await istNeueVersionVerfuegbar({ aktuell: VERSION }))) return;
@@ -182,6 +183,8 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
         else fixAngefragt = false; // beim nächsten Öffnen der Fixkosten frisch lesen
         if (seite === 'konto' && ui.kontoAnsicht === 'sparziele') ui.zieleLaden();
         else zieleAngefragt = false; // beim nächsten Öffnen der Sparziele frisch lesen
+        if (seite === 'konto' && ui.kontoAnsicht === 'versicherung') ui.versicherungLesen();
+        else versicherungAngefragt = false; // beim nächsten Öffnen der Versicherung frisch lesen (das andere Telefon könnte etwas eingereicht haben)
         if (seite === 'autos') ui.autosLesen();
         else autosAngefragt = false; // beim nächsten Öffnen frisch lesen (das andere Telefon könnte etwas eingetragen haben)
       }
@@ -232,6 +235,12 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
       if (autosAngefragt) return;
       autosAngefragt = true;
       Promise.resolve().then(() => store.autosLaden?.()).catch(() => {}); // erst nach dem laufenden Zeichnen
+    },
+    /** Versicherung beim Öffnen ihrer Ansicht einmal frisch lesen (Fehler stehen im Status, der letzte Stand bleibt sichtbar). */
+    versicherungLesen() {
+      if (versicherungAngefragt) return;
+      versicherungAngefragt = true;
+      Promise.resolve().then(() => store.versicherungLaden?.()).catch(() => {}); // erst nach dem laufenden Zeichnen
     },
     /** Ansicht des Konto-Tabs wechseln („kontostand“ | „fixkosten“ | „sparziele“) und auf diesem Telefon merken. */
     setzeKontoAnsicht(ansicht) {
@@ -362,9 +371,17 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
     vorgeladen: () => (store.getState().autos.frisch ? todayVienna(store.jetzt()).slice(0, 7) : null),
     monat: () => todayVienna(store.jetzt()).slice(0, 7),
   });
+  // ebenso die Versicherung (Polizze und Rechnungen): eigenes Wiederholen, das Push-Tor wartet nie auf sie
+  const versicherungVorlader = createSchichtVorlader({
+    bereit: () => (auth ? googleBereit() : store.getState().geladen),
+    vorladen: () => Promise.resolve().then(() => store.versicherungLaden()),
+    vorgeladen: () => (store.getState().versicherung.frisch ? todayVienna(store.jetzt()).slice(0, 7) : null),
+    monat: () => todayVienna(store.jetzt()).slice(0, 7),
+  });
   const schichtVorladenAnstossen = (optionen) => {
     schichtVorlader.anstossen(optionen);
     autosVorlader.anstossen(optionen);
+    versicherungVorlader.anstossen(optionen);
   };
 
   const schichtAbgleich = createSchichtAbgleich({

@@ -22,6 +22,14 @@ describe('nurHintergrundGeaendert', () => {
     assert.equal(nurHintergrundGeaendert(basis, mitSchicht, { seite: 'schicht', kontoAnsicht: 'kontostand' }), false);
   });
 
+  test('Versicherung gelesen (Hintergrund): nur in der Konto-Ansicht „Versicherung“ neu zeichnen – „Mehr“ und Heute bleiben, wie sie sind', () => {
+    const mitVers = { ...basis, versicherung: { status: 'laedt' } };
+    const danach = { ...basis, versicherung: { status: 'geladen' } };
+    for (const seite of ['mehr', 'heute', 'monat']) assert.equal(nurHintergrundGeaendert(mitVers, danach, { seite, kontoAnsicht: 'versicherung' }), true, seite);
+    assert.equal(nurHintergrundGeaendert(mitVers, danach, { seite: 'konto', kontoAnsicht: 'kontostand' }), true);
+    assert.equal(nurHintergrundGeaendert(mitVers, danach, { seite: 'konto', kontoAnsicht: 'versicherung' }), false);
+  });
+
   test('etwas anderes geändert (z. B. der Kontostand) oder gar nichts: neu zeichnen wie immer', () => {
     assert.equal(nurHintergrundGeaendert(basis, { ...mitFix, konto: { v: 2 } }, { seite: 'konto', kontoAnsicht: 'kontostand' }), false);
     assert.equal(nurHintergrundGeaendert(basis, basis, { seite: 'konto', kontoAnsicht: 'kontostand' }), false);

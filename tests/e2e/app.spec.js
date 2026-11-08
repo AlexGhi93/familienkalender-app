@@ -56,7 +56,7 @@ test('Sicherung: vorbereiten zeigt „Bereit“, Datei speichern lädt das JSON 
   await starteDemo(page, { route: '#/app' });
   const karte = page.locator('article.karte').filter({ has: page.getByRole('heading', { name: 'Sicherung' }) });
   await karte.getByRole('button', { name: 'Sicherung vorbereiten' }).click();
-  await expect(karte.locator('.sichern-bereit p')).toHaveText(/^Bereit: \d+ Tage · 2 Urlaube · 8 Termine · 4 Artikel auf der Einkaufsliste · 10 Kontostände · 3 Monate Schichtplan · 13 Fixkosten-Posten · 3 Sparziele · 2 Autos\.$/);
+  await expect(karte.locator('.sichern-bereit p')).toHaveText(/^Bereit: \d+ Tage · 2 Urlaube · 8 Termine · 4 Artikel auf der Einkaufsliste · 10 Kontostände · 3 Monate Schichtplan · 13 Fixkosten-Posten · 3 Sparziele · 2 Autos · Versicherung \(2 Rechnungen\)\.$/);
   const speichern = karte.getByRole('button', { name: 'Datei speichern (familienkalender-sicherung-2026-10-14.json)' });
   const [download] = await Promise.all([page.waitForEvent('download'), speichern.click()]);
   expect(download.suggestedFilename()).toBe('familienkalender-sicherung-2026-10-14.json');

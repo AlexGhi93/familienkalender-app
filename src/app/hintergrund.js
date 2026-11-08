@@ -1,4 +1,4 @@
-// Was im Hintergrund vorgeladen oder nachgelesen wird (Schichtplan, Fixkosten, Sparziele, Autos), zeichnet nur die Ansicht neu, die es zeigt.
+// Was im Hintergrund vorgeladen oder nachgelesen wird (Schichtplan, Fixkosten, Sparziele, Autos, Versicherung), zeichnet nur die Ansicht neu, die es zeigt.
 // Sonst ginge z. B. beim Eintippen des Kontostands die Tastatur zu, sobald das Vorladen der Fixkosten oder das Nachlesen der Sparziele
 // fertig ist (Neuzeichnen nimmt den Fokus).
 import { todayVienna } from '../domain/dates.js';
@@ -18,6 +18,8 @@ const SICHTBAR = {
   // Autos: auf ihrer Seite immer; auf Heute nur, wenn sich die Karte „🚗 Auto“ ändert (Laden, gleiche Daten, Nicht-Fälliges → nicht)
   // (in „Mehr“ nie: dort beschriftet die Shell nur die Marke „N fällig“ neu, siehe ui.autosMarkeZeichnen)
   autos: ({ seite, heute }, a, b) => seite === 'autos' || (seite === 'heute' && autoKarte(a, heute) !== autoKarte(b, heute)),
+  // Versicherung: nur in ihrer Konto-Ansicht (keine Karte auf Heute, keine Marke in „Mehr“)
+  versicherung: ({ seite, kontoAnsicht }) => seite === 'konto' && kontoAnsicht === 'versicherung',
 };
 
 /** Unterscheiden sich zwei Zustände nur in vorgeladenen Teilen, die gerade nicht zu sehen sind? (Dann nicht neu zeichnen.) */

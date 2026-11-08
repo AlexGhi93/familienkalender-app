@@ -389,12 +389,13 @@ describe('Einstellungen und Sicherung', () => {
     await store.laden();
     const d = await store.sicherungsDaten();
     const s = store.getState();
-    const { schicht, fixkosten, ziele, autos, ...rest } = d;
+    const { schicht, fixkosten, ziele, autos, versicherung, ...rest } = d;
     assert.deepEqual(rest, { settings: s.settings, tage: s.tage, urlaub: s.urlaub, termine: s.termine, einkauf: s.einkauf, konto: s.konto });
     assert.deepEqual(Object.keys(schicht), ['katalog', 'monate']); // Inhalt: siehe „Schichtplan“
     assert.deepEqual(Object.keys(fixkosten), ['shards', 'unlesbar']); // Inhalt: siehe fixkosten-store.test.js
     assert.deepEqual(Object.keys(ziele), ['daten', 'unlesbar', 'text']); // Inhalt: siehe sparziele-store.test.js
     assert.deepEqual(Object.keys(autos), ['daten', 'historie', 'rohtexte', 'weitereTeile']); // Inhalt: siehe autos-store.test.js
+    assert.deepEqual(Object.keys(versicherung), ['daten', 'teile', 'geschrieben', 'rohtexte', 'weitereTeile']); // Inhalt: siehe versicherung-store.test.js
   });
 });
 

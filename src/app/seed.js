@@ -6,6 +6,7 @@ import { leererMonat, setzeNotiz, setzeSchicht, standardKatalog, tageImMonat, zu
 import { FIX_SHARDS, leererShard, postenSetzen, shardFuer } from '../domain/fixkosten.js';
 import { ZIEL_EMOJIS } from '../domain/sparziele.js';
 import { arbeitSetzen, autoAnlegen, autoAusVorlage, historieJahrEintragen, kmEintragen, leereAutos, leereHistorie, monatPlus } from '../domain/autos.js';
+import { leererVersicherungTeil, leereVersicherung, polizzeAnlegen, polizzeAusVorlage, quartalVon, rechnungSetzen, versicherungJahrEintragen } from '../domain/versicherung.js';
 import { naechsterKitaTag, wochenSerie } from './serie.js';
 
 const MUSTER = ['kita_essen', 'kita_essen', 'kita_essen', 'kita_ohne', 'kita_essen', 'kita_essen', 'kita_essen', 'kita_essen'];
@@ -126,7 +127,8 @@ export function seedDemo(heute) {
   const fixkosten = fixkostenDemo(monatVor);
   const ziele = zieleDemo(monatVor);
   const autos = autosDemo(heute);
-  return { settings, tage, urlaub, termine: [...termine, ...sachenDemo({ settings, tage, urlaub }, heute)], einkauf, konto, schicht, fixkosten, ziele, autos };
+  const versicherung = versicherungDemo(heute);
+  return { settings, tage, urlaub, termine: [...termine, ...sachenDemo({ settings, tage, urlaub }, heute)], einkauf, konto, schicht, fixkosten, ziele, autos, versicherung };
 }
 
 // Papa: Blöcke aus 4 Diensten, dann 2 Tage frei (fortlaufend über Monatsgrenzen); jeder Block mit anderen Arten.
@@ -296,4 +298,36 @@ function autosDemo(heute) {
     historie[s.auto][j] = kmEintragen(historie[s.auto][j], s, { heute });
   }
   return { daten, historie };
+}
+
+/** Beginn der Beispiel-Polizze (fest, wie die Polizze, die die Familie abgeschlossen hat – ohne Polizzennummer). */
+const DEMO_VERSICHERUNG_BEGINN = '2026-10-20';
+
+/**
+ * Erfundene Versicherung für die Demo: Polizze „MedPLUS Privatarzt Basic“ aus der Vorlage für das Kind „Mia“ (Beginn 20.10.2026, keine
+ * Polizzennummer) und zwei kleine Medikamenten-Rechnungen – eine schon erstattet (80 %), eine offen. Die Daten liegen relativ zu `heute`
+ * (nie in der Zukunft) und, wenn möglich, nicht vor dem Beginn; liegt `heute` selbst davor (Aufnahmen vom 14.10.2026), einige Wochen
+ * zurück. → { daten, teile: { [jahr]: { [quartal]: Teil } } } im Zustandsformat; der Demo-Adapter speichert es als Kalendertext.
+ */
+function versicherungDemo(heute) {
+  const polizze = polizzeAusVorlage('medplusBasic', { person: 'Mia', beginn: DEMO_VERSICHERUNG_BEGINN }, { zufall: festerZufall(41) });
+  const frueheste = heute >= DEMO_VERSICHERUNG_BEGINN ? DEMO_VERSICHERUNG_BEGINN : addDays(heute, -60);
+  const tag = (n) => {
+    const d = addDays(heute, -n);
+    return d < frueheste ? frueheste : d;
+  };
+  const rechnungen = [
+    { id: 'demovr01', kategorie: 'medi', datum: tag(21), betragCent: 1520, eingereichtAm: tag(20), erstattetCent: 1216, erstattetAm: tag(6), stelle: 'Apotheke' },
+    { id: 'demovr02', kategorie: 'medi', datum: tag(5), betragCent: 1980, eingereichtAm: tag(4), stelle: 'Apotheke' },
+  ];
+  let daten = polizzeAnlegen(leereVersicherung(), polizze);
+  const teile = {};
+  for (const r of rechnungen) {
+    const jahr = Number(r.datum.slice(0, 4));
+    const quartal = quartalVon(r.datum);
+    daten = versicherungJahrEintragen(daten, jahr);
+    teile[jahr] ??= {};
+    teile[jahr][quartal] = rechnungSetzen(teile[jahr][quartal] ?? leererVersicherungTeil(jahr, quartal), r, { heute, polizze });
+  }
+  return { daten, teile };
 }
