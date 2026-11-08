@@ -29,7 +29,7 @@ const ziel = (id, mehr = {}) => ({ id, name: `Ziel ${id}`, emoji: '🎯', zielCe
 
 describe('Ansicht im Konto-Tab: drei Stellungen', () => {
   test('Sparziele wird gemerkt; Unsinn bleibt Kontostand', () => {
-    assert.deepEqual([...KONTO_ANSICHTEN], ['kontostand', 'fixkosten', 'sparziele']);
+    assert.deepEqual([...KONTO_ANSICHTEN], ['kontostand', 'fixkosten', 'sparziele', 'versicherung']);
     const s = speicherAttrappe();
     assert.equal(kontoAnsichtSpeichern('sparziele', s), 'sparziele');
     assert.equal(kontoAnsichtLesen(s), 'sparziele');

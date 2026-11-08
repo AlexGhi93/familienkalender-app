@@ -73,7 +73,7 @@
 
 /* Umschalter: Rinne mit Glastropfen (::before) unter der Wahl; nach dem Umschalten gleitet er von --kt-von herüber: der Stelle, an der
    er gerade stand (px, aus src/ui/fixkosten-screen.js), sonst der Stelle der vorigen Ansicht (data-von). --kt-seit (≤ 0) lässt ein
-   Neuzeichnen mitten im Gleiten an derselben Stelle weiterlaufen. Die drei Knöpfe sind gleich breit (flex: 1, 4 px Abstand):
+   Neuzeichnen mitten im Gleiten an derselben Stelle weiterlaufen. Die vier Knöpfe sind gleich breit (flex: 1, 4 px Abstand):
    Stelle = Index × (eigene Breite + 4 px). */
 :root[data-aussehen='glas'] .konto-segment {
   position: relative;
@@ -91,7 +91,7 @@
   top: var(--kt-seg-rand);
   bottom: var(--kt-seg-rand);
   left: var(--kt-seg-rand);
-  width: calc((100% - 2 * var(--kt-seg-rand) - 8px) / 3);
+  width: calc((100% - 2 * var(--kt-seg-rand) - 12px) / 4);
   border-radius: var(--r-chip);
   pointer-events: none;
   transform: translateX(var(--kt-nach, 0px));
@@ -120,6 +120,16 @@
 :root[data-aussehen='glas'] .konto-segment[data-von='sparziele'],
 :root[data-aussehen='bento'] .konto-segment[data-von='sparziele'] {
   --kt-von: calc(200% + 8px);
+}
+
+:root[data-aussehen='glas'] .konto-segment:has(> .konto-segment-knopf.aktiv:nth-child(4)),
+:root[data-aussehen='bento'] .konto-segment:has(> .konto-segment-knopf.aktiv:nth-child(4)) {
+  --kt-nach: calc(300% + 12px);
+}
+
+:root[data-aussehen='glas'] .konto-segment[data-von='versicherung'],
+:root[data-aussehen='bento'] .konto-segment[data-von='versicherung'] {
+  --kt-von: calc(300% + 12px);
 }
 
 :root[data-aussehen='glas'] .konto-segment-knopf.aktiv,

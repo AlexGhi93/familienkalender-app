@@ -228,6 +228,32 @@ test('Sparziele: Formular', async ({ page }) => {
   await foto(page, 'sparziel-formular', { ganz: false });
 });
 
+// Versicherung (1.4.0): neue Bildschirme – ihre Basis entstand mit dem Stand von Task 3 (nicht in 097adc4, dort gab es sie nicht)
+test('Konto: Versicherung', async ({ page }) => {
+  await starteDemo(page, { route: '#/konto/versicherung' });
+  await expect(ansichtKonto(page, 'Versicherung')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: '＋ Rechnung einreichen' })).toBeVisible();
+  await foto(page, 'konto-versicherung');
+});
+
+test('Versicherung: Rechnung ändern (Blatt)', async ({ page }) => {
+  await starteDemo(page, { route: '#/konto/versicherung' });
+  await page.locator('.vs-liste .au-eintrag').first().click();
+  await expect(page.getByRole('dialog', { name: '🧾 Rechnung ändern' })).toBeVisible();
+  await foto(page, 'versicherung-rechnung', { ganz: false });
+});
+
+test('Versicherung: ohne Polizze', async ({ page }) => {
+  await starteDemo(page, { route: '#/konto/kontostand' });
+  await page.getByRole('button', { name: 'Beispieldaten entfernen' }).click();
+  await page.getByRole('dialog', { name: 'Beispieldaten entfernen?' }).getByRole('button', { name: 'Entfernen' }).click();
+  await expect(page.locator('.toast').filter({ hasText: 'Beispieldaten entfernt' })).toBeVisible();
+  await ansichtKonto(page, 'Versicherung').click();
+  await expect(page.locator('.vs-leer')).toBeVisible();
+  await page.evaluate(() => document.querySelectorAll('.toast').forEach((t) => t.remove()));
+  await foto(page, 'versicherung-leer');
+});
+
 test('Sachen-Formular (mit gesperrtem Knopf am Zähler)', async ({ page }) => {
   await starteDemo(page, { route: '#/neu' });
   await page.locator('.kacheln .kachel').filter({ has: page.locator('b', { hasText: /^Sachen für Krabbelstube$/ }) }).click();

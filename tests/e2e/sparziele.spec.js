@@ -33,7 +33,7 @@ async function oeffneSparziele(page, optionen = {}) {
 test.describe('Sparziele im Konto-Tab (Demo)', () => {
   test('Umschalter mit drei Stellungen: gemerkt nach dem Neuladen; #/konto/sparziele; Kontostand und Fixkosten unverändert', async ({ page }) => {
     await starteDemo(page, { route: '#/konto' });
-    await expect(umschalter(page).getByRole('button')).toHaveText(['Kontostand', 'Fixkosten', 'Sparziele']);
+    await expect(umschalter(page).getByRole('button')).toHaveText(['Kontostand', 'Fixkosten', 'Sparziele', 'Versicherung']);
     await umschalter(page).getByRole('button', { name: 'Sparziele' }).click();
     await expect(page.getByRole('heading', { name: 'Sparziele 💶' })).toBeVisible();
     await expect(page).toHaveTitle('Familienkalender · Sparziele');

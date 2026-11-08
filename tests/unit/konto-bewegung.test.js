@@ -124,11 +124,11 @@ describe('Konto-Umschalter: data-von nur direkt nach dem Umschalten', () => {
     assert.equal(bilder.length, 0, 'nichts läuft');
   });
 
-  test('die drei Knöpfe bleiben gleich (Reihenfolge, aria-pressed)', () => {
+  test('die vier Knöpfe bleiben gleich (Reihenfolge, aria-pressed; 1.4.0: „Versicherung“ als vierter)', () => {
     const el = kontoUmschalter({ kontoAnsicht: 'fixkosten', seiteBetreten: true });
     assert.deepEqual(
       el.kinder.map((k) => [k.kinder[0].text, k.getAttribute('aria-pressed')]),
-      [['Kontostand', 'false'], ['Fixkosten', 'true'], ['Sparziele', 'false']],
+      [['Kontostand', 'false'], ['Fixkosten', 'true'], ['Sparziele', 'false'], ['Versicherung', 'false']],
     );
   });
 });

@@ -136,7 +136,7 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
     neu: { auswahl: null },
     urlaubJahr: 0, // gewähltes Kindergartenjahr auf der Urlaub-Seite (0 = aktuelles)
     schicht: { jm: store.heute().slice(0, 7), filter: schichtFilterLesen(), pinsel: null }, // angezeigter Monat, Filter (je Telefon gemerkt), Pinsel
-    kontoAnsicht: kontoAnsichtLesen(), // „Kontostand“, „Fixkosten“ oder „Sparziele“ im Konto-Tab (je Telefon gemerkt)
+    kontoAnsicht: kontoAnsichtLesen(), // „Kontostand“, „Fixkosten“, „Sparziele“ oder „Versicherung“ im Konto-Tab (je Telefon gemerkt)
     fixFilter: 'alle', // Filter der Fixkosten (Alle · Papa · Mama · Gemeinsam · Kind)
     verlauf: { typ: 'alle', jahr: null, text: '', von: null, laedt: false }, // Filter und geladener Bereich des Verlaufs
     titel: () => 'Familienkalender',
@@ -192,7 +192,7 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
       fenster.scrollTo(0, zumAnfang ? 0 : scrollY);
       zumAnfang = false;
       fuelle(leiste, TABS.map(([id, symbol, text]) => tab(id, symbol, text, seite)));
-      const kontoTitel = { fixkosten: 'Fixkosten', sparziele: 'Sparziele' }[ui.kontoAnsicht];
+      const kontoTitel = { fixkosten: 'Fixkosten', sparziele: 'Sparziele', versicherung: 'Versicherung' }[ui.kontoAnsicht];
       const seitenTitel = seite === 'konto' && kontoTitel ? kontoTitel : (SEITEN_TITEL[seite] ?? TABS.find(([id]) => id === seite)?.[2]);
       document.title = `${ui.titel()} · ${seitenTitel}`;
       einkaufAbgleich.pruefen(); // Einkaufsliste offen (und Google verbunden): alle 30 Sekunden nachsehen, sonst nicht
@@ -242,7 +242,7 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
       versicherungAngefragt = true;
       Promise.resolve().then(() => store.versicherungLaden?.()).catch(() => {}); // erst nach dem laufenden Zeichnen
     },
-    /** Ansicht des Konto-Tabs wechseln („kontostand“ | „fixkosten“ | „sparziele“) und auf diesem Telefon merken. */
+    /** Ansicht des Konto-Tabs wechseln („kontostand“ | „fixkosten“ | „sparziele“ | „versicherung“) und auf diesem Telefon merken. */
     setzeKontoAnsicht(ansicht) {
       ui.kontoAnsicht = kontoAnsichtSpeichern(ansicht);
       ui.rendern();
@@ -390,7 +390,7 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
   });
 
   /**
-   * `#/konto/kontostand`, `#/konto/fixkosten` bzw. `#/konto/sparziele` (Ziel der Erinnerungen und Links): wählt die Ansicht, merkt sie und lässt in der Adresse nur
+   * `#/konto/kontostand`, `#/konto/fixkosten`, `#/konto/sparziele` bzw. `#/konto/versicherung` (Ziel der Erinnerungen und Links): wählt die Ansicht, merkt sie und lässt in der Adresse nur
    * `#/konto` stehen (ohne neuen Verlaufseintrag), damit „Zurück“ und die Tab-Leiste wie gewohnt funktionieren.
    */
   function kontoUnterseiteUebernehmen() {

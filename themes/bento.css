@@ -345,7 +345,7 @@
 }
 
 :root[data-aussehen='bento'] .konto-segment-knopf {
-  font-size: 0.94rem;
+  font-size: clamp(0.8125rem, calc((100cqw - 12px) / 26), 0.94rem); /* vier Knöpfe: siehe .konto-segment-knopf in theme.css */
 }
 
 /* die Wahl selbst (Blob als ::before) zeichnet themes/konto.css */

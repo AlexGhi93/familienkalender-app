@@ -25,7 +25,7 @@ const DUNKEL_MEDIA = variablen(block("@media (prefers-color-scheme: dark) {\n  :
 const DUNKEL_ATTR = variablen(block(":root[data-theme='dark'] {"));
 const KOPF = css.slice(0, css.indexOf('*/') + 2);
 const OHNE_KOMMENTARE = css.replace(/\/\*[\s\S]*?\*\//g, '');
-const THEMEN_DATEIEN = ['themes/glas.css', 'themes/bento.css', 'themes/monat.css', 'themes/schicht.css', 'themes/konto.css', 'themes/formulare.css', 'themes/mehr.css', 'themes/autos.css'];
+const THEMEN_DATEIEN = ['themes/glas.css', 'themes/bento.css', 'themes/monat.css', 'themes/schicht.css', 'themes/konto.css', 'themes/formulare.css', 'themes/mehr.css', 'themes/autos.css', 'themes/versicherung.css'];
 
 /** Inhalt der Regel, deren Selektor genau `selektor` ist (am Zeilenanfang, erste Fundstelle). */
 function regelVon(selektor) {

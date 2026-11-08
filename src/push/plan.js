@@ -11,13 +11,14 @@ import { datumAnzeige } from '../domain/eingabe.js';
 import { terminAnzeige } from '../app/views/gemeinsam.js';
 import { urlaubChecksWunsch } from '../app/urlaub-check.js';
 import { autosUebersichten, erinnerungText, erinnerungsTage } from '../app/views/autos-faellig.js';
+import { VERSICHERUNG_ZIEL, versicherungTermine } from '../app/views/versicherung-model.js';
 import { bytesZuB64u } from './base64url.js';
 
 const TYPEN = ['arzt', 'familie', 'kita_sache', 'urlaub_check'];
 const STUNDE = 3600_000;
 // Sekunden, die der Push-Server von Google/Apple die Nachricht für ein Telefon ohne Netz aufhebt: kommt es rechtzeitig wieder ins Netz, wird sie noch zugestellt
 // („1 Stunde vorher“ nur bis kurz vor dem Termin, danach wäre sie sinnlos).
-const TTL = { tag: 21600, stunde: 3300, vortag: 21600, abend: 14400, konto: 10800, konto2: 5400, frist: 21600, auto30: 21600, auto7: 21600, auto0: 21600, autoUeber: 21600, saison: 21600, radmuttern: 21600 };
+const TTL = { tag: 21600, stunde: 3300, vortag: 21600, abend: 14400, konto: 10800, konto2: 5400, frist: 21600, auto30: 21600, auto7: 21600, auto0: 21600, autoUeber: 21600, saison: 21600, radmuttern: 21600, versOffen: 21600, versJahr: 21600 };
 // Monatlich kündbare Verträge bekommen keine Erinnerung (sonst jeden Monat eine): Regel `monatlichKuendbar` in domain/fixkosten.js.
 
 async function kennung(terminId, art) {
@@ -203,6 +204,33 @@ async function autoErinnerungen(state, von, bis) {
 }
 
 /**
+ * Versicherung (Privatarzt, Spec §6), an BEIDE Telefone (ohne `nur`), um 09:00 (Wien), öffnet die Ansicht „Versicherung“ im Konto-Tab:
+ * „Erstattung … noch offen?“ 30 Tage nach dem Einreichen (einmal je Rechnung, fällt mit der eingetragenen Erstattung weg) und am 01.12.
+ * „Bis 31.12. noch X €“, nur wenn noch etwas erstattbar ist (Tage und Texte: app/views/versicherung-model.js `versicherungTermine`).
+ * Kennung = Rechnung bzw. Jahr und Art: bleibt bei Neuberechnung gleich, auf beiden Telefonen. Nur aus frisch gelesenen Daten
+ * (`state.versicherung.frisch`, sonst keine – der übrige Plan wartet nie auf die Versicherung) und aus dem zuletzt GESPEICHERTEN Stand
+ * (`bestaetigt`). Nichts hier darf den übrigen Plan verhindern.
+ */
+async function versicherungErinnerungen(state, von, bis) {
+  const v = state.versicherung;
+  if (v?.frisch !== true) return [];
+  const plan = [];
+  try {
+    for (const t of versicherungTermine(v, todayVienna(new Date(von)))) {
+      try {
+        const um = wienZuInstant(t.tag, '09:00');
+        if (um > von && um <= bis) plan.push({ id: await kennung(t.schluessel, t.art), um, art: t.art, titel: t.titel, text: t.text, ttl: TTL[t.art], ziel: VERSICHERUNG_ZIEL });
+      } catch {
+        // diese eine Erinnerung lässt sich nicht planen: die anderen trotzdem
+      }
+    }
+  } catch {
+    // unbrauchbare Versicherung im Zustand: ohne ihre Erinnerungen weiter
+  }
+  return plan;
+}
+
+/**
  * Wovon der Plan abhängt, oder null = noch nicht senden: erst nach dem frischen Laden (nie aus dem gespeicherten Stand) und erst, wenn der
  * Schichtplan für den laufenden Monat (Wien, `jetzt`) vorgeladen ist; sonst fehlten im Plan Erinnerungen an Zusätze (oder, nach dem
  * Monatswechsel bei offener App, die des neuen dritten Monats), und der Push-Dienst würde sie löschen. Gilt für jeden Weg, auf dem der
@@ -210,13 +238,16 @@ async function autoErinnerungen(state, von, bis) {
  * store.schichtVorladen). Der bloße Ladestatus zählt nicht, nur Schichtarten, Monate und die Teile der Fixkosten. Autos: nur `frisch` (Wahrheitswert) und – wenn
  * frisch – Hauptteil und Verlauf (`bestaetigt`, solange eigene Änderungen offen sind), nie das ganze `state.autos`: ein scheiterndes Lesen
  * erzeugt jedes Mal ein neues Objekt, das sonst einen Abgleich nach dem anderen auslöste (Re-Review T2 N6). Die Autos halten den Plan nie auf.
+ * Versicherung ebenso: nur `frisch` und – wenn frisch – Hauptteil und Quartal-Teile (`bestaetigt`, solange eigene Änderungen offen sind)
+ * samt `geschrieben` (entscheidet bei doppelten Fassungen); sie hält den Plan nie auf.
  */
 export function planQuellen(state, jetzt = new Date()) {
   if (!state?.geladen || state.nurSnapshot) return null;
   const monat = todayVienna(jetzt).slice(0, 7);
   if (state.schicht?.vorgeladen !== monat) return null;
   const autos = state.autos?.frisch === true ? (state.autos.bestaetigt ?? state.autos) : null;
-  return [state.termine, state.settings, state.urlaub, state.konto, state.schicht.katalog, state.schicht.monate, state.fixkosten?.shards ?? null, autos !== null, autos?.daten ?? null, autos?.historie ?? null, monat];
+  const vers = state.versicherung?.frisch === true ? (state.versicherung.bestaetigt ?? state.versicherung) : null;
+  return [state.termine, state.settings, state.urlaub, state.konto, state.schicht.katalog, state.schicht.monate, state.fixkosten?.shards ?? null, autos !== null, autos?.daten ?? null, autos?.historie ?? null, vers !== null, vers?.daten ?? null, vers?.teile ?? null, vers ? (state.versicherung.geschrieben ?? null) : null, monat];
 }
 
 /** Hat sich seit dem letzten Senden (`vorher`, null = noch nie) etwas geändert, wovon der Plan abhängt? */
@@ -235,7 +266,7 @@ function nurFuer(t, settings) {
 }
 
 /**
- * Plan der nächsten `tage` Tage: [{ id, um (ms), art: 'tag'|'stunde'|'vortag'|'abend'|'konto'|'konto2'|'frist'|'auto30'|'auto7'|'auto0'|'autoUeber'|'saison'|'radmuttern', titel, text, ttl, ziel?, nur? }], sortiert nach Zeitpunkt.
+ * Plan der nächsten `tage` Tage: [{ id, um (ms), art: 'tag'|'stunde'|'vortag'|'abend'|'konto'|'konto2'|'frist'|'auto30'|'auto7'|'auto0'|'autoUeber'|'saison'|'radmuttern'|'versOffen'|'versJahr', titel, text, ttl, ziel?, nur? }], sortiert nach Zeitpunkt.
  * Die `id` hängt nur an Termin und Art (nicht am Zeitpunkt), damit zwei Telefone denselben Plan ohne Doppelungen schicken.
  * `nur` ('papa' | 'mama'): nur an die Telefone dieser Person (und an Telefone ohne Angabe, siehe meldungen.js).
  */
@@ -274,5 +305,6 @@ export async function planeErinnerungen(state, { jetzt = new Date(), tage = 60 }
   plan.push(...(await zusatzErinnerungen(state, von, bis)));
   plan.push(...(await fristErinnerungen(state, von, bis)));
   plan.push(...(await autoErinnerungen(state, von, bis)));
+  plan.push(...(await versicherungErinnerungen(state, von, bis)));
   return plan.sort((a, b) => a.um - b.um || a.id.localeCompare(b.id));
 }

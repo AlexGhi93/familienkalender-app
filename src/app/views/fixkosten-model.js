@@ -23,10 +23,10 @@ import { datumAnzeige } from '../../domain/eingabe.js';
 import { monatText } from '../format-de.js';
 import { kontoModel } from './konto-model.js';
 
-// ---------------------------------------------------------------- gemerkte Ansicht (Kontostand · Fixkosten · Sparziele)
+// ---------------------------------------------------------------- gemerkte Ansicht (Kontostand · Fixkosten · Sparziele · Versicherung)
 
 export const KONTO_ANSICHT_SCHLUESSEL = 'fk.konto.ansicht.v1';
-export const KONTO_ANSICHTEN = Object.freeze(['kontostand', 'fixkosten', 'sparziele']);
+export const KONTO_ANSICHTEN = Object.freeze(['kontostand', 'fixkosten', 'sparziele', 'versicherung']);
 const gueltigeAnsicht = (wert) => (KONTO_ANSICHTEN.includes(wert) ? wert : 'kontostand');
 
 /** Die zuletzt gewählte Ansicht des Konto-Tabs auf diesem Telefon; ohne Eintrag (oder ohne Speicher) „Kontostand“. Wirft nie. */

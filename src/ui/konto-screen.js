@@ -1,5 +1,5 @@
-// Registerkarte „Konto“ mit dem Umschalter „Kontostand · Fixkosten · Sparziele“ (gemerkt je Telefon); die Fixkosten stehen in
-// fixkosten-screen.js, die Sparziele in sparziele-screen.js.
+// Registerkarte „Konto“ mit dem Umschalter „Kontostand · Fixkosten · Sparziele · Versicherung“ (gemerkt je Telefon); die Fixkosten stehen in
+// fixkosten-screen.js, die Sparziele in sparziele-screen.js, die Versicherung in versicherung-screen.js.
 // Seite „Kontostand“: am letzten Tag des Monats tragen Papa und Mama ihren Gesamtstand ein; darunter die Ersparnis je Monat
 // (auch „ohne Extra“, wenn Sonderbeträge wie Weihnachtsgeld dabei waren). Alle Texte kommen als Text in die Seite, nie als HTML.
 // Beträge erscheinen nur hier, nie in Benachrichtigungen.
@@ -10,6 +10,7 @@ import { balkenDiagramm, bereichLeiste, kacheln, verlaufDiagramm } from './konto
 import { MAX_EXTRA_TEXT, betragText, centsAusText } from '../domain/konto.js';
 import { fixkostenInhalt, kontoUmschalter } from './fixkosten-screen.js';
 import { kontoBesuchBeginnt, sparzieleInhalt } from './sparziele-screen.js';
+import { versicherungInhalt } from './versicherung-screen.js';
 import { geloeschtMelden, sicherLoeschen } from './fortschritt.js';
 
 const GRUEN = '#2F9E5B';
@@ -435,6 +436,9 @@ export function kontoScreen({ store, ui }) {
   }
   if (ui.kontoAnsicht === 'sparziele') {
     return h('section', { class: 'screen konto sparziele' }, h('h1', { class: 'gruss' }, 'Sparziele 💶'), kontoUmschalter(ui), sparzieleInhalt({ store, ui }));
+  }
+  if (ui.kontoAnsicht === 'versicherung') {
+    return h('section', { class: 'screen konto versicherung' }, h('h1', { class: 'gruss' }, 'Versicherung 🩺'), kontoUmschalter(ui), versicherungInhalt({ store, ui }));
   }
   const demo = ui.konto?.modus === 'demo';
   const m = kontoModel(store.getState(), store.heute(), { demo, monat: demoMonat, nachtragMonat, bereich });

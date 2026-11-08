@@ -1,4 +1,4 @@
-// Ansicht „Fixkosten“ im Konto-Tab (Umschalter „Kontostand · Fixkosten · Sparziele“ oben): Kopf mit Ø pro Monat, im Jahr, diesen Monat fällig und
+// Ansicht „Fixkosten“ im Konto-Tab (Umschalter „Kontostand · Fixkosten · Sparziele · Versicherung“ oben): Kopf mit Ø pro Monat, im Jahr, diesen Monat fällig und
 // Ø Ersparnis aus dem Kontostand; Filter je Person mit Teilsumme; „Diesen Monat fällig“ (ohne offen/bezahlt – wird automatisch
 // abgebucht); Listen je Kategorie; Kündigungsfristen; Fixkosten und Ersparnis; Archiv. Alle Zahlen kommen aus fixkosten-model.js,
 // alle Texte als Text in die Seite (nie als HTML). Ein Tipp auf einen Posten öffnet das Formular (fixkosten-formular.js).
@@ -12,6 +12,7 @@ const ANSICHTEN = [
   ['kontostand', 'Kontostand'],
   ['fixkosten', 'Fixkosten'],
   ['sparziele', 'Sparziele'],
+  ['versicherung', 'Versicherung'],
 ];
 
 let gezeichneteAnsicht = null; // zuletzt gezeichnete Ansicht im Konto-Tab (für data-von)

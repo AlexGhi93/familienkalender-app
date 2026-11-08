@@ -236,8 +236,11 @@ function vignetteAbschnitt(m, ctx) {
   );
 }
 
-/** Wischen nach links gibt „Löschen“ frei; ein Tipp auf die (offene) Zeile schließt sie wieder bzw. öffnet das Blatt zum Ändern. */
-function wischbar(huelle, zeile, loeschen) {
+/**
+ * Wischen nach links gibt „Löschen“ frei; ein Tipp auf die (offene) Zeile schließt sie wieder bzw. öffnet das Blatt zum Ändern.
+ * Auch für die Rechnungen der Versicherung (versicherung-screen.js; dieselben Klassen au-wisch / au-wisch-loeschen).
+ */
+export function wischbar(huelle, zeile, loeschen) {
   let start = null;
   let offen = false;
   const setze = (auf) => {

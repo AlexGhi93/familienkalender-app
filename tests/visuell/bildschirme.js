@@ -121,6 +121,69 @@ export const BILDSCHIRME = [
     },
   },
   {
+    name: 'konto-versicherung',
+    titel: 'Konto: Versicherung',
+    oeffne: async (p) => {
+      await starteDemo(p, { route: '#/konto/versicherung' });
+      await p.getByRole('button', { name: '＋ Rechnung einreichen' }).waitFor();
+    },
+  },
+  {
+    name: 'versicherung-rechnung',
+    titel: 'Versicherung: Rechnung ändern',
+    blatt: true,
+    oeffne: async (p) => {
+      await starteDemo(p, { route: '#/konto/versicherung' });
+      await p.locator('.vs-liste .au-eintrag').first().click();
+      await p.getByRole('dialog', { name: '🧾 Rechnung ändern' }).waitFor();
+    },
+  },
+  {
+    name: 'versicherung-einreichen',
+    titel: 'Versicherung: Rechnung einreichen (Limit überschritten)',
+    blatt: true,
+    oeffne: async (p) => {
+      await starteDemo(p, { route: '#/konto/versicherung' });
+      await p.getByRole('button', { name: '＋ Rechnung einreichen' }).click();
+      const b = p.getByRole('dialog', { name: '＋ Rechnung einreichen' });
+      await b.getByRole('combobox', { name: 'Kategorie' }).selectOption({ label: 'Heilbehelfe' });
+      await b.getByRole('textbox', { name: 'Betrag in Euro' }).fill('230');
+      await b.locator('.vs-vorschau:not([hidden])').waitFor();
+    },
+  },
+  {
+    name: 'versicherung-erstattung',
+    titel: 'Versicherung: Erstattung erhalten',
+    blatt: true,
+    oeffne: async (p) => {
+      await starteDemo(p, { route: '#/konto/versicherung' });
+      await p.locator('.vs-liste .au-eintrag').first().click();
+      await p.getByRole('dialog', { name: '🧾 Rechnung ändern' }).getByRole('button', { name: '✓ Erstattung erhalten' }).click();
+      await p.getByRole('dialog', { name: '✓ Erstattung erhalten' }).waitFor();
+    },
+  },
+  {
+    name: 'versicherung-polizze',
+    titel: 'Versicherung: Polizze bearbeiten',
+    blatt: true,
+    oeffne: async (p) => {
+      await starteDemo(p, { route: '#/konto/versicherung' });
+      await p.getByRole('button', { name: 'Polizze bearbeiten' }).click();
+      await p.getByRole('dialog', { name: 'Polizze bearbeiten' }).waitFor();
+    },
+  },
+  {
+    name: 'versicherung-leer',
+    titel: 'Versicherung: ohne Polizze',
+    oeffne: async (p) => {
+      await starteDemo(p, { route: '#/konto/kontostand' });
+      await p.getByRole('button', { name: 'Beispieldaten entfernen' }).click();
+      await p.getByRole('dialog', { name: 'Beispieldaten entfernen?' }).getByRole('button', { name: 'Entfernen' }).click();
+      await ansichtKonto(p, 'Versicherung').click();
+      await p.locator('.vs-leer').waitFor();
+    },
+  },
+  {
     name: 'fixkosten-formular',
     titel: 'Konto: Fixkosten-Formular',
     blatt: true,

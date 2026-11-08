@@ -1,0 +1,251 @@
+/* Glas & Licht und Bento bunt: versicherung (nur unter :root[data-aussehen="glas"] bzw. [data-aussehen="bento"]; Klassisch unberührt).
+   Bereich: Konto → „Versicherung“ (Jahr ‹ JJJJ ›, Gesamt mit Balken, Karten je Kategorie, Rechnungen) und ihre Blätter (Rechnung,
+   Erstattung, Polizze). Die Balken sind die der Sparziele (.sz-balken in themes/konto.css, Farbe über --sz-farbe), die Zeilen der
+   Rechnungen die des Verlaufs der Autos (.au-wisch / .au-eintrag in themes/autos.css) – hier nur, was die Versicherung anders macht.
+   Stand immer als Zeichen + Wort (⏳ eingereicht, ✓ erstattet, ⚠ Limit überschritten), nie nur Farbe.
+   Text ≥ 16 px, kleine Etiketten ≥ 13 px, Ziele ≥ 44 px, Kontrast ≥ 4,5:1 (tests/visuell/kontrast.mjs, Task 4). */
+
+/* ---------- 1. Tokens ---------- */
+
+/* --vs-offen / --vs-erstattet: Fläche der Pillen „⏳ eingereicht“ / „✓ erstattet“; --vs-…-ink: Schrift darauf (≥ 4,5:1) */
+:root[data-aussehen='glas'] {
+  --vs-offen: rgba(214, 112, 20, 0.16);
+  --vs-offen-rand: rgba(214, 112, 20, 0.5);
+  --vs-erstattet: rgba(29, 140, 102, 0.16);
+  --vs-erstattet-rand: rgba(29, 140, 102, 0.45);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-aussehen='glas']:not([data-theme='light']) {
+    --vs-offen: rgba(255, 170, 90, 0.17);
+    --vs-offen-rand: rgba(255, 170, 90, 0.5);
+    --vs-erstattet: rgba(63, 211, 155, 0.16);
+    --vs-erstattet-rand: rgba(63, 211, 155, 0.45);
+  }
+}
+
+:root[data-aussehen='glas'][data-theme='dark'] {
+  --vs-offen: rgba(255, 170, 90, 0.17);
+  --vs-offen-rand: rgba(255, 170, 90, 0.5);
+  --vs-erstattet: rgba(63, 211, 155, 0.16);
+  --vs-erstattet-rand: rgba(63, 211, 155, 0.45);
+}
+
+:root[data-aussehen='bento'] {
+  --vs-offen: #c2410c;
+  --vs-offen-ink: #ffffff;
+  --vs-erstattet: #0b7a52;
+  --vs-erstattet-ink: #ffffff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-aussehen='bento']:not([data-theme='light']) {
+    --vs-offen: #ff8d66;
+    --vs-offen-ink: #2a0d03;
+    --vs-erstattet: #3fd39b;
+    --vs-erstattet-ink: #032a1b;
+  }
+}
+
+:root[data-aussehen='bento'][data-theme='dark'] {
+  --vs-offen: #ff8d66;
+  --vs-offen-ink: #2a0d03;
+  --vs-erstattet: #3fd39b;
+  --vs-erstattet-ink: #032a1b;
+}
+
+/* ---------- 2. Gemeinsam (Glas und Bento) ---------- */
+
+:root[data-aussehen='glas'] .versicherung .jahr-wahl,
+:root[data-aussehen='bento'] .versicherung .jahr-wahl {
+  padding: 8px;
+  border-radius: 30px;
+}
+
+:root[data-aussehen='glas'] .versicherung .jahr-titel,
+:root[data-aussehen='bento'] .versicherung .jahr-titel {
+  gap: 0;
+}
+
+:root[data-aussehen='glas'] .versicherung .jahr-wahl .rund,
+:root[data-aussehen='bento'] .versicherung .jahr-wahl .rund {
+  font-size: 1.625rem;
+}
+
+:root[data-aussehen='glas'] .versicherung .jahr-titel b,
+:root[data-aussehen='bento'] .versicherung .jahr-titel b {
+  font-family: var(--font-titel);
+  font-size: 1.25rem;
+  font-variant-numeric: tabular-nums;
+}
+
+:root[data-aussehen='glas'] .vs-gesamt,
+:root[data-aussehen='bento'] .vs-gesamt {
+  font-size: 1rem;
+}
+
+:root[data-aussehen='glas'] .vs-kopf .vs-balken,
+:root[data-aussehen='bento'] .vs-kopf .vs-balken {
+  margin-top: 4px;
+}
+
+:root[data-aussehen='glas'] .vs-pille,
+:root[data-aussehen='bento'] .vs-pille {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 0.875rem;
+}
+
+:root[data-aussehen='glas'] .vs-warnung,
+:root[data-aussehen='bento'] .vs-warnung {
+  font-size: 0.9375rem;
+}
+
+:root[data-aussehen='glas'] .vs-hinweis,
+:root[data-aussehen='bento'] .vs-hinweis {
+  font-size: 0.9375rem;
+}
+
+:root[data-aussehen='glas'] .vs-kat-zeile,
+:root[data-aussehen='bento'] .vs-kat-zeile {
+  padding: 12px 14px;
+  border-radius: 20px;
+}
+
+/* ---------- 3. Glas ---------- */
+
+/* Jahreswahl als Glasfläche mit runden Glasknöpfen (wie beim Urlaub) */
+:root[data-aussehen='glas'] .versicherung .jahr-wahl {
+  border: 1px solid var(--glas-kante);
+  background: linear-gradient(165deg, var(--glas-hoch), var(--karte) 75%);
+  box-shadow: var(--schatten-karte);
+}
+
+:root[data-aussehen='glas'] .versicherung .jahr-wahl .rund {
+  border: 1px solid var(--glas-kante);
+  background: color-mix(in srgb, var(--akzent) 10%, var(--glas-stark));
+  box-shadow: inset 0 1px 0 var(--glas-kante);
+  font-weight: 700;
+}
+
+:root[data-aussehen='glas'] .versicherung .jahr-titel b {
+  font-weight: 750;
+  letter-spacing: -0.015em;
+}
+
+:root[data-aussehen='glas'] .vs-gesamt-wort {
+  font-weight: 650;
+}
+
+:root[data-aussehen='glas'] .vs-kat {
+  gap: 8px;
+}
+
+:root[data-aussehen='glas'] .vs-pille {
+  border: 1px solid var(--c);
+  background: var(--f);
+  color: var(--ink);
+  font-weight: 650;
+}
+
+:root[data-aussehen='glas'] .vs-pille.eingereicht {
+  --c: var(--vs-offen-rand);
+  --f: var(--vs-offen);
+}
+
+:root[data-aussehen='glas'] .vs-pille.erstattet {
+  --c: var(--vs-erstattet-rand);
+  --f: var(--vs-erstattet);
+}
+
+:root[data-aussehen='glas'] .vs-kat.ueber {
+  border-color: color-mix(in srgb, var(--gefahr) 55%, var(--glas-kante));
+}
+
+:root[data-aussehen='glas'] .vs-vorschau {
+  border-radius: 16px;
+  font-weight: 700;
+}
+
+/* ---------- 4. Bento ---------- */
+
+/* Jahreswahl: weiße Kachel, runde lila Knöpfe */
+:root[data-aussehen='bento'] .versicherung .jahr-wahl {
+  background: var(--karte);
+  box-shadow: var(--lippe);
+}
+
+:root[data-aussehen='bento'] .versicherung .jahr-wahl .rund {
+  width: 48px;
+  height: 48px;
+  border: 0;
+  background: var(--knopf-auf-tint);
+  color: var(--ink);
+  font-weight: 900;
+}
+
+:root[data-aussehen='bento'] .versicherung .jahr-wahl .rund:disabled {
+  background: var(--karte-2);
+  color: var(--ink-2);
+}
+
+:root[data-aussehen='bento'] .versicherung .jahr-titel b {
+  font-weight: 600;
+}
+
+/* Kategorien: jede Kachel getönt in der Farbe ihres Balkens (--sz-farbe; überschritten: rot), wie die Sparziele */
+:root[data-aussehen='bento'] .vs-kat {
+  gap: 8px;
+  border-radius: 28px;
+  background: color-mix(in srgb, var(--sz-farbe, var(--akzent)) 12%, var(--karte));
+  box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--sz-farbe, var(--akzent)) 30%, transparent);
+}
+
+:root[data-aussehen='bento'] .vs-kat .fk-klein {
+  color: var(--ink);
+}
+
+:root[data-aussehen='bento'] .vs-pille {
+  border: 0;
+  box-shadow: inset 0 -2px 0 rgb(0 0 0 / 0.14);
+  font-weight: 800;
+}
+
+:root[data-aussehen='bento'] .vs-pille.eingereicht {
+  background: var(--vs-offen);
+  color: var(--vs-offen-ink);
+}
+
+:root[data-aussehen='bento'] .vs-pille.erstattet {
+  background: var(--vs-erstattet);
+  color: var(--vs-erstattet-ink);
+}
+
+:root[data-aussehen='bento'] .vs-vorschau {
+  border: 0;
+  border-radius: 18px;
+  box-shadow: var(--lippe);
+}
+
+:root[data-aussehen='bento'] .vs-leer h3,
+:root[data-aussehen='bento'] .vs-kat-titel {
+  font-family: var(--font-titel);
+}
+
+/* ---------- 5. Bewegung (nur ohne „Reduziert“ und ohne prefers-reduced-motion) ---------- */
+
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .versicherung .rund,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .versicherung .rund {
+    transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .versicherung .rund:active,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .versicherung .rund:active {
+    transform: scale(0.9);
+    transition-duration: 0.08s;
+  }
+}

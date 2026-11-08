@@ -4049,7 +4049,10 @@ html:has(.screen.einkauf) {
   font-size: 0.8rem;
 }
 
-/* ---------- Konto: Umschalter „Kontostand · Fixkosten · Sparziele“ ---------- */
+/* ---------- Konto: Umschalter „Kontostand · Fixkosten · Sparziele · Versicherung“ ----------
+   Vier gleich breite Knöpfe (Glas/Bento rechnen die Stelle des Tropfens/Blobs daraus, themes/konto.css). Damit „Versicherung“ auch auf
+   einem 375 px breiten Telefon in eine Zeile passt, wächst die Schrift mit der Breite des Umschalters (100cqw): ≈ 1/26 der Breite eines
+   Knopfs pro Zeichenhöhe, nie unter 13 px (kleine Etiketten), nie über die bisherige Größe. */
 
 .konto-segment {
   display: flex;
@@ -4057,19 +4060,22 @@ html:has(.screen.einkauf) {
   padding: 4px;
   border-radius: var(--r-chip);
   background: color-mix(in srgb, var(--akzent) 14%, var(--karte));
+  container-type: inline-size;
 }
 
 .konto-segment-knopf {
   flex: 1;
   min-width: 0;
   min-height: 44px;
-  padding: 0 4px;
+  padding: 0;
   border: 0;
   border-radius: var(--r-chip);
   background: transparent;
   color: var(--ink-2);
   font-weight: 800;
-  font-size: 0.9rem;
+  font-size: clamp(0.8125rem, calc((100cqw - 12px) / 26), 0.9rem);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
 }
 
 .konto-segment-knopf.aktiv {
@@ -5378,6 +5384,166 @@ html:has(.screen.einkauf) {
 
 .au-datenschutz {
   font-size: 0.85rem;
+}
+
+/* ---------- Versicherung (src/ui/versicherung-screen.js, versicherung-formular.js) ----------
+   Konto → „Versicherung“: Jahr ‹ JJJJ ›, Gesamt „Noch X € von Y €“ mit Balken (die Balken sind die der Sparziele, .sz-balken, Farbe über
+   --sz-farbe), eine Karte je Kategorie, Rechnungen als Zeilen der Autos (.au-wisch / .au-eintrag, nach links wischen = Löschen).
+   Stand immer als Zeichen + Wort (⏳ eingereicht, ✓ erstattet, ⚠ Limit überschritten). Glas und Bento würzen das in themes/versicherung.css. */
+
+.vs-jahr {
+  margin-top: 2px;
+}
+
+.vs-kopf {
+  gap: 6px;
+}
+
+.vs-gesamt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 6px;
+  margin: 2px 0 0;
+}
+
+.vs-gesamt-wort {
+  font-weight: 800;
+  color: var(--ink-2);
+}
+
+.vs-kat {
+  gap: 6px;
+}
+
+.vs-info {
+  margin-top: -4px;
+}
+
+.vs-stand {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.vs-pille {
+  padding: 2px 9px;
+  border-radius: 8px;
+  border: 1px solid var(--c, var(--linie));
+  background: color-mix(in srgb, var(--c, var(--linie)) 16%, var(--karte));
+  color: var(--ink);
+  font-size: 0.85rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.vs-pille.eingereicht {
+  --c: var(--abwesend);
+}
+
+.vs-pille.erstattet {
+  --c: var(--kita);
+}
+
+.vs-warnung {
+  color: var(--gefahr);
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.vs-status {
+  font-weight: 700;
+}
+
+.vs-status.erstattet {
+  color: var(--ink);
+}
+
+.vs-offen {
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.vs-betrag {
+  font-variant-numeric: tabular-nums;
+}
+
+.vs-hinweis {
+  margin: 0;
+  padding: 10px 12px;
+  font-size: 0.9rem;
+}
+
+.vs-neu {
+  width: 100%;
+}
+
+.vs-leer {
+  gap: 10px;
+}
+
+.vs-anlegen {
+  flex-wrap: wrap;
+}
+
+.vs-polizze-knoepfe {
+  justify-content: center;
+}
+
+/* Formulare */
+
+.vs-vorschau {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: var(--r-zeile);
+  border: 1px solid var(--gefahr);
+  background: color-mix(in srgb, var(--gefahr) 10%, var(--karte));
+  color: var(--ink);
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.vs-vorschau[hidden] {
+  display: none;
+}
+
+.vs-erstattung-box {
+  gap: 4px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+}
+
+.vs-erstattung-box.erstattet {
+  border-color: color-mix(in srgb, var(--kita) 60%, transparent);
+  background: color-mix(in srgb, var(--kita) 10%, var(--karte));
+}
+
+.vs-kat-liste {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.vs-kat-zeile {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--r-zeile);
+  border: var(--rand) solid var(--linie);
+  background: color-mix(in srgb, var(--akzent) 5%, var(--karte));
+}
+
+.vs-kat-unten {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.vs-kat-weg {
+  min-height: 46px;
 }
 
 /* ---------- Bewegung (1.2.0, src/ui/bewegung.js): Effekte nur in Glas und Bento, nur mit Bewegung ----------
