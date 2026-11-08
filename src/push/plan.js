@@ -206,7 +206,7 @@ async function autoErinnerungen(state, von, bis) {
 /**
  * Versicherung (Privatarzt, Spec §6), an BEIDE Telefone (ohne `nur`), um 09:00 (Wien), öffnet die Ansicht „Versicherung“ im Konto-Tab:
  * „Erstattung … noch offen?“ 30 Tage nach dem Einreichen (einmal je Rechnung, fällt mit der eingetragenen Erstattung weg) und am 01.12.
- * „Bis 31.12. noch X €“, nur wenn noch etwas erstattbar ist (Tage und Texte: app/views/versicherung-model.js `versicherungTermine`).
+ * „Bis 31.12. noch Rest bei …“ (nur die Kategorien, nie ein Betrag – E1), nur wenn noch etwas erstattbar ist (Tage und Texte: app/views/versicherung-model.js `versicherungTermine`).
  * Kennung = Rechnung bzw. Jahr und Art: bleibt bei Neuberechnung gleich, auf beiden Telefonen. Nur aus frisch gelesenen Daten
  * (`state.versicherung.frisch`, sonst keine – der übrige Plan wartet nie auf die Versicherung) und aus dem zuletzt GESPEICHERTEN Stand
  * (`bestaetigt`). Nichts hier darf den übrigen Plan verhindern.

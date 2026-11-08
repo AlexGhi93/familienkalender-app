@@ -345,7 +345,8 @@ export function entwurfZuPolizze(e) {
  *  - 'versOffen': `eingereichtAm` + 30 Tage, solange keine Erstattung eingetragen ist – einmal je Rechnung (Schlüssel = Rechnung); mit der
  *    Erstattung fällt sie beim nächsten Plan weg. Liegt der Tag schon zurück (z. B. spät nachgetragen), kommt keine mehr.
  *  - 'versJahr': 01.12. des laufenden und des nächsten Jahres, nur wenn bis 31.12. noch etwas erstattbar ist (Rest > 0) und die Polizze
- *    in dem Jahr schon läuft; nennt den Rest und die Kategorien mit Rest (kurz, höchstens drei).
+ *    in dem Jahr schon läuft; nennt nur die Kategorien mit Rest (kurz, höchstens drei), NIE einen Betrag (E1: keine Beträge in
+ *    Benachrichtigungen). Beide Arten rechnen mit denselben Schreibzeiten (`v.geschrieben`, Review T3 M3): `bestaetigt` hat keine.
  * Wirft nie (unbrauchbare Daten → []).
  */
 export function versicherungTermine(v, heute) {
@@ -362,7 +363,7 @@ export function versicherungTermine(v, heute) {
     for (const jahr of [jetzt, jetzt + 1]) {
       const tag = `${jahr}-12-01`;
       if (tag < heute || (istDatum(polizze.beginn) && polizze.beginn > `${jahr}-12-31`)) continue;
-      const text = jahresendeText(polizze, jahresStand(polizze, rechnungenJahr(teil, jahr), jahr));
+      const text = jahresendeText(polizze, jahresStand(polizze, rechnungenJahr({ teile: teil.teile, geschrieben: v.geschrieben }, jahr), jahr));
       if (text) termine.push({ schluessel: `vers-jahr-${jahr}`, art: 'versJahr', tag, titel: '🩺 Versicherung', text });
     }
     return termine;
@@ -374,13 +375,14 @@ export function versicherungTermine(v, heute) {
 /** „Erstattung für Rechnung vom 12.10. (Medikamente) noch offen?“ */
 export const offenText = (polizze, rechnung) => `Erstattung für Rechnung vom ${kurzDatum(rechnung.datum)} (${kategorieKurz(polizze, rechnung.kategorie)}) noch offen?`;
 
-/** „Bis 31.12. noch 3.109,60 € (Privatarzt, Physiotherapie, Psychotherapie …)“ – null, wenn nichts mehr erstattbar ist. */
+/** „Bis 31.12. noch Rest bei Privatarzt, Physiotherapie, Psychotherapie …“ – ohne Betrag (E1); null, wenn nichts mehr erstattbar ist. */
 export function jahresendeText(polizze, s) {
   const rest = erstattbarerRest(s);
   if (!s || rest <= 0) return null;
   const mitRest = s.kategorien.filter((k) => k.restCent > 0).map((k) => kategorieKurz(polizze, k.id));
+  if (!mitRest.length) return null;
   const liste = mitRest.length > 3 ? `${mitRest.slice(0, 3).join(', ')} …` : mitRest.join(', ');
-  return `Bis 31.12. noch ${betragText(rest)} (${liste})`;
+  return `Bis 31.12. noch Rest bei ${liste}`;
 }
 
 /** Tage bis zur Erinnerung „noch offen?“ (für den Hinweis im Blatt). */
