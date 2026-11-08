@@ -2,7 +2,7 @@
 // fixkosten-screen.js, die Sparziele in sparziele-screen.js, die Versicherung in versicherung-screen.js.
 // Seite „Kontostand“: am letzten Tag des Monats tragen Papa und Mama ihren Gesamtstand ein; darunter die Ersparnis je Monat
 // (auch „ohne Extra“, wenn Sonderbeträge wie Weihnachtsgeld dabei waren). Alle Texte kommen als Text in die Seite, nie als HTML.
-// Beträge erscheinen nur in der App, nie in Benachrichtigungen (auch die Versicherung nennt dort nur Kategorien, E1).
+// Beträge erscheinen nur in der App, nie in Benachrichtigungen (die Versicherung nennt dort weder Beträge noch Kategorien).
 import { fuelle, h, svg } from './dom.js';
 import { abschnitt, bestaetigen, blatt, chip, farbe, toast } from './components.js';
 import { kontoModel } from '../app/views/konto-model.js';

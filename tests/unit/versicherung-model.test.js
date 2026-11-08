@@ -84,7 +84,7 @@ describe('Versicherungs-Erinnerungen im Push-Plan (Spec §6)', () => {
 
   test('Jahresende: 01.12. 09:00 nennt nur die Kategorien mit Rest (höchstens drei, dann …), OHNE Betrag (E1)', async () => {
     const plan = await versPlan(mitVers(versTeil({ rechnungen: [r('rech0001', { erstattetCent: 1216, erstattetAm: '2026-11-05' })] })), '2026-11-08T08:00:00+01:00');
-    assert.deepEqual(kurz(plan), [['2026-12-01T08:00:00.000Z', 'versJahr', 'Bis 31.12. noch Rest bei Privatarzt, Physiotherapie, Psychotherapie …']]);
+    assert.deepEqual(kurz(plan), [['2026-12-01T08:00:00.000Z', 'versJahr', 'Bis 31.12. noch Rest bei der Versicherung – jetzt nachsehen.']]);
     assert.equal(plan[0].ziel, VERSICHERUNG_ZIEL);
   });
 
@@ -103,9 +103,23 @@ describe('Versicherungs-Erinnerungen im Push-Plan (Spec §6)', () => {
     for (const k of P.kategorien) assert.equal(plan[0].text.includes(kategorieKurz(P, k.id)), false, k.id);
   });
 
+  test('Jahresende ohne Kategorien (wie M5): keine Gesundheitsangabe auf dem Sperrbildschirm, egal welche Kategorie Rest hat', async () => {
+    for (const k of P.kategorien) {
+      const andere = P.kategorien.filter((x) => x.id !== k.id).map((x, i) => r(`voll000${i}`, { kategorie: x.id, betragCent: x.limitCent }));
+      const plan = nurArt('versJahr', await versPlan(mitVers(versTeil({ rechnungen: andere })), '2026-11-08T08:00:00+01:00'));
+      assert.equal(plan.length, 1, k.id);
+      for (const x of P.kategorien) {
+        assert.equal(plan[0].text.includes(kategorieKurz(P, x.id)), false, `${k.id}: ${x.id}`);
+        assert.equal(plan[0].text.includes(x.name), false, `${k.id}: ${x.name}`);
+      }
+    }
+  });
+
   test('M3: das Jahresende nutzt dieselben Schreibzeiten wie „noch offen“, auch aus dem gespeicherten Stand (bestaetigt)', () => {
     // Fassungen gleich, beide falsch abgelegt (Q1 und Q2 statt Q4): nur die Schreibzeit entscheidet – Q1 wurde zuletzt geschrieben.
-    const voll = ['arzt', 'physio', 'psycho'].map((id, i) => r(`voll000${i}`, { kategorie: id, betragCent: P.kategorien.find((k) => k.id === id).limitCent }));
+    // Ohne Kategorien im Text: der Unterschied zeigt sich daran, OB eine Erinnerung kommt. Alles voll bis auf Medikamente; die neuere
+    // Fassung (Medikamente voll) gilt → nichts mehr erstattbar → keine; gälte die ältere (Heilbehelfe, schon voll), käme eine.
+    const voll = ['arzt', 'physio', 'psycho', 'heil'].map((id, i) => r(`voll000${i}`, { kategorie: id, betragCent: P.kategorien.find((k) => k.id === id).limitCent }));
     const basis = versTeil({ rechnungen: voll });
     const neuer = r('dopp0001', { kategorie: 'medi', betragCent: 41500 });
     const alter = r('dopp0001', { kategorie: 'heil', betragCent: 22400 });
@@ -113,7 +127,9 @@ describe('Versicherungs-Erinnerungen im Push-Plan (Spec §6)', () => {
     const geschrieben = { 2026: { 1: '2026-11-07T10:00:00.000Z', 2: '2026-11-01T10:00:00.000Z' } };
     const v = { ...basis, teile, geschrieben, bestaetigt: { daten: basis.daten, teile } };
     const jahr = versicherungTermine(v, HEUTE).filter((t) => t.art === 'versJahr' && t.tag === '2026-12-01');
-    assert.deepEqual(jahr.map((t) => t.text), ['Bis 31.12. noch Rest bei Heilbehelfe'], 'die zuletzt geschriebene Fassung (Medikamente voll) gilt');
+    assert.deepEqual(jahr, [], 'die zuletzt geschriebene Fassung (Medikamente voll) gilt');
+    const ohneZeiten = versicherungTermine({ ...v, geschrieben: { 2026: { 1: '2026-11-01T10:00:00.000Z', 2: '2026-11-07T10:00:00.000Z' } } }, HEUTE);
+    assert.deepEqual(ohneZeiten.filter((t) => t.art === 'versJahr' && t.tag === '2026-12-01').map((t) => t.text), ['Bis 31.12. noch Rest bei der Versicherung – jetzt nachsehen.'], 'umgekehrt: Heilbehelfe-Fassung gilt, Medikamente haben Rest');
   });
 
   test('Jahresende nur mit Rest > 0: alle Limits ausgeschöpft → keine Erinnerung; nur Kategorien mit Rest werden genannt', async () => {
@@ -122,7 +138,7 @@ describe('Versicherungs-Erinnerungen im Push-Plan (Spec §6)', () => {
     assert.deepEqual(leer.filter((p) => p.art === 'versJahr'), []);
     const fast = voll.filter((x) => x.kategorie !== 'heil');
     const plan = await versPlan(mitVers(versTeil({ rechnungen: fast })), '2026-11-08T08:00:00+01:00');
-    assert.deepEqual(plan.filter((p) => p.art === 'versJahr').map((p) => p.text), ['Bis 31.12. noch Rest bei Heilbehelfe']);
+    assert.deepEqual(plan.filter((p) => p.art === 'versJahr').map((p) => p.text), ['Bis 31.12. noch Rest bei der Versicherung – jetzt nachsehen.']);
   });
 
   test('Jahresende: nicht vor dem Beginn der Polizze, und nicht für ein Jahr, das schon vorbei ist', async () => {
@@ -279,7 +295,7 @@ describe('Seite „Versicherung“ (versicherungModel)', () => {
     assert.equal(kategorieKurz({ ...P, kategorien: [{ id: 'arzt', name: 'Homöopathie', limitCent: 100 }] }, 'arzt'), 'Homöopathie');
     assert.equal(kategorieKurz(P, 'gibtsnicht'), 'ohne Kategorie');
     assert.equal(jahresendeText(P, null), null);
-    assert.equal(jahresendeText(P, jahresStand(P, [], 2026)), 'Bis 31.12. noch Rest bei Privatarzt, Physiotherapie, Psychotherapie …');
+    assert.equal(jahresendeText(P, jahresStand(P, [], 2026)), 'Bis 31.12. noch Rest bei der Versicherung – jetzt nachsehen.');
   });
 });
 

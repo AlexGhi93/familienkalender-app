@@ -345,8 +345,8 @@ export function entwurfZuPolizze(e) {
  *  - 'versOffen': `eingereichtAm` + 30 Tage, solange keine Erstattung eingetragen ist – einmal je Rechnung (Schlüssel = Rechnung); mit der
  *    Erstattung fällt sie beim nächsten Plan weg. Liegt der Tag schon zurück (z. B. spät nachgetragen), kommt keine mehr.
  *  - 'versJahr': 01.12. des laufenden und des nächsten Jahres, nur wenn bis 31.12. noch etwas erstattbar ist (Rest > 0) und die Polizze
- *    in dem Jahr schon läuft; nennt nur die Kategorien mit Rest (kurz, höchstens drei), NIE einen Betrag (E1: keine Beträge in
- *    Benachrichtigungen). Beide Arten rechnen mit denselben Schreibzeiten (`v.geschrieben`, Review T3 M3): `bestaetigt` hat keine.
+ *    in dem Jahr schon läuft; nennt weder Betrag (E1) noch Kategorie (wie M5) – keine Beträge und keine Gesundheitsangaben in
+ *    Benachrichtigungen. Beide Arten rechnen mit denselben Schreibzeiten (`v.geschrieben`, Review T3 M3): `bestaetigt` hat keine.
  * Wirft nie (unbrauchbare Daten → []).
  */
 export function versicherungTermine(v, heute) {
@@ -375,14 +375,12 @@ export function versicherungTermine(v, heute) {
 /** „Erstattung für Rechnung vom 12.10. noch offen?“ – ohne Kategorie: keine Gesundheitsangabe auf dem Sperrbildschirm (Abschluss-Review M5). */
 export const offenText = (rechnung) => `Erstattung für Rechnung vom ${kurzDatum(rechnung.datum)} noch offen?`;
 
-/** „Bis 31.12. noch Rest bei Privatarzt, Physiotherapie, Psychotherapie …“ – ohne Betrag (E1); null, wenn nichts mehr erstattbar ist. */
+/**
+ * „Bis 31.12. noch Rest bei der Versicherung – jetzt nachsehen.“ – ohne Betrag (E1) und ohne Kategorie (wie M5: keine Gesundheitsangabe
+ * auf dem Sperrbildschirm); welche Kategorien Rest haben, zeigt die Seite. null, wenn nichts mehr erstattbar ist.
+ */
 export function jahresendeText(polizze, s) {
-  const rest = erstattbarerRest(s);
-  if (!s || rest <= 0) return null;
-  const mitRest = s.kategorien.filter((k) => k.restCent > 0).map((k) => kategorieKurz(polizze, k.id));
-  if (!mitRest.length) return null;
-  const liste = mitRest.length > 3 ? `${mitRest.slice(0, 3).join(', ')} …` : mitRest.join(', ');
-  return `Bis 31.12. noch Rest bei ${liste}`;
+  return s && erstattbarerRest(s) > 0 ? 'Bis 31.12. noch Rest bei der Versicherung – jetzt nachsehen.' : null;
 }
 
 /** Tage bis zur Erinnerung „noch offen?“ (für den Hinweis im Blatt). */
