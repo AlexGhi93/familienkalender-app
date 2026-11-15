@@ -6,6 +6,7 @@ import { h } from './dom.js';
 import { blatt, chip, toast } from './components.js';
 import { datumFeld, zeitFeld } from './eingabefelder.js';
 import { oeffneMenueZeile } from './menue.js';
+import { kopieren } from './zwischenablage.js';
 import { ANLAESSE, GRUPPEN, KRANKHEITEN, TONARTEN, einrichtungsFormen, nachrichtBetreff, nachrichtText, sendeLinks } from '../app/nachrichten.js';
 import { addDays } from '../domain/dates.js';
 import { einrichtungFor } from '../domain/modus.js';
@@ -31,22 +32,21 @@ function sendeKnopf(symbol, text, beiKlick) {
   return h('button', { class: 'knopf klein senden', type: 'button', onClick: beiKlick }, h('span', { 'aria-hidden': 'true' }, symbol), ` ${text}`);
 }
 
-async function kopieren(textfeld) {
-  try {
-    await navigator.clipboard.writeText(textfeld.value);
+async function textKopieren(textfeld) {
+  if (await kopieren(textfeld.value)) {
     toast('Kopiert ✓');
-  } catch {
-    // ältere Browser oder keine Erlaubnis: markieren und klassisch kopieren
-    textfeld.focus();
-    textfeld.select();
-    let ok = false;
-    try {
-      ok = document.execCommand('copy');
-    } catch {
-      ok = false;
-    }
-    toast(ok ? 'Kopiert ✓' : 'Kopieren ging nicht. Bitte den Text markieren und kopieren.');
+    return;
   }
+  // ältere Browser oder keine Erlaubnis: markieren und klassisch kopieren
+  textfeld.focus();
+  textfeld.select();
+  let ok = false;
+  try {
+    ok = document.execCommand('copy');
+  } catch {
+    ok = false;
+  }
+  toast(ok ? 'Kopiert ✓' : 'Kopieren ging nicht. Bitte den Text markieren und kopieren.');
 }
 
 const ruhig = () => !bewegungAn(); // prefers-reduced-motion oder „Bewegung: Reduziert“ (ui/bewegung.js)
@@ -247,7 +247,7 @@ export function oeffneNachricht({ store, ui }, optionen = {}) {
     if (typeof navigator.share === 'function') {
       knoepfe.push(sendeKnopf('📤', 'Teilen …', () => navigator.share({ text: textfeld.value }).catch(() => {}))); // Abbrechen ist kein Fehler
     }
-    knoepfe.push(sendeKnopf('📋', 'Kopieren', () => kopieren(textfeld)));
+    knoepfe.push(sendeKnopf('📋', 'Kopieren', () => textKopieren(textfeld)));
 
     const ohneKontakt = !s.einrichtungTelefon && !s.einrichtungEmail;
     return [

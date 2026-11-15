@@ -5,34 +5,16 @@
 import { h } from './dom.js';
 import { abschnitt } from './components.js';
 import { fortschritt, hochzaehlen } from './bewegung.js';
+import { nochmalKnopf } from './formular.js';
+import { wischbar } from './wischen.js';
 import { TEXT_DATENSCHUTZ, autoSeiteModel } from '../app/views/autos-model.js';
 import { arbeitLoeschen, kmLoeschen, oeffneArbeitFormular, oeffneAutoFormular, oeffneKmFormular, oeffneRegelFormular, oeffneSatzFormular, regelEinschalten, satzLoeschen } from './auto-formular.js';
-
-/** Knopf „Nochmal versuchen“: liest die Autos neu (das Neuzeichnen ersetzt ihn). */
-export function autosNochmalKnopf(store) {
-  return h(
-    'button',
-    {
-      class: 'knopf klein',
-      type: 'button',
-      onClick: async (ev) => {
-        const knopf = ev.currentTarget; // nach dem `await` ist currentTarget schon null
-        knopf.disabled = true;
-        knopf.textContent = 'Wird geladen …';
-        await store.autosLaden?.();
-        knopf.disabled = false;
-        knopf.textContent = 'Nochmal versuchen';
-      },
-    },
-    'Nochmal versuchen',
-  );
-}
 
 /** Hinweise über den Autos (unlesbar, nicht aktuell, Warnungen) – auf der Liste und der Seite eines Autos. */
 export function autosMeldungen(m, store) {
   return [
     m.unlesbar ? h('article', { class: 'karte fk-meldung warn au-meldung' }, h('b', {}, '🔒 Autos unlesbar'), h('p', {}, m.unlesbar)) : null,
-    m.nichtAktuell ? h('article', { class: 'karte fk-meldung warn au-meldung' }, h('b', {}, '⚠️ Nicht aktuell'), h('p', {}, m.nichtAktuell), h('div', { class: 'knopfzeile' }, autosNochmalKnopf(store))) : null,
+    m.nichtAktuell ? h('article', { class: 'karte fk-meldung warn au-meldung' }, h('b', {}, '⚠️ Nicht aktuell'), h('p', {}, m.nichtAktuell), h('div', { class: 'knopfzeile' }, nochmalKnopf(() => store.autosLaden?.()))) : null,
     m.warnungen.length > 0 ? h('article', { class: 'karte fk-meldung au-meldung' }, m.warnungen.map((w) => h('p', {}, `⚠️ ${w}`))) : null,
   ];
 }
@@ -47,19 +29,6 @@ export function kmZahl(klasse, schluessel, km) {
 
 /** Zeichen und Wort des Stands als Pille (nie nur Farbe). */
 export const statusPille = (x, klasse = '') => h('span', { class: `au-status ${x.status} ${klasse}`.trim() }, h('span', { 'aria-hidden': 'true' }, `${x.symbol} `), x.wort);
-
-const WISCH_BREITE = 96; // so weit gibt das Wischen den Knopf „Löschen“ frei
-const WISCH_SCHWELLE = 48;
-
-/**
- * Wohin eine Zeile nach dem Wischen geht: `dx`/`dy` = Weg des Fingers (px), `offen` = Löschen schon frei → 'auf' | 'zu' | null
- * (kein waagrechtes Wischen: nichts tun, z. B. Scrollen).
- */
-export function wischZiel(dx, dy, offen) {
-  if (Math.abs(dx) < 10 || Math.abs(dx) < Math.abs(dy)) return null;
-  if (offen) return dx > WISCH_SCHWELLE / 2 ? 'zu' : 'auf';
-  return dx < -WISCH_SCHWELLE ? 'auf' : 'zu';
-}
 
 function knopf(text, klasse, onClick, mehr = {}) {
   return h('button', { class: `knopf klein ${klasse}`.trim(), type: 'button', onClick, ...mehr }, text);
@@ -236,50 +205,6 @@ function vignetteAbschnitt(m, ctx) {
   );
 }
 
-/**
- * Wischen nach links gibt „Löschen“ frei; ein Tipp auf die (offene) Zeile schließt sie wieder bzw. öffnet das Blatt zum Ändern.
- * Auch für die Rechnungen der Versicherung (versicherung-screen.js; dieselben Klassen au-wisch / au-wisch-loeschen).
- */
-export function wischbar(huelle, zeile, loeschen) {
-  let start = null;
-  let offen = false;
-  const setze = (auf) => {
-    offen = auf;
-    huelle.classList.toggle('offen', auf);
-    zeile.style.removeProperty('transform');
-    loeschen.tabIndex = auf ? 0 : -1;
-    loeschen.setAttribute('aria-hidden', String(!auf));
-  };
-  zeile.addEventListener('touchstart', (e) => {
-    if (e.touches.length !== 1) return;
-    start = { x: e.touches[0].clientX, y: e.touches[0].clientY, dx: 0, dy: 0 };
-    huelle.classList.add('zieht');
-  }, { passive: true });
-  zeile.addEventListener('touchmove', (e) => {
-    if (!start) return;
-    start.dx = e.touches[0].clientX - start.x;
-    start.dy = e.touches[0].clientY - start.y;
-    if (Math.abs(start.dx) > Math.abs(start.dy)) zeile.style.setProperty('transform', `translateX(${Math.min(0, Math.max(-WISCH_BREITE, (offen ? -WISCH_BREITE : 0) + start.dx))}px)`);
-  }, { passive: true });
-  const ende = () => {
-    if (!start) return;
-    huelle.classList.remove('zieht');
-    const ziel = wischZiel(start.dx, start.dy, offen);
-    if (ziel) {
-      zeile.dataset.gewischt = '1'; // der folgende Klick öffnet kein Blatt
-      setze(ziel === 'auf');
-    } else zeile.style.removeProperty('transform');
-    start = null;
-  };
-  zeile.addEventListener('touchend', ende);
-  zeile.addEventListener('touchcancel', ende);
-  setze(false);
-  return {
-    istOffen: () => offen,
-    schliessen: () => setze(false),
-  };
-}
-
 function verlaufZeile(v, m, ctx) {
   const loeschen = h('button', { class: 'au-wisch-loeschen', type: 'button', 'aria-label': `${v.titel} vom ${v.zeile} löschen`, disabled: Boolean(m.gesperrt) }, '🗑️ Löschen');
   const zeile = h(
@@ -343,7 +268,7 @@ export function autoScreen({ store, ui }, id) {
     // M5 (Review T4): nicht gelesen ist nicht „gibt es nicht“
     const fehler = a?.status === 'fehler' && (a?.daten?.autos ?? []).length === 0;
     const text = laedt ? 'Das Auto wird geladen …' : fehler ? 'Die Autos konnten nicht gelesen werden.' : 'Dieses Auto gibt es nicht (mehr).';
-    return h('section', { class: 'screen auto-seite' }, zurueck, h('article', { class: 'karte hinweis' }, h('p', {}, text), fehler ? h('div', { class: 'knopfzeile' }, autosNochmalKnopf(store)) : null));
+    return h('section', { class: 'screen auto-seite' }, zurueck, h('article', { class: 'karte hinweis' }, h('p', {}, text), fehler ? h('div', { class: 'knopfzeile' }, nochmalKnopf(() => store.autosLaden?.())) : null));
   }
   return h(
     'section',

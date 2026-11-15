@@ -1,6 +1,7 @@
 import { fuelle, h } from './dom.js';
 import { bestaetigen, toast } from './components.js';
 import { freigabeAnleitung } from './anleitung.js';
+import { kopieren } from './zwischenablage.js';
 import { todayVienna } from '../domain/dates.js';
 import { createGoogleAdapter } from '../calendar/google-adapter.js';
 import { FreigabeFehlt, abonniere, codeErzeugen, codeLesen, freigabeVorschau, richteEin, teile } from '../calendar/setup.js';
@@ -8,13 +9,8 @@ import { FreigabeFehlt, abonniere, codeErzeugen, codeLesen, freigabeVorschau, ri
 const seite = (zurueck, ...inhalt) =>
   h('main', { class: 'screen einrichtung' }, zurueck ? h('button', { class: 'zurueck', type: 'button', onClick: zurueck }, '‹ Zurück') : null, ...inhalt);
 
-async function kopieren(text) {
-  try {
-    await navigator.clipboard.writeText(text);
-    toast('Kopiert ✓');
-  } catch {
-    toast('Kopieren hat nicht geklappt. Bitte den Code von Hand markieren.');
-  }
+async function codeKopieren(text) {
+  toast((await kopieren(text)) ? 'Kopiert ✓' : 'Kopieren hat nicht geklappt. Bitte den Code von Hand markieren.');
 }
 
 const googleHinweis = () =>
@@ -102,7 +98,7 @@ export function einrichtenBesitzer({ wurzel, google, konfiguration, jetzt, beiFe
         seite(
           null,
           h('h1', { class: 'gruss' }, 'Fast fertig 🎉'),
-          h('article', { class: 'karte' }, h('h3', {}, 'Code für das andere Elternteil'), h('p', { class: 'code' }, z.code), h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein', type: 'button', onClick: () => kopieren(z.code) }, 'Code kopieren')), h('p', { class: 'leise' }, 'Schick den Code zum Beispiel per Nachricht. Er ist kein Passwort: ohne Freigabe öffnet er nichts.')),
+          h('article', { class: 'karte' }, h('h3', {}, 'Code für das andere Elternteil'), h('p', { class: 'code' }, z.code), h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein', type: 'button', onClick: () => codeKopieren(z.code) }, 'Code kopieren')), h('p', { class: 'leise' }, 'Schick den Code zum Beispiel per Nachricht. Er ist kein Passwort: ohne Freigabe öffnet er nichts.')),
           h('article', { class: 'karte' }, h('h3', {}, 'Kalender teilen'), freigabeAnleitung(), z.freigabeText ? h('p', { class: 'hinweis-text' }, z.freigabeText) : null, z.fehler ? h('p', { class: 'fehlertext' }, z.fehler) : null,
             z.vorschau
               ? h('div', { class: 'vorschau' }, h('small', {}, 'Bitte genau prüfen:'), h('b', { class: 'adresse' }, z.vorschau.anzeige), h('small', {}, z.vorschau.zeilen[0]), h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein', type: 'button', onClick: () => { z.vorschau = null; zeichne(); } }, 'Ändern'), h('button', { class: 'knopf klein primaer', type: 'button', onClick: freigabeSenden }, 'Adresse stimmt')))

@@ -2,13 +2,11 @@
 // weil Teilen/Herunterladen auf dem iPhone eine direkte Berührung braucht und das Holen etwas dauern kann.
 import { fuelle, h } from './dom.js';
 import { toast } from './components.js';
+import { fehlerText } from './formular.js';
 import { VERSION } from '../app/version.js';
 import { sicherungAnzahlText, sicherungDateiname, sicherungErstellen, sicherungText } from '../app/sicherung.js';
 
 let bereit = null; // { text, name, anzahl }: bleibt erhalten, wenn die Seite neu gezeichnet wird
-
-const MELDUNG_ANMELDEN = 'Bitte zuerst neu anmelden (Mehr → Konto & App → Neu anmelden).';
-const fehlerText = (fehler) => (fehler?.name === 'AuthAbgelaufen' ? MELDUNG_ANMELDEN : fehler?.message || 'Das hat nicht geklappt. Bitte noch einmal versuchen.');
 
 const istApple = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 

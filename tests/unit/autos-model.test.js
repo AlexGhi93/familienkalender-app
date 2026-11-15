@@ -309,9 +309,9 @@ describe('Regel und Auto', () => {
   });
 });
 
-describe('Wischen im Verlauf (src/ui/auto-screen.js)', () => {
+describe('Wischen im Verlauf (src/ui/wischen.js)', () => {
   test('nach links über die Schwelle → auf; senkrecht (Scrollen) oder winzig → nichts; offen und nach rechts → zu', async () => {
-    const { wischZiel } = await import('../../src/ui/auto-screen.js');
+    const { wischZiel } = await import('../../src/ui/wischen.js');
     assert.equal(wischZiel(-60, 5, false), 'auf');
     assert.equal(wischZiel(-30, 5, false), 'zu');
     assert.equal(wischZiel(-60, 80, false), null);

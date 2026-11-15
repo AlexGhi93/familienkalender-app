@@ -5,6 +5,7 @@
 // ({ ok, fehler?, wartet? }) erscheinen wie beim Schichtplan als Meldung; das Formular bleibt bei einem Fehler mit der Eingabe offen.
 import { h, fuelle } from './dom.js';
 import { bestaetigen, blatt, toast } from './components.js';
+import { auswahl, erledigt, feld, gesperrtHinweis, sicher } from './formular.js';
 import { datumFeld } from './eingabefelder.js';
 import { geloeschtMelden } from './fortschritt.js';
 import { entwurfZuPosten, fixEntwurf, startMonate, vertragVorschau, vorlageAnwenden } from '../app/views/fixkosten-model.js';
@@ -12,7 +13,6 @@ import { FIX_FRISTEN, FIX_INTERVALLE, FIX_KATEGORIEN, FIX_PERSONEN, FIX_VERLAENG
 import { betragText } from '../domain/konto.js';
 import { datumAnzeige } from '../domain/eingabe.js';
 
-const ALLGEMEINER_FEHLER = 'Das hat nicht geklappt. Bitte noch einmal versuchen.';
 const TAGE = [...Array.from({ length: 31 }, (_, i) => [String(i + 1), `${i + 1}. des Monats`]), ['letzter', 'Monatsletzter']];
 const verlaengerungText = (n) => (n === 0 ? 'verlängert sich nicht' : n === 1 ? '1 Monat' : `${n} Monate`);
 
@@ -25,39 +25,6 @@ function finde(state, id) {
   }
   return null;
 }
-
-/**
- * Ergebnis des Stores melden; true = erledigt (gespeichert oder wartet nur auf die Anmeldung). Ein Fehler mit `gemeldet` zeigt die
- * Shell schon (aus state.fehler) – dann keine zweite Meldung; vor dem Schreiben Abgelehntes (ohne `gemeldet`) zeigt nur diese hier.
- */
-function erledigt(r, erfolg) {
-  if (r?.ok || r?.wartet) {
-    if (r.ok) toast(erfolg);
-    return true;
-  }
-  if (!r?.gemeldet) toast(r?.fehler ?? ALLGEMEINER_FEHLER, { art: 'fehler' });
-  return false;
-}
-
-async function sicher(lauf) {
-  try {
-    return await lauf;
-  } catch (e) {
-    return { ok: false, fehler: e?.message ?? ALLGEMEINER_FEHLER };
-  }
-}
-
-const gesperrtHinweis = () => h('article', { class: 'karte fk-meldung warn' }, h('b', {}, '🔒 Nicht änderbar'), h('p', {}, TEXT_TEIL_GESPERRT));
-
-function auswahl(beschriftung, optionen, wert, beiAenderung, mehr = {}) {
-  return h(
-    'select',
-    { class: 'fk-auswahl', 'aria-label': beschriftung, onChange: (ev) => beiAenderung(ev.target.value), ...mehr },
-    optionen.map(([w, text]) => h('option', { value: String(w), selected: String(w) === String(wert) }, text)),
-  );
-}
-
-const feld = (titel, inhalt, klasse = '') => h('label', { class: `feld ${klasse}`.trim() }, h('span', {}, titel), inhalt);
 
 /** Formular für einen neuen (`id` = null) oder vorhandenen Posten. */
 export function oeffneFixFormular({ store }, id) {
@@ -72,15 +39,8 @@ export function oeffneFixFormular({ store }, id) {
   const e = fixEntwurf(original, heute);
   let speichert = false;
   let b = null;
-  let felder = null; // die Felder im Blatt (um die Stelle beim Neuzeichnen zu halten)
-
-  /** Neu zeichnen (Vertrag, Intervall, Vorlage, Person); die Stelle im Blatt bleibt. */
-  function neuZeichnen() {
-    const tafel = felder?.closest('.blatt');
-    const oben = tafel?.scrollTop ?? 0;
-    b.neuZeichnen();
-    if (tafel) tafel.scrollTop = oben;
-  }
+  /** Neu zeichnen (Vertrag, Intervall, Vorlage, Person); die Stelle im Blatt bleibt (blatt() hält sie). */
+  const neuZeichnen = () => b.neuZeichnen();
 
   function vorschauInhalt() {
     const v = vertragVorschau(e, heute);
@@ -199,7 +159,7 @@ export function oeffneFixFormular({ store }, id) {
     const loeschenKnopf = original
       ? h('button', { class: 'knopf klein gefahr fk-loeschen', type: 'button', disabled: gesperrt, onClick: () => fixLoeschenFragen({ store }, original, () => b.schliessen(), [loeschenKnopf, archivKnopf, speichernKnopf], gesperrt) }, 'Löschen')
       : null;
-    felder = h(
+    const felder = h(
         'fieldset',
         { class: 'fk-felder', disabled: gesperrt },
         original ? null : vorlagen(),
@@ -244,7 +204,7 @@ export function oeffneFixFormular({ store }, id) {
         feld('Notiz (optional)', notiz),
       );
     return [
-      gesperrt ? gesperrtHinweis() : null,
+      gesperrt ? gesperrtHinweis(TEXT_TEIL_GESPERRT) : null,
       felder,
       h(
         'div',
@@ -369,7 +329,7 @@ export function oeffneFixArchiviert({ store }, id) {
           'Zurückholen',
         );
       return [
-      gesperrt ? gesperrtHinweis() : null,
+      gesperrt ? gesperrtHinweis(TEXT_TEIL_GESPERRT) : null,
       h('p', { class: 'blatt-text' }, `Archiviert ab ${datumAnzeige(posten.archiv)}. ${aktiv ? 'Bis dahin zählt er noch zu den Fixkosten.' : 'Er zählt nicht mehr zu den Fixkosten.'}`),
       h('p', { class: 'leise' }, `${posten.ungefaehr ? '~ ' : ''}${betragText(posten.cents)} ${intervall}`),
       h('div', { class: 'knopfzeile' }, loeschenKnopf, zurueckKnopf),

@@ -50,7 +50,7 @@ export function urlaubRing({ genommen, geplant, ziel, groesse = 66 }) {
 }
 
 /**
- * Blatt von unten (Tagesdetails, Bestätigungen). `render` baut den Inhalt; `neuZeichnen()` aktualisiert ihn.
+ * Blatt von unten (Tagesdetails, Bestätigungen). `render({ schliessen, neuZeichnen })` baut den Inhalt; `neuZeichnen()` aktualisiert ihn (und hält die Stelle im Blatt).
  * Schließen mit ✕, Escape, Tipp auf den Hintergrund oder nach unten wischen; `beimSchliessen` läuft dabei genau einmal.
  */
 export function blatt({ titel, render, beimSchliessen = () => {} }) {
@@ -66,7 +66,10 @@ export function blatt({ titel, render, beimSchliessen = () => {} }) {
     if (e.key === 'Escape') schliessen();
   };
   function neuZeichnen() {
-    fuelle(inhalt, render({ schliessen }));
+    // die eigene Stelle halten (nicht die des obersten Blatts: darüber kann eine Bestätigung liegen)
+    const oben = tafel.scrollTop;
+    fuelle(inhalt, render({ schliessen, neuZeichnen }));
+    tafel.scrollTop = oben;
   }
   function schliessen() {
     if (!offen) return;

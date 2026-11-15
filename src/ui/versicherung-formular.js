@@ -6,9 +6,9 @@
 // Eingabe offen. Rechnen und Prüfen in app/views/versicherung-model.js; alle Texte kommen als Text in die Seite.
 import { fuelle, h } from './dom.js';
 import { bestaetigen, blatt, toast } from './components.js';
+import { auswahl, erledigt, feld, gesperrtHinweis, gruppe, sicher, textFeld } from './formular.js';
 import { datumFeld } from './eingabefelder.js';
 import { geloeschtMelden, sicherLoeschen } from './fortschritt.js';
-import { sicher } from './sparziele-formular.js';
 import { betragText } from '../domain/konto.js';
 import { datumAnzeige } from '../domain/eingabe.js';
 import { MAX_KATEGORIE_INFO, MAX_KATEGORIE_NAME, MAX_PERSON, MAX_POLIZZE_NAME, MAX_RECHNUNG_NOTIZ, MAX_STELLE } from '../domain/versicherung.js';
@@ -29,52 +29,6 @@ import {
   versicherungSperre,
 } from '../app/views/versicherung-model.js';
 
-const ALLGEMEINER_FEHLER = 'Das hat nicht geklappt. Bitte noch einmal versuchen.';
-const WARNUNG_DAUER = 6000; // eine Warnung zum Gespeicherten bleibt länger stehen
-
-/**
- * Ergebnis des Stores melden; true = erledigt (gespeichert oder wartet nur auf die Anmeldung). Ein Fehler mit `gemeldet` zeigt schon die
- * Shell. Die Erfolgsmeldung ersetzt eine noch stehende Fehlermeldung; eine Warnung des Stores (z. B. „vor dem Beginn der Polizze“) steht
- * mit dabei.
- */
-function erledigt(r, erfolg) {
-  if (r?.ok || r?.wartet) {
-    if (r.ok) toast(r.warnung ? `${erfolg} · ${r.warnung}` : erfolg, { ersetztFehler: true, ...(r.warnung ? { dauer: WARNUNG_DAUER } : {}) });
-    return true;
-  }
-  if (!r?.gemeldet) toast(r?.fehler ?? ALLGEMEINER_FEHLER, { art: 'fehler' });
-  return false;
-}
-
-const feld = (titel, inhalt, ...mehr) => h('label', { class: 'feld' }, h('span', {}, titel), inhalt, ...mehr);
-const gruppe = (titel, inhalt, ...mehr) => h('div', { class: 'feld' }, h('span', { 'aria-hidden': 'true' }, titel), inhalt, ...mehr);
-const gesperrtHinweis = (text) => h('article', { class: 'karte fk-meldung warn' }, h('b', {}, '🔒 Nicht änderbar'), h('p', {}, text));
-
-function textFeld({ wert, beschriftung, platzhalter = '', max = 40, modus = null, beiEingabe }) {
-  return h('input', { type: 'text', value: wert ?? '', maxlength: String(max), autocomplete: 'off', placeholder: platzhalter, inputmode: modus, 'aria-label': beschriftung, onInput: (ev) => beiEingabe(ev.target.value) });
-}
-
-function auswahl(beschriftung, optionen, wert, beiAenderung) {
-  return h(
-    'select',
-    { class: 'fk-auswahl', 'aria-label': beschriftung, onChange: (ev) => beiAenderung(ev.target.value) },
-    optionen.map(([w, text]) => h('option', { value: String(w), selected: String(w) === String(wert ?? '') }, text)),
-  );
-}
-
-/** Ein Blatt, das sich neu zeichnen lässt, ohne dass die Liste nach oben springt. */
-function formularBlatt(titel, bauen) {
-  let b = null;
-  const neuZeichnen = () => {
-    const tafel = [...document.querySelectorAll('.blatt-huelle:not(.zu) .blatt')].at(-1);
-    const oben = tafel?.scrollTop ?? 0;
-    b.neuZeichnen();
-    if (tafel) tafel.scrollTop = oben;
-  };
-  b = blatt({ titel, render: ({ schliessen }) => bauen({ schliessen, neuZeichnen }) });
-  return b;
-}
-
 // ---------------------------------------------------------------- Rechnung einreichen / ändern
 
 /** Formular für eine neue (`id` = null) oder vorhandene Rechnung. */
@@ -92,7 +46,7 @@ export function oeffneRechnungFormular({ store, ui }, id) {
   const bearbeiten = Boolean(e.id);
   let speichert = false;
 
-  return formularBlatt(bearbeiten ? '🧾 Rechnung ändern' : '＋ Rechnung einreichen', ({ schliessen, neuZeichnen }) => {
+  return blatt({ titel: bearbeiten ? '🧾 Rechnung ändern' : '＋ Rechnung einreichen', render: ({ schliessen, neuZeichnen }) => {
     const state = store.getState();
     const gesperrt = versicherungSperre(state.versicherung);
     const aus = Boolean(gesperrt) || speichert;
@@ -159,7 +113,7 @@ export function oeffneRechnungFormular({ store, ui }, id) {
       h('div', { class: 'knopfzeile' }, speichernKnopf),
       loeschenKnopf ? h('div', { class: 'knopfzeile loeschen-zeile' }, loeschenKnopf) : null,
     ];
-  });
+  } });
 }
 
 /** Eine Rechnung ohne Blatt löschen (Wischen in der Liste) → „Gelöscht ✓ · Rückgängig“. */
@@ -179,7 +133,7 @@ function oeffneErstattung({ store }, id, { danach = () => {} } = {}) {
     return null;
   }
   let speichert = false;
-  return formularBlatt(e.vorhanden ? 'Erstattung ändern' : '✓ Erstattung erhalten', ({ schliessen, neuZeichnen }) => {
+  return blatt({ titel: e.vorhanden ? 'Erstattung ändern' : '✓ Erstattung erhalten', render: ({ schliessen, neuZeichnen }) => {
     const gesperrt = versicherungSperre(store.getState().versicherung);
     const aus = Boolean(gesperrt) || speichert;
     const los = async (erstattung, erfolg) => {
@@ -223,7 +177,7 @@ function oeffneErstattung({ store }, id, { danach = () => {} } = {}) {
       h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein primaer vs-erstattung-speichern', type: 'button', disabled: aus, onClick: speichern }, speichert ? 'Speichert …' : 'Speichern')),
       e.vorhanden ? h('div', { class: 'knopfzeile loeschen-zeile' }, h('button', { class: 'knopf klein gefahr', type: 'button', disabled: aus, onClick: entfernen }, 'Erstattung entfernen')) : null,
     ];
-  });
+  } });
 }
 
 // ---------------------------------------------------------------- Polizze
@@ -237,7 +191,7 @@ export function oeffnePolizzeFormular({ store }, { vorlageId = null, bearbeiten 
   const e = polizzeEntwurf(store.getState(), heute, { vorlageId, bearbeiten });
   let speichert = false;
   const titel = bearbeiten ? 'Polizze bearbeiten' : vorlageId ? `${e.name} anlegen` : 'Eigene Polizze';
-  return formularBlatt(titel, ({ schliessen, neuZeichnen }) => {
+  return blatt({ titel, render: ({ schliessen, neuZeichnen }) => {
     const state = store.getState();
     const gesperrt = versicherungSperre(state.versicherung);
     const aus = Boolean(gesperrt) || speichert;
@@ -317,5 +271,5 @@ export function oeffnePolizzeFormular({ store }, { vorlageId = null, bearbeiten 
       ),
       h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein primaer vs-polizze-speichern', type: 'button', disabled: aus, onClick: speichern }, speichert ? 'Speichert …' : bearbeiten ? 'Speichern' : 'Anlegen')),
     ];
-  });
+  } });
 }

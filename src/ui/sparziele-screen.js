@@ -5,7 +5,8 @@
 import { h } from './dom.js';
 import { abschnitt } from './components.js';
 import { sparzieleModel } from '../app/views/sparziele-model.js';
-import { erledigt, oeffneVerschieben, oeffneZielFormular, sicher, verschiebungRueckgaengigFragen, zielLoeschenFragen, zurueckZuFreiFragen } from './sparziele-formular.js';
+import { erledigt, nochmalKnopf, sicher } from './formular.js';
+import { oeffneVerschieben, oeffneZielFormular, verschiebungRueckgaengigFragen, zielLoeschenFragen, zurueckZuFreiFragen } from './sparziele-formular.js';
 import { betragText } from '../domain/konto.js';
 import { bewegungAn, fortschritt, hochzaehlen, konfetti } from './bewegung.js';
 
@@ -46,30 +47,10 @@ function konfettiPlanen(ids) {
   );
 }
 
-/** Knopf „Nochmal versuchen“: liest nur die Sparziele neu (store.zieleLaden); das Neuzeichnen ersetzt ihn. */
-function nochmalKnopf(store) {
-  return h(
-    'button',
-    {
-      class: 'knopf klein',
-      type: 'button',
-      onClick: async (ev) => {
-        const knopf = ev.currentTarget; // nach dem `await` ist currentTarget schon null
-        knopf.disabled = true;
-        knopf.textContent = 'Wird geladen …';
-        await store.zieleLaden?.();
-        knopf.disabled = false; // falls die Seite (noch) nicht neu gezeichnet wurde
-        knopf.textContent = 'Nochmal versuchen';
-      },
-    },
-    'Nochmal versuchen',
-  );
-}
-
 function meldungen(m, store) {
   return [
     m.unlesbar ? h('article', { class: 'karte fk-meldung warn sz-meldung' }, h('b', {}, '🔒 Sparziele unlesbar'), h('p', {}, m.unlesbar)) : null,
-    m.nichtGeladen ? h('article', { class: 'karte fk-meldung warn sz-meldung' }, h('b', {}, '⚠️ Nicht aktuell'), h('p', {}, m.nichtGeladen), h('div', { class: 'knopfzeile' }, nochmalKnopf(store))) : null,
+    m.nichtGeladen ? h('article', { class: 'karte fk-meldung warn sz-meldung' }, h('b', {}, '⚠️ Nicht aktuell'), h('p', {}, m.nichtGeladen), h('div', { class: 'knopfzeile' }, nochmalKnopf(() => store.zieleLaden?.()))) : null,
     m.warnungen.length > 0 ? h('article', { class: 'karte fk-meldung sz-meldung' }, m.warnungen.map((w) => h('p', {}, `⚠️ ${w}`))) : null,
   ];
 }
@@ -260,7 +241,7 @@ export function sparzieleInhalt({ store, ui }) {
   const m = sparzieleModel(store.getState(), store.heute(), { ausgeblendeteZeigen });
   const ctx = { store, ui };
   if (m.zustand === 'nichtGeladen') {
-    return [h('article', { class: 'karte hinweis sz-nicht-geladen' }, h('p', {}, 'Die Sparziele sind noch nicht geladen.'), h('div', { class: 'knopfzeile' }, nochmalKnopf(store)))];
+    return [h('article', { class: 'karte hinweis sz-nicht-geladen' }, h('p', {}, 'Die Sparziele sind noch nicht geladen.'), h('div', { class: 'knopfzeile' }, nochmalKnopf(() => store.zieleLaden?.())))];
   }
   konfettiPlanen(zuFeiern(m.ziele, gefeiert));
   return [

@@ -8,36 +8,17 @@ import { abschnitt } from './components.js';
 import { fortschritt, hochzaehlen } from './bewegung.js';
 import { betragText } from '../domain/konto.js';
 import { TEXT_VERSICHERUNG_NICHT_GELADEN, VERSICHERUNG_FARBE, versicherungModel } from '../app/views/versicherung-model.js';
-import { wischbar } from './auto-screen.js';
+import { nochmalKnopf } from './formular.js';
+import { wischbar } from './wischen.js';
 import { oeffnePolizzeFormular, oeffneRechnungFormular, rechnungWischLoeschen } from './versicherung-formular.js';
 
 let gewaehltesJahr = null; // angezeigtes Jahr (null = laufendes); bleibt beim Neuzeichnen und Umschalten im Konto-Tab
-
-/** Knopf „Nochmal versuchen“: liest die Versicherung neu (das Neuzeichnen ersetzt ihn). */
-function nochmalKnopf(store) {
-  return h(
-    'button',
-    {
-      class: 'knopf klein',
-      type: 'button',
-      onClick: async (ev) => {
-        const knopf = ev.currentTarget; // nach dem `await` ist currentTarget schon null
-        knopf.disabled = true;
-        knopf.textContent = 'Wird geladen …';
-        await store.versicherungLaden?.();
-        knopf.disabled = false;
-        knopf.textContent = 'Nochmal versuchen';
-      },
-    },
-    'Nochmal versuchen',
-  );
-}
 
 function meldungen(m, store) {
   const x = m.meldungen;
   return [
     x.unlesbar ? h('article', { class: 'karte fk-meldung warn vs-meldung' }, h('b', {}, '🔒 Versicherung unlesbar'), h('p', {}, x.unlesbar)) : null,
-    x.nichtAktuell ? h('article', { class: 'karte fk-meldung warn vs-meldung' }, h('b', {}, '⚠️ Nicht aktuell'), h('p', {}, x.nichtAktuell), h('div', { class: 'knopfzeile' }, nochmalKnopf(store))) : null,
+    x.nichtAktuell ? h('article', { class: 'karte fk-meldung warn vs-meldung' }, h('b', {}, '⚠️ Nicht aktuell'), h('p', {}, x.nichtAktuell), h('div', { class: 'knopfzeile' }, nochmalKnopf(() => store.versicherungLaden?.()))) : null,
     x.warnungen.length > 0 ? h('article', { class: 'karte fk-meldung vs-meldung' }, x.warnungen.map((w) => h('p', {}, `⚠️ ${w}`))) : null,
   ];
 }
@@ -166,7 +147,7 @@ export function versicherungInhalt({ store, ui }) {
   const ctx = { store, ui };
   const m = versicherungModel(store.getState(), store.heute(), { jahr: gewaehltesJahr });
   if (m.zustand === 'laedt') return [h('article', { class: 'karte hinweis vs-laedt' }, h('p', {}, 'Die Versicherung wird geladen …'))];
-  if (m.zustand === 'nichtGeladen') return [h('article', { class: 'karte hinweis vs-nicht-geladen' }, h('p', {}, TEXT_VERSICHERUNG_NICHT_GELADEN), h('div', { class: 'knopfzeile' }, nochmalKnopf(store)))];
+  if (m.zustand === 'nichtGeladen') return [h('article', { class: 'karte hinweis vs-nicht-geladen' }, h('p', {}, TEXT_VERSICHERUNG_NICHT_GELADEN), h('div', { class: 'knopfzeile' }, nochmalKnopf(() => store.versicherungLaden?.())))];
   if (m.zustand === 'gesperrt') return meldungen(m, store);
   if (m.zustand === 'leer') return [...meldungen(m, store), leerKarte(m, ctx)];
   gewaehltesJahr = m.istAktuell ? null : m.jahr;

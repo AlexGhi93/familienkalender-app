@@ -5,9 +5,9 @@
 // Fehler bleibt das Blatt mit der Eingabe offen. Alles Rechnen steht in app/views/autos-model.js, alle Texte kommen als Text in die Seite.
 import { fuelle, h } from './dom.js';
 import { bestaetigen, blatt, chip, toast } from './components.js';
+import { auswahl, erledigt, feld, gesperrtHinweis, gruppe, haken, sicher, textFeld } from './formular.js';
 import { datumFeld } from './eingabefelder.js';
 import { geloeschtMelden } from './fortschritt.js';
-import { sicher } from './sparziele-formular.js';
 import { MONATE } from '../app/format-de.js';
 import { ARBEIT_TYPEN, AUTO_ANTRIEBE, AUTO_FELDER, AUTO_HALTUNGEN, MAX_ARBEIT_NOTIZ, VIGNETTE_ARTEN, kmText } from '../domain/autos.js';
 import {
@@ -33,42 +33,8 @@ import {
 } from '../app/views/autos-model.js';
 
 const TYPEN = new Map(ARBEIT_TYPEN.map((t) => [t.id, t]));
-const ALLGEMEINER_FEHLER = 'Das hat nicht geklappt. Bitte noch einmal versuchen.';
-
-/**
- * Ergebnis des Stores melden; true = erledigt (gespeichert oder wartet nur auf die Anmeldung). Ein Fehler mit `gemeldet` zeigt schon die
- * Shell. Die Erfolgsmeldung ersetzt eine noch stehende Fehlermeldung (M2, Review T4: nach einer berichtigten Eingabe soll man sehen, dass
- * gespeichert wurde – sonst trägt man es womöglich ein zweites Mal ein).
- */
-function erledigt(r, erfolg) {
-  if (r?.ok || r?.wartet) {
-    if (r.ok) toast(typeof erfolg === 'function' ? erfolg(r) : erfolg, { ersetztFehler: true });
-    return true;
-  }
-  if (!r?.gemeldet) toast(r?.fehler ?? ALLGEMEINER_FEHLER, { art: 'fehler' });
-  return false;
-}
 
 const SATZ_EMOJI = { winter: '❄️', sommer: '☀️', ganzjahr: '🌤️' };
-
-const feld = (titel, inhalt, ...mehr) => h('label', { class: 'feld' }, h('span', {}, titel), inhalt, ...mehr);
-const gruppe = (titel, inhalt, ...mehr) => h('div', { class: 'feld' }, h('span', { 'aria-hidden': 'true' }, titel), inhalt, ...mehr);
-
-function textFeld({ wert, beschriftung, platzhalter = '', max = 40, modus = null, beiEingabe }) {
-  return h('input', { type: 'text', value: wert ?? '', maxlength: String(max), autocomplete: 'off', placeholder: platzhalter, inputmode: modus, 'aria-label': beschriftung, onInput: (ev) => beiEingabe(ev.target.value) });
-}
-
-function auswahl(beschriftung, optionen, wert, beiAenderung) {
-  return h(
-    'select',
-    { class: 'fk-auswahl', 'aria-label': beschriftung, onChange: (ev) => beiAenderung(ev.target.value) },
-    optionen.map(([w, text]) => h('option', { value: String(w), selected: String(w) === String(wert ?? '') }, text)),
-  );
-}
-
-function haken(text, wert, beiAenderung) {
-  return h('label', { class: 'fk-haken' }, h('input', { type: 'checkbox', checked: Boolean(wert), onChange: (ev) => beiAenderung(ev.target.checked) }), ` ${text}`);
-}
 
 /** Monat 'JJJJ-MM' als zwei Auswahllisten (Monat, Jahr). */
 function monatFeld(titel, wert, heute, beiAenderung) {
@@ -88,22 +54,7 @@ function monatFeld(titel, wert, heute, beiAenderung) {
   );
 }
 
-const gesperrtHinweis = (text) => h('article', { class: 'karte fk-meldung warn' }, h('b', {}, '🔒 Nicht änderbar'), h('p', {}, text));
 const hinweisInhalt = (x) => (x ? h('span', { class: `au-feld-hinweis ${x.art}` }, `⚠ ${x.text}`) : null);
-
-/** Ein Blatt mit Formular, das bei Auswahl-Änderungen neu gezeichnet wird (Textfelder melden sich nur über ihre eigenen Hinweise). */
-function formularBlatt(titel, bauen) {
-  let b = null;
-  let tafelOben = 0;
-  const neuZeichnen = () => {
-    const tafel = [...document.querySelectorAll('.blatt-huelle:not(.zu) .blatt')].at(-1);
-    tafelOben = tafel?.scrollTop ?? 0;
-    b.neuZeichnen();
-    if (tafel) tafel.scrollTop = tafelOben;
-  };
-  b = blatt({ titel, render: ({ schliessen }) => bauen({ schliessen, neuZeichnen }) });
-  return b;
-}
 
 // ---------------------------------------------------------------- Arbeit eintragen / ändern
 
@@ -124,7 +75,7 @@ export function oeffneArbeitFormular({ store }, autoId, optionen = {}) {
   const titelTyp = () => TYPEN.get(e.typ)?.name ?? 'Arbeit';
   const titel = bearbeiten ? `${TYPEN.get(e.typ)?.emoji ?? '🔧'} ${titelTyp()} ändern` : e.festerTyp ? `${TYPEN.get(e.typ)?.emoji ?? '🔧'} ${titelTyp()} eintragen` : '＋ Arbeit eintragen';
 
-  return formularBlatt(titel, ({ schliessen, neuZeichnen }) => {
+  return blatt({ titel, render: ({ schliessen, neuZeichnen }) => {
     const state = store.getState();
     const gesperrt = autosSperre(state.autos);
     const aus = Boolean(gesperrt) || speichert;
@@ -327,7 +278,7 @@ export function oeffneArbeitFormular({ store }, autoId, optionen = {}) {
       h('div', { class: 'knopfzeile' }, speichernKnopf),
       loeschenKnopf ? h('div', { class: 'knopfzeile loeschen-zeile' }, loeschenKnopf) : null,
     ];
-  });
+  } });
 }
 
 /** Eine Arbeit ohne Blatt löschen (Wischen im Verlauf) → „Gelöscht ✓ · Rückgängig“. */
@@ -359,7 +310,7 @@ export function oeffneKmFormular({ store }, autoId) {
   }
   const e = { datum: heute, km: '' };
   let speichert = false;
-  return formularBlatt('Kilometerstand aktualisieren', ({ schliessen, neuZeichnen }) => {
+  return blatt({ titel: 'Kilometerstand aktualisieren', render: ({ schliessen, neuZeichnen }) => {
     const gesperrt = autosSperre(store.getState().autos);
     const aus = Boolean(gesperrt) || speichert;
     const hinweis = h('div', { class: 'au-km-hinweis', 'aria-live': 'polite' });
@@ -409,7 +360,7 @@ export function oeffneKmFormular({ store }, autoId) {
       ),
       h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein primaer', type: 'button', disabled: aus, onClick: speichern }, speichert ? 'Speichert …' : 'Speichern')),
     ];
-  });
+  } });
 }
 
 // ---------------------------------------------------------------- Regel
@@ -422,7 +373,7 @@ export function oeffneRegelFormular({ store }, regelId) {
   }
   const heute = store.heute();
   let speichert = false;
-  return formularBlatt(`${TYPEN.get(e.original.typ)?.emoji ?? '🔧'} ${e.original.name}`, ({ schliessen, neuZeichnen }) => {
+  return blatt({ titel: `${TYPEN.get(e.original.typ)?.emoji ?? '🔧'} ${e.original.name}`, render: ({ schliessen, neuZeichnen }) => {
     const gesperrt = autosSperre(store.getState().autos);
     const aus = Boolean(gesperrt) || speichert;
     const speichern = async () => {
@@ -489,7 +440,7 @@ export function oeffneRegelFormular({ store }, regelId) {
         ),
       ),
     ];
-  });
+  } });
 }
 
 /** Eine abgeschaltete Regel wieder einschalten (ohne Blatt). */
@@ -531,7 +482,7 @@ export function oeffneAutoFormular({ store, ui }, { autoId = null, vorlage = 'te
   let e = autoEntwurf(vorhanden, vorlage);
   let speichert = false;
   let fragt = false; // die Rückfrage „Auto löschen?“ ist offen
-  return formularBlatt(vorhanden ? 'Fahrzeugdaten bearbeiten' : '＋ Auto hinzufügen', ({ schliessen, neuZeichnen }) => {
+  return blatt({ titel: vorhanden ? 'Fahrzeugdaten bearbeiten' : '＋ Auto hinzufügen', render: ({ schliessen, neuZeichnen }) => {
     const gesperrt = autosSperre(store.getState().autos);
     const aus = Boolean(gesperrt) || speichert;
     const vorlagen = vorhanden
@@ -650,7 +601,7 @@ export function oeffneAutoFormular({ store, ui }, { autoId = null, vorlage = 'te
       h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein primaer', type: 'button', disabled: aus, onClick: speichern }, speichert ? 'Speichert …' : vorhanden ? 'Speichern' : 'Auto anlegen')),
       loeschenKnopf ? h('div', { class: 'knopfzeile loeschen-zeile' }, loeschenKnopf) : null,
     ];
-  });
+  } });
 }
 
 /** Rückfrage „Auto löschen?“, danach „Gelöscht ✓ · Rückgängig“ und zurück zur Liste. */
@@ -693,7 +644,7 @@ export function oeffneSatzFormular({ store }, autoId, { danach = () => {} } = {}
   const start = SATZ_NAMEN.find(([, art]) => !vorhanden.has(art)) ?? SATZ_NAMEN[0];
   const e = { name: start[0], art: start[1], groesse: auto.reifenGroessen ?? '' };
   let speichert = false;
-  return formularBlatt('🛞 Reifensatz anlegen', ({ schliessen, neuZeichnen }) => {
+  return blatt({ titel: '🛞 Reifensatz anlegen', render: ({ schliessen, neuZeichnen }) => {
     const gesperrt = autosSperre(store.getState().autos);
     const aus = Boolean(gesperrt) || speichert;
     const speichern = async () => {
@@ -738,5 +689,5 @@ export function oeffneSatzFormular({ store }, autoId, { danach = () => {} } = {}
       ),
       h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein primaer', type: 'button', disabled: aus, onClick: speichern }, speichert ? 'Speichert …' : 'Anlegen')),
     ];
-  });
+  } });
 }

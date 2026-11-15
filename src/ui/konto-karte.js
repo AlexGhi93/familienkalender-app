@@ -1,15 +1,11 @@
 import { fuelle, h } from './dom.js';
 import { bestaetigen, toast } from './components.js';
 import { freigabeAnleitung } from './anleitung.js';
+import { kopieren } from './zwischenablage.js';
 import { verbindungsModel } from '../app/views/verbindung-model.js';
 
-async function kopieren(text) {
-  try {
-    await navigator.clipboard.writeText(text);
-    toast('Kopiert ✓');
-  } catch {
-    toast('Kopieren hat nicht geklappt. Bitte den Code von Hand markieren.');
-  }
+async function codeKopieren(text) {
+  toast((await kopieren(text)) ? 'Kopiert ✓' : 'Kopieren hat nicht geklappt. Bitte den Code von Hand markieren.');
 }
 
 /** „Konto & App“: Konto bei Google (Status, neu anmelden, Code, Anleitung) bzw. im Demo-Modus der Weg zu Google. Gibt { oben, unten } zurück (leer ohne `ui.konto`). */
@@ -63,7 +59,7 @@ export function kontoKarten({ store, ui }) {
   const codeBox = h('div', { class: 'code-box' });
   codeBox.hidden = true;
   if (konto.kalenderCode) {
-    fuelle(codeBox, h('p', { class: 'code' }, konto.kalenderCode), h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein', type: 'button', onClick: () => kopieren(konto.kalenderCode) }, 'Code kopieren')), h('p', { class: 'leise' }, 'Der Code ist kein Passwort: ohne Freigabe öffnet er nichts.'), freigabeAnleitung());
+    fuelle(codeBox, h('p', { class: 'code' }, konto.kalenderCode), h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein', type: 'button', onClick: () => codeKopieren(konto.kalenderCode) }, 'Code kopieren')), h('p', { class: 'leise' }, 'Der Code ist kein Passwort: ohne Freigabe öffnet er nichts.'), freigabeAnleitung());
   }
 
   const konto_ = h(

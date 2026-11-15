@@ -1,5 +1,6 @@
 import { fuelle, h } from './dom.js';
 import { toast } from './components.js';
+import { fehlerText } from './formular.js';
 import { standText } from '../app/format-de.js';
 import { GRUND_TEXT } from '../push/client.js';
 import { GERAET_PERSONEN } from '../push/geraete.js';
@@ -8,8 +9,7 @@ import { fehlendeErinnerungsTelefone } from '../app/views/schicht-model.js';
 
 const WARTET_TEXT = '⏳ Der Schichtplan wird noch geladen. Der Abgleich folgt von selbst.';
 const WARTET_NEU_ZEICHNEN_MS = 5000;
-const MELDUNG_ANMELDEN = 'Bitte zuerst neu anmelden (Mehr → Konto & App → Neu anmelden).';
-const fehlerText = (fehler) => (fehler?.name === 'AuthAbgelaufen' ? MELDUNG_ANMELDEN : fehler?.message || 'Das hat nicht geklappt.');
+const KURZER_FEHLER = 'Das hat nicht geklappt.';
 
 /**
  * „Benachrichtigungen von der App“ in Konto & App → Erinnerungen: aktivieren, testen, abgleichen, ausschalten.
@@ -25,7 +25,7 @@ export function pushAbschnitt({ push, store = null }) {
       const ergebnis = await arbeit();
       if (erfolg) toast(typeof erfolg === 'function' ? erfolg(ergebnis) : erfolg);
     } catch (fehler) {
-      toast(fehlerText(fehler), { art: 'fehler', dauer: 7000 });
+      toast(fehlerText(fehler, KURZER_FEHLER), { art: 'fehler', dauer: 7000 });
     }
     zeichne();
   }

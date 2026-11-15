@@ -421,3 +421,37 @@ test.describe('Nachbesserungen mit Bewegung (Review Runde 1)', () => {
     await expect(page.getByRole('dialog')).toHaveCount(0);
   });
 });
+
+test.describe('Neuzeichnen und Stelle im Blatt (B8)', () => {
+  test('Neuzeichnen eines Formulars unter einer Bestätigung behält seine Stelle', async ({ page }) => {
+    await starteDemo(page, { route: '#/autos' });
+    await page.locator('.au-karte').first().click();
+    await page.getByRole('button', { name: 'Fahrzeugdaten bearbeiten' }).click();
+    const formular = page.getByRole('dialog', { name: 'Fahrzeugdaten bearbeiten' });
+    await expect(formular).toBeVisible();
+    const stelle = () => formular.evaluate((e) => e.scrollTop);
+    // eine Bestätigung darüber (Klick per Skript: er verschiebt die Stelle des Formulars nicht) …
+    await formular.evaluate((e) => [...e.querySelectorAll('button')].find((k) => k.textContent === 'Auto löschen').click());
+    await expect(page.getByRole('dialog', { name: 'Auto löschen?' })).toBeVisible();
+    // das Formular ist länger als der Bildschirm: 200 px nach unten
+    await formular.evaluate((e) => (e.scrollTop = 200));
+    expect(await stelle()).toBe(200);
+    // … und das Formular darunter zeichnet sich neu (eine andere Farbe; ein Klick per Skript, die Bestätigung deckt es ab).
+    // Ein Browser kappt die Stelle, sobald er mitten im Neuzeichnen Layout rechnet, solange der Inhalt noch leer ist (z. B. bei einem
+    // Fokus oder einer Messung) – das stellt der Test nach.
+    await formular.evaluate((e) => {
+      const inhalt = e.querySelector('.blatt-inhalt');
+      const leeren = inhalt.replaceChildren.bind(inhalt);
+      inhalt.replaceChildren = (...kinder) => {
+        leeren();
+        inhalt.getBoundingClientRect();
+        leeren(...kinder);
+      };
+      e.querySelector('.au-farbe[aria-pressed="false"]').click();
+    });
+    expect(await stelle()).toBe(200);
+    await page.getByRole('dialog', { name: 'Auto löschen?' }).getByRole('button', { name: 'Abbrechen' }).click();
+    await expect(page.getByRole('dialog', { name: 'Auto löschen?' })).toHaveCount(0);
+    expect(await stelle()).toBe(200);
+  });
+});

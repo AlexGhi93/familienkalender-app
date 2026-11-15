@@ -6,53 +6,20 @@
 // wieder benutzbar. Alle Zahlen kommen aus sparziele-model.js (Domäne), alle Texte als Text in die Seite.
 import { fuelle, h } from './dom.js';
 import { bestaetigen, blatt, toast } from './components.js';
+import { auswahl, erledigt, feld, gesperrtHinweis, sicher } from './formular.js';
 import { bedarfVorschau, entwurfZuZiel, sparzieleModel, verschiebungFrage, zielEntwurf, zielLoeschFrage, zieleSperre, zielSymbole } from '../app/views/sparziele-model.js';
 import { MAX_ZIEL_NAME, TEXT_NICHT_LOESCHBAR, zielSchluss } from '../domain/sparziele.js';
 import { geloeschtMelden } from './fortschritt.js';
 import { betragText, centsAusText } from '../domain/konto.js';
 import { MONATE } from '../app/format-de.js';
 
-const ALLGEMEINER_FEHLER = 'Das hat nicht geklappt. Bitte noch einmal versuchen.';
 const JAHRE_VORAUS = 15;
-
-/**
- * Ergebnis des Stores melden; true = erledigt (gespeichert oder wartet nur auf die Anmeldung). Ein Fehler mit `gemeldet` zeigt die
- * Shell schon (aus state.fehler) – dann keine zweite Meldung; vor dem Schreiben Abgelehntes (ohne `gemeldet`) zeigt nur diese hier.
- */
-export function erledigt(r, erfolg) {
-  if (r?.ok || r?.wartet) {
-    if (r.ok) toast(typeof erfolg === 'function' ? erfolg(r) : erfolg);
-    return true;
-  }
-  if (!r?.gemeldet) toast(r?.fehler ?? ALLGEMEINER_FEHLER, { art: 'fehler' });
-  return false;
-}
-
-export async function sicher(lauf) {
-  try {
-    return await lauf;
-  } catch (e) {
-    return { ok: false, fehler: e?.message ?? ALLGEMEINER_FEHLER };
-  }
-}
 
 /** Knöpfe während einer Speicherung sperren; nach einem Fehler wieder freigeben (nach `await` ist ev.currentTarget schon null). */
 const sperren = (knoepfe, an) => knoepfe.forEach((k) => k && (k.disabled = an));
 
 /** Nach einem Fehler: Knöpfe wieder frei – außer die Sparziele sind inzwischen gesperrt (unlesbar oder nicht geladen). */
 const freigeben = (store, knoepfe) => sperren(knoepfe, Boolean(zieleSperre(store.getState().ziele)));
-
-const gesperrtHinweis = (text) => h('article', { class: 'karte fk-meldung warn' }, h('b', {}, '🔒 Nicht änderbar'), h('p', {}, text));
-
-function auswahl(beschriftung, optionen, wert, beiAenderung) {
-  return h(
-    'select',
-    { class: 'fk-auswahl', 'aria-label': beschriftung, onChange: (ev) => beiAenderung(ev.target.value) },
-    optionen.map(([w, text]) => h('option', { value: String(w), selected: String(w) === String(wert) }, text)),
-  );
-}
-
-const feld = (titel, inhalt) => h('label', { class: 'feld' }, h('span', {}, titel), inhalt);
 
 /** Ziel `id` im angezeigten Stand (oder null). */
 const finde = (state, id) => (state.ziele?.daten?.z ?? []).find((z) => z.id === id) ?? null;
@@ -75,14 +42,7 @@ export function oeffneZielFormular({ store }, id) {
   const abgeschlossen = original ? zielSchluss(original).monat <= heute.slice(0, 7) : false;
   let speichert = false;
   let b = null;
-  let felder = null;
-
-  function neuZeichnen() {
-    const tafel = felder?.closest('.blatt');
-    const oben = tafel?.scrollTop ?? 0;
-    b.neuZeichnen();
-    if (tafel) tafel.scrollTop = oben;
-  }
+  const neuZeichnen = () => b.neuZeichnen(); // blatt() hält die Stelle im Blatt
 
   function vorschauInhalt() {
     const s = store.getState();
@@ -177,7 +137,7 @@ export function oeffneZielFormular({ store }, id) {
     const gesperrt = gesperrtJetzt();
     const aus = Boolean(gesperrt) || speichert;
     const speichernKnopf = h('button', { class: 'knopf klein primaer sz-speichern', type: 'button', disabled: aus, onClick: () => speichern() }, speichert ? 'Speichert …' : 'Speichern');
-    felder = h(
+    const felder = h(
       'fieldset',
       { class: 'fk-felder', disabled: aus },
       feld('Name', name),

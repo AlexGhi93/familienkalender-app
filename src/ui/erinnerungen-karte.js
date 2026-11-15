@@ -1,15 +1,12 @@
 import { fuelle, h } from './dom.js';
 import { toast } from './components.js';
+import { fehlerText } from './formular.js';
 import { erinnerungenAnleitung } from './anleitung.js';
 import { pushAbschnitt } from './push-abschnitt.js';
 
-const MELDUNG_ANMELDEN = 'Bitte zuerst neu anmelden (Mehr → Konto & App → Neu anmelden).';
+const KURZER_FEHLER = 'Das hat nicht geklappt.';
 
 let laufenderTest = null; // { zeit, klingeltUm }: bleibt erhalten, wenn man den Bildschirm wechselt
-
-function fehlerText(fehler) {
-  return fehler?.name === 'AuthAbgelaufen' ? MELDUNG_ANMELDEN : fehler?.message || 'Das hat nicht geklappt.';
-}
 
 /** „Konto & App“: Erinnerungen prüfen und reparieren, Test-Erinnerung auslösen, Hilfe für Android und iPhone. Nur im Google-Modus. */
 export function erinnerungenKarte({ store, ui = null }) {
@@ -17,7 +14,7 @@ export function erinnerungenKarte({ store, ui = null }) {
   const testBox = h('div', { class: 'pruefergebnis', 'aria-live': 'polite' });
 
   function zeigeFehler(box, fehler) {
-    fuelle(box, h('p', { class: 'fehlertext' }, fehlerText(fehler)));
+    fuelle(box, h('p', { class: 'fehlertext' }, fehlerText(fehler, KURZER_FEHLER)));
   }
 
   function zeigePruefung(r) {

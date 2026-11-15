@@ -1,10 +1,11 @@
 import { fuelle, h } from './dom.js';
 import { datumFeld as datumEingabe, zeitFeld as zeitEingabe } from './eingabefelder.js';
 import { chip, farbe, toast } from './components.js';
+import { mitnehmenFeld } from './mitnehmen-feld.js';
 import { ARZT_SUBTYPEN, FAMILIE_SYMBOLE, TYPES } from '../domain/types.js';
 import { fuerAuswahl } from '../domain/fuer.js';
 import { mitnehmenFor } from '../domain/settings.js';
-import { MAX_MITNEHMEN, MAX_MITNEHMEN_EINTRAG, MAX_NOTIZ, MAX_TITEL, terminAusEntwurf, terminVorschau } from '../app/termin.js';
+import { MAX_MITNEHMEN, MAX_NOTIZ, MAX_TITEL, terminAusEntwurf, terminVorschau } from '../app/termin.js';
 
 const KOSTEN_ARTEN = [
   ['keine', 'Keine Angabe'],
@@ -22,7 +23,6 @@ export function terminFormular({ store, ui }, kachel) {
   const fuerBox = h('div', { class: 'chip-reihe' });
   const symbolBox = h('div', { class: 'chip-reihe' });
   const zeitHinweis = h('small', { class: 'leise' });
-  const mitnehmenBox = h('div', { class: 'chip-reihe' });
   const kostenBox = h('div', { class: 'chip-reihe' });
   const betragFeld = h('div', { class: 'feld' });
   const vorschauBox = h('div', { class: 'vorschau', 'aria-live': 'polite' });
@@ -95,7 +95,7 @@ export function terminFormular({ store, ui }, kachel) {
             n.subtyp = s.id;
             if (!n.mitnehmenGeaendert) n.mitnehmen = [...mitnehmenFor(s.id, settings)];
             zeichneArt();
-            zeichneMitnehmen();
+            mitnehmen.neuZeichnen();
             zeichneVorschau();
           },
         }),
@@ -103,30 +103,18 @@ export function terminFormular({ store, ui }, kachel) {
     );
   }
 
-  function zeichneMitnehmen() {
-    fuelle(
-      mitnehmenBox,
-      ...n.mitnehmen.map((text, i) =>
-        h(
-          'button',
-          {
-            class: 'chip entfernbar',
-            type: 'button',
-            'aria-label': `${text} entfernen`,
-            onClick: () => {
-              n.mitnehmen = n.mitnehmen.filter((_, j) => j !== i);
-              n.mitnehmenGeaendert = true;
-              zeichneMitnehmen();
-              zeichneVorschau();
-            },
-          },
-          `🎒 ${text}`,
-          h('span', { class: 'x', 'aria-hidden': 'true' }, '✕'),
-        ),
-      ),
-      n.mitnehmen.length === 0 ? h('span', { class: 'leise' }, 'Nichts zum Mitnehmen eingetragen.') : null,
-    );
-  }
+  const mitnehmen = mitnehmenFeld({
+    gewaehlt: () => n.mitnehmen,
+    beiAenderung: (liste) => {
+      n.mitnehmen = liste;
+      n.mitnehmenGeaendert = true;
+      zeichneVorschau();
+    },
+    leerText: 'Nichts zum Mitnehmen eingetragen.',
+    platzhalter: 'z. B. Trinkflasche',
+    beschriftung: 'Weiteres zum Mitnehmen',
+    maxText: `Höchstens ${MAX_MITNEHMEN} Dinge zum Mitnehmen.`,
+  });
 
   function zeichneKosten() {
     fuelle(
@@ -164,30 +152,6 @@ export function terminFormular({ store, ui }, kachel) {
     }
   }
 
-  function neuesMitnehmen() {
-    const eingabe = h('input', { type: 'text', maxlength: String(MAX_MITNEHMEN_EINTRAG), autocomplete: 'off', placeholder: 'z. B. Trinkflasche', 'aria-label': 'Weiteres zum Mitnehmen' });
-    const hinzufuegen = () => {
-      const text = eingabe.value.trim();
-      if (text === '') return;
-      if (n.mitnehmen.length >= MAX_MITNEHMEN) {
-        toast(`Höchstens ${MAX_MITNEHMEN} Dinge zum Mitnehmen.`);
-        return;
-      }
-      if (!n.mitnehmen.includes(text)) n.mitnehmen = [...n.mitnehmen, text];
-      n.mitnehmenGeaendert = true;
-      eingabe.value = '';
-      zeichneMitnehmen();
-      zeichneVorschau();
-    };
-    eingabe.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        hinzufuegen();
-      }
-    });
-    return h('div', { class: 'zeile-eingabe' }, eingabe, h('button', { class: 'knopf klein', type: 'button', onClick: hinzufuegen }, 'Hinzufügen'));
-  }
-
   async function speichern() {
     try {
       await store.terminSpeichern(terminAusEntwurf(n), n.bearbeiten);
@@ -222,7 +186,6 @@ export function terminFormular({ store, ui }, kachel) {
   zeichneFuer();
   zeichneSymbol();
   zeichneZeitHinweis();
-  zeichneMitnehmen();
   zeichneKosten();
   zeichneVorschau();
 
@@ -257,7 +220,7 @@ export function terminFormular({ store, ui }, kachel) {
       h('div', { class: 'feld' }, h('span', {}, 'Für wen'), fuerBox),
       h('div', { class: 'feld-paar' }, h('label', { class: 'feld' }, h('span', {}, 'Datum'), datumFeld), h('label', { class: 'feld' }, h('span', {}, istArzt ? 'Uhrzeit' : 'Uhrzeit (optional)'), zeitFeld)),
       zeitHinweis,
-      h('div', { class: 'feld' }, h('span', {}, '🎒 Mitnehmen'), mitnehmenBox, neuesMitnehmen()),
+      h('div', { class: 'feld' }, h('span', {}, '🎒 Mitnehmen'), mitnehmen.chips, mitnehmen.eingabe),
       h('div', { class: 'feld' }, h('span', {}, '💶 Zu bezahlen'), kostenBox),
       betragFeld,
       h(

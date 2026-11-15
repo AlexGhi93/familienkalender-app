@@ -4,7 +4,8 @@
 import { h } from './dom.js';
 import { autosListeModel } from '../app/views/autos-model.js';
 import { oeffneAutoFormular } from './auto-formular.js';
-import { autoScreen, autosMeldungen, autosNochmalKnopf, kmZahl, statusPille } from './auto-screen.js';
+import { autoScreen, autosMeldungen, kmZahl, statusPille } from './auto-screen.js';
+import { nochmalKnopf } from './formular.js';
 
 function autoKarte(k) {
   return h(
@@ -57,7 +58,7 @@ function listeSeite({ store, ui }) {
   const ctx = { store, ui };
   let inhalt;
   if (m.zustand === 'laedt') inhalt = [h('article', { class: 'karte hinweis au-laedt' }, h('p', {}, 'Die Autos werden geladen …'))];
-  else if (m.zustand === 'nichtGeladen') inhalt = [h('article', { class: 'karte hinweis' }, h('p', {}, 'Die Autos konnten nicht gelesen werden.'), h('div', { class: 'knopfzeile' }, autosNochmalKnopf(store)))];
+  else if (m.zustand === 'nichtGeladen') inhalt = [h('article', { class: 'karte hinweis' }, h('p', {}, 'Die Autos konnten nicht gelesen werden.'), h('div', { class: 'knopfzeile' }, nochmalKnopf(() => store.autosLaden?.())))];
   else if (m.zustand === 'leer') inhalt = [...autosMeldungen(m.meldungen, store), m.gesperrt ? null : leerKarte(m, ctx)];
   else
     inhalt = [

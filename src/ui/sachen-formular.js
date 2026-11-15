@@ -1,9 +1,10 @@
 import { fuelle, h } from './dom.js';
 import { datumFeld as datumEingabe, zeitFeld as zeitEingabe } from './eingabefelder.js';
 import { chip, farbe, toast, wochenStepper } from './components.js';
+import { mitnehmenFeld } from './mitnehmen-feld.js';
 import { KITA_RICHTUNGEN, KITA_VORSCHLAEGE, TYPES } from '../domain/types.js';
 import { addDays } from '../domain/dates.js';
-import { MAX_MITNEHMEN, MAX_MITNEHMEN_EINTRAG, mitRichtung, terminAusEntwurf, terminVorschau } from '../app/termin.js';
+import { MAX_MITNEHMEN, mitRichtung, terminAusEntwurf, terminVorschau } from '../app/termin.js';
 import { MAX_SERIEN_WOCHEN, serieZusammenfassung, wochenSerie } from '../app/serie.js';
 import { datumKurz } from '../app/format-de.js';
 import { pyjamasWechsel } from './pyjamas-wechsel.js';
@@ -26,13 +27,11 @@ export function sachenFormular({ store, ui }, kachel) {
   const heute = store.heute();
 
   const richtungBox = h('div', { class: 'chip-reihe' });
-  const gewaehltBox = h('div', { class: 'chip-reihe' });
   const wiederholenBox = h('div', { class: 'feld' });
   const planBox = h('div', { class: 'vorschau' });
   const vorschauBox = h('div', { class: 'vorschau', 'aria-live': 'polite' });
   const pyjamasBox = h('div', {});
   pyjamasBox.hidden = true;
-  const vorschlagChips = new Map(); // Text -> alle Buttons dazu (Gruppen und „Zuletzt benutzt“)
 
   const datumFeld = datumEingabe({
     wert: n.date,
@@ -82,82 +81,23 @@ export function sachenFormular({ store, ui }, kachel) {
     );
   }
 
-  function markiereVorschlaege() {
-    for (const [text, knoepfe] of vorschlagChips) {
-      for (const k of knoepfe) {
-        const aktiv = n.mitnehmen.includes(text);
-        k.classList.toggle('aktiv', aktiv);
-        k.setAttribute('aria-pressed', String(aktiv));
-      }
-    }
-  }
-
-  function zeichneGewaehlt() {
-    fuelle(
-      gewaehltBox,
-      n.mitnehmen.map((text) =>
-        h(
-          'button',
-          { class: 'chip entfernbar', type: 'button', 'aria-label': `${text} entfernen`, onClick: () => umschalten(text) },
-          `🎒 ${text}`,
-          h('span', { class: 'x', 'aria-hidden': 'true' }, '✕'),
-        ),
-      ),
-      n.mitnehmen.length === 0 ? h('span', { class: 'leise' }, 'Noch nichts gewählt: unten antippen oder selbst eintragen.') : null,
-    );
-  }
-
-  function aktualisiereSachen() {
-    zeichneGewaehlt();
-    markiereVorschlaege();
-    zeichneVorschau();
-  }
-
-  function umschalten(text) {
-    if (n.mitnehmen.includes(text)) {
-      n.mitnehmen = n.mitnehmen.filter((x) => x !== text);
-    } else if (n.mitnehmen.length >= MAX_MITNEHMEN) {
-      toast(`Höchstens ${MAX_MITNEHMEN} Sachen pro Erinnerung.`);
-      return;
-    } else {
-      n.mitnehmen = [...n.mitnehmen, text];
-    }
-    aktualisiereSachen();
-  }
-
-  function vorschlagButton(text) {
-    const k = chip(text, { farbeHex: TYPES.kita_sache.farbe, onClick: () => umschalten(text) });
-    vorschlagChips.set(text, [...(vorschlagChips.get(text) ?? []), k]);
-    return k;
-  }
-
   const eigene = state.settings.sachenEigene ?? [];
-  const vorschlaege = eigene.length > 0 ? { Eigene: eigene, ...KITA_VORSCHLAEGE } : KITA_VORSCHLAEGE; // „Eigene“ (aus Mehr) steht zuerst
-  const gruppen = Object.entries(vorschlaege).map(([name, liste], i) =>
-    h('details', { class: 'gruppe', open: i === 0 }, h('summary', {}, name), h('div', { class: 'chip-reihe' }, liste.map(vorschlagButton))),
-  );
-  const zuletzt = zuletztBenutzt(state);
-  const zuletztBlock =
-    zuletzt.length > 0 && !n.bearbeiten
-      ? h('div', { class: 'gruppe-offen' }, h('span', { class: 'leise' }, 'Zuletzt benutzt'), h('div', { class: 'chip-reihe' }, zuletzt.map(vorschlagButton)))
-      : null;
-
-  function eigeneSache() {
-    const eingabe = h('input', { type: 'text', maxlength: String(MAX_MITNEHMEN_EINTRAG), autocomplete: 'off', placeholder: 'Etwas anderes, z. B. Lieblingsbuch', 'aria-label': 'Eigene Sache' });
-    const hinzufuegen = () => {
-      const text = eingabe.value.trim();
-      if (text === '') return;
-      eingabe.value = '';
-      if (!n.mitnehmen.includes(text)) umschalten(text);
-    };
-    eingabe.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        hinzufuegen();
-      }
-    });
-    return h('div', { class: 'zeile-eingabe' }, eingabe, h('button', { class: 'knopf klein', type: 'button', onClick: hinzufuegen }, 'Hinzufügen'));
-  }
+  const mitnehmen = mitnehmenFeld({
+    vorschlaege: {
+      zuletzt: n.bearbeiten ? [] : zuletztBenutzt(state),
+      gruppen: eigene.length > 0 ? { Eigene: eigene, ...KITA_VORSCHLAEGE } : KITA_VORSCHLAEGE, // „Eigene“ (aus Mehr) steht zuerst
+      farbeHex: TYPES.kita_sache.farbe,
+    },
+    gewaehlt: () => n.mitnehmen,
+    beiAenderung: (liste) => {
+      n.mitnehmen = liste;
+      zeichneVorschau();
+    },
+    leerText: 'Noch nichts gewählt: unten antippen oder selbst eintragen.',
+    platzhalter: 'Etwas anderes, z. B. Lieblingsbuch',
+    beschriftung: 'Eigene Sache',
+    maxText: `Höchstens ${MAX_MITNEHMEN} Sachen pro Erinnerung.`,
+  });
 
   function zeichneWiederholen() {
     if (n.bearbeiten) {
@@ -254,8 +194,6 @@ export function sachenFormular({ store, ui }, kachel) {
       );
 
   zeichneRichtung();
-  zeichneGewaehlt();
-  markiereVorschlaege();
   zeichneWiederholen();
   zeichnePlan();
   zeichneVorschau();
@@ -273,10 +211,10 @@ export function sachenFormular({ store, ui }, kachel) {
       h('div', { class: 'karte-zeile' }, h('span', { class: 'emoji gross' }, kachel.emoji), h('div', { class: 'karte-text' }, h('b', {}, n.bearbeiten ? `${kachel.titel} ändern` : kachel.titel))),
       h('div', { class: 'feld' }, h('span', {}, 'Was passiert?'), richtungBox),
       h('div', { class: 'feld-paar' }, h('label', { class: 'feld' }, h('span', {}, 'Datum'), datumFeld), h('label', { class: 'feld' }, h('span', {}, 'Uhrzeit'), zeitFeld)),
-      h('div', { class: 'feld' }, h('span', {}, '🎒 Sachen'), gewaehltBox),
-      zuletztBlock,
-      h('div', { class: 'gruppen' }, gruppen),
-      eigeneSache(),
+      h('div', { class: 'feld' }, h('span', {}, '🎒 Sachen'), mitnehmen.chips),
+      mitnehmen.zuletzt,
+      mitnehmen.gruppen,
+      mitnehmen.eingabe,
       wiederholenBox,
       planBox,
     ),
