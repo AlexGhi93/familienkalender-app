@@ -7,6 +7,7 @@ import { codeErzeugen, codeLesen, freigabeVorschau, teile } from '../../src/cale
 import { normalizeSettings } from '../../src/domain/settings.js';
 import { leereListe } from '../../src/domain/einkauf.js';
 import { leeresKonto } from '../../src/domain/konto.js';
+import { standardSpeicher } from '../../src/app/speicher.js';
 import { speicherAttrappe } from './hilfen.js';
 
 const K = 'x_1@group.calendar.google.com';
@@ -238,4 +239,17 @@ describe('Einrichtungscode für das zweite Elternteil', () => {
     const verboten = { acl: { einfuegen: async () => ({ ok: false, status: 403 }) } };
     assert.deepEqual(await teile(verboten, kalender, v, { bestaetigt: true }), { geteilt: false, ergebnisse: [{ kalender: 'termine', ok: false, status: 403 }] });
   });
+});
+
+test('gesperrter Speicher (Zugriff wirft): standardSpeicher() gibt null, createSnapshot/createKonfiguration werfen nicht', () => {
+  const alt = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, get() { throw new DOMException('SecurityError'); } });
+  try {
+    assert.equal(standardSpeicher(), null);
+    assert.equal(createKonfiguration().lesen(), null);
+    assert.doesNotThrow(() => createSnapshot());
+  } finally {
+    if (alt) Object.defineProperty(globalThis, 'localStorage', alt);
+    else delete globalThis.localStorage;
+  }
 });

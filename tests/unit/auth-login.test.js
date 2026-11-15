@@ -368,3 +368,13 @@ test('api.js: Token als Wert oder als Promise; Fehler bleiben AuthAbgelaufen', a
   await assert.rejects(createApi({ fetch, token: () => Promise.reject(new AuthAbgelaufen()) }).kalenderListe.liste(), { name: 'AuthAbgelaufen' });
   assert.equal(kopf.length, 2);
 });
+
+test('Verbindung bricht beim Lesen der Antwort ab: Netzwerk, kein roher TypeError', async () => {
+  const api = createApi({ token: async () => 't', fetch: async () => ({ status: 200, text: async () => { throw new TypeError('terminated'); } }) });
+  await assert.rejects(api.ereignisse.holen('k', 'fkkonto'), { name: 'Netzwerk' });
+});
+
+test('hängende Anfrage endet nach zeitlimitMs als Netzwerk', async () => {
+  const api = createApi({ token: async () => 't', zeitlimitMs: 20, fetch: (_u, { signal }) => new Promise((_, nein) => signal.addEventListener('abort', () => nein(signal.reason))) });
+  await assert.rejects(api.ereignisse.holen('k', 'fkkonto'), { name: 'Netzwerk' });
+});

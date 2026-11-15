@@ -1,17 +1,9 @@
 // Darstellung, Aussehen und Bewegung zur Laufzeit wechseln (Konto & App → Darstellung). Beim Start übernimmt src/theme-init.js
 // dasselbe vor dem Zeichnen. Die theme-color hängt von Aussehen UND Darstellung ab: wer eins ändert, liest das andere vom <html>
 // (dort steht, was gerade gilt – auch wenn der Speicher gesperrt ist).
+import { standardSpeicher } from '../app/speicher.js';
 import { DARSTELLUNG_SCHLUESSEL, gueltigeDarstellung, themeAttribut } from '../domain/darstellung.js';
 import { AUSSEHEN_SCHLUESSEL, BEWEGUNG_SCHLUESSEL, aussehenAttribut, aussehenThemeFarben, bewegungAttribut, gueltigeBewegung, gueltigesAussehen } from '../domain/aussehen.js';
-
-/** localStorage dieses Telefons; null, wenn schon der Zugriff wirft (Browser blockiert alle Website-Daten). */
-function standardSpeicher() {
-  try {
-    return globalThis.localStorage ?? null;
-  } catch {
-    return null;
-  }
-}
 
 function lese(speicher, schluessel, gueltig) {
   try {

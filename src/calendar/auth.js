@@ -5,6 +5,7 @@
 // (login-dienst/, eigener Cloudflare Worker) tauscht den Code gegen ein Refresh-Token, verwahrt es verschlüsselt und gibt
 // diesem Telefon nur eine Sitzung (localStorage „fk.login.v1“). Neue Tokens kommen danach still über den Dienst, ohne Tipp
 // und ohne Popup. Ist der Dienst nicht erreichbar, nimmt der nächste Tipp wieder den Token-Flow (eine Stunde).
+import { standardSpeicher } from '../app/speicher.js';
 import { CONFIG } from './config.js';
 import { AuthAbgelaufen } from './api.js';
 import { NEUVERSUCH_MS, createLoginDienst, erneuernInMs, mussErneuern, sitzungLesen, sitzungLoeschen, sitzungSpeichern } from './login-dienst.js';
@@ -46,14 +47,6 @@ const fehler = (art, code = null) => {
 
 /** Zufälliger `state` für den Code-Flow (die Antwort muss ihn zurückbringen). */
 const zufallsText = () => Array.from(globalThis.crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
-
-function standardSpeicher() {
-  try {
-    return globalThis.localStorage ?? null;
-  } catch {
-    return null; // Speicher gesperrt: die Sitzung gilt dann nur bis zum Neuladen
-  }
-}
 
 /** Lädt das Google-Skript (einmal) und liefert `google.accounts.oauth2`. */
 function ladeGisImBrowser() {

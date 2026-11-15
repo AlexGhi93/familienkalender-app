@@ -1,5 +1,6 @@
 // Lokaler Schnappschuss der zuletzt geladenen Daten (nur auf diesem Telefon): zeigt beim Start sofort etwas an
 // und erlaubt Lesen ohne Anmeldung/Netz. Enthält Gesundheits-Titel; er bleibt im localStorage dieses Geräts.
+import { standardSpeicher } from '../app/speicher.js';
 import { addDays, isValidDate } from '../domain/dates.js';
 import { istObjekt } from '../domain/gemeinsam.js';
 import { normalizeSettings } from '../domain/settings.js';
@@ -210,7 +211,7 @@ function pruefe(roh) {
   return { daten: { settings, tage: roh.tage, urlaub: roh.urlaub, termine: roh.termine, fenster, einkauf: normalisiereListe(roh.einkauf), konto: normalisiereKonto(roh.konto), schicht: pruefeSchicht(roh.schicht, new Date(roh.gespeichertAm).toISOString()), fixkosten: pruefeFixkosten(roh.fixkosten), ziele: pruefeZiele(roh.ziele), autos: pruefeAutos(roh.autos), versicherung: pruefeVersicherungSnapshot(roh.versicherung) }, gespeichertAm: roh.gespeichertAm };
 }
 
-export function createSnapshot({ speicher = globalThis.localStorage ?? null, jetzt = () => new Date() } = {}) {
+export function createSnapshot({ speicher = standardSpeicher(), jetzt = () => new Date() } = {}) {
   return {
     /**
      * Speichert Tage, Urlaub, Termine und Einstellungen der letzten zwölf Monate, dazu die Schichtarten und von den geladenen Monaten

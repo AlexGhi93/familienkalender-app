@@ -26,6 +26,11 @@ self.addEventListener('activate', (event) => {
       for (const name of await caches.keys()) {
         if (name !== CACHE) await caches.delete(name);
       }
+      // Abrufe mit Query (z. B. die Versionsprüfung) werden nicht mehr gespeichert; alte Einträge räumen wir weg.
+      const cache = await caches.open(CACHE);
+      for (const eintrag of await cache.keys()) {
+        if (new URL(eintrag.url).search !== '') await cache.delete(eintrag);
+      }
       await self.clients.claim();
     })(),
   );
@@ -33,12 +38,13 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const { request } = event;
-  if (request.method !== 'GET' || new URL(request.url).origin !== self.location.origin) return;
+  const adresse = new URL(request.url);
+  if (request.method !== 'GET' || adresse.origin !== self.location.origin) return;
   event.respondWith(
     (async () => {
       try {
         const antwort = await fetch(request, { cache: 'no-cache' });
-        if (antwort.ok) (await caches.open(CACHE)).put(request, antwort.clone());
+        if (antwort.ok && adresse.search === '') (await caches.open(CACHE)).put(request, antwort.clone());
         return antwort;
       } catch (fehler) {
         const gespeichert = await caches.match(request);

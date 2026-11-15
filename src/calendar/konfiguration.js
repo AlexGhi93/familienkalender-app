@@ -1,4 +1,6 @@
 // Lokale Konfiguration dieses Telefons: Demo oder Google, welche Kalender, welche Rolle. Nur Kalender-IDs, keine Zugangsdaten.
+import { standardSpeicher } from '../app/speicher.js';
+
 export const KONFIG_KEY = 'fk.config.v1';
 
 const KALENDER_ID = /^[0-9a-z_]+@[a-z0-9.-]+$/;
@@ -15,7 +17,7 @@ function pruefe(roh) {
   return { v: 1, modus: 'google', rolle: roh.rolle, kalender: Object.fromEntries(SCHLUESSEL.map((s) => [s, k[s]])) };
 }
 
-export function createKonfiguration({ speicher = globalThis.localStorage ?? null } = {}) {
+export function createKonfiguration({ speicher = standardSpeicher() } = {}) {
   return {
     lesen() {
       if (!speicher) return null;

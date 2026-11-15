@@ -1,6 +1,7 @@
 // Entscheidet beim Start: Willkommen (noch nicht eingerichtet), Demo oder Google – und baut Speicher, Adapter und Oberfläche zusammen.
 import { createStore } from './app/store.js';
 import { createDemoAdapter } from './app/demo-adapter.js';
+import { standardSpeicher } from './app/speicher.js';
 import { createApi } from './calendar/api.js';
 import { createAuth } from './calendar/auth.js';
 import { createGoogleAdapter } from './calendar/google-adapter.js';
@@ -45,7 +46,7 @@ const ladefehler = () => h('main', { class: 'screen' }, h('p', { class: 'hinweis
  * `google` ist austauschbar (Tests und die Entwicklungsseite mit simuliertem Google); `speicher` = localStorage.
  * Gibt die Oberfläche zurück (oder null, solange das Willkommen-Menü offen ist).
  */
-export async function starte({ wurzel, speicher = globalThis.localStorage ?? null, google = echteGoogle(), jetzt = () => new Date(), fenster = globalThis.window }) {
+export async function starte({ wurzel, speicher = standardSpeicher(), google = echteGoogle(), jetzt = () => new Date(), fenster = globalThis.window }) {
   const konfiguration = createKonfiguration({ speicher });
   const konfig = konfiguration.lesen();
   const neustart = () => starte({ wurzel, speicher, google, jetzt, fenster });

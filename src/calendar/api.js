@@ -57,25 +57,27 @@ const ereignisPfad = (kalenderId, id = '') => `/calendars/${kodiert(kalenderId)}
 
 /**
  * `token()` liefert das aktuelle Token – mit Login-Dienst auch ein Promise darauf, während es still erneuert wird – oder wirft
- * AuthAbgelaufen; `sleep` ist für Tests austauschbar.
+ * AuthAbgelaufen; `sleep` ist für Tests austauschbar. Jede Anfrage endet spätestens nach `zeitlimitMs` (Netzwerk), auch beim Lesen der Antwort.
  */
-export function createApi({ fetch = globalThis.fetch, token, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), basis = CONFIG.apiBasis }) {
+export function createApi({ fetch = globalThis.fetch, token, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), basis = CONFIG.apiBasis, zeitlimitMs = 30_000 }) {
   const sauber = (text, tokenWert) => String(text ?? '').replaceAll(tokenWert, '[Token]');
 
   async function anfrage(methode, pfad, { body, kopf = {} } = {}) {
     for (let versuch = 0; ; versuch += 1) {
       const tokenWert = await token();
       let res;
+      let text;
       try {
         res = await fetch(`${basis}${pfad}`, {
           method: methode,
           headers: { Authorization: `Bearer ${tokenWert}`, 'Content-Type': 'application/json', ...kopf },
           body: body === undefined ? undefined : JSON.stringify(body),
+          signal: globalThis.AbortSignal?.timeout?.(zeitlimitMs),
         });
+        text = await res.text();
       } catch {
-        throw new Netzwerk();
+        throw new Netzwerk(); // Zeitlimit oder Verbindung weg – auch mitten im Lesen der Antwort
       }
-      const text = await res.text();
       let daten = null;
       try {
         daten = text ? JSON.parse(text) : null;
