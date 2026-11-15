@@ -208,7 +208,7 @@ export function oeffneZielFormular({ store }, id) {
 }
 
 /** „Ziel beenden“: Geld wurde ausgegeben (fällt aus der Summe) oder Geld zurück zu Frei – ab diesem Monat. */
-export function oeffneZielBeenden({ store }, ziel, danach = () => {}) {
+function oeffneZielBeenden({ store }, ziel, danach = () => {}) {
   return blatt({
     titel: `„${ziel.name}“ beenden`,
     render: ({ schliessen }) => {

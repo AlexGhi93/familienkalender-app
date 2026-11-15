@@ -1,7 +1,7 @@
 // Datumsrechnung, Feiertage, Zeitspannen, Wiener Zeit und Zeitumstellung.
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { addDays, compareDates, diffDays, eachDay, isValidDate, isWerktag, istZeitumstellungsLuecke, letzterSonntag, parseDate, todayVienna, weekday } from '../../src/domain/dates.js';
+import { addDays, diffDays, eachDay, isValidDate, isWerktag, istZeitumstellungsLuecke, letzterSonntag, parseDate, todayVienna, weekday } from '../../src/domain/dates.js';
 import { easterSunday, feiertageAT, feiertagName, isFeiertag } from '../../src/domain/feiertage.js';
 import { eventSpan, fromGoogleAllDay, spanDays, toGoogleAllDay } from '../../src/domain/span.js';
 import { instantZuWien, wienZuInstant } from '../../src/domain/instant.js';
@@ -20,7 +20,7 @@ describe('parseDate / isValidDate', () => {
   });
 });
 
-describe('addDays / diffDays / compareDates', () => {
+describe('addDays / diffDays', () => {
   test('über Monats-, Jahres- und Schaltjahresgrenzen', () => {
     assert.equal(addDays('2024-02-28', 1), '2024-02-29');
     assert.equal(addDays('2023-02-28', 1), '2023-03-01');
@@ -36,13 +36,6 @@ describe('addDays / diffDays / compareDates', () => {
     assert.equal(addDays('2026-10-24', 2), '2026-10-26');
     assert.equal(diffDays('2026-03-28', '2026-03-30'), 2);
     assert.equal(diffDays('2026-10-26', '2026-10-24'), -2);
-  });
-
-  test('compareDates ordnet und prüft beide Daten', () => {
-    assert.equal(compareDates('2026-01-01', '2026-01-02'), -1);
-    assert.equal(compareDates('2026-01-02', '2026-01-01'), 1);
-    assert.equal(compareDates('2026-01-01', '2026-01-01'), 0);
-    assert.throws(() => compareDates('2026-01-01', 'gestern'));
   });
 });
 

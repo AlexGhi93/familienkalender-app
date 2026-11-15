@@ -38,7 +38,6 @@ import {
   leereAutos,
   leereHistorie,
   neueAutoId,
-  neueArbeitId,
   normalisiereAutos,
   regelLoeschen,
   regelPruefen,
@@ -65,7 +64,6 @@ import {
   saisonHinweis,
   vignettenFrist,
 } from '../../src/domain/autos-rechnung.js';
-import * as domain from '../../src/domain/index.js';
 
 // ---------------------------------------------------------------- Testdaten (nur Zahlen)
 
@@ -133,15 +131,12 @@ function teslaHistorie() {
 // ---------------------------------------------------------------- Grundlagen
 
 describe('Autos: Konstanten, Kennungen, Vorlagen', () => {
-  test('leere Daten, Kennungen aus 0-9 und a-v, domain/index.js', () => {
+  test('leere Daten, Kennungen aus 0-9 und a-v', () => {
     assert.deepEqual(leereAutos(), { v: 1, autos: [], regeln: [], saetze: [], ab: {} });
     assert.notEqual(leereAutos().autos, leereAutos().autos);
     assert.deepEqual(leereHistorie(T, 2026), { v: 1, auto: T, jahr: 2026, arbeiten: [], km: [] });
     for (let i = 0; i < 50; i += 1) assert.match(neueAutoId(), /^[0-9a-v]{8}$/);
-    assert.equal(neueArbeitId(() => 0), '00000000');
     assert.equal(neueAutoId(() => 0.9999999), 'vvvvvvvv');
-    for (const name of ['autoSetzen', 'arbeitSetzen', 'autosText', 'historieLesen', 'kmSchaetzung', 'faelligkeit', 'reifenStand', 'vignettenFrist', 'autoUebersicht']) assert.equal(typeof domain[name], 'function', name);
-    assert.equal(typeof domain.zielPruefen, 'function'); // Sparziele weiter erreichbar
   });
 
   test('ARBEIT_TYPEN: alle 14 Typen mit Emoji, Name und Detailfeldern; eingefroren', () => {

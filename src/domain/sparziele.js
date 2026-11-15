@@ -52,7 +52,7 @@ export const MAX_ZIELE_ZEICHEN = 6000; // wie Kontostand und Fixkosten: Google k
 export const ZIEL_EMOJIS = Object.freeze(['🚗', '🏖️', '🏠', '🎁', '👧', '💍', '🛋️', '🎯', '🇷🇴', '✈️', '💻', '🎄']);
 
 /** Arten, ein Ziel von Hand zu beenden. */
-export const ZIEL_ENDE_ARTEN = Object.freeze(['ausgegeben', 'frei']);
+const ZIEL_ENDE_ARTEN = Object.freeze(['ausgegeben', 'frei']);
 
 export const TEXT_ZIELE_VOLL = 'Die Sparziele sind voll: im Kalender ist kein Platz für ein weiteres Ziel. Laufende Ziele und Ziele, die nie Geld bekommen haben, lassen sich löschen.';
 export const TEXT_VERSCHIEBUNGEN_VOLL = 'Kein Platz mehr für weitere Verschiebungen aus „Frei“ – der Speicher der Sparziele im Kalender ist voll.';

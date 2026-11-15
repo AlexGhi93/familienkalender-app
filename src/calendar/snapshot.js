@@ -15,7 +15,7 @@ export const SNAPSHOT_KEY = 'fk.snapshot.v1';
 export const MAX_SNAPSHOT_ZEICHEN = 200_000;
 const TAGE_ZURUECK = 365;
 const TERMIN_TYPEN = ['arzt', 'familie', 'kita_sache'];
-export const MAX_SNAPSHOT_SCHICHT_MONATE = 6;
+const MAX_SNAPSHOT_SCHICHT_MONATE = 6;
 const MONAT = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 const istObjekt = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
@@ -182,10 +182,10 @@ function versicherungRohKuerzen(roh, jahre) {
 }
 
 /** So viele Jahre bleiben von der Versicherung im Schnappschuss, wenn er sonst zu groß wäre (das laufende und das vorige Jahr). */
-export const SNAPSHOT_VERSICHERUNG_JAHRE = 2;
+const SNAPSHOT_VERSICHERUNG_JAHRE = 2;
 
 /** So viele Jahre je Auto bleiben im Schnappschuss, wenn er sonst zu groß wäre (die längste Regel rechnet mit 48 Monaten). */
-export const SNAPSHOT_AUTOS_JAHRE = 5;
+const SNAPSHOT_AUTOS_JAHRE = 5;
 
 /** Prüft die gelesene Struktur streng; liefert die bereinigten Daten oder null. */
 function pruefe(roh) {

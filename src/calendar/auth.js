@@ -56,7 +56,7 @@ function standardSpeicher() {
 }
 
 /** Lädt das Google-Skript (einmal) und liefert `google.accounts.oauth2`. */
-export function ladeGisImBrowser() {
+function ladeGisImBrowser() {
   return new Promise((ok, nein) => {
     if (globalThis.google?.accounts?.oauth2) return ok(globalThis.google.accounts.oauth2);
     const skript = document.createElement('script');

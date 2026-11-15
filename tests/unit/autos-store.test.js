@@ -3,7 +3,8 @@
 // Unlesbares und fremde Einträge, Schnappschuss (offline), Sicherung und „Beispieldaten entfernen“.
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { autosHistorien, createStore } from '../../src/app/store.js';
+import { autosHistorien } from '../../src/domain/autos-rechnung.js';
+import { createStore } from '../../src/app/store.js';
 import { createDemoAdapter } from '../../src/app/demo-adapter.js';
 import { createGoogleAdapter } from '../../src/calendar/google-adapter.js';
 import { createSnapshot, SNAPSHOT_KEY } from '../../src/calendar/snapshot.js';

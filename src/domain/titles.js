@@ -137,10 +137,6 @@ export function titleLength(title) {
   return [...segmenter.segment(title)].length;
 }
 
-export function isTitleTooLong(title, limit = TITLE_LIMIT) {
-  return titleLength(title) > limit;
-}
-
 /**
  * True, wenn die Uhrzeit im Titel nicht mehr zur echten Startzeit passt.
  * Ganztags-Ereignisse (ohne startDateTime) und Titel ohne Uhrzeit bleiben unangetastet.

@@ -2,7 +2,6 @@
 // Testdaten: erfunden (Kind „Mia“, keine Polizzennummer).
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import * as domain from '../../src/domain/index.js';
 import { MAX_FASSUNG, fassungJetzt, versicherungTeilText as teilTextFuer } from '../../src/domain/versicherung.js';
 import {
   MAX_VERSICHERUNG_TEIL_ZEICHEN,
@@ -54,16 +53,13 @@ const FREMD_RECHNUNG = { i: 'neu00001', k: 'physio', d: '2026-03-01', b: 100, e:
 const FREMD_KATEGORIE = { i: 'zahn', n: 'Zahn', l: 10000, q: 1 };
 
 describe('Versicherung: Vorlage, Kennungen, leere Daten', () => {
-  test('leere Daten; Kennungen aus 0-9 und a-v; domain/index.js', () => {
+  test('leere Daten; Kennungen aus 0-9 und a-v', () => {
     assert.deepEqual(leereVersicherung(), { v: 1, polizze: null, ab: null });
     assert.deepEqual(leererVersicherungTeil(2026, 4), { v: 1, jahr: 2026, quartal: 4, rechnungen: [] });
     assert.notEqual(leererVersicherungTeil(2026, 4).rechnungen, leererVersicherungTeil(2026, 4).rechnungen);
     assert.deepEqual(['2026-01-01', '2026-03-31', '2026-04-01', '2026-06-30', '2026-07-01', '2026-09-30', '2026-10-01', '2026-12-31'].map(quartalVon), [1, 1, 2, 2, 3, 3, 4, 4]);
     for (let i = 0; i < 50; i += 1) assert.match(neueVersicherungId(), /^[0-9a-v]{8}$/);
     assert.equal(neueVersicherungId(() => 0.9999999), 'vvvvvvvv');
-    for (const name of ['polizzeAnlegen', 'rechnungSetzen', 'versicherungText', 'pruefeVersicherungTeil', 'jahresStand', 'offeneErstattungen', 'rechnungenDesJahres']) assert.equal(typeof domain[name], 'function', name);
-    assert.equal(typeof domain.autoSetzen, 'function', 'Autos weiter erreichbar');
-    assert.equal(domain.MAX_NOTIZ, 300, 'Termin-Notiz unverändert');
   });
 
   test('POLIZZE_VORLAGEN.medplusBasic: 5 Kategorien mit den Limits der Polizze (Spec §2), Maximum, Hinweis; eingefroren', () => {

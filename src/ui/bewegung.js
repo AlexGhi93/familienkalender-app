@@ -11,7 +11,7 @@ const MIT_EFFEKTEN = new Set(['glas', 'bento']);
 /** Klasse am Behälter beim ersten Zeichnen eines Bildschirms; die Kinder tragen `--bw-i` (Staffel-Index). */
 export const EINBLENDEN_KLASSE = 'bw-einblenden';
 /** Höchstens so viele Kinder werden gestaffelt, alle weiteren kommen mit dem letzten zusammen. */
-export const MAX_GESTAFFELT = 8;
+const MAX_GESTAFFELT = 8;
 /** Danach sind Klasse und Index wieder weg (Staffel 8 × 45 ms + Dauer ≤ 0,6 s, mit Reserve). */
 const EINBLENDEN_AUFRAEUMEN_MS = 1400;
 /** Dauer des Hochzählens (rAF, ease-out). */

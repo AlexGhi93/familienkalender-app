@@ -10,7 +10,6 @@ import {
   buildKitaSacheTitle,
   buildTerminTitle,
   buildUrlaubCheckTitle,
-  isTitleTooLong,
   needsTimeResync,
   ohneKlammer,
   parseKitaSacheLabel,
@@ -123,9 +122,6 @@ describe('Hilfen rund um den Titel', () => {
     assert.equal(titleLength('🩺 Arzt'), 6);
     assert.equal(titleLength('👁️ Augen'), 7);
     assert.equal(TITLE_LIMIT, 60);
-    assert.equal(isTitleTooLong('x'.repeat(60)), false);
-    assert.equal(isTitleTooLong('x'.repeat(61)), true);
-    assert.equal(isTitleTooLong('🩺'.repeat(60)), false);
   });
 
   test('needsTimeResync / withTime', () => {

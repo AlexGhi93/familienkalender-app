@@ -3,8 +3,8 @@ import { KITA_RICHTUNGEN } from '../../domain/types.js';
 import { datumKurz } from '../format-de.js';
 import { terminAnzeige } from './gemeinsam.js';
 
-export const SACHEN_TAGE_ZURUECK = 7;
-export const SACHEN_TAGE_VORAUS = 7;
+const SACHEN_TAGE_ZURUECK = 7;
+const SACHEN_TAGE_VORAUS = 7;
 
 /** Offene Sachen für die Einrichtung rund um heute: überfällig (bis 7 Tage zurück), heute, morgen, später (bis 7 Tage voraus). */
 export function sachenModel(state, heute) {

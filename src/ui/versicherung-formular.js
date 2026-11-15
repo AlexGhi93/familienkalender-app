@@ -77,9 +77,6 @@ function formularBlatt(titel, bauen) {
 
 // ---------------------------------------------------------------- Rechnung einreichen / ändern
 
-/** Tipp auf eine Rechnung in der Liste: das Blatt zum Ändern (mit „Erstattung erhalten“ und „Löschen“). */
-export const oeffneRechnungBlatt = (ctx, id) => oeffneRechnungFormular(ctx, id);
-
 /** Formular für eine neue (`id` = null) oder vorhandene Rechnung. */
 export function oeffneRechnungFormular({ store, ui }, id) {
   const heute = store.heute();
@@ -174,7 +171,7 @@ export async function rechnungWischLoeschen({ store }, id, knoepfe = []) {
 // ---------------------------------------------------------------- Erstattung erhalten
 
 /** „Erstattung erhalten“: Betrag + Datum (auch ändern); eine eingetragene lässt sich wieder entfernen (dann zählt der volle Betrag). */
-export function oeffneErstattung({ store }, id, { danach = () => {} } = {}) {
+function oeffneErstattung({ store }, id, { danach = () => {} } = {}) {
   const heute = store.heute();
   const e = erstattungEntwurf(store.getState(), heute, id);
   if (!e) {

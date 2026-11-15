@@ -1,6 +1,6 @@
 // Reine Umrechnung zwischen dem App-Modell und Google-Kalender-Ereignissen: kein Netz, kein DOM.
 // Grundlage: Titel sind die einzige Quelle für Mitnehmen/Kosten, die echte Startzeit gilt für die Uhrzeit,
-// und das Verhalten der API ist in docs/spike/CONTRACT.md belegt.
+// und das Verhalten der API ist in Vertragsprobe (Dokument nicht im Repo) belegt.
 import { addDays, todayVienna } from '../domain/dates.js';
 import { eventSpan, spanDays, toGoogleAllDay } from '../domain/span.js';
 import { dayEventId, istUrlaubCheckId, urlaubCheckEventId } from '../domain/ids.js';

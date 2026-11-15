@@ -24,7 +24,7 @@ export const FIX_SHARDS = 4;
 export const MAX_FIX_ZEICHEN = 6000; // wie beim Kontostand: Google kürzt Beschreibungen still bei 8192 Zeichen
 export const MAX_FIX_NAME = 40;
 export const MAX_FIX_NOTIZ = 80;
-export const MAX_FIX_CENTS = 9_999_999; // 99.999,99 €
+const MAX_FIX_CENTS = 9_999_999; // 99.999,99 €
 
 const einfrieren = (liste) => Object.freeze(liste.map((x) => Object.freeze(x)));
 
@@ -361,9 +361,6 @@ export function shardLesen(text) {
   if (verworfen > 0) warnungen.unshift(`${verworfen} doppelte Fixkosten-Posten wurden entfernt.`);
   return { shard: teil(posten, { fremd }), warnungen };
 }
-
-/** Text aus dem Kalender → Teil im Speicherformat (wie shardLesen, ohne Warnungen). */
-export const shardAusText = (text) => shardLesen(text).shard;
 
 /**
  * Darf ein Posten mit dieser Kennung gespeichert werden? Ein neuer nur, solange es insgesamt (alle Teile, archivierte mitgezählt)

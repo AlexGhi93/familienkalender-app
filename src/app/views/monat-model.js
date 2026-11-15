@@ -22,7 +22,7 @@ const tageText = (n, einzahl, mehrzahl) => `${n} ${n === 1 ? einzahl : mehrzahl}
  * Essensgeld eines Monats: `anzahl` Tage mit Mittagessen × Preis pro Essen (Cent, aus den Einstellungen).
  * null ohne Preis oder ohne Mittagessen. „ca.“, weil die Rechnung der Einrichtung z. B. Abmeldefristen anders zählen kann.
  */
-export function essensgeld(anzahl, preisCent) {
+function essensgeld(anzahl, preisCent) {
   if (!Number.isInteger(preisCent) || preisCent <= 0 || !Number.isInteger(anzahl) || anzahl <= 0) return null;
   const summeCent = anzahl * preisCent;
   return { anzahl, preisCent, summeCent, text: `Essensgeld: ca. ${euroText(summeCent / 100)} (${anzahl} × ${euroText(preisCent / 100)})` };

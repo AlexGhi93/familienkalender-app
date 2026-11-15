@@ -1,10 +1,11 @@
 // Schichtplan: Schichtarten (Katalog), Monat (ein Zeichen je Tag), Pinsel, Notizen, Zusätze, Zählung – alles rein und ohne Veränderung des Arguments.
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import * as domain from '../../src/domain/index.js';
+import { MAX_NOTIZ as MAX_NOTIZ_TERMIN } from '../../src/domain/notiz.js';
 import {
   LEER,
   MAX_ARTEN,
+  MAX_NOTIZ,
   MAX_SCHICHT_ZEICHEN,
   PALETTE,
   SCHICHT_PERSONEN,
@@ -91,10 +92,9 @@ describe('Konstanten', () => {
     assert.ok(Object.isFrozen(PALETTE) && Object.isFrozen(PALETTE[0]) && Object.isFrozen(SCHICHT_PERSONEN));
   });
 
-  test('domain/index.js bündelt die Schicht-Regeln, ohne MAX_NOTIZ der Termin-Notiz zu verdecken', () => {
-    for (const name of ['standardKatalog', 'artHinzufuegen', 'leererMonat', 'schaltePinsel', 'monatZaehlung', 'monatText']) assert.equal(typeof domain[name], 'function', name);
-    assert.equal(domain.MAX_NOTIZ, 300); // Termin-Notiz (notiz.js)
-    assert.equal(domain.MAX_SCHICHT_NOTIZ, 40);
+  test('MAX_NOTIZ: Termin-Notiz 300, Schicht-Notiz 40', () => {
+    assert.equal(MAX_NOTIZ_TERMIN, 300);
+    assert.equal(MAX_NOTIZ, 40);
   });
 });
 

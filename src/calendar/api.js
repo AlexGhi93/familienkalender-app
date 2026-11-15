@@ -1,10 +1,10 @@
-// Schlanker Client für die Google-Kalender-API v3 (nur `fetch`, kein SDK). Verhalten laut docs/spike/CONTRACT.md:
+// Schlanker Client für die Google-Kalender-API v3 (nur `fetch`, kein SDK). Verhalten laut Vertragsprobe (Dokument nicht im Repo):
 // 409 bei doppelter ID, 404/410 beim Löschen, 412 bei altem ETag, Backoff bei Rate-Limit.
 // Sicherheit: das Token steht nur im Authorization-Header (nie in URL, Meldungen oder Logs), und es gibt bewusst
 // KEINE Methode, die Kalender oder Kalenderlisten-Einträge löscht.
 import { CONFIG } from './config.js';
 
-export class ApiFehler extends Error {
+class ApiFehler extends Error {
   constructor(message, status = 0) {
     super(message);
     this.name = 'ApiFehler';
@@ -19,14 +19,14 @@ export class AuthAbgelaufen extends ApiFehler {
   }
 }
 
-export class NichtErlaubt extends ApiFehler {
+class NichtErlaubt extends ApiFehler {
   constructor(message) {
     super(message, 403);
     this.name = 'NichtErlaubt';
   }
 }
 
-export class Netzwerk extends Error {
+class Netzwerk extends Error {
   constructor() {
     super('Keine Verbindung zu Google. Bitte die Internetverbindung prüfen und noch einmal versuchen.');
     this.name = 'Netzwerk';

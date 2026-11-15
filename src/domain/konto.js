@@ -8,10 +8,10 @@
 export const PERSONEN = Object.freeze(['papa', 'mama']);
 export const MAX_MONATE = 96; // je Person (ungünstigster Fall ≈ 4 KB)
 export const MAX_CENTS = 999_999_999; // ±9.999.999,99 €
-export const MAX_KONTO_ZEICHEN = 6000; // Google kürzt Beschreibungen still bei 8192 Zeichen (Vertragsprobe C11b)
+const MAX_KONTO_ZEICHEN = 6000; // Google kürzt Beschreibungen still bei 8192 Zeichen (Vertragsprobe C11b)
 export const MAX_EXTRAS = 40; // Sonderbeträge insgesamt
 export const MAX_EXTRA_TEXT = 30; // Zeichen je Bezeichnung
-export const MAX_NACHTRAG_MONATE = 24; // so weit zurück lässt sich ein früherer Monat nachtragen
+const MAX_NACHTRAG_MONATE = 24; // so weit zurück lässt sich ein früherer Monat nachtragen
 
 const MONAT = /^\d{4}-(0[1-9]|1[0-2])$/;
 const KENNUNG = /^[A-Za-z0-9_-]{4,16}$/;

@@ -4,7 +4,7 @@
 import { bytesZuB64u } from './base64url.js';
 
 export const MAX_GERAETE = 6;
-export const MAX_REGISTER_ZEICHEN = 6000; // Google kürzt Beschreibungen still bei 8192 Zeichen (Vertragsprobe C11b)
+const MAX_REGISTER_ZEICHEN = 6000; // Google kürzt Beschreibungen still bei 8192 Zeichen (Vertragsprobe C11b)
 
 const FID = /^[A-Za-z0-9_-]{16,64}$/;
 const SCHLUESSEL = /^[A-Za-z0-9_-]{32,128}$/;

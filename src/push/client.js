@@ -10,12 +10,12 @@ import { verschluessele } from './verschluesselung.js';
 const TAGE_VORAUS = 60;
 // Hat ein Abgleich warten müssen (siehe sync, 'wartet'), wird er still nachgeholt: nach 30 s, 2 min, 10 min, dann alle 10 min.
 // Sonst bliebe er liegen, wenn danach nichts mehr anstößt (z. B. eine eigene Änderung wurde fertig gespeichert, ohne Meldung).
-export const NACHHOLEN_MS = Object.freeze([30_000, 120_000, 600_000]);
+const NACHHOLEN_MS = Object.freeze([30_000, 120_000, 600_000]);
 const TAG_MS = 24 * 3600_000;
 const K = { geraet: 'fk.push.geraet.v1', aktiv: 'fk.push.aktiv.v1', digest: 'fk.push.digest.v1', stand: 'fk.push.stand.v1', erloschen: 'fk.push.erloschen.v1', person: 'fk.push.person.v1', personen: 'fk.push.personen.v1' };
 const enc = new TextEncoder();
 
-export class PushFehler extends Error {
+class PushFehler extends Error {
   /** `code`: abgelehnt, nicht-eingerichtet, nicht-unterstuetzt, ios-installieren, dienst-nicht-erreichbar, schluessel, besetzt, dienst-fehler, kein-abo, nicht-registriert, abo-erloschen, … */
   constructor(code, message) {
     super(message);

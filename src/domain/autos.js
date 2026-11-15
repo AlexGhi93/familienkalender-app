@@ -42,18 +42,18 @@
 import { addDays, diffDays, heutePruefen, isValidDate } from './dates.js';
 
 export const MAX_AUTOS = 4; // mit vollen Vorlagen (≈ 1.500 Zeichen je Auto) passen etwa 4 in die 6000 Zeichen
-export const MAX_REGELN = 80; // insgesamt (die Vorlagen bringen 9–10 je Auto)
-export const MAX_SAETZE = 16; // Reifensätze insgesamt
+const MAX_REGELN = 80; // insgesamt (die Vorlagen bringen 9–10 je Auto)
+const MAX_SAETZE = 16; // Reifensätze insgesamt
 export const MAX_AUTOS_ZEICHEN = 6000; // wie Kontostand/Fixkosten/Sparziele: Google kürzt Beschreibungen still bei 8192 Zeichen
-export const MAX_HISTORIE_ZEICHEN = 6000;
-export const MAX_AUTO_NAME = 30;
-export const MAX_REGEL_NAME = 40;
-export const MAX_SATZ_NAME = 20;
-export const MAX_AUTO_NOTIZ = 120;
+const MAX_HISTORIE_ZEICHEN = 6000;
+const MAX_AUTO_NAME = 30;
+const MAX_REGEL_NAME = 40;
+const MAX_SATZ_NAME = 20;
+const MAX_AUTO_NOTIZ = 120;
 export const MAX_ARBEIT_NOTIZ = 120;
-export const MAX_KM = 2_000_000;
-export const MAX_SATZ_START_KM = 500_000;
-export const MAX_KOSTEN_CENTS = 9_999_999; // 99.999,99 €
+const MAX_KM = 2_000_000;
+const MAX_SATZ_START_KM = 500_000;
+const MAX_KOSTEN_CENTS = 9_999_999; // 99.999,99 €
 export const MAX_KM_PRO_TAG = 1000; // mehr gegenüber dem vorigen Stand ist ein Tippfehler: Warnung, der Punkt zählt nicht
 export const KM_FENSTER_TAGE = 90; // Durchschnitt aus den letzten 90 Tagen (mit ≥ 2 Punkten), sonst aus allen
 export const BALD_TAGE = 30; // „bald“: höchstens 30 Tage …
@@ -81,14 +81,14 @@ export const AUTO_FARBEN = tiefFrieren([
 ]);
 export const AUTO_ANTRIEBE = Object.freeze(['Elektro', 'Benzin', 'Diesel', 'Hybrid', 'Plug-in-Hybrid', 'Erdgas']);
 export const AUTO_HALTUNGEN = Object.freeze(['Eigentum', 'Leasing', 'Finanzierung', 'Firmenauto']);
-export const REIFEN_ARTEN = tiefFrieren([
+const REIFEN_ARTEN = tiefFrieren([
   { id: 'sommer', name: 'Sommerreifen' },
   { id: 'winter', name: 'Winterreifen' },
   { id: 'ganzjahr', name: 'Ganzjahresreifen' },
 ]);
 export const VIGNETTE_ARTEN = Object.freeze(['digital', 'Klebe']);
 /** Felder des Autos, aus denen eine Regel ihren Termin nimmt (autoDatum). */
-export const REGEL_AUTO_DATEN = Object.freeze(['leasingEnde']);
+const REGEL_AUTO_DATEN = Object.freeze(['leasingEnde']);
 
 /**
  * Die Arten von Arbeiten. details = die Felder je Art fürs Formular und den Speicher: feld (Name im Speicher), kurz (Schlüssel im
@@ -263,9 +263,6 @@ export function neueAutoId(zufall = Math.random) {
   for (let i = 0; i < ID_LAENGE; i += 1) id += ID_ZEICHEN[Math.floor(zufall() * ID_ZEICHEN.length) % ID_ZEICHEN.length];
   return id;
 }
-export const neueRegelId = neueAutoId;
-export const neueSatzId = neueAutoId;
-export const neueArbeitId = neueAutoId;
 
 /** Die Art eines Reifensatzes aus dem Namen („Winter…“, „Sommer…“), sonst Ganzjahr (dann gibt es keinen Saison-Hinweis). */
 const artAusName = (name) => (/winter/i.test(name) ? 'winter' : /sommer/i.test(name) ? 'sommer' : 'ganzjahr');
@@ -401,7 +398,7 @@ export function autoPruefen(entwurf) {
 }
 
 /** Ein gültiges Auto mit Kennung → bereinigt in fester Feldreihenfolge (leere Felder fallen weg); sonst null. */
-export function normalisiereAuto(roh) {
+function normalisiereAuto(roh) {
   if (autoPruefen(roh) !== null || !istKennung(roh.id)) return null;
   return { id: roh.id, ...felderLesen(AUTO_FELDER, roh).obj };
 }
@@ -460,7 +457,7 @@ export function regelPruefen(entwurf) {
 }
 
 /** Eine gültige Regel mit Kennung → bereinigt (aktiv fehlt → true); sonst null. Zusatzfelder (quelle, info) fallen weg. */
-export function normalisiereRegel(roh) {
+function normalisiereRegel(roh) {
   if (regelPruefen(roh) !== null || !istKennung(roh.id)) return null;
   const r = { id: roh.id, auto: roh.auto, typ: roh.typ, name: sauber(roh.name) };
   if (!leer(roh.intervallMonate)) r.intervallMonate = ganzzahl(roh.intervallMonate);
@@ -519,7 +516,7 @@ export function satzPruefen(entwurf) {
 }
 
 /** Ein gültiger Reifensatz → bereinigt (art fehlt → aus dem Namen, startGeschaetzt immer da); sonst null. */
-export function normalisiereSatz(roh) {
+function normalisiereSatz(roh) {
   if (satzPruefen(roh) !== null || !istKennung(roh.id)) return null;
   const name = sauber(roh.name);
   const { startGeschaetzt, ...rest } = felderLesen(SATZ_FELDER, roh).obj;
@@ -620,7 +617,7 @@ export function kmPruefen(eintrag, { heute, punkte } = {}) {
 }
 
 /** Eine gültige Arbeit (mit id und auto) → bereinigt; sonst null. Ohne „heute“ (gelesene Daten). */
-export function normalisiereArbeit(roh) {
+function normalisiereArbeit(roh) {
   if (!istObjekt(roh) || !istKennung(roh.id) || !istKennung(roh.auto)) return null;
   const r = arbeitLesen(roh);
   return r.fehler ? null : { id: roh.id, auto: roh.auto, ...r.arbeit };

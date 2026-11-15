@@ -7,7 +7,7 @@ import { ERINNERUNG_VORHER, TEST_ID, endeAus } from './mapping.js';
 import { EINSTELLUNG, FreigabeFehlt, KALENDER_SCHLUESSEL } from './setup.js';
 
 export { TEST_ID };
-export const TEST_TITEL = '🔔 Test-Erinnerung';
+const TEST_TITEL = '🔔 Test-Erinnerung';
 
 const SCHREIBRECHT = ['writer', 'owner'];
 

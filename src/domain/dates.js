@@ -47,12 +47,6 @@ export function diffDays(a, b) {
   return Math.round((parseDate(b).ms - parseDate(a).ms) / DAY_MS);
 }
 
-export function compareDates(a, b) {
-  parseDate(a);
-  parseDate(b);
-  return a < b ? -1 : a > b ? 1 : 0;
-}
-
 /** Montag = 0 … Sonntag = 6 */
 export function weekday(s) {
   return (new Date(parseDate(s).ms).getUTCDay() + 6) % 7;

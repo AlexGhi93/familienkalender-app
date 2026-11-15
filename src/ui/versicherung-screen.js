@@ -9,7 +9,7 @@ import { fortschritt, hochzaehlen } from './bewegung.js';
 import { betragText } from '../domain/konto.js';
 import { TEXT_VERSICHERUNG_NICHT_GELADEN, VERSICHERUNG_FARBE, versicherungModel } from '../app/views/versicherung-model.js';
 import { wischbar } from './auto-screen.js';
-import { oeffnePolizzeFormular, oeffneRechnungBlatt, oeffneRechnungFormular, rechnungWischLoeschen } from './versicherung-formular.js';
+import { oeffnePolizzeFormular, oeffneRechnungFormular, rechnungWischLoeschen } from './versicherung-formular.js';
 
 let gewaehltesJahr = null; // angezeigtes Jahr (null = laufendes); bleibt beim Neuzeichnen und Umschalten im Konto-Tab
 
@@ -126,7 +126,7 @@ function rechnungZeile(r, m, ctx) {
       w.schliessen();
       return;
     }
-    oeffneRechnungBlatt(ctx, r.id);
+    oeffneRechnungFormular(ctx, r.id);
   });
   loeschen.addEventListener('click', () => rechnungWischLoeschen(ctx, r.id, [loeschen]));
   return huelle;

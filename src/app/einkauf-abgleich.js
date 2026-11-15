@@ -1,7 +1,7 @@
 // Einkaufsliste aktuell halten: solange die Seite „Einkauf“ offen und sichtbar ist (und Google verbunden), wird alle 30 Sekunden
 // nur die Liste geholt. So sieht, wer gerade im Geschäft steht, was das andere Telefon noch dazugeschrieben hat.
 
-export const EINKAUF_INTERVALL_MS = 30_000;
+const EINKAUF_INTERVALL_MS = 30_000;
 
 /**
  * `aktiv()` → true, solange abgeglichen werden soll (Seite, Sichtbarkeit, Google); `holen()` holt die Liste (Fehler stören nicht);

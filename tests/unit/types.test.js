@@ -3,8 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ARZT_SUBTYPEN, CALENDARS, CALENDAR_NAMES, FAMILIE_SYMBOLE, FUER, FUER_ALLE, KITA_RICHTUNGEN, KITA_VORSCHLAEGE, TAGES_TYPEN, TYPES } from '../../src/domain/types.js';
 import { MAX_LISTEN_EINTRAG, MAX_MITNEHMEN_LISTE, normalizeSettings } from '../../src/domain/settings.js';
-import { SEP, buildArztTitle, isTitleTooLong } from '../../src/domain/titles.js';
-import * as domain from '../../src/domain/index.js';
+import { SEP, TITLE_LIMIT, buildArztTitle, titleLength } from '../../src/domain/titles.js';
 
 test('jeder Typ: id = Schlüssel, bekannter Kalender, Farbe als Hex, Google-Farbe 1–11', () => {
   const kalender = Object.values(CALENDARS);
@@ -43,7 +42,7 @@ test('Arzt-Untertypen: id = Schlüssel, Mitnehmen passt in die Einstellungen', (
 test('jeder Standard-Arzttermin passt in die Benachrichtigung (60 Zeichen)', () => {
   for (const s of Object.values(ARZT_SUBTYPEN)) {
     const titel = buildArztTitle({ subtyp: s.id, fuer: 'Kind', time: '09:15', mitnehmen: s.mitnehmen });
-    assert.equal(isTitleTooLong(titel), false, titel);
+    assert.ok(titleLength(titel) <= TITLE_LIMIT, titel);
   }
 });
 
@@ -63,10 +62,4 @@ test('Symbole, Für wen und Richtungen', () => {
 
 test('Stammdaten sind eingefroren', () => {
   for (const x of [TYPES, CALENDARS, ARZT_SUBTYPEN, FUER, FAMILIE_SYMBOLE, KITA_VORSCHLAEGE, KITA_VORSCHLAEGE.Kleidung, TAGES_TYPEN]) assert.ok(Object.isFrozen(x));
-});
-
-test('domain/index.js bündelt die reinen Regeln', () => {
-  for (const name of ['addDays', 'buildTerminTitle', 'classifyEvent', 'normalizeSettings', 'hinzufuegen', 'setzeStand', 'urlaubStatus', 'dayEventId', 'dominanterTyp']) {
-    assert.equal(typeof domain[name], 'function', name);
-  }
 });

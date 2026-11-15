@@ -17,9 +17,9 @@ export const MAX_ANREDE = 40; // eigene Anrede am Anfang der Nachrichten
 export const MAX_ESSEN_PREIS_CENT = 5000; // höchstens 50 € pro Mittagessen
 
 // Bringen & Abholen: wer das Kind hinbringt (b) und wer es abholt (h); '' = niemand eingetragen (Hilfen in src/domain/dienst.js)
-export const DIENST_PERSONEN = Object.freeze(['', 'papa', 'mama']);
-export const DIENST_ROLLEN = Object.freeze(['b', 'h']);
-export const DIENST_ERINNERUNG = Object.freeze(['beide', 'dienst']);
+const DIENST_PERSONEN = Object.freeze(['', 'papa', 'mama']);
+const DIENST_ROLLEN = Object.freeze(['b', 'h']);
+const DIENST_ERINNERUNG = Object.freeze(['beide', 'dienst']);
 export const MAX_DIENST_AUSNAHMEN = 60; // einzelne Tage; beim Speichern fliegen die ältesten zuerst raus
 const leererWochenplan = () => ['', '', '', '', '', '', ''];
 

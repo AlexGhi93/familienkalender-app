@@ -25,10 +25,10 @@ import {
 import { VIGNETTE_INFO, arbeitenVon, autoUebersicht, autosHistorien, kmPunkte, reifenStand, vignettenFrist } from '../../domain/autos-rechnung.js';
 
 /** Farbe je Kennung des Autos (nur Schmuck: Punkt, Kante, Kachel – Schrift bleibt immer --ink). */
-export const AUTO_FARBE_HEX = Object.freeze({ blau: '#2a78d6', rot: '#d94848', gruen: '#2f9e5b', grau: '#8a8799', schwarz: '#3a3648', weiss: '#d8d3c8', gelb: '#e9b520', lila: '#8b6cd6' });
+const AUTO_FARBE_HEX = Object.freeze({ blau: '#2a78d6', rot: '#d94848', gruen: '#2f9e5b', grau: '#8a8799', schwarz: '#3a3648', weiss: '#d8d3c8', gelb: '#e9b520', lila: '#8b6cd6' });
 
 /** Zeichen und Wort je Stand (nie nur Farbe). */
-export const STATUS = Object.freeze({
+const STATUS = Object.freeze({
   ok: { symbol: '✓', wort: 'ok' },
   bald: { symbol: '⏳', wort: 'bald' },
   ueberfaellig: { symbol: '⚠', wort: 'überfällig' },
@@ -50,7 +50,7 @@ const monatName = (jm) => `${MONATE[Number(jm.slice(5, 7)) - 1]} ${jm.slice(0, 4
 const kurzDatum = (d) => `${d.slice(8, 10)}.${d.slice(5, 7)}.`;
 
 /** Kilometer zur Anzeige; geschätzte mit „ca.“ davor. */
-export const kmAnzeige = (km, geschaetzt) => `${geschaetzt ? 'ca. ' : ''}${kmText(km)}`;
+const kmAnzeige = (km, geschaetzt) => `${geschaetzt ? 'ca. ' : ''}${kmText(km)}`;
 
 /** „in 6 Tagen“, „morgen“, „heute“, „in ca. 4 Monaten“. */
 export function abstandText(tage) {
@@ -265,7 +265,7 @@ function vignetteModel(u, auto, heute) {
 }
 
 /** Kurztext der Angaben einer Arbeit („SAE 0W-30 · 3,2 l · mit Filter“). */
-export function detailsText(a, saetze = []) {
+function detailsText(a, saetze = []) {
   const d = a.details ?? {};
   const satz = (id) => saetze.find((s) => s.id === id)?.name ?? 'Reifensatz';
   switch (a.typ) {
@@ -306,7 +306,7 @@ function feldAnzeige(def, w) {
 }
 
 /** Felder, die „Fahrzeugdaten“ zeigt (Name und Farbe stehen oben, die Vorlage ist intern). */
-export const FAHRZEUG_FELDER = AUTO_FELDER.filter((f) => !['name', 'farbeKennung', 'vorlage'].includes(f.feld));
+const FAHRZEUG_FELDER = AUTO_FELDER.filter((f) => !['name', 'farbeKennung', 'vorlage'].includes(f.feld));
 
 /**
  * Seite eines Autos → null (gibt es nicht) oder { id, name, farbe, kennzeichen, untertitel, km, faellig, aus, reifen, vignette,

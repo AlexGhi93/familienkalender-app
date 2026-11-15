@@ -10,8 +10,6 @@ export const gueltigeDarstellung = (wert) => (DARSTELLUNGEN.includes(wert) ? wer
 /** Wert für `data-theme` am <html>-Element; null = kein Attribut (dem Telefon folgen). */
 export const themeAttribut = (wahl) => (wahl === 'hell' ? 'light' : wahl === 'dunkel' ? 'dark' : null);
 
-export const istDunkel = (wahl, systemDunkel) => (wahl === 'auto' ? Boolean(systemDunkel) : wahl === 'dunkel');
-
 /** Die <meta name="theme-color">-Einträge: erzwungen eine Farbe, automatisch zwei mit `media`, wie im Ausgangs-HTML. */
 export function themeFarben(wahl) {
   if (wahl === 'hell') return [{ farbe: HELL, media: null }];

@@ -211,9 +211,6 @@ function mitFrist(zusage, ms) {
   return Promise.race([zusage, frist]).finally(() => clearTimeout(zeitgeber));
 }
 
-/** Alle Verlauf-Teile der Autos als Liste – liegt jetzt in domain/autos-rechnung.js (rein); hier weiter angeboten für bisherige Aufrufer. */
-export { autosHistorien };
-
 /** Wie gleichOder, aber je Verlauf-Teil (zweistufig – auch für die Quartal-Teile der Versicherung): unveränderte Teile (und, ist alles gleich, das ganze Objekt) behalten ihre Identität. */
 function historieGleichOder(alt, neu) {
   let gleich = Object.keys(alt ?? {}).length === Object.keys(neu).length;

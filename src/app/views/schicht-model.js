@@ -7,7 +7,7 @@ import { monatVor } from '../../domain/konto.js';
 import { PALETTE, SCHICHT_PERSONEN, aktiveArten, artAendern, artFuer, artHinzufuegen, istNacht, monatZaehlung, schichtAm, standardKatalog, tageImMonat } from '../../domain/schicht.js';
 import { WOCHENTAGE_KURZ, datumLang, monatTitel } from '../format-de.js';
 
-export const SCHICHT_FILTER = Object.freeze(['beide', 'papa', 'mama']);
+const SCHICHT_FILTER = Object.freeze(['beide', 'papa', 'mama']);
 export const SCHICHT_FILTER_SCHLUESSEL = 'fk.schicht.filter.v1';
 
 const gueltigerFilter = (filter) => (SCHICHT_FILTER.includes(filter) ? filter : 'beide');
@@ -34,7 +34,7 @@ export function schichtFilterSpeichern(filter, speicher = globalThis.localStorag
 }
 
 /** Die angezeigten Personen zum Filter, in fester Reihenfolge (oben Papa, unten Mama). */
-export const personenFuer = (filter) => (gueltigerFilter(filter) === 'beide' ? [...SCHICHT_PERSONEN] : [gueltigerFilter(filter)]);
+const personenFuer = (filter) => (gueltigerFilter(filter) === 'beide' ? [...SCHICHT_PERSONEN] : [gueltigerFilter(filter)]);
 
 const zeitenText = (art) => (art.von && art.bis ? `${art.von}–${art.bis}` : null);
 /** Muster einer Art für die Anzeige: 'urlaub' oder 'offen' (beide gestreift, z. B. Ersatzdienst E), sonst null. */

@@ -654,7 +654,7 @@ export function oeffneAutoFormular({ store, ui }, { autoId = null, vorlage = 'te
 }
 
 /** Rückfrage „Auto löschen?“, danach „Gelöscht ✓ · Rückgängig“ und zurück zur Liste. */
-export function autoLoeschenFragen({ store, ui }, auto, danach = () => {}, { beimSchliessen = () => {}, beginnt = () => {}, fehlgeschlagen = () => {} } = {}) {
+function autoLoeschenFragen({ store, ui }, auto, danach = () => {}, { beimSchliessen = () => {}, beginnt = () => {}, fehlgeschlagen = () => {} } = {}) {
   return bestaetigen({
     titel: 'Auto löschen?',
     text: `„${auto.name}“ mit allen Regeln und Reifensätzen löschen? Mit „Rückgängig“ kommt alles samt Verlauf zurück.`,

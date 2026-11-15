@@ -11,7 +11,7 @@ const kurzDatum = (d) => `${d.slice(8, 10)}.${d.slice(5, 7)}.`;
 const istDatum = (x) => typeof x === 'string' && isValidDate(x);
 
 /** km für den Text: ab 1.000 auf Hunderter, darunter auf Zehner gerundet („ca. 15.200 km“). */
-export const caKm = (km) => kmText(Math.abs(km) >= 1000 ? Math.round(km / 100) * 100 : Math.round(km / 10) * 10);
+const caKm = (km) => kmText(Math.abs(km) >= 1000 ? Math.round(km / 100) * 100 : Math.round(km / 10) * 10);
 
 /** autoUebersicht für `teil` = { daten, historie } (state.autos oder dessen `bestaetigt`) am Tag `heute`; unbrauchbar → [] (wirft nie). */
 export function autosUebersichten(teil, heute) {
@@ -24,7 +24,7 @@ export function autosUebersichten(teil, heute) {
 }
 
 /** Alle Termine der aktiven Regeln aller Autos am Tag `heute` → [{ auto, f }] (f = Eintrag aus autoUebersicht(…).faellig). */
-export const autosTermine = (teil, heute) => autosUebersichten(teil, heute).flatMap((u) => u.faellig.map((f) => ({ auto: u.auto, f })));
+const autosTermine = (teil, heute) => autosUebersichten(teil, heute).flatMap((u) => u.faellig.map((f) => ({ auto: u.auto, f })));
 
 /**
  * Wann ein Termin erinnert – NUR aus seinem Datum, nie aus „heute“ (Ruling I1 nach dem Review T3): so ist jeder Zeitpunkt auf beiden

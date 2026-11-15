@@ -16,7 +16,7 @@ export function fortschrittLeiste(state) {
 const ALLGEMEINER_FEHLER = 'Das hat nicht geklappt. Bitte noch einmal versuchen.';
 
 /** So lange steht „Gelöscht ✓ · Rückgängig“ (ms). */
-export const GELOESCHT_DAUER = 6000;
+const GELOESCHT_DAUER = 6000;
 
 /**
  * Meldet das Ergebnis eines Löschens aus dem Store ({ ok, fehler?, gemeldet?, wartet?, rueckgaengig? }); → true = erledigt (gelöscht

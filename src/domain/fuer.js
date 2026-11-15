@@ -1,7 +1,7 @@
 // „Für wen“ bei Terminen: Namen, Auswahl fürs Formular und Rückübersetzung aus dem Kalendertitel.
 import { FUER, FUER_ALLE } from './types.js';
 
-export const FUER_SCHLUESSEL = Object.freeze(Object.keys(FUER));
+const FUER_SCHLUESSEL = Object.freeze(Object.keys(FUER));
 
 /** Angezeigter Name: Kind = Name aus den Einstellungen (sonst „Kind“); null für „Alle“ (steht nicht im Titel). */
 export function fuerName(schluessel, settings = {}) {

@@ -18,7 +18,7 @@ import { ERSTATTUNG_ERINNERUNG_TAGE, alleRechnungen, jahresStand, offeneErstattu
 
 /** Wohin eine Erinnerung führt (Shell: wählt die Ansicht „Versicherung“ im Konto-Tab und lässt `#/konto` stehen). */
 export const VERSICHERUNG_ZIEL = '#/konto/versicherung';
-export const TEXT_VERSICHERUNG_NICHT_AKTUELL = 'Die Versicherung konnte gerade nicht neu gelesen werden – angezeigt wird der letzte Stand.';
+const TEXT_VERSICHERUNG_NICHT_AKTUELL = 'Die Versicherung konnte gerade nicht neu gelesen werden – angezeigt wird der letzte Stand.';
 export const TEXT_VERSICHERUNG_NICHT_GELADEN = 'Die Versicherung konnte nicht gelesen werden.';
 /** Farbe der Balken (wie --sz-farbe der Sparziele: nur Schmuck, die Zahlen stehen immer als Text daneben). */
 export const VERSICHERUNG_FARBE = '#2a78d6';
@@ -50,7 +50,7 @@ const stand = (v, { gespeichert = false } = {}) => (gespeichert && v?.bestaetigt
 const rechnungenJahr = (v, jahr) => rechnungenDesJahres(v?.teile ?? {}, jahr, { geschrieben: v?.geschrieben });
 
 /** Jahre, durch die man blättern kann: vom ersten (Beginn der Polizze, erstes Jahr mit Rechnungen) bis zum laufenden (oder späteren mit Rechnungen). */
-export function versicherungJahre(v, heute) {
+function versicherungJahre(v, heute) {
   const jetzt = Number(heute.slice(0, 4));
   const polizze = v?.daten?.polizze;
   const kandidaten = [jetzt];
@@ -62,7 +62,7 @@ export function versicherungJahre(v, heute) {
 }
 
 /** Rest, der sich bis Jahresende noch erstatten lässt: der Gesamtrest, höchstens die Summe der Reste der Kategorien. */
-export const erstattbarerRest = (s) => (s ? Math.min(s.gesamt.restCent, s.kategorien.reduce((summe, k) => summe + k.restCent, 0)) : 0);
+const erstattbarerRest = (s) => (s ? Math.min(s.gesamt.restCent, s.kategorien.reduce((summe, k) => summe + k.restCent, 0)) : 0);
 
 function meldungen(v) {
   const gesperrt = versicherungSperre(v);
@@ -373,7 +373,7 @@ export function versicherungTermine(v, heute) {
 }
 
 /** „Erstattung für Rechnung vom 12.10. noch offen?“ – ohne Kategorie: keine Gesundheitsangabe auf dem Sperrbildschirm (Abschluss-Review M5). */
-export const offenText = (rechnung) => `Erstattung für Rechnung vom ${kurzDatum(rechnung.datum)} noch offen?`;
+const offenText = (rechnung) => `Erstattung für Rechnung vom ${kurzDatum(rechnung.datum)} noch offen?`;
 
 /**
  * „Bis 31.12. noch Rest bei der Versicherung – jetzt nachsehen.“ – ohne Betrag (E1) und ohne Kategorie (wie M5: keine Gesundheitsangabe

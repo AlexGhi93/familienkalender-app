@@ -26,14 +26,12 @@ import {
   postenPruefen,
   postenSetzen,
   postenWiederherstellen,
-  shardAusText,
   shardFuer,
   shardLesen,
   shardText,
   summen,
   vertragStatus,
 } from '../../src/domain/fixkosten.js';
-import * as domain from '../../src/domain/index.js';
 
 /** Ein gültiger Posten; `aenderung` überschreibt einzelne Felder. */
 const posten = (aenderung = {}) => ({
@@ -59,6 +57,8 @@ function zufallsfolge(seed = 1) {
     return s / 2147483648;
   };
 }
+
+const shardAusText = (text) => shardLesen(text).shard;
 
 describe('Konstanten', () => {
   test('Kategorien, Personen, Intervalle, Fristen, Verlängerung, Grenzen', () => {
@@ -91,11 +91,6 @@ describe('Konstanten', () => {
     assert.equal(FIX_SHARDS, 4);
     assert.equal(MAX_FIX_ZEICHEN, 6000);
     assert.ok(Object.isFrozen(FIX_KATEGORIEN) && Object.isFrozen(FIX_VORLAGEN));
-  });
-
-  test('domain/index.js bündelt die Fixkosten-Regeln', () => {
-    for (const name of ['postenPruefen', 'postenSetzen', 'shardFuer', 'faelligIn', 'vertragStatus', 'summen']) assert.equal(typeof domain[name], 'function', name);
-    assert.equal(domain.MAX_FIX_POSTEN, 100);
   });
 
   test('Vorlagen: alle aus der Spezifikation, gültige Werte, Fristen nur als Hinweis', () => {

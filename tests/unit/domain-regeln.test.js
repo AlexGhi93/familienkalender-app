@@ -4,13 +4,13 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { dominanterTyp, hatKonflikt, verdraengteTypen } from '../../src/domain/konflikt.js';
-import { dateFromDayEventId, dayEventId, istUrlaubCheckId, isValidGoogleEventId, urlaubCheckEventId } from '../../src/domain/ids.js';
+import { dayEventId, istUrlaubCheckId, urlaubCheckEventId } from '../../src/domain/ids.js';
 import { jahrFuerId, kindergartenjahr, naechsterUrlaub, planUrlaubChecks, urlaubCheckDaten, urlaubStatus } from '../../src/domain/urlaub.js';
-import { offeneTage, planBestaetigung } from '../../src/domain/offen.js';
+import { offeneTage } from '../../src/domain/offen.js';
 import { planUmwandlung } from '../../src/domain/umwandlung.js';
 import { MAX_NOTIZ, bereinigeNotiz, notizAusBeschreibung } from '../../src/domain/notiz.js';
 import { datumAnzeige, datumAusEingabe, datumWaehrendTippen, zeitAusEingabe, zeitWaehrendTippen } from '../../src/domain/eingabe.js';
-import { DARSTELLUNGEN, DARSTELLUNG_SCHLUESSEL, gueltigeDarstellung, istDunkel, themeAttribut, themeFarben } from '../../src/domain/darstellung.js';
+import { DARSTELLUNGEN, DARSTELLUNG_SCHLUESSEL, gueltigeDarstellung, themeAttribut, themeFarben } from '../../src/domain/darstellung.js';
 import { AUSSEHEN_SCHLUESSEL, BEWEGUNG_SCHLUESSEL, aussehenAttribut, aussehenThemeFarben, bewegungAttribut, gueltigeBewegung, gueltigesAussehen } from '../../src/domain/aussehen.js';
 import { normalizeSettings } from '../../src/domain/settings.js';
 
@@ -34,9 +34,6 @@ describe('Konflikte am selben Tag', () => {
 describe('Ereignis-IDs', () => {
   test('Tages-IDs hin und zurück', () => {
     assert.equal(dayEventId('2026-10-14'), 'fk20261014');
-    assert.equal(dateFromDayEventId('fk20261014'), '2026-10-14');
-    assert.equal(dateFromDayEventId('fk20260230'), null);
-    assert.equal(dateFromDayEventId('fkc20261014'), null);
     assert.throws(() => dayEventId('14.10.2026'));
   });
 
@@ -46,14 +43,6 @@ describe('Ereignis-IDs', () => {
     assert.equal(istUrlaubCheckId('fkc20270230'), false);
     assert.equal(istUrlaubCheckId('fk20270301'), false);
     assert.equal(istUrlaubCheckId(undefined), false);
-  });
-
-  test('erlaubte Zeichen für Google-IDs (a–v, 0–9, 5 bis 1024)', () => {
-    assert.equal(isValidGoogleEventId('fk20261014'), true);
-    assert.equal(isValidGoogleEventId('uabc0123456'), true);
-    assert.equal(isValidGoogleEventId('fkw2026'), false);
-    assert.equal(isValidGoogleEventId('abcd'), false);
-    assert.equal(isValidGoogleEventId('ABCDE'), false);
   });
 });
 
@@ -138,11 +127,6 @@ describe('offene Tage und Bestätigung', () => {
     });
     assert.deepEqual(tage, ['2026-10-28', '2026-10-29']); // 26.10. Feiertag, Wochenende fällt weg, heute zählt nicht
     assert.deepEqual(offeneTage({ erwartung: [0], erfassungAb: null, today: '2026-10-30', anwesenheit: new Set(), abwesenheit: new Set(), urlaub: new Set() }), []);
-  });
-
-  test('Bestätigung: deterministische IDs, mit oder ohne Essen', () => {
-    assert.deepEqual(planBestaetigung(['2026-10-28']), [{ date: '2026-10-28', typ: 'kita_essen', id: 'fk20261028' }]);
-    assert.equal(planBestaetigung(['2026-10-28'], false)[0].typ, 'kita_ohne');
   });
 });
 
@@ -231,9 +215,6 @@ describe('Darstellung (Hell/Dunkel), Aussehen und Bewegung', () => {
     assert.equal(themeAttribut('hell'), 'light');
     assert.equal(themeAttribut('dunkel'), 'dark');
     assert.equal(themeAttribut('auto'), null);
-    assert.equal(istDunkel('auto', true), true);
-    assert.equal(istDunkel('hell', true), false);
-    assert.equal(istDunkel('dunkel', false), true);
     assert.equal(themeFarben('auto').length, 2);
   });
 

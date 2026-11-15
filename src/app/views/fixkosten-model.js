@@ -51,7 +51,7 @@ export function kontoAnsichtSpeichern(wert, speicher = globalThis.localStorage) 
 
 // ---------------------------------------------------------------- Hilfen
 
-export const FIX_FILTER = Object.freeze(['alle', ...FIX_PERSONEN.map((x) => x.id)]);
+const FIX_FILTER = Object.freeze(['alle', ...FIX_PERSONEN.map((x) => x.id)]);
 const WARN_TAGE = 60; // ⚠ ab so vielen Tagen vor „Kündbar bis“
 const DIAGRAMM_MONATE = 6;
 const DIAGRAMM_HINWEIS = 'Wird mit jedem Monat länger (bis 6 Monate).';

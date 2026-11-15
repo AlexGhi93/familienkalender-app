@@ -2,7 +2,7 @@
 // Schichtarten neu geholt (wie bei der Einkaufsliste). So sieht man, was das andere Telefon eingetragen hat.
 
 export const SCHICHT_INTERVALL_MS = 30_000;
-export const SCHICHT_RUECKKEHR_MS = 60_000; // Rückkehr in die App: höchstens einmal pro Minute neu holen
+const SCHICHT_RUECKKEHR_MS = 60_000; // Rückkehr in die App: höchstens einmal pro Minute neu holen
 
 /** Rückkehr in die App: ist ein neues Holen fällig? `zuletzt` = Zeitpunkt (ms) des letzten Holens beim Zurückkehren oder null. */
 export function schichtAktualisierenFaellig(zuletzt, jetzt) {

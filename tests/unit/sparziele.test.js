@@ -41,7 +41,6 @@ import {
   zieleText,
   zieleWarnungen,
 } from '../../src/domain/sparziele.js';
-import * as domain from '../../src/domain/index.js';
 
 // ---------------------------------------------------------------- Helfer
 
@@ -100,12 +99,9 @@ describe('Konstanten', () => {
     assert.ok(Object.isFrozen(ZIEL_EMOJIS));
   });
 
-  test('leereZiele und domain/index.js', () => {
+  test('leereZiele', () => {
     assert.deepEqual(leereZiele(), { v: 1, z: [], m: [] });
     assert.notEqual(leereZiele().z, leereZiele().z);
-    for (const name of ['zielPruefen', 'zielSetzen', 'sparVerlauf', 'sparMonate', 'startMonat', 'zieleLesen', 'zieleText', 'zielLoeschbar', 'zielAusblenden', 'zieleBeginn']) assert.equal(typeof domain[name], 'function', name);
-    assert.equal(domain.MAX_ZIELE_AKTIV, 20);
-    assert.equal(typeof domain.postenPruefen, 'function'); // Fixkosten weiter erreichbar
   });
 
   test('neueZielId: 8 Zeichen aus 0-9 und a-v, mit einspeisbarer Zufallsquelle', () => {

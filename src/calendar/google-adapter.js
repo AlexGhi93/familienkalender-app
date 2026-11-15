@@ -21,7 +21,7 @@ const KALENDER = ['termine', 'abwesenheit', 'anwesenheit'];
 const ANDERER_TAGESKALENDER = { anwesenheit: 'abwesenheit', abwesenheit: 'anwesenheit' };
 
 /** Standardfenster beim Laden: ab Beginn des Kindergartenjahres (oder „Erfassung ab“, oder 31 Tage zurück), 540 Tage voraus. */
-export function ladeFenster(heute, settings) {
+function ladeFenster(heute, settings) {
   const kandidaten = [kindergartenjahr(heute, settings.jahresstart).start, addDays(heute, -TAGE_ZURUECK)];
   if (settings.erfassungAb) kandidaten.push(settings.erfassungAb);
   return { von: kandidaten.sort()[0], bis: addDays(heute, TAGE_VORAUS) };

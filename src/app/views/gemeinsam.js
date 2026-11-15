@@ -35,7 +35,7 @@ export function typText(typ, date, settings) {
   return { emoji, text: buildDayTitle(typ, date, settings).slice(emoji.length + 1) };
 }
 
-export function kostenText(kosten) {
+function kostenText(kosten) {
   if (!kosten) return null;
   return kosten.kostenlos ? 'kostenlos' : euroText(kosten.betrag);
 }

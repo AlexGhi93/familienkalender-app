@@ -7,8 +7,8 @@ import { MONATE, datumKurz } from '../format-de.js';
 import { terminAnzeige, typText } from './gemeinsam.js';
 import { urlaubstageImZeitraum } from './neu-model.js';
 
-export const VERLAUF_MAX_JAHRE = 5; // so weit zurück lässt sich nachladen
-export const VERLAUF_SCHRITT_MONATE = 3; // so viel lädt „Ältere laden“ auf einmal
+const VERLAUF_MAX_JAHRE = 5; // so weit zurück lässt sich nachladen
+const VERLAUF_SCHRITT_MONATE = 3; // so viel lädt „Ältere laden“ auf einmal
 
 const TAGE_ARTEN = ['krank', 'abwesend', 'schliess'];
 

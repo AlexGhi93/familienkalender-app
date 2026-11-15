@@ -14,7 +14,7 @@ import { startShell } from './shell.js';
 import { zeigeWillkommen } from './ui/willkommen-screen.js';
 
 /** Die echte Google-Anbindung (Anmeldung + API); wird erst bei Bedarf und nur einmal erzeugt. */
-export function echteGoogle() {
+function echteGoogle() {
   let cache = null;
   return {
     erzeuge() {

@@ -8,7 +8,7 @@ export const MAX_ARTIKEL = 80;
 export const MAX_TEXT = 40;
 export const MAX_MENGE = 12;
 export const MAX_HAEUFIG = 30;
-export const MAX_EINKAUF_ZEICHEN = 6000; // Google kürzt Beschreibungen still bei 8192 Zeichen (Vertragsprobe C11b)
+const MAX_EINKAUF_ZEICHEN = 6000; // Google kürzt Beschreibungen still bei 8192 Zeichen (Vertragsprobe C11b)
 
 const KENNUNG = /^[A-Za-z0-9_-]{1,16}$/;
 const sauber = (text) => String(text ?? '').replace(/\s+/g, ' ').trim();
