@@ -1,7 +1,8 @@
 import { fuelle, h } from './dom.js';
 import { datumFeld as datumEingabe, zeitFeld as zeitEingabe } from './eingabefelder.js';
-import { chip, farbe, toast } from './components.js';
+import { chip, farbe } from './components.js';
 import { mitnehmenFeld } from './mitnehmen-feld.js';
+import { einmalSpeichern, erledigt } from './formular.js';
 import { ARZT_SUBTYPEN, FAMILIE_SYMBOLE, TYPES } from '../domain/types.js';
 import { fuerAuswahl } from '../domain/fuer.js';
 import { mitnehmenFor } from '../domain/settings.js';
@@ -153,13 +154,12 @@ export function terminFormular({ store, ui }, kachel) {
   }
 
   async function speichern() {
-    try {
-      await store.terminSpeichern(terminAusEntwurf(n), n.bearbeiten);
-    } catch (fehler) {
-      toast(fehler.message);
+    const r = await einmalSpeichern(n, () => store.terminSpeichern(terminAusEntwurf(n), n.bearbeiten));
+    if (r === undefined) return;
+    if (!erledigt(r, n.bearbeiten ? 'Termin geändert ✓' : 'Termin gespeichert ✓')) {
+      ui.rendern(); // nicht gespeichert: das Formular bleibt mit den Eingaben offen, „Speichern“ geht wieder
       return;
     }
-    toast(n.bearbeiten ? 'Termin geändert ✓' : 'Termin gespeichert ✓');
     const ziel = n.date;
     ui.neuZuruecksetzen();
     ui.gehZuMonat(ziel);
@@ -241,6 +241,6 @@ export function terminFormular({ store, ui }, kachel) {
       ),
     ),
     vorschauBox,
-    h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein', type: 'button', onClick: abbrechen }, 'Abbrechen'), h('button', { class: 'knopf klein primaer', type: 'button', onClick: speichern }, n.bearbeiten ? 'Änderungen speichern' : 'Speichern')),
+    h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein', type: 'button', onClick: abbrechen }, 'Abbrechen'), h('button', { class: 'knopf klein primaer', type: 'button', disabled: n.speichert, onClick: speichern }, n.bearbeiten ? 'Änderungen speichern' : 'Speichern')),
   );
 }

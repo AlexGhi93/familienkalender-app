@@ -1,5 +1,5 @@
 // „Neu“: jede Kachel öffnet ihr Formular; Arzttermin (Mutter-Kind-Pass) speichern und in Heute/Monat/Verlauf wiederfinden.
-import { test, expect, starteDemo, tab, erwarteToast } from './hilfen.js';
+import { test, expect, starteDemo, starteGoogleVerbunden, tab, erwarteToast, NETZFEHLER } from './hilfen.js';
 
 const KACHELN = ['Krabbelstube · Mittagessen', 'Krabbelstube · ohne Essen', 'Abwesend', 'Krank', 'Schließtag', 'Urlaub', 'Arzttermin', 'Termin', 'Sachen für Krabbelstube', 'Einkauf'];
 
@@ -129,4 +129,68 @@ test('Wahl-Chips sagen Bildschirmlesern, was gewählt ist (aria-pressed): Wieder
   const gewaehlt = page.locator('.fuer-chip[aria-pressed="true"]');
   await expect(gewaehlt).toHaveCount(1);
   await expect(page.locator('.fuer-chip:not([aria-pressed])')).toHaveCount(0);
+});
+
+test.describe('Speichern mit Google: nur einmal gleichzeitig, ein Fehlschlag ist kein Erfolg (B3, B4)', () => {
+  test.use({ erlaubteFehler: NETZFEHLER }); // fehlende versteckte Ereignisse antworten 404, der gestörte Versuch 500
+
+  const VERSUCHE = 4; // calendar/api.js: die erste Anfrage und drei Wiederholungen bei 5xx
+
+  /**
+   * Fängt das Schreiben des Termins mit diesem Titel ab: `antwort(route, nr)` beantwortet die nr-te Anfrage (oder reicht sie mit
+   * `route.fallback()` an die Attrappe weiter). → { anfragen } = Zahl der Schreibanfragen für diesen Termin.
+   */
+  async function terminSchreiben(page, titel, antwort) {
+    const z = { anfragen: 0 };
+    await page.route(/^https:\/\/www\.googleapis\.com\/calendar\/v3\//, (route) => {
+      const anfrage = route.request();
+      if (anfrage.method() === 'GET' || !(anfrage.postData() ?? '').includes(titel)) return route.fallback();
+      z.anfragen += 1;
+      return antwort(route, z.anfragen);
+    });
+    return z;
+  }
+
+  async function terminAusfuellen(page, titel) {
+    await page.locator('.kachel').filter({ hasText: /^📌Termin$/ }).click();
+    await page.getByRole('textbox', { name: 'Titel' }).fill(titel);
+    return page.getByRole('button', { name: 'Speichern', exact: true });
+  }
+
+  test('Doppeltipp auf Speichern legt den Termin einmal an', async ({ page }) => {
+    await starteGoogleVerbunden(page, { route: '#/neu' });
+    let antworten; // langsames Netz: Google antwortet erst nach dem zweiten Tipp
+    const langsam = new Promise((weiter) => { antworten = weiter; });
+    const z = await terminSchreiben(page, 'Zoobesuch', async (route) => {
+      await langsam;
+      return route.fallback();
+    });
+    const speichern = await terminAusfuellen(page, 'Zoobesuch');
+    await speichern.click();
+    await expect(speichern).toBeDisabled();
+    await speichern.click({ force: true }); // zweiter Tipp, während der erste noch speichert
+    antworten();
+    await erwarteToast(page, 'Termin gespeichert ✓');
+    await expect(page).toHaveURL(/#\/monat$/);
+    expect(z.anfragen).toBe(1);
+  });
+
+  test('gescheitertes Speichern: Formular bleibt offen, zweiter Versuch speichert genau einmal', async ({ page }) => {
+    await starteGoogleVerbunden(page, { route: '#/neu' });
+    const fehler500 = { status: 500, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ error: { code: 500, message: 'Backend Error' } }) };
+    const z = await terminSchreiben(page, 'Zoobesuch', (route, nr) => (nr <= VERSUCHE ? route.fulfill(fehler500) : route.fallback()));
+    const speichern = await terminAusfuellen(page, 'Zoobesuch');
+    await speichern.click();
+    await expect(page.locator('.toast.fehler')).toHaveText('Speichern hat nicht geklappt. Bitte noch einmal versuchen.', { timeout: 15_000 });
+    await expect(page).toHaveURL(/#\/neu$/);
+    await expect(page.getByRole('textbox', { name: 'Titel' })).toHaveValue('Zoobesuch');
+    await expect(page.locator('.toast').filter({ hasText: 'gespeichert ✓' })).toHaveCount(0);
+    await expect(speichern).toBeEnabled();
+    expect(z.anfragen).toBe(VERSUCHE);
+
+    await speichern.click();
+    await erwarteToast(page, 'Termin gespeichert ✓');
+    await expect(page).toHaveURL(/#\/monat$/);
+    expect(z.anfragen).toBe(VERSUCHE + 1); // genau eine weitere Anfrage – die gelungene
+  });
 });

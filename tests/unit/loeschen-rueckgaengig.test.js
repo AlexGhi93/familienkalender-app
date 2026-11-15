@@ -103,7 +103,7 @@ describe('Termin, Sache, Urlaub, Tag: löschen mit Rückgängig', () => {
   test('Termin einer wiederkehrenden Google-Serie (Kennung mit „_“): gelöscht, aber ohne Rückgängig', async () => {
     const { store } = aufbau();
     await store.laden();
-    const id = await store.terminSpeichern({ typ: 'arzt', subtyp: 'zahnarzt', date: '2026-10-28', time: '09:00', mitnehmen: [] }, 'abc123_20261028t070000z');
+    const { id } = await store.terminSpeichern({ typ: 'arzt', subtyp: 'zahnarzt', date: '2026-10-28', time: '09:00', mitnehmen: [] }, 'abc123_20261028t070000z');
     const r = await store.terminLoeschen(id);
     assert.equal(r.ok, true);
     assert.equal(r.rueckgaengig, undefined);

@@ -251,6 +251,96 @@ describe('gescheitertes Schreiben nimmt nur das Eigene zurück (B1)', () => {
   });
 });
 
+describe('ältere Speicher-Methoden melden ihr Ergebnis (B4)', () => {
+  const netzFehler = async () => { throw new Error('Netz'); };
+  const KEIN_ERFOLG = { ok: false, gemeldet: true };
+  const kurz = (r) => ({ ok: r.ok, gemeldet: r.gemeldet });
+
+  test('terminSpeichern: gescheitert → { ok: false, gemeldet: true }, Termin nicht im Zustand', async () => {
+    const { store } = aufbau({ aendern: (a) => ({ ...a, speichereTermin: netzFehler }) });
+    await store.laden();
+    const r = await store.terminSpeichern({ typ: 'familie', label: 'Zoo', date: '2026-11-03' });
+    assert.deepEqual(kurz(r), KEIN_ERFOLG);
+    assert.equal(typeof r.id, 'string');
+    assert.equal(r.fehler, store.getState().fehler);
+    assert.equal(store.getState().termine.some((t) => t.id === r.id), false);
+  });
+
+  test('gelungen: { ok: true, id } bzw. ids/umgewandelt/rueckgaengig wie bisher', async () => {
+    const { store } = aufbau();
+    await store.laden();
+    const termin = await store.terminSpeichern({ typ: 'familie', label: 'Zoo', date: '2026-11-03' });
+    assert.equal(termin.ok, true);
+    assert.equal(store.getState().termine.find((t) => t.id === termin.id).label, 'Zoo');
+    const sache = await store.sachenSpeichern({ richtung: 'heim', date: '2026-10-16', time: '15:30', mitnehmen: ['Body'] });
+    assert.deepEqual([sache.ok, sache.ids.length, sache.verschoben, sache.uebersprungen], [true, 1, 0, []]);
+    const pyjamas = await store.pyjamasWechselSpeichern({ hinTag: 0, heimTag: 4, wochen: 2 });
+    assert.deepEqual([pyjamas.ok, pyjamas.ids.length], [true, 4]);
+    const tage = await store.setTage(['2026-11-09', '2026-11-10'], 'kita_essen');
+    assert.deepEqual([tage.ok, typeof tage.rueckgaengig], [true, 'function']);
+    assert.deepEqual(kurz(await store.setTag('2026-11-11', 'krank')), { ok: true, gemeldet: undefined });
+    const urlaub = await store.urlaubHinzufuegen({ start: '2026-11-09', end: '2026-11-10' });
+    assert.deepEqual([urlaub.ok, urlaub.umgewandelt, typeof urlaub.rueckgaengig], [true, 2, 'function']);
+    assert.ok(store.getState().urlaub.some((u) => u.id === urlaub.id));
+    assert.deepEqual(await store.kontoSpeichern({ person: 'papa', monat: '2026-10', cents: 100_00 }, { demo: true }), { ok: true });
+    assert.deepEqual(await store.kontoNachtragen({ person: 'mama', monat: '2026-09', cents: 200_00 }), { ok: true });
+    assert.deepEqual(await store.extraHinzufuegen({ person: 'papa', monat: '2026-10', cents: 50_00, text: 'Bonus' }), { ok: true });
+  });
+
+  test('setTage gescheitert: kein rueckgaengig', async () => {
+    const { store } = aufbau({ aendern: (a) => ({ ...a, setzeTag: netzFehler }) });
+    await store.laden();
+    const r = await store.setTage(['2026-11-09'], 'krank');
+    assert.deepEqual(kurz(r), KEIN_ERFOLG);
+    assert.equal(r.rueckgaengig, undefined);
+    assert.notEqual(store.getState().tage['2026-11-09']?.typ, 'krank');
+  });
+
+  test('gescheitert: Sachen, Pyjamas, Urlaub, Kontostand, Nachtrag und Sonderbetrag melden keinen Erfolg und nehmen ihr Feld zurück', async () => {
+    const { store } = aufbau({ aendern: (a) => ({ ...a, speichereTermin: netzFehler, speichereUrlaub: netzFehler, aendereKonto: netzFehler }) });
+    await store.laden();
+    const vorher = store.getState();
+    const sache = await store.sachenSpeichern({ richtung: 'heim', date: '2026-10-16', time: '15:30', mitnehmen: ['Body'] });
+    assert.deepEqual([kurz(sache), sache.ids.length], [KEIN_ERFOLG, 1]);
+    assert.deepEqual(kurz(await store.pyjamasWechselSpeichern({ hinTag: 0, heimTag: 4, wochen: 2 })), KEIN_ERFOLG);
+    assert.deepEqual(store.getState().termine, vorher.termine);
+    const urlaub = await store.urlaubHinzufuegen({ start: '2026-11-09', end: '2026-11-10' });
+    assert.deepEqual([kurz(urlaub), urlaub.rueckgaengig], [KEIN_ERFOLG, undefined]);
+    assert.deepEqual(store.getState().urlaub, vorher.urlaub);
+    assert.deepEqual(kurz(await store.kontoSpeichern({ person: 'papa', monat: '2026-10', cents: 100_00 }, { demo: true })), KEIN_ERFOLG);
+    assert.deepEqual(kurz(await store.kontoNachtragen({ person: 'mama', monat: '2026-09', cents: 200_00 })), KEIN_ERFOLG);
+    assert.deepEqual(kurz(await store.extraHinzufuegen({ person: 'papa', monat: '2026-10', cents: 50_00, text: 'Bonus' })), KEIN_ERFOLG);
+    assert.deepEqual(store.getState().konto, vorher.konto);
+  });
+
+  test('abgelaufene Anmeldung: { ok: false, wartet: true }', async () => {
+    const abgelaufen = async () => { throw authFehler(); };
+    const { store } = aufbau({ aendern: (a) => ({ ...a, speichereTermin: abgelaufen, setzeTag: abgelaufen, speichereUrlaub: abgelaufen, aendereKonto: abgelaufen }) });
+    await store.laden();
+    const wartet = (r) => ({ ok: r.ok, wartet: r.wartet, gemeldet: r.gemeldet });
+    const WARTET = { ok: false, wartet: true, gemeldet: undefined };
+    const termin = await store.terminSpeichern({ typ: 'familie', label: 'Zoo', date: '2026-11-03' });
+    assert.deepEqual(wartet(termin), WARTET);
+    assert.ok(store.getState().termine.some((t) => t.id === termin.id)); // bleibt sichtbar, wird nach dem Anmelden gespeichert
+    const tage = await store.setTage(['2026-11-09'], 'krank');
+    assert.deepEqual([wartet(tage), typeof tage.rueckgaengig], [WARTET, 'function']);
+    const urlaub = await store.urlaubHinzufuegen({ start: '2026-11-16', end: '2026-11-17' });
+    assert.deepEqual([wartet(urlaub), typeof urlaub.rueckgaengig], [WARTET, 'function']);
+    assert.deepEqual(wartet(await store.sachenSpeichern({ richtung: 'heim', date: '2026-10-16', time: '15:30', mitnehmen: ['Body'] })), WARTET);
+    assert.deepEqual(wartet(await store.kontoSpeichern({ person: 'papa', monat: '2026-10', cents: 100_00 }, { demo: true })), WARTET);
+    assert.deepEqual(wartet(await store.extraHinzufuegen({ person: 'papa', monat: '2026-10', cents: 50_00, text: 'Bonus' })), WARTET);
+    assert.equal(store.ausstehend(), 6);
+  });
+
+  test('eine abgelehnte Eingabe wirft weiterhin sofort', async () => {
+    const { store } = aufbau();
+    await store.laden();
+    await assert.rejects(store.terminSpeichern({ typ: 'familie', label: '', date: '2026-11-03' }));
+    await assert.rejects(store.kontoSpeichern({ person: 'papa', monat: '2026-10', cents: 100_00 })); // nicht der letzte Tag des Monats
+    await assert.rejects(store.urlaubHinzufuegen({ start: '2026-11-10', end: '2026-11-09' }), /Ungültiger Zeitraum/);
+  });
+});
+
 describe('abgelaufene Anmeldung', () => {
   test('Änderung bleibt sichtbar und wartet; nach dem Anmelden wird sie gespeichert', async () => {
     let abgelaufen = true;
@@ -334,7 +424,7 @@ describe('Termine und Sachen', () => {
   test('anlegen, ändern, löschen; ungültige Eingaben ändern nichts', async () => {
     const { store } = aufbau();
     await store.laden();
-    const id = await store.terminSpeichern({ typ: 'arzt', subtyp: 'ekp', date: '2026-10-20', time: '08:00', mitnehmen: ['e-card', 'MuKi-Pass'], fuer: 'kind' });
+    const { id } = await store.terminSpeichern({ typ: 'arzt', subtyp: 'ekp', date: '2026-10-20', time: '08:00', mitnehmen: ['e-card', 'MuKi-Pass'], fuer: 'kind' });
     assert.deepEqual(store.getState().termine.find((t) => t.id === id), { id, typ: 'arzt', subtyp: 'ekp', date: '2026-10-20', time: '08:00', mitnehmen: ['e-card', 'MuKi-Pass'], kosten: null, fuer: 'kind' });
     await store.terminSpeichern({ typ: 'arzt', subtyp: 'ekp', date: '2026-10-21', time: '08:00', mitnehmen: [] }, id);
     assert.equal(store.getState().termine.filter((t) => t.id === id).length, 1);

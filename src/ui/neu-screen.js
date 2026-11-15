@@ -5,7 +5,8 @@ import { neuKacheln, urlaubVorschau, werktageImBereich } from '../app/views/neu-
 import { werktageText } from '../domain/format.js';
 import { terminFormular } from './termin-formular.js';
 import { sachenFormular } from './sachen-formular.js';
-import { zeigeRueckgaengig } from './fortschritt.js';
+import { eingetragenMelden } from './fortschritt.js';
+import { einmal } from '../app/einmal.js';
 
 function auswahlAnsicht({ ui }, kacheln) {
   return h(
@@ -95,8 +96,12 @@ function formularAnsicht({ store, ui }, kachel) {
         toast('In diesem Zeitraum gibt es keine Werktage.');
         return;
       }
-      const { rueckgaengig } = await store.setTage(tage, kachel.id);
-      zeigeRueckgaengig(`${tage.length} ${tage.length === 1 ? 'Tag' : 'Tage'} gespeichert ✓`, rueckgaengig);
+      const r = await einmal(n, () => store.setTage(tage, kachel.id));
+      if (r === undefined) return;
+      if (!eingetragenMelden(r, `${tage.length} ${tage.length === 1 ? 'Tag' : 'Tage'} gespeichert ✓`)) {
+        ui.rendern(); // nicht gespeichert: das Formular bleibt mit dem Zeitraum offen, „Speichern“ geht wieder
+        return;
+      }
       const ziel = n.von;
       ui.neuZuruecksetzen();
       ui.gehZuMonat(ziel);
@@ -104,8 +109,12 @@ function formularAnsicht({ store, ui }, kachel) {
     }
     const vorschau = urlaubVorschau(store.getState(), { start: n.von, end: n.bis }, heute);
     const anlegen = async () => {
-      const r = await store.urlaubHinzufuegen({ start: n.von, end: n.bis });
-      zeigeRueckgaengig(r.umgewandelt > 0 ? `Urlaub gespeichert, ${r.umgewandelt} Betreuungstage umgewandelt ✓` : 'Urlaub gespeichert ✓', r.rueckgaengig);
+      const r = await einmal(n, () => store.urlaubHinzufuegen({ start: n.von, end: n.bis }));
+      if (r === undefined) return;
+      if (!eingetragenMelden(r, r.umgewandelt > 0 ? `Urlaub gespeichert, ${r.umgewandelt} Betreuungstage umgewandelt ✓` : 'Urlaub gespeichert ✓')) {
+        ui.rendern();
+        return;
+      }
       ui.neuZuruecksetzen();
       ui.gehZu('urlaub');
     };
@@ -127,7 +136,7 @@ function formularAnsicht({ store, ui }, kachel) {
     { class: 'screen neu-formular' },
     h('button', { class: 'zurueck', type: 'button', onClick: () => ui.neuZuruecksetzen(true) }, '‹ Zurück'),
     h('div', { class: 'karte tint formular', style: farbe(kachel.farbe) }, h('div', { class: 'karte-zeile' }, h('span', { class: 'emoji gross' }, kachel.emoji), h('div', { class: 'karte-text' }, h('b', {}, kachel.titel))), von.knoten, bisFeld.knoten, info),
-    h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein', type: 'button', onClick: () => ui.neuZuruecksetzen(true) }, 'Abbrechen'), h('button', { class: 'knopf klein primaer', type: 'button', onClick: speichern }, 'Speichern')),
+    h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein', type: 'button', onClick: () => ui.neuZuruecksetzen(true) }, 'Abbrechen'), h('button', { class: 'knopf klein primaer', type: 'button', disabled: n.speichert, onClick: speichern }, 'Speichern')),
   );
 }
 

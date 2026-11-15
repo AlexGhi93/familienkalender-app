@@ -66,6 +66,9 @@ const einzelnWiederherstellbar = (id) => typeof id === 'string' && id !== '' && 
 /** Ergebnis mit `rueckgaengig` – nur bei Erfolg und nur, wenn es ein Rückgängig gibt. */
 const mitRueckgaengig = (r, rueckgaengig) => (r.ok && rueckgaengig ? { ...r, rueckgaengig } : r);
 
+/** Ergebnis eines Eintragens mit `rueckgaengig` – auch, wenn es nur auf die Anmeldung wartet (es bleibt sichtbar); nicht nach einem Fehlschlag. */
+const mitZuruecknehmen = (r, rueckgaengig) => (r.ok || r.wartet ? { ...r, rueckgaengig } : r);
+
 /** Zufällige ID aus den Zeichen 0-9 und a-v: so darf sie auch als Google-Ereignis-ID dienen. */
 const zufaelligeId = () => `u${Array.from({ length: 11 }, () => Math.floor(Math.random() * 32).toString(32)).join('')}`;
 
@@ -478,16 +481,18 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     };
   }
 
+  /** Legt Termine an (oder ersetzt die mit derselben Kennung). Wirft sofort, wenn es keinen gibt; sonst → wie `ergebnisVon`. */
   async function termineAnlegen(neue) {
     if (neue.length === 0) throw new Error('In diesem Zeitraum gibt es keinen passenden Tag.');
     const ids = new Set(neue.map((t) => t.id));
-    await aendere({ termine: [...state.termine.filter((t) => !ids.has(t.id)), ...neue] }, async (bericht) => {
+    const e = await aendere({ termine: [...state.termine.filter((t) => !ids.has(t.id)), ...neue] }, async (bericht) => {
       let i = 0;
       for (const t of neue) {
         await adapter.speichereTermin(t);
         bericht((i += 1), neue.length);
       }
     });
+    return ergebnisVon(e);
   }
 
   /**
@@ -1895,19 +1900,22 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
 
     setTag: (date, typ) => store.setTage([date], typ),
 
-    /** Setzt den Typ für mehrere Tage. Gibt { rueckgaengig } zurück (stellt die Tage auf den früheren Stand). */
+    /**
+     * Setzt den Typ für mehrere Tage. → wie `ergebnisVon`, dazu `rueckgaengig()` (stellt die Tage auf den früheren Stand) – nicht,
+     * wenn das Speichern gescheitert ist (dann ist schon alles zurückgenommen und neu geladen).
+     */
     async setTage(dates, typ) {
       const vorher = dates.map((d) => [d, state.tage[d]?.typ ?? null]);
       const tage = { ...state.tage };
       for (const d of dates) tage[d] = { typ };
-      await aendere({ tage }, async (bericht) => {
+      const e = await aendere({ tage }, async (bericht) => {
         let i = 0;
         for (const d of dates) {
           await adapter.setzeTag(d, typ);
           bericht((i += 1), dates.length);
         }
       });
-      return { rueckgaengig: () => stelleTageWieder(vorher) };
+      return mitZuruecknehmen(ergebnisVon(e), () => stelleTageWieder(vorher));
     },
 
     /**
@@ -1925,7 +1933,10 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       return mitRueckgaengig(r, vorher.konflikt ? null : zurueck);
     },
 
-    /** Legt einen Urlaub an; Betreuungstage darin werden umgewandelt (gelöscht). Gibt { id, umgewandelt, rueckgaengig } zurück. */
+    /**
+     * Legt einen Urlaub an; Betreuungstage darin werden umgewandelt (gelöscht). Wirft sofort bei einem ungültigen Zeitraum.
+     * → wie `ergebnisVon`, dazu { id, umgewandelt } und `rueckgaengig()` (nicht, wenn das Speichern gescheitert ist).
+     */
     async urlaubHinzufuegen({ start, end }) {
       if (!(start <= end)) throw new Error('Ungültiger Zeitraum');
       const tage = { ...state.tage };
@@ -1934,7 +1945,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       const entfernt = plan.loeschen.map((d) => [d, tage[d].typ]);
       for (const d of plan.loeschen) delete tage[d];
       const eintrag = { id: neueId(), start, end };
-      await aendere({ tage, urlaub: [...state.urlaub, eintrag] }, async (bericht) => {
+      const e = await aendere({ tage, urlaub: [...state.urlaub, eintrag] }, async (bericht) => {
         const gesamt = plan.loeschen.length + 1;
         let i = 0;
         for (const d of plan.loeschen) {
@@ -1944,15 +1955,12 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
         await adapter.speichereUrlaub(eintrag);
         bericht(gesamt, gesamt);
       });
-      return {
-        id: eintrag.id,
-        umgewandelt: plan.loeschen.length,
-        rueckgaengig: () =>
-          stelleTageWieder(entfernt, {
-            zustand: { urlaub: state.urlaub.filter((u) => u.id !== eintrag.id) },
-            vorher: () => adapter.loescheUrlaub(eintrag.id),
-          }),
-      };
+      const zurueck = () =>
+        stelleTageWieder(entfernt, {
+          zustand: { urlaub: state.urlaub.filter((u) => u.id !== eintrag.id) },
+          vorher: () => adapter.loescheUrlaub(eintrag.id),
+        });
+      return mitZuruecknehmen({ ...ergebnisVon(e), id: eintrag.id, umgewandelt: plan.loeschen.length }, zurueck);
     },
 
     /**
@@ -1967,12 +1975,14 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       return mitRueckgaengig(r, u && einzelnWiederherstellbar(id) ? zurueck : null);
     },
 
-    /** Legt einen Termin an oder ändert ihn (mit `id`). Wirft bei ungültigen Eingaben einen Error mit deutscher Meldung. */
+    /**
+     * Legt einen Termin an oder ändert ihn (mit `id`). Wirft bei ungültigen Eingaben sofort einen Error mit deutscher Meldung.
+     * → wie `ergebnisVon`, dazu `id` (auch wenn das Speichern gescheitert ist: dann steht der Termin nicht mehr im Zustand).
+     */
     async terminSpeichern(roh, id = null) {
       const termin = { id: id ?? neueId(), ...normalisiereTermin(roh) };
       const termine = [...state.termine.filter((t) => t.id !== termin.id), termin];
-      await aendere({ termine }, () => adapter.speichereTermin(termin));
-      return termin.id;
+      return { ...ergebnisVon(await aendere({ termine }, () => adapter.speichereTermin(termin))), id: termin.id };
     },
 
     /**
@@ -1990,27 +2000,25 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
 
     /**
      * Sachen für Krabbelstube/Kindergarten: einmalig (`wochen` = 1), als wöchentliche Serie (`wochen` > 1)
-     * oder, mit `id`, als Änderung genau dieser Sache. Gibt { ids, verschoben, uebersprungen } zurück.
+     * oder, mit `id`, als Änderung genau dieser Sache. Wirft sofort bei ungültigen Eingaben. → wie `ergebnisVon`, dazu
+     * { ids, verschoben, uebersprungen }.
      */
     async sachenSpeichern(roh, { wochen = 1, id = null } = {}) {
       pruefeWochen(wochen);
       if (id) {
         const alt = state.termine.find((t) => t.id === id);
         const basis = normalisiereTermin({ ...roh, typ: 'kita_sache', serie: alt?.serie });
-        await termineAnlegen([{ id, ...basis }]);
-        return { ids: [id], verschoben: 0, uebersprungen: [] };
+        return { ...(await termineAnlegen([{ id, ...basis }])), ids: [id], verschoben: 0, uebersprungen: [] };
       }
       if (wochen === 1) {
         const termin = { id: neueId(), ...normalisiereTermin({ ...roh, typ: 'kita_sache', serie: undefined }) };
-        await termineAnlegen([termin]);
-        return { ids: [termin.id], verschoben: 0, uebersprungen: [] };
+        return { ...(await termineAnlegen([termin])), ids: [termin.id], verschoben: 0, uebersprungen: [] };
       }
       const r = serieTermine(roh, wochen);
-      await termineAnlegen(r.termine);
-      return { ids: r.termine.map((t) => t.id), verschoben: r.verschoben, uebersprungen: r.uebersprungen };
+      return { ...(await termineAnlegen(r.termine)), ids: r.termine.map((t) => t.id), verschoben: r.verschoben, uebersprungen: r.uebersprungen };
     },
 
-    /** Pyjamas-Wechsel: wöchentlich „Pyjamas hinbringen“ (hinTag) und „Pyjamas heimholen“ (heimTag), Mo = 0 … Fr = 4. */
+    /** Pyjamas-Wechsel: wöchentlich „Pyjamas hinbringen“ (hinTag) und „Pyjamas heimholen“ (heimTag), Mo = 0 … Fr = 4. → wie `sachenSpeichern`. */
     async pyjamasWechselSpeichern({ hinTag = 0, heimTag = 4, wochen = 8, mitnehmen = ['Pyjamas'] } = {}) {
       pruefeWochen(wochen);
       for (const tag of [hinTag, heimTag]) {
@@ -2021,8 +2029,8 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       const hin = serieTermine({ richtung: 'hin', date: naechsterWochentag(heute, hinTag), time: bringzeit, mitnehmen, kosten: null }, wochen);
       const heim = serieTermine({ richtung: 'heim', date: naechsterWochentag(heute, heimTag), time: abholzeit, mitnehmen, kosten: null }, wochen);
       const neue = [...hin.termine, ...heim.termine];
-      await termineAnlegen(neue);
       return {
+        ...(await termineAnlegen(neue)),
         ids: neue.map((t) => t.id),
         verschoben: hin.verschoben + heim.verschoben,
         uebersprungen: [...hin.uebersprungen, ...heim.uebersprungen],
@@ -2033,10 +2041,11 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
      * Kontostand von Papa oder Mama für einen Monat eintragen (oder als Tippfehler korrigieren). Ein NEUER Eintrag geht nur am letzten Tag des Monats
      * (Wiener Datum zum Zeitpunkt des Tippens; `demo: true` hebt das auf). Monat und Datum sind festgehalten: eine wegen abgelaufener Anmeldung
      * später gespeicherte Eingabe landet trotzdem im richtigen Monat. Wirft sofort (ohne etwas zu ändern), wenn die Eingabe nicht passt.
+     * → wie `ergebnisVon`.
      */
     async kontoSpeichern(eintrag, { demo = false } = {}) {
       const heute = todayVienna(jetzt());
-      await kontoAendern((konto) => setzeStand(konto, eintrag, { heute, demo }));
+      return ergebnisVon(await kontoAendern((konto) => setzeStand(konto, eintrag, { heute, demo })));
     },
 
     /**
@@ -2045,7 +2054,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
      */
     async kontoNachtragen(eintrag) {
       const heute = todayVienna(jetzt());
-      await kontoAendern((konto) => setzeStand(konto, eintrag, { heute, nachtrag: true }));
+      return ergebnisVon(await kontoAendern((konto) => setzeStand(konto, eintrag, { heute, nachtrag: true })));
     },
 
     /**
@@ -2066,11 +2075,14 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       return mitRueckgaengig(r, geloescht === undefined ? null : zurueck);
     },
 
-    /** Sonderbetrag (Einnahme > 0, Ausgabe < 0) für einen Monat, jederzeit. Die Kennung macht eine wiederholte Speicherung unschädlich. */
+    /**
+     * Sonderbetrag (Einnahme > 0, Ausgabe < 0) für einen Monat, jederzeit. Die Kennung macht eine wiederholte Speicherung unschädlich.
+     * Wirft sofort, wenn die Eingabe nicht passt. → wie `ergebnisVon`.
+     */
     async extraHinzufuegen(eintrag) {
       const heute = todayVienna(jetzt());
       const id = neueId().slice(0, 16);
-      await kontoAendern((konto) => fuegeExtraHinzu(konto, { ...eintrag, id }, { heute }));
+      return ergebnisVon(await kontoAendern((konto) => fuegeExtraHinzu(konto, { ...eintrag, id }, { heute })));
     },
 
     /**

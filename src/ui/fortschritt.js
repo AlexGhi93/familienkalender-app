@@ -67,6 +67,16 @@ export async function sicherLoeschen(lauf) {
   }
 }
 
+/**
+ * Meldet das Ergebnis eines Eintragens mit „Rückgängig“ ({ ok, wartet?, rueckgaengig? } aus store.setTage / urlaubHinzufuegen);
+ * → true = erledigt (gespeichert, oder es wartet nur auf die Anmeldung – dann ohne Erfolgsmeldung). Einen Fehlschlag zeigt schon die
+ * Shell (aus state.fehler): keine Erfolgsmeldung, → false.
+ */
+export function eingetragenMelden(r, text) {
+  if (r?.ok) zeigeRueckgaengig(text, r.rueckgaengig);
+  return Boolean(r?.ok || r?.wartet);
+}
+
 /** Meldung mit „Rückgängig“ (10 Sekunden) nach einer Aktion mit mehreren Tagen. */
 export function zeigeRueckgaengig(text, rueckgaengig) {
   toast(text, {

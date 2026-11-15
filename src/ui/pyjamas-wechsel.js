@@ -1,5 +1,6 @@
 import { fuelle, h } from './dom.js';
-import { chip, farbe, toast, wochenStepper } from './components.js';
+import { chip, farbe, wochenStepper } from './components.js';
+import { einmalSpeichern, erledigt } from './formular.js';
 import { TYPES } from '../domain/types.js';
 import { WOCHENTAGE_KURZ } from '../app/format-de.js';
 import { MAX_SERIEN_WOCHEN, naechsterWochentag, serieZusammenfassung, wochenSerie } from '../app/serie.js';
@@ -39,14 +40,14 @@ export function pyjamasWechsel({ store, ui }) {
   }
 
   async function einrichten() {
-    try {
-      const r = await store.pyjamasWechselSpeichern({ hinTag: p.hinTag, heimTag: p.heimTag, wochen: p.wochen });
-      toast(`${r.ids.length} Erinnerungen eingerichtet ✓`);
-      ui.neuZuruecksetzen();
-      ui.gehZu('heute');
-    } catch (fehler) {
-      toast(fehler.message);
+    const r = await einmalSpeichern(p, () => store.pyjamasWechselSpeichern({ hinTag: p.hinTag, heimTag: p.heimTag, wochen: p.wochen }));
+    if (r === undefined) return;
+    if (!erledigt(r, `${r.ids.length} Erinnerungen eingerichtet ✓`)) {
+      ui.rendern(); // nicht gespeichert: zurück zum Formular
+      return;
     }
+    ui.neuZuruecksetzen();
+    ui.gehZu('heute');
   }
 
   function zeichnen() {
@@ -77,7 +78,7 @@ export function pyjamasWechsel({ store, ui }) {
       fehler
         ? h('p', { class: 'leise' }, fehler)
         : h('div', { class: 'info' }, h('p', {}, `Hinbringen: ${serieZusammenfassung(hin)}`), h('p', {}, `Heimholen: ${serieZusammenfassung(heim)}`)),
-      h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein primaer', type: 'button', onClick: einrichten }, 'Einrichten')),
+      h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein primaer', type: 'button', disabled: p.speichert, onClick: einrichten }, 'Einrichten')),
     );
   }
 

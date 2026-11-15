@@ -2,7 +2,7 @@
 // direkt nach dem Umschalten (data-von), Überschrift und Umschalter kommen dabei nicht noch einmal herein; die Köpfe der Fixkosten und
 // Sparziele zählen hoch und enden beim genauen Betrag; die Balken der Sparziele füllen sich über scaleX; in Bento fliegt Konfetti, wenn ein
 // Sparziel erreicht wird – einmal je Ziel und Besuch. Klassisch: nichts davon (Text sofort, Balken mit Breite in %, kein Konfetti).
-import { test, expect, starteDemo } from './hilfen.js';
+import { test, expect, starteDemo, starteGoogleVerbunden, erwarteToast, NETZFEHLER } from './hilfen.js';
 
 test.use({ contextOptions: { reducedMotion: 'no-preference' } });
 
@@ -277,5 +277,36 @@ test.describe('Öffnen von Fixkosten und Sparziele: alles spielt einmal – auch
       return knopf.offsetLeft - parseFloat(getComputedStyle(knopf.parentElement).paddingLeft);
     });
     expect(Math.abs(bilder.zweite.at(-1).x - ziel), 'am Ende genau unter „Fixkosten“').toBeLessThan(2);
+  });
+});
+
+test.describe('Speichern mit Google (B3)', () => {
+  test.use({ erlaubteFehler: NETZFEHLER }); // fehlende versteckte Ereignisse antworten 404
+
+  test('Sonderbetrag: Doppeltipp speichert einmal', async ({ page }) => {
+    await starteGoogleVerbunden(page, { route: '#/konto', speicher: { 'fk.konto.ansicht.v1': 'kontostand' } });
+    let schreiben = 0;
+    let antworten; // langsames Netz: Google antwortet erst nach dem zweiten Tipp
+    const langsam = new Promise((weiter) => { antworten = weiter; });
+    await page.route(/^https:\/\/www\.googleapis\.com\/calendar\/v3\//, async (route) => {
+      const anfrage = route.request();
+      if (anfrage.method() === 'GET' || !(anfrage.postData() ?? '').includes('Bonuszahlung')) return route.fallback();
+      schreiben += 1;
+      await langsam;
+      return route.fallback();
+    });
+    const sonder = page.locator('section.abschnitt').filter({ has: page.getByRole('heading', { name: 'Sonderbeträge' }) });
+    await sonder.getByRole('button', { name: '＋ Sonderbetrag' }).click();
+    await sonder.getByRole('textbox', { name: 'Betrag des Sonderbetrags' }).fill('2.000');
+    await sonder.getByRole('textbox', { name: 'Bezeichnung des Sonderbetrags' }).fill('Bonuszahlung');
+    const speichern = sonder.getByRole('button', { name: 'Speichern', exact: true });
+    await speichern.click();
+    await expect(speichern).toBeDisabled();
+    await speichern.click({ force: true }); // zweiter Tipp, während der erste noch speichert
+    antworten();
+    await erwarteToast(page, 'Gespeichert ✓');
+    await expect(sonder.locator('.extra-zeile')).toHaveCount(1);
+    await expect(sonder.locator('.extra-zeile')).toContainText('Bonuszahlung');
+    expect(schreiben).toBe(1);
   });
 });

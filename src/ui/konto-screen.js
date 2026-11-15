@@ -12,6 +12,7 @@ import { fixkostenInhalt, kontoUmschalter } from './fixkosten-screen.js';
 import { kontoBesuchBeginnt, sparzieleInhalt } from './sparziele-screen.js';
 import { versicherungInhalt } from './versicherung-screen.js';
 import { geloeschtMelden, sicherLoeschen } from './fortschritt.js';
+import { einmalSpeichern, erledigt } from './formular.js';
 
 const GRUEN = '#2F9E5B';
 const HINWEIS_EINGABE = 'Bitte einen Betrag eingeben, z. B. 20.711 oder 1.234,56.';
@@ -55,21 +56,17 @@ function betragFeld(zustand, beschriftung, beiEnter) {
   return h('div', { class: 'konto-betrag' }, eingabe, minus);
 }
 
-async function speichern(store, { person, monat, zustand, demo, nachtrag, danach }) {
+/** Speichert den Betrag aus `zustand` (der Entwurf der Person: er überlebt das Neuzeichnen und hält fest, dass gerade gespeichert wird). */
+async function speichern({ store, ui }, { person, monat, zustand, demo, nachtrag, danach }) {
   const cents = betragAusFeld(zustand.text, zustand.minus);
   if (cents === null) {
     toast(HINWEIS_EINGABE);
     return;
   }
-  try {
-    if (nachtrag) await store.kontoNachtragen({ person, monat, cents });
-    else await store.kontoSpeichern({ person, monat, cents }, { demo });
-  } catch (fehler) {
-    toast(fehler.message);
-    return;
-  }
-  danach?.();
-  toast('Gespeichert ✓');
+  const r = await einmalSpeichern(zustand, () => (nachtrag ? store.kontoNachtragen({ person, monat, cents }) : store.kontoSpeichern({ person, monat, cents }, { demo })));
+  if (r === undefined) return;
+  if (erledigt(r, 'Gespeichert ✓')) danach();
+  else ui.rendern(); // nicht gespeichert: der Betrag bleibt im Feld, „Speichern“ geht wieder
 }
 
 function personZeile(feld, e, { store, ui }, z = eintragenZustand) {
@@ -98,7 +95,7 @@ function personZeile(feld, e, { store, ui }, z = eintragenZustand) {
     );
   }
   const los = () =>
-    speichern(store, {
+    speichern({ store, ui }, {
       person: feld.person,
       monat: e.monat,
       zustand,
@@ -116,7 +113,7 @@ function personZeile(feld, e, { store, ui }, z = eintragenZustand) {
     { class: 'konto-person' },
     h('div', { class: 'karte-zeile' }, h('span', { class: 'emoji' }, feld.emoji), h('b', {}, feld.label)),
     betragFeld(zustand, `Kontostand ${feld.label}`, los),
-    h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein primaer', type: 'button', onClick: los }, 'Speichern')),
+    h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein primaer', type: 'button', disabled: zustand.speichert, onClick: los }, 'Speichern')),
   );
 }
 
@@ -220,7 +217,7 @@ function oeffneKorrektur(z, { store }) {
   );
   return blatt({
     titel: `${z.monatText}: korrigieren oder löschen`,
-    render: ({ schliessen }) => [
+    render: ({ schliessen, neuZeichnen }) => [
       h('p', { class: 'leise' }, 'Korrigieren nur für Tippfehler: Ein neuer Wert ändert auch die Ersparnis dieses und des nächsten Monats.'),
       felder.map((p) => {
         const korrigieren = () =>
@@ -234,13 +231,11 @@ function oeffneKorrektur(z, { store }) {
                 toast(HINWEIS_EINGABE);
                 return;
               }
-              try {
-                await store.kontoSpeichern({ person: p.person, monat: z.monat, cents });
-                schliessen();
-                toast('Korrigiert ✓');
-              } catch (fehler) {
-                toast(fehler.message);
-              }
+              const lauf = einmalSpeichern(zustaende[p.person], () => store.kontoSpeichern({ person: p.person, monat: z.monat, cents }));
+              neuZeichnen(); // „Korrigieren“ ist aus, solange gespeichert wird
+              const r = await lauf;
+              if (r !== undefined && erledigt(r, 'Korrigiert ✓')) schliessen();
+              else neuZeichnen(); // nicht gespeichert: das Blatt bleibt mit dem Betrag offen, „Korrigieren“ geht wieder
             },
           });
         const loeschen = () =>
@@ -258,7 +253,7 @@ function oeffneKorrektur(z, { store }) {
           { class: 'konto-person' },
           h('div', { class: 'karte-zeile' }, h('span', { class: 'emoji' }, p.emoji), h('b', {}, p.label)),
           betragFeld(zustaende[p.person], `Kontostand ${p.label} ${z.monatText}`, korrigieren),
-          h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein gefahr', type: 'button', onClick: loeschen }, 'Löschen'), h('button', { class: 'knopf klein primaer', type: 'button', onClick: korrigieren }, 'Korrigieren')),
+          h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein gefahr', type: 'button', onClick: loeschen }, 'Löschen'), h('button', { class: 'knopf klein primaer', type: 'button', disabled: zustaende[p.person].speichert, onClick: korrigieren }, 'Korrigieren')),
         );
       }),
     ],
@@ -329,17 +324,14 @@ function extraFormular(m, { store, ui }) {
       toast('Bitte einen Betrag eingeben, z. B. 2.000 oder 450,50.');
       return;
     }
-    try {
-      await store.extraHinzufuegen({ person: e.person, monat: e.monat ?? f.standard, cents: e.ausgabe ? -Math.abs(cents) : Math.abs(cents), text: e.text });
-    } catch (fehler) {
-      toast(fehler.message);
-      return;
+    const r = await einmalSpeichern(e, () => store.extraHinzufuegen({ person: e.person, monat: e.monat ?? f.standard, cents: e.ausgabe ? -Math.abs(cents) : Math.abs(cents), text: e.text }));
+    if (r === undefined) return;
+    if (erledigt(r, 'Gespeichert ✓')) {
+      e.betrag = '';
+      e.text = '';
+      e.offen = false;
     }
-    e.betrag = '';
-    e.text = '';
-    e.offen = false;
-    ui.rendern();
-    toast('Gespeichert ✓');
+    ui.rendern(); // gespeichert: das Formular ist zu; nicht gespeichert: es bleibt mit den Eingaben offen, „Speichern“ geht wieder
   };
   text.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); speichernExtra(); } });
   return h(
@@ -350,7 +342,7 @@ function extraFormular(m, { store, ui }) {
     monatWahl,
     betrag,
     text,
-    h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein', type: 'button', onClick: () => { e.offen = false; ui.rendern(); } }, 'Abbrechen'), h('button', { class: 'knopf klein primaer', type: 'button', onClick: speichernExtra }, 'Speichern')),
+    h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein', type: 'button', onClick: () => { e.offen = false; ui.rendern(); } }, 'Abbrechen'), h('button', { class: 'knopf klein primaer', type: 'button', disabled: e.speichert, onClick: speichernExtra }, 'Speichern')),
   );
 }
 

@@ -2,6 +2,7 @@
 // „Nicht änderbar“, die einheitliche Meldung nach einem Store-Ergebnis und der Text für einen Fehler. Alles als Text in die Seite.
 import { h } from './dom.js';
 import { toast } from './components.js';
+import { einmal } from '../app/einmal.js';
 
 export const ALLGEMEINER_FEHLER = 'Das hat nicht geklappt. Bitte noch einmal versuchen.';
 export const MELDUNG_ANMELDEN = 'Bitte zuerst neu anmelden (Mehr → Konto & App → Neu anmelden).';
@@ -53,6 +54,20 @@ export function erledigt(r, erfolg) {
   }
   if (!r?.gemeldet) toast(r?.fehler ?? ALLGEMEINER_FEHLER, { art: 'fehler' });
   return false;
+}
+
+/**
+ * Speichern aus einem Formular, das seine Eingaben selbst prüfen lässt (der Store wirft bei einer abgelehnten Eingabe): je Entwurf
+ * `halter` nur einmal gleichzeitig (siehe app/einmal.js; der Knopf hat `disabled: halter.speichert`). → das Ergebnis des Stores für
+ * `erledigt`, oder undefined: es wird schon gespeichert, oder die Eingabe wurde abgelehnt (ihre Meldung steht dann schon da).
+ */
+export async function einmalSpeichern(halter, lauf) {
+  try {
+    return await einmal(halter, lauf);
+  } catch (fehler) {
+    toast(fehler.message);
+    return undefined;
+  }
 }
 
 /** Wartet auf den Lauf des Stores; eine Ausnahme wird zu `{ ok: false, fehler }`. */

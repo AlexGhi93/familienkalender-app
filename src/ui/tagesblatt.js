@@ -1,5 +1,6 @@
 import { h } from './dom.js';
-import { bestaetigen, blatt, chip, farbe, toast } from './components.js';
+import { bestaetigen, blatt, chip, farbe } from './components.js';
+import { erledigt } from './formular.js';
 import { tagModel } from '../app/views/tag-model.js';
 import { datumLang } from '../app/format-de.js';
 import { sacheErledigt, sacheLoeschen } from './sachen-aktionen.js';
@@ -98,10 +99,7 @@ export function oeffneTagesblatt(ctx, date) {
     beimSchliessen: () => abmelden(),
     render: ({ schliessen }) => {
       const m = tagModel(store.getState(), date, store.heute());
-      const setze = async (typ) => {
-        await store.setTag(date, typ);
-        toast('Gespeichert ✓');
-      };
+      const setze = async (typ) => erledigt(await store.setTag(date, typ), 'Gespeichert ✓');
       return [
         m.konflikt ? h('div', { class: 'konflikt-hinweis', role: 'alert' }, h('b', {}, '⚠️ Konflikt'), h('p', {}, m.konflikt.hinweis)) : null,
         m.eintraege.length > 0

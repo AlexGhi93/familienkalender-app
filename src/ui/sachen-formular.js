@@ -1,7 +1,8 @@
 import { fuelle, h } from './dom.js';
 import { datumFeld as datumEingabe, zeitFeld as zeitEingabe } from './eingabefelder.js';
-import { chip, farbe, toast, wochenStepper } from './components.js';
+import { chip, farbe, wochenStepper } from './components.js';
 import { mitnehmenFeld } from './mitnehmen-feld.js';
+import { einmalSpeichern, erledigt } from './formular.js';
 import { KITA_RICHTUNGEN, KITA_VORSCHLAEGE, TYPES } from '../domain/types.js';
 import { addDays } from '../domain/dates.js';
 import { MAX_MITNEHMEN, mitRichtung, terminAusEntwurf, terminVorschau } from '../app/termin.js';
@@ -158,12 +159,11 @@ export function sachenFormular({ store, ui }, kachel) {
   }
 
   async function speichern() {
-    try {
-      const wochen = !n.bearbeiten && n.wiederholen.art === 'woechentlich' ? n.wiederholen.wochen : 1;
-      const r = await store.sachenSpeichern(terminAusEntwurf(n), { wochen, id: n.bearbeiten });
-      toast(n.bearbeiten ? 'Änderung gespeichert ✓' : r.ids.length === 1 ? 'Gespeichert ✓' : `${r.ids.length} Erinnerungen gespeichert ✓`);
-    } catch (fehler) {
-      toast(fehler.message);
+    const wochen = !n.bearbeiten && n.wiederholen.art === 'woechentlich' ? n.wiederholen.wochen : 1;
+    const r = await einmalSpeichern(n, () => store.sachenSpeichern(terminAusEntwurf(n), { wochen, id: n.bearbeiten }));
+    if (r === undefined) return;
+    if (!erledigt(r, n.bearbeiten ? 'Änderung gespeichert ✓' : r.ids.length === 1 ? 'Gespeichert ✓' : `${r.ids.length} Erinnerungen gespeichert ✓`)) {
+      ui.rendern(); // nicht gespeichert: das Formular bleibt mit den Eingaben offen, „Speichern“ geht wieder
       return;
     }
     const ziel = n.date;
@@ -219,6 +219,6 @@ export function sachenFormular({ store, ui }, kachel) {
       planBox,
     ),
     vorschauBox,
-    h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein', type: 'button', onClick: abbrechen }, 'Abbrechen'), h('button', { class: 'knopf klein primaer', type: 'button', onClick: speichern }, n.bearbeiten ? 'Änderung speichern' : 'Speichern')),
+    h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein', type: 'button', onClick: abbrechen }, 'Abbrechen'), h('button', { class: 'knopf klein primaer', type: 'button', disabled: n.speichert, onClick: speichern }, n.bearbeiten ? 'Änderung speichern' : 'Speichern')),
   );
 }

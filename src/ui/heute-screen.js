@@ -5,7 +5,7 @@ import { datumKurz } from '../app/format-de.js';
 import { werktageText } from '../domain/format.js';
 import { TYPES } from '../domain/types.js';
 import { sacheErledigt } from './sachen-aktionen.js';
-import { zeigeRueckgaengig } from './fortschritt.js';
+import { eingetragenMelden } from './fortschritt.js';
 import { EINKAUF_FARBE } from '../app/views/einkauf-model.js';
 import { oeffneNachricht } from './nachricht-blatt.js';
 import { dienstKarte } from './bringen-holen.js';
@@ -76,7 +76,8 @@ function statusKarte(m, store, ui) {
   );
   if (s.art === 'offen') {
     const setze = async (typ) => {
-      await store.setTag(m.heute, typ);
+      const r = await store.setTag(m.heute, typ);
+      if (!r.ok) return; // nicht gespeichert (die Meldung zeigt die Shell) oder wartet noch auf die Anmeldung: kein „Eingetragen ✓“
       const anlass = BENACHRICHTIGEN[typ];
       // Die Schnellknöpfe haben kein „Rückgängig“ (dafür gibt es „Ändern“): der Platz für die Aktion in der Meldung ist frei.
       toast('Eingetragen ✓', anlass ? { aktion: { text: 'Benachrichtigen', beiKlick: () => oeffneNachricht({ store, ui }, { anlass, tag: 'heute' }) } } : {});
@@ -140,10 +141,7 @@ function offeneTageKarte(m, store, ui) {
               titel: 'Alle offenen Tage bestätigen?',
               text: `${n} ${n === 1 ? 'Tag wird' : 'Tage werden'} als „${m.einrichtung} · Mittagessen“ eingetragen.`,
               ja: 'Bestätigen',
-              beiJa: async () => {
-                const { rueckgaengig } = await store.setTage(m.offeneTage, 'kita_essen');
-                zeigeRueckgaengig(`${n} ${n === 1 ? 'Tag' : 'Tage'} bestätigt ✓`, rueckgaengig);
-              },
+              beiJa: async () => eingetragenMelden(await store.setTage(m.offeneTage, 'kita_essen'), `${n} ${n === 1 ? 'Tag' : 'Tage'} bestätigt ✓`),
             }),
         },
         'Alle bestätigen',
