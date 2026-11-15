@@ -16,20 +16,14 @@ import { autosHistorien, kmPunkte } from '../domain/autos-rechnung.js';
 import { TEXT_POLIZZE_WEG, TEXT_RECHNUNG_WEG, TEXT_VERSICHERUNG_GESPERRT, TEXT_VERSICHERUNG_TEIL_GESPERRT, erstattungSetzen, fassungJetzt, leererVersicherungTeil, leereVersicherung, neueVersicherungId, polizzeAendern, polizzeAnlegen, rechnungJahr, rechnungLoeschen as rechnungLoeschenRein, rechnungPruefen, rechnungQuartal, rechnungSetzen, rechnungSpur, rechnungTeilWechseln, rechnungWiederherstellen, versicherungJahrBekannt, versicherungJahrEintragen, versicherungTeilWarnungen, versicherungWarnungen } from '../domain/versicherung.js';
 import { rechnungFinden } from '../domain/versicherung-rechnung.js';
 import { TEXT_ZIELE_GESPERRT, TEXT_ZIELE_NICHT_GELADEN, freiVerschieben as zielFreiVerschieben, leereZiele, neueZielId, startMonat, verschiebungLoeschen as verschiebungLoeschenRein, verschiebungWiederherstellen as verschiebungWiederherstellenRein, zielAusblenden as zielAusblendenRein, zielBeenden as zielBeendenRein, zielLoeschen as zielLoeschenRein, zielSchluss, zielSetzen, zielSpur, zielWiederherstellen as zielWiederherstellenRein, zieleWarnungen } from '../domain/sparziele.js';
+import { FACHLICH, TEXT_AUTOS_NEUER, TEXT_FEHLER, createKern, eintragVorhanden, gleichOder, historieGleichOder, istAuthFehler, ladeFelder, mitFrist } from './store/kern.js';
 
 const KITA_TYPEN = ['kita_essen', 'kita_ohne'];
 const MIN_ABSTAND_MS = 60_000; // höchstens einmal pro Minute neu laden
-const FORTSCHRITT_AB = 3; // ab mehr als drei Schreibvorgängen gibt es eine Fortschrittsanzeige
-
 const SCHICHT_SICHERUNG_AB = '2026-01'; // erster Monat, den die Sicherung nach einem Schichtplan fragt
 const SCHICHT_SICHERUNG_VORAUS = 12; // … bis zwölf Monate nach dem laufenden
 const SCHICHT_SICHERUNG_PARALLEL = 6; // so viele Monate werden gleichzeitig gefragt
 
-const TEXT_FEHLER = 'Speichern hat nicht geklappt. Bitte noch einmal versuchen.';
-// Fehler, die eine reine Änderungsfunktion auf der neuesten Fassung geworfen hat (fachliche Ablehnung mit deutscher Meldung).
-const FACHLICH = new WeakSet();
-const TEXT_ANMELDEN = 'Bitte neu anmelden: deine Änderung wird danach gespeichert.';
-const TEXT_UNKLAR = 'Möglicherweise teilweise gespeichert – bitte aktualisieren.';
 const TEXT_FIX_NICHT_GELESEN = 'Die Fixkosten konnten nicht gelesen werden. Bitte noch einmal versuchen.';
 const TEXT_FIX_ANMELDEN = 'Bitte zuerst neu anmelden; danach lassen sich die Fixkosten ändern.';
 const TEXT_FIX_GELOESCHT = 'Diesen Posten gibt es nicht mehr – er wurde wohl auf dem anderen Telefon gelöscht.';
@@ -39,11 +33,9 @@ const TEXT_ZIEL_NEUER = 'Dieses Sparziel hat das andere Telefon mit einer neuere
 const TEXT_ZIEL_ABGESCHLOSSEN = 'Dieses Sparziel ist schon abgeschlossen.';
 const TEXT_NICHT_AUTOMATISCH = 'Nur ein nach dem Zieldatum automatisch abgeschlossenes Ziel lässt sich so zurück zu Frei geben.';
 const TEXT_VERSCHIEBUNG_WEG = 'Diese Verschiebung gibt es nicht mehr – sie wurde wohl auf dem anderen Telefon rückgängig gemacht.';
-const TEXT_SCHON_WIEDER_DA = 'Das ist inzwischen wieder eingetragen (wohl auf dem anderen Telefon) – nichts überschrieben.';
 const TEXT_VERSCHIEBUNG_NEUER = 'Diese Verschiebung hat das andere Telefon mit einer neueren App-Version geändert. Bitte die App aktualisieren.';
 const TEXT_AUTOS_NICHT_GELESEN = 'Die Autos konnten nicht gelesen werden. Bitte noch einmal versuchen.';
 const TEXT_AUTOS_ANMELDEN = 'Bitte zuerst neu anmelden; danach lassen sich die Autos ändern.';
-const TEXT_AUTOS_NEUER = 'Diesen Eintrag hat das andere Telefon mit einer neueren App-Version geändert. Bitte die App aktualisieren.';
 const TEXT_REGEL_WEG = 'Diese Regel gibt es nicht mehr – sie wurde wohl auf dem anderen Telefon gelöscht.';
 const TEXT_SATZ_WEG = 'Diesen Reifensatz gibt es nicht mehr – er wurde wohl auf dem anderen Telefon gelöscht.';
 const TEXT_ARBEIT_WEG = 'Diese Arbeit gibt es nicht mehr – sie wurde wohl auf dem anderen Telefon gelöscht.';
@@ -63,19 +55,11 @@ const TEXT_KATEGORIE_UNPRUEFBAR = 'Ein Teil der Rechnungen ist unlesbar – ob d
  */
 const einzelnWiederherstellbar = (id) => typeof id === 'string' && id !== '' && !id.includes('_');
 
-/** Ergebnis mit `rueckgaengig` – nur bei Erfolg und nur, wenn es ein Rückgängig gibt. */
-const mitRueckgaengig = (r, rueckgaengig) => (r.ok && rueckgaengig ? { ...r, rueckgaengig } : r);
-
 /** Ergebnis eines Eintragens mit `rueckgaengig` – auch, wenn es nur auf die Anmeldung wartet (es bleibt sichtbar); nicht nach einem Fehlschlag. */
 const mitZuruecknehmen = (r, rueckgaengig) => (r.ok || r.wartet ? { ...r, rueckgaengig } : r);
 
 /** Zufällige ID aus den Zeichen 0-9 und a-v: so darf sie auch als Google-Ereignis-ID dienen. */
 const zufaelligeId = () => `u${Array.from({ length: 11 }, () => Math.floor(Math.random() * 32).toString(32)).join('')}`;
-
-const istAuthFehler = (fehler) => fehler?.name === 'AuthAbgelaufen';
-
-/** `alt`, wenn `neu` denselben Inhalt hat (gleiches JSON), sonst `neu`: so bleibt die Identität unveränderter Daten erhalten. */
-const gleichOder = (alt, neu) => (alt != null && JSON.stringify(alt) === JSON.stringify(neu) ? alt : neu);
 
 /** Liegt [von, bis) vollständig in den Bereichen `bereiche` ({ von, bis }, auch mehrere aneinander anschließende oder überlappende)? */
 function bereichAbgedeckt(von, bis, bereiche) {
@@ -201,44 +185,6 @@ function versicherungZustand(gelesen, status) {
 }
 
 /**
- * `zusage` mit Frist: antwortet sie nicht binnen `ms`, wird abgelehnt (Name 'Zeitueberschreitung'); eine spätere Antwort zählt nicht mehr.
- * api.js kennt kein Timeout – ohne Frist bliebe ein hängendes Lesen der Autos für immer „laufend“ und würde nie wiederholt (Review T3 M3).
- */
-function mitFrist(zusage, ms) {
-  let zeitgeber;
-  const frist = new Promise((_, nein) => {
-    // nicht unref(): sonst endet unter Node 22 die Ereignisschleife, während nur noch die Frist wartet (Test bricht ab); `finally` räumt ohnehin auf
-    zeitgeber = setTimeout(() => nein(Object.assign(new Error('Keine Antwort (Zeitüberschreitung).'), { name: 'Zeitueberschreitung' })), ms);
-  });
-  return Promise.race([zusage, frist]).finally(() => clearTimeout(zeitgeber));
-}
-
-/** Wie gleichOder, aber je Verlauf-Teil (zweistufig – auch für die Quartal-Teile der Versicherung): unveränderte Teile (und, ist alles gleich, das ganze Objekt) behalten ihre Identität. */
-function historieGleichOder(alt, neu) {
-  let gleich = Object.keys(alt ?? {}).length === Object.keys(neu).length;
-  const ergebnis = {};
-  for (const [auto, jahre] of Object.entries(neu)) {
-    const a = alt?.[auto] ?? {};
-    const teile = {};
-    let autoGleich = Object.keys(a).length === Object.keys(jahre).length;
-    for (const [jahr, h] of Object.entries(jahre)) {
-      teile[jahr] = gleichOder(a[jahr], h);
-      if (teile[jahr] !== a[jahr]) autoGleich = false;
-    }
-    ergebnis[auto] = autoGleich ? a : teile;
-    if (ergebnis[auto] !== alt?.[auto]) gleich = false;
-  }
-  return gleich ? alt : ergebnis;
-}
-
-/** Ist `id` in `liste` (gelesene Einträge) oder unter den fremden (`fremd`, roh mit `i`)? Wirft sonst mit `weg` bzw. TEXT_AUTOS_NEUER. */
-function eintragVorhanden(liste, fremd, id, weg) {
-  const x = (liste ?? []).find((e) => e.id === id);
-  if (x) return x;
-  throw new Error((fremd ?? []).some((k) => k?.i === id) ? TEXT_AUTOS_NEUER : weg);
-}
-
-/**
  * Wirft, wenn es das Ziel `id` in `daten` nicht (mehr) gibt: inzwischen gelöscht, oder vom anderen Telefon mit einer neueren Version
  * geändert (jetzt ein fremder Eintrag, den diese Version nicht anfassen darf). Auf der neuesten Fassung heißt der Wurf: zurücknehmen,
  * neu lesen, die Meldung zeigen.
@@ -249,31 +195,6 @@ function zielVorhanden(daten, id) {
   throw new Error((daten.fremd?.z ?? []).some((k) => k?.i === id) ? TEXT_ZIEL_NEUER : TEXT_ZIEL_GELOESCHT);
 }
 
-/** Die Bereiche, deren Lesbarkeit jedes Laden meldet (`daten.unlesbar`); Schichtarten und Schichtmonate meldet das Lesen des Schichtplans. */
-const LADE_BEREICHE = Object.freeze(['einkauf', 'konto', 'settings']);
-
-/**
- * Übernimmt aus dem, was ein Adapter liefert, nur die Felder des Zustands. Den Schichtplan nicht: er wird erst beim Öffnen seiner Seite
- * geladen (`schichtLaden`); die Demo liefert ihn zwar mit, aber so verhalten sich Demo und Google gleich. `unlesbar`: Einkauf, Konto
- * und Einstellungen gelten, wie dieses Laden sie meldet (fehlt die Angabe – Demo, Schnappschuss –, sind sie lesbar); was das Lesen des
- * Schichtplans vermerkt hat, bleibt.
- */
-function ladeFelder(daten, state) {
-  return {
-    unlesbar: [...(state.unlesbar ?? []).filter((b) => !LADE_BEREICHE.includes(b)), ...(daten.unlesbar ?? []).filter((b) => LADE_BEREICHE.includes(b))].sort(),
-    settings: daten.settings ?? state.settings,
-    tage: daten.tage ?? {},
-    urlaub: daten.urlaub ?? [],
-    termine: daten.termine ?? [],
-    einkauf: daten.einkauf ? normalisiereListe(daten.einkauf) : (state.einkauf ?? leereListe()),
-    konto: daten.konto ? normalisiereKonto(daten.konto) : (state.konto ?? leeresKonto()),
-    urlaubChecks: daten.urlaubChecks ?? state.urlaubChecks ?? [],
-    ...(daten.konflikte ? { konflikte: daten.konflikte } : {}),
-    ...(daten.warnungen ? { warnungen: daten.warnungen } : {}),
-    ...(daten.fenster ? { fenster: daten.fenster } : {}),
-  };
-}
-
 /**
  * Zustand der App. Alle Änderungen gehen zuerst in den Zustand (Oberfläche reagiert sofort) und dann in den Adapter.
  * - Schlägt das Speichern fehl, wird der Stand neu vom Adapter geladen (Teil-Erfolge bleiben sichtbar) und `fehler` gesetzt.
@@ -282,10 +203,14 @@ function ladeFelder(daten, state) {
  * - Mehr als drei Schreibvorgänge melden ihren Fortschritt (`state.fortschritt`).
  */
 export function createStore(adapter, { jetzt = () => new Date(), neueId = zufaelligeId, fixId = neueFixId, zielId = neueZielId, autoId = neueAutoId, autosFristMs = 20_000, versicherungId = () => neueVersicherungId(), versicherungFristMs = 20_000 } = {}) {
-  let state = { geladen: false, settings: normalizeSettings(), tage: {}, urlaub: [], termine: [], einkauf: leereListe(), konto: leeresKonto(), schicht: leererSchichtplan(), fixkosten: leereFixkosten(), ziele: leererZieleZustand(), autos: leererAutosZustand(), versicherung: leererVersicherungZustand(), unlesbar: [], fehler: null, fortschritt: null, anmeldungNoetig: false, fenster: null };
-  const hoerer = new Set();
-  const wartend = []; // Schreibvorgänge, die wegen abgelaufener Anmeldung noch fehlen
+  const kern = createKern({ adapter, jetzt, neueId });
+  const { wartend, melden, unlesbarMerken, gelesenMerken, ausfuehren, aendere, teilAendern, ergebnisVon, teilErgebnis, mitRueckgaengig, fachlich, fachlichAsync, ohneUeberschreiben } = kern;
+  const store = {};
+  kern.state = { geladen: false, settings: normalizeSettings(), tage: {}, urlaub: [], termine: [], einkauf: leereListe(), konto: leeresKonto(), schicht: leererSchichtplan(), fixkosten: leereFixkosten(), ziele: leererZieleZustand(), autos: leererAutosZustand(), versicherung: leererVersicherungZustand(), unlesbar: [], fehler: null, fortschritt: null, anmeldungNoetig: false, fenster: null };
   const geladeneBereiche = [];
+  kern.nachNeuLaden(() => () => {
+    geladeneBereiche.length = 0;
+  });
   const ladendeBereiche = new Map(); // Schlüssel „von|bis“ → laufendes Laden (dieselbe Zusage für jeden, der denselben Bereich anfordert)
 
   /** Lädt [von, bis) und übernimmt Tage, Urlaub und Termine dieses Zeitraums; Ergebnis wie sichereBereich. */
@@ -293,27 +218,25 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     let erfolg = false;
     try {
       const d = await adapter.ladeBereich(von, bis);
-      const tage = { ...state.tage };
+      const tage = { ...kern.state.tage };
       for (const k of Object.keys(tage)) if (k >= von && k < bis) delete tage[k];
       Object.assign(tage, d.tage);
-      state = {
-        ...state,
+      kern.state = {
+        ...kern.state,
         tage,
-        termine: [...state.termine.filter((t) => !(t.date >= von && t.date < bis)), ...d.termine],
-        urlaub: [...state.urlaub.filter((u) => !d.urlaub.some((x) => x.id === u.id)), ...d.urlaub],
+        termine: [...kern.state.termine.filter((t) => !(t.date >= von && t.date < bis)), ...d.termine],
+        urlaub: [...kern.state.urlaub.filter((u) => !d.urlaub.some((x) => x.id === u.id)), ...d.urlaub],
       };
       geladeneBereiche.push({ von, bis });
       erfolg = true;
     } catch (fehler) {
-      state = istAuthFehler(fehler) ? { ...state, anmeldungNoetig: true } : { ...state, fehler: 'Dieser Zeitraum konnte nicht geladen werden.' };
+      kern.state = istAuthFehler(fehler) ? { ...kern.state, anmeldungNoetig: true } : { ...kern.state, fehler: 'Dieser Zeitraum konnte nicht geladen werden.' };
     }
     melden();
     return erfolg;
   }
   let letzteLadung = 0;
   let checksLaufen = false;
-  let schreibend = 0; // Schreibvorgänge, die gerade laufen
-  let schreibStand = 0; // zählt begonnene Schreibvorgänge: so erkennt `einkaufAktualisieren`, dass inzwischen selbst etwas geändert wurde
   let einkaufGeprueft = null; // wann die Einkaufsliste zuletzt mit dem Kalender abgeglichen war (ms): Laden, Aktualisieren, eigenes Speichern
   let einkaufHolen = null; // laufende Abfrage der Einkaufsliste: mehrfaches Anstoßen fragt nur einmal
   let schichtVorladenLaeuft = null; // laufendes Vorladen des Schichtplans: mehrfaches Anstoßen fragt nur einmal
@@ -327,7 +250,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
   let zieleStand = 0;
   let zieleLesenLaeuft = null; // laufendes zieleLaden(): mehrfaches Anstoßen liest nur einmal
   /** Die zuletzt gelesenen Sparziele bleiben, aber gesperrt: das Lesen ist gescheitert (Netz). */
-  const zieleNichtGelesen = () => ({ ...state.ziele, status: 'fehler', warnungen: [TEXT_ZIELE_NICHT_GELADEN] });
+  const zieleNichtGelesen = () => ({ ...kern.state.ziele, status: 'fehler', warnungen: [TEXT_ZIELE_NICHT_GELADEN] });
   /**
    * Sparziele nach einem Laden (`stand` = zieleStand beim Beginn): `ziele: null` = ihr Lesen ist gescheitert → gesperrt (siehe
    * zieleNichtGelesen); sonst nur übernommen, wenn seitdem nichts selbst geändert wurde. Liefert der Adapter keine (undefined): unverändert.
@@ -335,8 +258,12 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
   function zieleNachLaden(daten, stand) {
     if (daten?.ziele === null) return zieleNichtGelesen();
     if (daten?.ziele?.unlesbar) return zieleUnlesbarUebernehmen(daten.ziele);
-    return !daten?.ziele || zieleOffen.size > 0 || stand !== zieleStand ? state.ziele : zieleZustand(daten.ziele, 'geladen');
+    return !daten?.ziele || zieleOffen.size > 0 || stand !== zieleStand ? kern.state.ziele : zieleZustand(daten.ziele, 'geladen');
   }
+  kern.nachNeuLaden(() => {
+    const stand = zieleStand;
+    return (daten) => ({ ziele: zieleNachLaden(daten, stand) });
+  });
   /**
    * Frisch gelesene, aber unlesbare Sparziele gehen immer vor: leer und gesperrt, auch wenn eine eigene Änderung unterwegs ist oder auf
    * die Anmeldung wartet (ihr Speichern würde ohnehin abgelehnt) – die Warteschlange wird geleert.
@@ -350,152 +277,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     return zieleZustand(gelesen, 'geladen');
   }
   /** Ist Ändern gerade verboten? → Meldung oder null (unlesbar, oder nicht (erfolgreich) gelesen). */
-  const zieleGesperrt = () => (state.ziele.unlesbar ? TEXT_ZIELE_GESPERRT : state.ziele.status === 'geladen' || state.ziele.status === 'gespeichert' ? null : TEXT_ZIELE_NICHT_GELADEN);
-  const melden = () => {
-    for (const h of hoerer) h(state);
-  };
-
-  /**
-   * `state.unlesbar` = Bereiche der älteren versteckten Ereignisse, deren Text diese Version nicht lesen kann (sortiert): 'einkauf',
-   * 'konto', 'settings', 'schichtarten', 'schicht:JJJJ-MM'. Sie werden leer bzw. mit Standardwerten gezeigt, die Oberfläche zeigt oben
-   * den Hinweis, und der Adapter lehnt jedes Ändern ab (Fehler „Unlesbar“) – nichts wird überschrieben. Vermerkt wird beim Lesen
-   * (`laden`, Schichtplan, Einkaufsliste) und wenn ein Schreiben mit „Unlesbar“ abgelehnt wird; ein späteres lesbares Lesen oder ein
-   * gelungenes Speichern nimmt den Bereich wieder heraus. Trägt `bereich` ein (`ist`) oder nimmt ihn heraus; → ob sich etwas geändert hat
-   * (gemeldet wird hier nicht).
-   */
-  function unlesbarMerken(bereich, ist) {
-    if (state.unlesbar.includes(bereich) === ist) return false;
-    state = { ...state, unlesbar: ist ? [...state.unlesbar, bereich].sort() : state.unlesbar.filter((b) => b !== bereich) };
-    return true;
-  }
-  /** Was ein Adapter gelesen hat ({ …, unlesbar? }; die Demo nennt `unlesbar` nie = lesbar): vermerkt den Bereich und gibt das Gelesene zurück. */
-  function gelesenMerken(bereich, gelesen) {
-    unlesbarMerken(bereich, gelesen?.unlesbar === true);
-    return gelesen;
-  }
-  const istUnlesbarFehler = (fehler) => fehler?.name === 'Unlesbar' && typeof fehler.bereich === 'string';
-
-  /**
-   * Führt einen Schreibvorgang aus. Ergebnis: 'ok', 'auth' (wartet auf Anmeldung) oder 'fehler' (zurückgenommen, neu geladen).
-   * Bei einem Fehler werden nur die Felder aus `optionen.schluessel` auf ihren Wert in `alt` zurückgesetzt (ohne `schluessel` keines),
-   * dann wird neu geladen: was inzwischen in anderen Feldern gelesen oder gespeichert wurde (Autos, Schichtmonate …), bleibt stehen.
-   * Mit `optionen.zurueck()` (→ neuer Zustand) nimmt der Aufrufer selbst das Betroffene zurück, danach läuft `optionen.neuLesen()`
-   * statt des ganzen Ladens (Schichtplan). Lehnt der Adapter ab, weil der gespeicherte Text unlesbar ist (Fehler „Unlesbar“, auch beim
-   * Nachholen nach dem Anmelden), wurde nichts geschrieben: gezeigt wird seine Meldung, und der Bereich kommt in `state.unlesbar` – auf
-   * beiden Wegen (mit und ohne `optionen.zurueck`).
-   */
-  let fehlerNr = 0; // zählt jeden gemeldeten Schreibfehler (state.fehlerNr): die Shell zeigt auch eine gleichlautende zweite Meldung
-  async function ausfuehren(schreibe, alt, optionen = {}) {
-    let erledigt = 0;
-    let gesamt = 0;
-    schreibStand += 1;
-    schreibend += 1;
-    const bericht = (e, g) => {
-      erledigt = e;
-      gesamt = g;
-      if (g > FORTSCHRITT_AB) {
-        state = { ...state, fortschritt: { erledigt: e, gesamt: g } };
-        melden();
-      }
-    };
-    try {
-      await schreibe(bericht);
-      if (state.fortschritt) {
-        state = { ...state, fortschritt: null };
-        melden();
-      }
-      return 'ok';
-    } catch (fehler) {
-      if (istAuthFehler(fehler)) {
-        wartend.push({ schreibe, optionen });
-        state = { ...state, fortschritt: null, anmeldungNoetig: true, fehler: TEXT_ANMELDEN };
-        melden();
-        return 'auth';
-      }
-      // Lehnt eine reine Änderung auf der neuesten Fassung ab (z. B. das andere Telefon hat dasselbe Kürzel schon vergeben), zählt ihre Meldung.
-      fehlerNr += 1; // dieselbe Meldung zweimal hintereinander wird trotzdem zweimal gezeigt
-      let text = gesamt > 1 && erledigt > 0 ? `Gespeichert: ${erledigt} von ${gesamt}. Bitte noch einmal versuchen; Gespeichertes bleibt erhalten.` : TEXT_FEHLER;
-      const unlesbar = istUnlesbarFehler(fehler);
-      if (FACHLICH.has(fehler) || unlesbar) text = fehler.message;
-      optionen.beiFehler?.(fehler, text);
-      if (optionen.zurueck) {
-        state = { ...optionen.zurueck(), fortschritt: null, fehler: text, fehlerNr };
-        if (unlesbar) unlesbarMerken(fehler.bereich, true);
-        melden();
-        try {
-          await optionen.neuLesen();
-        } catch {
-          state = { ...state, fehler: TEXT_UNKLAR };
-        }
-        melden();
-        return 'fehler';
-      }
-      const eigene = Object.fromEntries((optionen.schluessel ?? []).map((k) => [k, alt[k]]));
-      state = { ...state, ...eigene, fortschritt: null, fehler: text, fehlerNr };
-      if (unlesbar) unlesbarMerken(fehler.bereich, true); // bleibt, auch wenn das Neu-Laden gleich scheitert
-      melden();
-      try {
-        const stand = zieleStand;
-        const daten = await adapter.laden();
-        state = { ...state, ...ladeFelder(daten, state), ziele: zieleNachLaden(daten, stand), fehler: text };
-        geladeneBereiche.length = 0;
-      } catch {
-        state = { ...state, fehler: TEXT_UNKLAR };
-      }
-      melden();
-      return 'fehler';
-    } finally {
-      schreibend -= 1;
-    }
-  }
-
-  /** Sofort sichtbar, dann geschrieben (siehe `ausfuehren`); → 'ok' | 'auth' | 'fehler'. */
-  async function aendere(neu, schreibe) {
-    const alt = state;
-    state = { ...state, ...neu, fehler: null };
-    melden();
-    return ausfuehren(schreibe, alt, { schluessel: Object.keys(neu) });
-  }
-
-  /**
-   * Ergebnis von `aendere` für die Oberfläche: { ok: true } | { ok: false, wartet: true, fehler } (nach dem Anmelden gespeichert) |
-   * { ok: false, fehler, gemeldet: true } (zurückgenommen; die Meldung steht schon in state.fehler, die Shell zeigt sie – genau einmal).
-   */
-  const ergebnisVon = (e) => (e === 'ok' ? { ok: true } : e === 'auth' ? { ok: false, wartet: true, fehler: TEXT_ANMELDEN } : { ok: false, fehler: state.fehler ?? TEXT_FEHLER, gemeldet: true });
-
-  /**
-   * Schreibvorgang für „Rückgängig“ eines Termins, Urlaubs oder Tages: `stelle()` meldet { schonDa: true }, wenn inzwischen (vom anderen
-   * Telefon) wieder etwas eingetragen ist – dann wird nichts überschrieben: zurückgenommen, neu geladen, genau eine Meldung.
-   */
-  const ohneUeberschreiben = (stelle) => async () => {
-    const r = await stelle();
-    if (r?.schonDa) {
-      const e = new Error(TEXT_SCHON_WIEDER_DA);
-      FACHLICH.add(e);
-      throw e;
-    }
-  };
-
-  /** Wie `fachlich`, für eine asynchrone Prüfung ohne Argument: ihre Ablehnung zählt als fachliche Meldung. */
-  const fachlichAsync = (pruefung) => async () => {
-    try {
-      return await pruefung();
-    } catch (e) {
-      if (e instanceof Error && !istAuthFehler(e) && e.fachlich) FACHLICH.add(e);
-      throw e;
-    }
-  };
-
-  /** `fn`, deren Ablehnung auf der neuesten Fassung als fachliche Meldung zählt (deren Text gezeigt wird, nicht „Speichern hat nicht geklappt“). */
-  const fachlich = (fn) => (wert) => {
-    try {
-      return fn(wert);
-    } catch (e) {
-      if (e instanceof Error) FACHLICH.add(e);
-      throw e;
-    }
-  };
-
+  const zieleGesperrt = () => (kern.state.ziele.unlesbar ? TEXT_ZIELE_GESPERRT : kern.state.ziele.status === 'geladen' || kern.state.ziele.status === 'gespeichert' ? null : TEXT_ZIELE_NICHT_GELADEN);
   const pruefeWochen = (wochen) => {
     if (!Number.isInteger(wochen) || wochen < 1 || wochen > MAX_SERIEN_WOCHEN) throw new Error(`Wochen: bitte 1 bis ${MAX_SERIEN_WOCHEN} wählen.`);
   };
@@ -503,7 +285,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
   /** Termine einer wöchentlichen Serie ab `roh.date` (Feiertage, Urlaub usw. werden verschoben oder übersprungen). */
   function serieTermine(roh, wochen) {
     const basis = normalisiereTermin({ ...roh, typ: 'kita_sache', serie: undefined });
-    const plan = wochenSerie(state, { start: basis.date, wochen, richtung: basis.richtung, heute: todayVienna(jetzt()) });
+    const plan = wochenSerie(kern.state, { start: basis.date, wochen, richtung: basis.richtung, heute: todayVienna(jetzt()) });
     const serie = neueId();
     return {
       termine: plan.eintraege.map((e) => ({ id: neueId(), ...basis, date: e.date, serie })),
@@ -516,7 +298,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
   async function termineAnlegen(neue) {
     if (neue.length === 0) throw new Error('In diesem Zeitraum gibt es keinen passenden Tag.');
     const ids = new Set(neue.map((t) => t.id));
-    const e = await aendere({ termine: [...state.termine.filter((t) => !ids.has(t.id)), ...neue] }, async (bericht) => {
+    const e = await aendere({ termine: [...kern.state.termine.filter((t) => !ids.has(t.id)), ...neue] }, async (bericht) => {
       let i = 0;
       for (const t of neue) {
         await adapter.speichereTermin(t);
@@ -531,13 +313,13 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
    * damit zwei Telefone sich nicht überschreiben. Wirft sofort (ohne etwas zu ändern), wenn `fn` die Eingabe ablehnt.
    */
   async function einkaufAendern(fn) {
-    const neu = fn(state.einkauf);
+    const neu = fn(kern.state.einkauf);
     await aendere({ einkauf: neu }, async () => {
       const gespeichert = await adapter.aendereEinkauf(fn);
       const wiederLesbar = unlesbarMerken('einkauf', false); // nicht abgelehnt: die neueste Fassung war lesbar
       if (gespeichert) {
         einkaufGeprueft = jetzt().getTime(); // gespeichert wurde auf der neuesten Fassung: die Liste ist jetzt aktuell
-        state = { ...state, einkauf: gespeichert };
+        kern.state = { ...kern.state, einkauf: gespeichert };
       }
       if (gespeichert || wiederLesbar) melden();
     });
@@ -548,11 +330,11 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
    * (zwei Telefone überschreiben sich nicht). Wirft sofort (ohne etwas zu ändern), wenn `fn` die Eingabe ablehnt. → wie `aendere`.
    */
   async function kontoAendern(fn) {
-    const neu = fn(state.konto);
+    const neu = fn(kern.state.konto);
     return aendere({ konto: neu }, async () => {
       const gespeichert = await adapter.aendereKonto(fn);
       const wiederLesbar = unlesbarMerken('konto', false); // nicht abgelehnt: die neueste Fassung war lesbar
-      if (gespeichert) state = { ...state, konto: gespeichert };
+      if (gespeichert) kern.state = { ...kern.state, konto: gespeichert };
       if (gespeichert || wiederLesbar) melden();
     });
   }
@@ -574,97 +356,17 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
   const fixOffen = new Map();
   const fixSchreibtNoch = () => fixOffen.size > 0;
 
-  const schichtTeil = (teil) => (teil === 'katalog' ? state.schicht.katalog : state.schicht.monate[teil]);
-  const mitSchichtTeil = (teil, wert) => ({ ...state, schicht: teil === 'katalog' ? { ...state.schicht, katalog: wert } : { ...state.schicht, monate: { ...state.schicht.monate, [teil]: wert } } });
-
-  /** `basis` mit den offenen Änderungen; eine, die darauf nicht mehr passt, wird übersprungen (ihr eigenes Speichern meldet den Fehler). */
-  const mitOffenen = (basis, offen) =>
-    offen.reduce((wert, fn) => {
-      try {
-        return fn(wert);
-      } catch {
-        return wert;
-      }
-    }, basis);
-
-  /**
-   * Ändert einen Teil (des Schichtplans oder der Fixkosten): `fn(wert)` → neuer Wert. Sofort sichtbar; wirft sofort (ohne etwas zu
-   * ändern), wenn `fn` ablehnt. Gespeichert wird je Teil eines nach dem anderen (schnelle Pinsel-Tipps streiten nicht um dieselbe Fassung
-   * im Kalender), und zwar `fn` auf der NEUESTEN Fassung (zwei Telefone überschreiben sich nicht). Bei einem Fehler wird nur diese
-   * Änderung zurückgenommen und der Teil neu gelesen; anderes (inzwischen geladene Monate, Status) bleibt. `offenListe` = Warteschlangen
-   * je Teil, `aktuell()` = angezeigter Wert, `mit(wert)` = Zustand mit diesem Wert. Gibt { neu (sofort angezeigt), ergebnis, fehler } zurück.
-   */
-  async function teilAendern(offenListe, teil, fn, { leer, aktuell, mit, speichern, lesen, normalisiere }) {
-    const vorher = aktuell() ?? leer();
-    const neu = fn(vorher);
-    let eintrag = offenListe.get(teil);
-    if (!eintrag) {
-      eintrag = { basis: vorher, offen: [], kette: Promise.resolve() };
-      offenListe.set(teil, eintrag);
-    }
-    eintrag.offen.push(fn);
-    state = { ...mit(neu), fehler: null };
-    melden();
-
-    const anzeigen = () => mit(mitOffenen(eintrag.basis, eintrag.offen));
-    const herausnehmen = () => {
-      const i = eintrag.offen.indexOf(fn);
-      if (i >= 0) eintrag.offen.splice(i, 1);
-    };
-    const aufraeumen = () => {
-      if (eintrag.offen.length === 0 && offenListe.get(teil) === eintrag) offenListe.delete(teil);
-    };
-    // Wirft `fn` auf der neuesten Fassung, ist das eine fachliche Ablehnung (deutsche Meldung), kein Netzfehler.
-    const aufNeuester = (wert) => {
-      try {
-        return fn(wert);
-      } catch (e) {
-        if (e instanceof Error) FACHLICH.add(e);
-        throw e;
-      }
-    };
-    let fehlerText = null;
-    const schreibe = async () => {
-      const gespeichert = await speichern(aufNeuester);
-      herausnehmen();
-      if (gespeichert) eintrag.basis = normalisiere(gespeichert);
-      state = anzeigen();
-      aufraeumen();
-      melden();
-    };
-    const optionen = {
-      beiFehler: (_fehler, text) => {
-        fehlerText = text;
-      },
-      zurueck: () => {
-        herausnehmen();
-        return anzeigen();
-      },
-      async neuLesen() {
-        try {
-          eintrag.basis = normalisiere(await lesen());
-          state = anzeigen();
-        } finally {
-          aufraeumen();
-        }
-      },
-    };
-    const lauf = eintrag.kette.then(() => ausfuehren(schreibe, state, optionen));
-    // Die Kette läuft immer weiter (sonst bliebe nach einem Wurf, z. B. eines Hörers, jeder spätere Tipp dieses Teils ungespeichert);
-    // der Aufrufer bekommt die Ablehnung trotzdem über `await lauf`.
-    eintrag.kette = lauf.catch(() => {});
-    const ergebnis = await lauf;
-    return { neu, ergebnis, fehler: ergebnis === 'auth' ? TEXT_ANMELDEN : fehlerText };
-  }
+  const schichtTeil = (teil) => (teil === 'katalog' ? kern.state.schicht.katalog : kern.state.schicht.monate[teil]);
+  const mitSchichtTeil = (teil, wert) => ({ ...kern.state, schicht: teil === 'katalog' ? { ...kern.state.schicht, katalog: wert } : { ...kern.state.schicht, monate: { ...kern.state.schicht.monate, [teil]: wert } } });
 
   /** Ändert einen Teil des Schichtplans ('katalog' oder 'JJJJ-MM'), siehe `teilAendern`. */
   const schichtAendern = (teil, fn, optionen) => teilAendern(schichtOffen, teil, fn, { ...optionen, aktuell: () => schichtTeil(teil), mit: (wert) => mitSchichtTeil(teil, wert) });
 
   /** Zustand mit Teil `nr` der Fixkosten = `shard` (die anderen Teile bleiben). */
   function mitFixTeil(nr, shard) {
-    const shards = [...(state.fixkosten.shards ?? fixTeile(null))];
+    const shards = [...(kern.state.fixkosten.shards ?? fixTeile(null))];
     shards[nr] = shard;
-    return { ...state, fixkosten: { ...state.fixkosten, shards } };
+    return { ...kern.state, fixkosten: { ...kern.state.fixkosten, shards } };
   }
 
   /**
@@ -675,7 +377,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
   async function fixTeilAendern(nr, fn) {
     const { ergebnis, fehler } = await teilAendern(fixOffen, nr, fn, {
       leer: leererShard,
-      aktuell: () => state.fixkosten.shards?.[nr] ?? null,
+      aktuell: () => kern.state.fixkosten.shards?.[nr] ?? null,
       mit: (shard) => mitFixTeil(nr, shard),
       async speichern(f) {
         try {
@@ -684,7 +386,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
           // Der Teil ist (inzwischen, z. B. durch das andere Telefon) unlesbar: der Adapter hat nichts geschrieben; ab jetzt gesperrt.
           if (fehler?.name === 'FixTeilGesperrt') {
             FACHLICH.add(fehler);
-            state = { ...state, fixkosten: { ...state.fixkosten, unlesbar: unlesbareNummern([...state.fixkosten.unlesbar, nr]) } };
+            kern.state = { ...kern.state, fixkosten: { ...kern.state.fixkosten, unlesbar: unlesbareNummern([...kern.state.fixkosten.unlesbar, nr]) } };
           }
           throw fehler;
         }
@@ -705,23 +407,23 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     if (fixLesenLaeuft) return fixLesenLaeuft;
     if (!adapter.leseFixkosten) return Promise.resolve(false);
     fixLesenLaeuft = (async () => {
-      const stand = schreibStand;
-      state = { ...state, fixkosten: { ...state.fixkosten, status: 'laedt' } };
+      const stand = kern.schreibStand;
+      kern.state = { ...kern.state, fixkosten: { ...kern.state.fixkosten, status: 'laedt' } };
       melden();
       let gelesen;
       try {
         gelesen = await adapter.leseFixkosten();
       } catch (fehler) {
-        state = { ...state, fixkosten: { ...state.fixkosten, status: 'fehler' }, ...(istAuthFehler(fehler) ? { anmeldungNoetig: true } : {}) };
+        kern.state = { ...kern.state, fixkosten: { ...kern.state.fixkosten, status: 'fehler' }, ...(istAuthFehler(fehler) ? { anmeldungNoetig: true } : {}) };
         melden();
         return false;
       }
-      const eigene = stand !== schreibStand || schreibend > 0 || wartend.length > 0 || fixSchreibtNoch();
-      const f = state.fixkosten;
+      const eigene = stand !== kern.schreibStand || kern.schreibend > 0 || wartend.length > 0 || fixSchreibtNoch();
+      const f = kern.state.fixkosten;
       const frisch = fixTeile(gelesen?.shards);
       // eigene Änderung inzwischen: das Angezeigte bleibt; unverändert: dieselben Teile (kein neuer Push-Plan, kein Neuzeichnen der Liste)
       const shards = f.shards && (eigene || JSON.stringify(frisch) === JSON.stringify(f.shards)) ? f.shards : frisch;
-      state = { ...state, fixkosten: { shards, status: 'geladen', warnungen: gelesen?.warnungen ?? [], unlesbar: unlesbareNummern(gelesen?.unlesbar) } };
+      kern.state = { ...kern.state, fixkosten: { shards, status: 'geladen', warnungen: gelesen?.warnungen ?? [], unlesbar: unlesbareNummern(gelesen?.unlesbar) } };
       fixGelesen = true;
       melden();
       return true;
@@ -735,14 +437,14 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
 
   /** Vor dem ersten Schreiben müssen die Fixkosten einmal aus dem Kalender gelesen sein (Anzahl, Anzeige, Warnungen). → Fehlertext oder null. */
   async function fixBereit() {
-    if (fixGelesen && state.fixkosten.shards) return null;
+    if (fixGelesen && kern.state.fixkosten.shards) return null;
     if (await fixLesen()) return null;
-    return state.anmeldungNoetig ? TEXT_FIX_ANMELDEN : TEXT_FIX_NICHT_GELESEN;
+    return kern.state.anmeldungNoetig ? TEXT_FIX_ANMELDEN : TEXT_FIX_NICHT_GELESEN;
   }
 
   /** In welchem Teil der Posten `id` steht (angezeigter Stand); sonst der Teil, in den er gehört. */
   function fixTeilVon(id) {
-    const nr = (state.fixkosten.shards ?? []).findIndex((s) => s?.posten.some((p) => p.id === id));
+    const nr = (kern.state.fixkosten.shards ?? []).findIndex((s) => s?.posten.some((p) => p.id === id));
     return nr >= 0 ? nr : shardFuer(id);
   }
 
@@ -752,7 +454,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
    * bis eine passt oder jeder Teil ausgeschieden ist. → { id } | { fehler } (verständlich, ohne „Teil“).
    */
   function neueFixIdFuer(posten) {
-    const shards = state.fixkosten.shards ?? fixTeile(null);
+    const shards = kern.state.fixkosten.shards ?? fixTeile(null);
     const vergeben = new Set(shards.flatMap((s) => [...(s?.posten.map((p) => p.id) ?? []), ...(s?.fremd ?? []).map((k) => k?.i)]));
     const raus = new Set(); // Teile, die nicht in Frage kommen (unlesbar oder voll)
     let voll = false;
@@ -777,7 +479,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
   }
 
   /** Ist Teil `nr` gesperrt, weil diese Version ihn nicht lesen kann? */
-  const fixGesperrt = (nr) => state.fixkosten.unlesbar.includes(nr);
+  const fixGesperrt = (nr) => kern.state.fixkosten.unlesbar.includes(nr);
 
   /**
    * Der Posten `id` in Teil `shard`, sonst ein Wurf mit klarer Meldung: inzwischen gelöscht, oder vom anderen Telefon mit einer neueren
@@ -808,7 +510,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
    * { shards (mit fremden Posten), unlesbar: [{ nr, text }] } – unlesbare Teile kommen als Rohtext mit, damit nichts unbemerkt fehlt.
    */
   async function fixFuerSicherung() {
-    if (!adapter.leseFixkosten) return { shards: state.fixkosten.shards ?? fixTeile(null), unlesbar: state.fixkosten.unlesbar.map((nr) => ({ nr, text: null })) };
+    if (!adapter.leseFixkosten) return { shards: kern.state.fixkosten.shards ?? fixTeile(null), unlesbar: kern.state.fixkosten.unlesbar.map((nr) => ({ nr, text: null })) };
     const gelesen = await adapter.leseFixkosten();
     return { shards: fixTeile(gelesen.shards), unlesbar: (gelesen.unlesbar ?? []).map(({ nr, text }) => ({ nr, text })) };
   }
@@ -825,7 +527,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     if (gesperrt) return { ok: false, fehler: gesperrt };
     if (!adapter.aendereZiele) return { ok: false, fehler: TEXT_FEHLER };
     try {
-      fn(state.ziele.daten); // schon am angezeigten Stand abgelehnt: nichts ändern, nichts zählen (ein Laden läuft ungestört weiter)
+      fn(kern.state.ziele.daten); // schon am angezeigten Stand abgelehnt: nichts ändern, nichts zählen (ein Laden läuft ungestört weiter)
     } catch (e) {
       return { ok: false, fehler: e?.message || TEXT_FEHLER };
     }
@@ -833,21 +535,21 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     try {
       const { ergebnis, fehler } = await teilAendern(zieleOffen, 'ziele', fn, {
         leer: leereZiele,
-        aktuell: () => state.ziele.daten,
+        aktuell: () => kern.state.ziele.daten,
         // `bestaetigt` = der zuletzt gespeicherte Stand, solange eigene Änderungen offen sind (für den Schnappschuss: eine Änderung, die
         // auf die Anmeldung wartet, lebt nur im Speicher und darf nach einem Neustart nicht als gespeichert erscheinen)
         mit: (daten) => {
           const e = zieleOffen.get('ziele');
-          const { bestaetigt: _alt, ...ziele } = state.ziele;
-          return { ...state, ziele: e && e.offen.length > 0 ? { ...ziele, daten, bestaetigt: e.basis } : { ...ziele, daten } };
+          const { bestaetigt: _alt, ...ziele } = kern.state.ziele;
+          return { ...kern.state, ziele: e && e.offen.length > 0 ? { ...ziele, daten, bestaetigt: e.basis } : { ...ziele, daten } };
         },
         async speichern(f) {
           try {
             const gespeichert = await adapter.aendereZiele(f);
             // Gespeichert heißt: der Adapter hat die Sparziele eben frisch gelesen (und lesbar gefunden) – eine Sperre nach einem
             // gescheiterten Lesen ('fehler') ist damit aufgehoben.
-            if (state.ziele.status !== 'geladen' && state.ziele.status !== 'gespeichert') {
-              state = { ...state, ziele: { ...state.ziele, status: 'geladen', warnungen: zieleWarnungen({ daten: gespeichert ?? state.ziele.daten, unlesbar: false }) } };
+            if (kern.state.ziele.status !== 'geladen' && kern.state.ziele.status !== 'gespeichert') {
+              kern.state = { ...kern.state, ziele: { ...kern.state.ziele, status: 'geladen', warnungen: zieleWarnungen({ daten: gespeichert ?? kern.state.ziele.daten, unlesbar: false }) } };
             }
             return gespeichert;
           } catch (e) {
@@ -860,14 +562,14 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
                 eintrag.basis = leereZiele();
                 eintrag.offen.length = 0;
               }
-              state = { ...state, ziele: { ...state.ziele, daten: leereZiele(), unlesbar: true, warnungen: zieleWarnungen({ unlesbar: true }) } };
+              kern.state = { ...kern.state, ziele: { ...kern.state.ziele, daten: leereZiele(), unlesbar: true, warnungen: zieleWarnungen({ unlesbar: true }) } };
             }
             throw e;
           }
         },
         async lesen() {
           const g = await adapter.leseZiele();
-          state = { ...state, ziele: { ...zieleZustand(g, 'geladen'), daten: state.ziele.daten } };
+          kern.state = { ...kern.state, ziele: { ...zieleZustand(g, 'geladen'), daten: kern.state.ziele.daten } };
           return g.daten;
         },
         normalisiere: (daten) => daten ?? leereZiele(),
@@ -884,18 +586,18 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
    * Monat eben vervollständigt haben); geht das nicht (offline, Demo), der angezeigte.
    */
   async function kontoFrisch() {
-    if (!adapter.leseKonto) return state.konto;
+    if (!adapter.leseKonto) return kern.state.konto;
     try {
       const { konto } = await adapter.leseKonto();
-      return konto ? normalisiereKonto(konto) : state.konto;
+      return konto ? normalisiereKonto(konto) : kern.state.konto;
     } catch {
-      return state.konto;
+      return kern.state.konto;
     }
   }
 
   /** Eine Kennung für ein neues Ziel oder eine Verschiebung, die noch nicht vergeben ist (auch nicht an fremde Einträge); sonst null. */
   function neueZielKennung() {
-    const d = state.ziele.daten;
+    const d = kern.state.ziele.daten;
     const vergeben = new Set([...(d.z ?? []), ...(d.m ?? [])].map((x) => x.id).concat([...(d.fremd?.z ?? []), ...(d.fremd?.m ?? [])].map((k) => k?.i)));
     for (let versuch = 0; versuch < 20; versuch += 1) {
       const id = zielId();
@@ -920,14 +622,14 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       try {
         g = await adapter.leseZiele();
       } catch (fehler) {
-        state = istAuthFehler(fehler) ? { ...state, anmeldungNoetig: true } : { ...state, ziele: zieleNichtGelesen() };
+        kern.state = istAuthFehler(fehler) ? { ...kern.state, anmeldungNoetig: true } : { ...kern.state, ziele: zieleNichtGelesen() };
         melden();
         return false;
       }
       const frisch = zieleZustand(g, 'geladen');
       const eigene = zieleOffen.size > 0 || stand !== zieleStand;
-      if (frisch.unlesbar) state = { ...state, ziele: zieleUnlesbarUebernehmen(g) };
-      else state = { ...state, ziele: eigene ? { ...frisch, daten: state.ziele.daten, ...(state.ziele.bestaetigt ? { bestaetigt: state.ziele.bestaetigt } : {}) } : frisch };
+      if (frisch.unlesbar) kern.state = { ...kern.state, ziele: zieleUnlesbarUebernehmen(g) };
+      else kern.state = { ...kern.state, ziele: eigene ? { ...frisch, daten: kern.state.ziele.daten, ...(kern.state.ziele.bestaetigt ? { bestaetigt: kern.state.ziele.bestaetigt } : {}) } : frisch };
       melden();
       return true;
     })()
@@ -940,7 +642,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
 
   /** Sparziele für die Sicherung: frisch aus dem Kalender (Anmeldefehler laufen nach oben), sonst der angezeigte Stand. → { daten, unlesbar, text }. */
   async function zieleFuerSicherung() {
-    if (!adapter.leseZiele) return { daten: state.ziele.daten, unlesbar: state.ziele.unlesbar, text: null };
+    if (!adapter.leseZiele) return { daten: kern.state.ziele.daten, unlesbar: kern.state.ziele.unlesbar, text: null };
     const g = await adapter.leseZiele();
     return { daten: g.daten, unlesbar: g.unlesbar === true, text: g.text ?? null };
   }
@@ -953,7 +655,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
   let autosHolenLaeuft = null; // laufendes Lesen: mehrfaches Anstoßen fragt nur einmal
   let autosFrischLaeuft = null; // laufendes Frisch-Lesen vor dem Push-Plan (siehe autosFrischLesen)
   const teilSchluessel = (auto, jahr) => `h:${auto}:${jahr}`;
-  const teilGesperrt = (auto, jahr) => state.autos.unlesbar.shards.some((x) => x.auto === auto && x.jahr === jahr);
+  const teilGesperrt = (auto, jahr) => kern.state.autos.unlesbar.shards.some((x) => x.auto === auto && x.jahr === jahr);
 
   /** Leert die Warteschlange eines Teils (nach „unlesbar“: ihr Speichern würde ohnehin abgelehnt). */
   function autosOffenLeeren(schluessel, basis) {
@@ -987,16 +689,16 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
   /** Der Hauptteil ist (inzwischen) unlesbar: alles leer und gesperrt. */
   function autosHauptSperren() {
     autosOffenLeeren('haupt', leereAutos());
-    state = { ...state, autos: { ...state.autos, daten: leereAutos(), historie: {}, warnungen: autosWarnungen({ unlesbar: true }), unlesbar: { main: true, shards: state.autos.unlesbar.shards } } };
+    kern.state = { ...kern.state, autos: { ...kern.state.autos, daten: leereAutos(), historie: {}, warnungen: autosWarnungen({ unlesbar: true }), unlesbar: { main: true, shards: kern.state.autos.unlesbar.shards } } };
   }
 
   /** Ein Verlauf-Teil ist (inzwischen) unlesbar: leer gezeigt und gesperrt. */
   function autosTeilSperren(auto, jahr) {
     const leer = leereHistorie(auto, jahr);
     autosOffenLeeren(teilSchluessel(auto, jahr), leer);
-    const a = state.autos;
+    const a = kern.state.autos;
     const shards = teilGesperrt(auto, jahr) ? a.unlesbar.shards : [...a.unlesbar.shards, { auto, jahr }];
-    state = { ...state, autos: { ...a, historie: { ...a.historie, [auto]: { ...(a.historie[auto] ?? {}), [jahr]: leer } }, warnungen: [...a.warnungen, ...historieWarnungen({ historie: leer, unlesbar: true })], unlesbar: { ...a.unlesbar, shards } } };
+    kern.state = { ...kern.state, autos: { ...a, historie: { ...a.historie, [auto]: { ...(a.historie[auto] ?? {}), [jahr]: leer } }, warnungen: [...a.warnungen, ...historieWarnungen({ historie: leer, unlesbar: true })], unlesbar: { ...a.unlesbar, shards } } };
   }
 
   /**
@@ -1008,10 +710,10 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     const frisch = autosZustand(g, 'geladen');
     if (frisch.unlesbar.main) {
       autosOffenLeeren('haupt', leereAutos());
-      state = { ...state, autos: frisch };
+      kern.state = { ...kern.state, autos: frisch };
       return;
     }
-    const a = state.autos;
+    const a = kern.state.autos;
     let historie = frisch.historie;
     if (eigene) {
       historie = { ...frisch.historie };
@@ -1021,7 +723,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       historie = { ...historie, [auto]: { ...(historie[auto] ?? {}), [jahr]: leereHistorie(auto, jahr) } };
       autosOffenLeeren(teilSchluessel(auto, jahr), leereHistorie(auto, jahr));
     }
-    state = { ...state, autos: mitBestaetigt({ daten: eigene ? a.daten : gleichOder(a.daten, frisch.daten), historie: historieGleichOder(a.historie, historie), status: 'geladen', warnungen: gleichOder(a.warnungen, frisch.warnungen), unlesbar: gleichOder(a.unlesbar, frisch.unlesbar), frisch: true }) };
+    kern.state = { ...kern.state, autos: mitBestaetigt({ daten: eigene ? a.daten : gleichOder(a.daten, frisch.daten), historie: historieGleichOder(a.historie, historie), status: 'geladen', warnungen: gleichOder(a.warnungen, frisch.warnungen), unlesbar: gleichOder(a.unlesbar, frisch.unlesbar), frisch: true }) };
   }
 
   /**
@@ -1032,18 +734,18 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     if (autosHolenLaeuft) return autosHolenLaeuft;
     if (!adapter.leseAutos) return Promise.resolve(false);
     autosHolenLaeuft = (async () => {
-      const stand = schreibStand;
-      state = { ...state, autos: { ...state.autos, status: 'laedt' } };
+      const stand = kern.schreibStand;
+      kern.state = { ...kern.state, autos: { ...kern.state.autos, status: 'laedt' } };
       melden();
       let g;
       try {
         g = await mitFrist(adapter.leseAutos(), autosFristMs); // hängt es, gilt es als Fehler: der Vorlader der Shell versucht es später wieder
       } catch (fehler) {
-        state = { ...state, autos: { ...state.autos, status: 'fehler', frisch: false, warnungen: [TEXT_AUTOS_NICHT_GELESEN] }, ...(istAuthFehler(fehler) ? { anmeldungNoetig: true } : {}) };
+        kern.state = { ...kern.state, autos: { ...kern.state.autos, status: 'fehler', frisch: false, warnungen: [TEXT_AUTOS_NICHT_GELESEN] }, ...(istAuthFehler(fehler) ? { anmeldungNoetig: true } : {}) };
         melden();
         return false;
       }
-      autosUebernehmen(g, stand !== schreibStand || schreibend > 0 || wartend.length > 0 || autosSchreibtNoch());
+      autosUebernehmen(g, stand !== kern.schreibStand || kern.schreibend > 0 || wartend.length > 0 || autosSchreibtNoch());
       autosGelesen = true;
       melden();
       return true;
@@ -1058,8 +760,8 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
   /** Vor dem Schreiben: einmal gelesen und der Hauptteil lesbar? → Fehlertext oder null. */
   async function autosBereit() {
     if (!adapter.aendereAutos) return TEXT_FEHLER;
-    if (!autosGelesen && !(await autosHolen())) return state.anmeldungNoetig ? TEXT_AUTOS_ANMELDEN : TEXT_AUTOS_NICHT_GELESEN;
-    return state.autos.unlesbar.main ? TEXT_AUTOS_GESPERRT : null;
+    if (!autosGelesen && !(await autosHolen())) return kern.state.anmeldungNoetig ? TEXT_AUTOS_ANMELDEN : TEXT_AUTOS_NICHT_GELESEN;
+    return kern.state.autos.unlesbar.main ? TEXT_AUTOS_GESPERRT : null;
   }
 
   /** Ändert den Hauptteil (siehe teilAendern) mit `fn(daten)`; → wie teilErgebnis. Wirft, wenn `fn` schon am angezeigten Stand ablehnt. */
@@ -1067,8 +769,8 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     return teilErgebnis(
       await teilAendern(autosOffen, 'haupt', fn, {
         leer: leereAutos,
-        aktuell: () => state.autos.daten,
-        mit: (daten) => ({ ...state, autos: mitBestaetigt({ ...state.autos, daten }) }),
+        aktuell: () => kern.state.autos.daten,
+        mit: (daten) => ({ ...kern.state, autos: mitBestaetigt({ ...kern.state.autos, daten }) }),
         async speichern(f) {
           try {
             return await adapter.aendereAutos(f);
@@ -1100,11 +802,11 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
    */
   async function indexSichern(auto, jahr) {
     const e = autosOffen.get('haupt');
-    if (historieJahrBekannt(e?.basis ?? state.autos.daten, auto, jahr)) return;
+    if (historieJahrBekannt(e?.basis ?? kern.state.autos.daten, auto, jahr)) return;
     const gespeichert = await adapter.aendereAutos(fachlich((d) => historieJahrEintragen(d, auto, jahr)));
     if (!gespeichert) return;
     if (e) e.basis = gespeichert;
-    else state = { ...state, autos: { ...state.autos, daten: gleichOder(state.autos.daten, gespeichert) } };
+    else kern.state = { ...kern.state, autos: { ...kern.state.autos, daten: gleichOder(kern.state.autos.daten, gespeichert) } };
   }
 
   /**
@@ -1115,8 +817,8 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     return teilErgebnis(
       await teilAendern(autosOffen, teilSchluessel(auto, jahr), fn, {
         leer: () => leereHistorie(auto, jahr),
-        aktuell: () => state.autos.historie[auto]?.[jahr] ?? null,
-        mit: (h) => ({ ...state, autos: mitBestaetigt({ ...state.autos, historie: { ...state.autos.historie, [auto]: { ...(state.autos.historie[auto] ?? {}), [jahr]: h } } }) }),
+        aktuell: () => kern.state.autos.historie[auto]?.[jahr] ?? null,
+        mit: (h) => ({ ...kern.state, autos: mitBestaetigt({ ...kern.state.autos, historie: { ...kern.state.autos.historie, [auto]: { ...(kern.state.autos.historie[auto] ?? {}), [jahr]: h } } }) }),
         async speichern(f) {
           try {
             if (vorher) await vorher();
@@ -1151,9 +853,9 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
    */
   async function autosInJahrAendern(auto, jahr, fn, optionen) {
     if (teilGesperrt(auto, jahr)) return { ok: false, fehler: TEXT_HISTORIE_GESPERRT };
-    if (!(state.autos.daten.autos ?? []).some((a) => a.id === auto)) return { ok: false, fehler: TEXT_AUTO_WEG };
+    if (!(kern.state.autos.daten.autos ?? []).some((a) => a.id === auto)) return { ok: false, fehler: TEXT_AUTO_WEG };
     try {
-      const bekannt = historieJahrBekannt(autosOffen.get('haupt')?.basis ?? state.autos.daten, auto, jahr);
+      const bekannt = historieJahrBekannt(autosOffen.get('haupt')?.basis ?? kern.state.autos.daten, auto, jahr);
       if (!bekannt) {
         const r = await autosHauptAendern((d) => historieJahrEintragen(d, auto, jahr));
         if (!r.ok && !r.wartet) return r;
@@ -1176,24 +878,24 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
 
   /** Alle vergebenen Kennungen im angezeigten Hauptteil (Autos, Regeln, Reifensätze, auch fremde). */
   function hauptKennungen() {
-    const d = state.autos.daten;
+    const d = kern.state.autos.daten;
     return new Set([...(d.autos ?? []), ...(d.regeln ?? []), ...(d.saetze ?? [])].map((x) => x.id).concat([...(d.fremd?.a ?? []), ...(d.fremd?.r ?? []), ...(d.fremd?.s ?? [])].map((k) => k?.i)));
   }
 
   /** Alle vergebenen Kennungen von Arbeiten des Autos `auto` (alle angezeigten Jahre, auch fremde). */
-  const arbeitKennungen = (auto) => new Set(Object.values(state.autos.historie[auto] ?? {}).flatMap((h) => [...(h.arbeiten ?? []).map((a) => a.id), ...(h.fremd?.w ?? []).map((k) => k?.i)]));
+  const arbeitKennungen = (auto) => new Set(Object.values(kern.state.autos.historie[auto] ?? {}).flatMap((h) => [...(h.arbeiten ?? []).map((a) => a.id), ...(h.fremd?.w ?? []).map((k) => k?.i)]));
 
   /** Alle angezeigten Arbeiten des Autos `auto` (alle Jahre). */
-  const arbeitenDesAutos = (auto) => Object.values(state.autos.historie[auto] ?? {}).flatMap((h) => h.arbeiten ?? []);
+  const arbeitenDesAutos = (auto) => Object.values(kern.state.autos.historie[auto] ?? {}).flatMap((h) => h.arbeiten ?? []);
 
   /** Das Jahr, in dem die Arbeit `id` des Autos `auto` angezeigt wird, oder null. */
   function arbeitJahr(auto, id) {
-    for (const [jahr, h] of Object.entries(state.autos.historie[auto] ?? {})) if ((h.arbeiten ?? []).some((a) => a.id === id)) return Number(jahr);
+    for (const [jahr, h] of Object.entries(kern.state.autos.historie[auto] ?? {})) if ((h.arbeiten ?? []).some((a) => a.id === id)) return Number(jahr);
     return null;
   }
 
   /** Die km-Punkte des Autos `auto` (angezeigter Stand) für die Warnungen beim Eintragen. */
-  const autoPunkte = (auto) => kmPunkte(autosHistorien(state.autos), (state.autos.daten.autos ?? []).find((a) => a.id === auto) ?? auto);
+  const autoPunkte = (auto) => kmPunkte(autosHistorien(kern.state.autos), (kern.state.autos.daten.autos ?? []).find((a) => a.id === auto) ?? auto);
 
   /** Änderung am Hauptteil für die Oberfläche: erst bereit, dann `fn`; nie ein Wurf. */
   async function autosHauptSicher(fn) {
@@ -1211,7 +913,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
    * kennt (`weitereTeile`: Teile gelöschter Autos, alles bei unlesbarem Hauptteil); ohne passenden Adapter der angezeigte Stand.
    */
   async function autosFuerSicherung() {
-    if (!adapter.leseAutos) return { daten: state.autos.daten, historie: state.autos.historie, rohtexte: [], weitereTeile: [] };
+    if (!adapter.leseAutos) return { daten: kern.state.autos.daten, historie: kern.state.autos.historie, rohtexte: [], weitereTeile: [] };
     const g = adapter.leseAutosSicherung ? await adapter.leseAutosSicherung() : await adapter.leseAutos();
     return { daten: g.daten, historie: g.historie, rohtexte: g.rohtexte ?? [], weitereTeile: g.weitereTeile ?? [] };
   }
@@ -1227,13 +929,13 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     const pruefe = (r) => {
       if (!r.ok && !r.wartet) throw new Error(r.fehler ?? TEXT_FEHLER);
     };
-    for (const [auto, jahre] of Object.entries(state.autos.historie)) {
+    for (const [auto, jahre] of Object.entries(kern.state.autos.historie)) {
       for (const h of Object.values(jahre)) {
         if (teilGesperrt(auto, h.jahr) || ((h.arbeiten ?? []).length === 0 && (h.km ?? []).length === 0)) continue;
         pruefe(await autosTeilAendern(auto, h.jahr, (x) => (x.fremd ? { ...leereHistorie(auto, h.jahr), fremd: x.fremd } : leereHistorie(auto, h.jahr))));
       }
     }
-    const d = state.autos.daten;
+    const d = kern.state.autos.daten;
     if ((d.autos ?? []).length === 0 && (d.regeln ?? []).length === 0 && (d.saetze ?? []).length === 0) return;
     pruefe(
       await autosHauptAendern((x) => {
@@ -1254,11 +956,11 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
   let versFrischLaeuft = null; // laufendes Frisch-Lesen vor dem Push-Plan (siehe versicherungFrischLesen)
   const versSchluessel = ({ jahr, quartal }) => `t:${jahr}:${quartal}`;
   const gleicherTeil = (a, b) => a.jahr === b.jahr && a.quartal === b.quartal;
-  const versTeilGesperrt = (t) => state.versicherung.unlesbar.teile.some((x) => gleicherTeil(x, t));
+  const versTeilGesperrt = (t) => kern.state.versicherung.unlesbar.teile.some((x) => gleicherTeil(x, t));
   const teilVonRechnung = (r) => ({ jahr: rechnungJahr(r), quartal: rechnungQuartal(r) });
   const quartalText = ({ jahr, quartal }) => `${quartal}. Quartal ${jahr}`;
   /** Der zuletzt GESPEICHERTE Hauptteil (offene eigene Änderungen nicht mitgezählt). */
-  const versHauptBasis = () => versOffen.get('haupt')?.basis ?? state.versicherung.daten;
+  const versHauptBasis = () => versOffen.get('haupt')?.basis ?? kern.state.versicherung.daten;
 
   /** Leert die Warteschlange eines Teils (nach „unlesbar“: ihr Speichern würde ohnehin abgelehnt). */
   function versOffenLeeren(schluessel, basis) {
@@ -1290,21 +992,21 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
   }
 
   /** Zustand mit dem Quartal-Teil `t` = `teil` (die anderen bleiben). */
-  const mitVersTeil = (t, teil) => ({ ...state, versicherung: mitVersBestaetigt({ ...state.versicherung, teile: { ...state.versicherung.teile, [t.jahr]: { ...(state.versicherung.teile[t.jahr] ?? {}), [t.quartal]: teil } } }) });
+  const mitVersTeil = (t, teil) => ({ ...kern.state, versicherung: mitVersBestaetigt({ ...kern.state.versicherung, teile: { ...kern.state.versicherung.teile, [t.jahr]: { ...(kern.state.versicherung.teile[t.jahr] ?? {}), [t.quartal]: teil } } }) });
 
   /** Der Hauptteil ist (inzwischen) unlesbar: alles leer und gesperrt. */
   function versHauptSperren() {
     versOffenLeeren('haupt', leereVersicherung());
-    state = { ...state, versicherung: { ...state.versicherung, daten: leereVersicherung(), teile: {}, warnungen: versicherungWarnungen({ unlesbar: true }), unlesbar: { main: true, teile: state.versicherung.unlesbar.teile } } };
+    kern.state = { ...kern.state, versicherung: { ...kern.state.versicherung, daten: leereVersicherung(), teile: {}, warnungen: versicherungWarnungen({ unlesbar: true }), unlesbar: { main: true, teile: kern.state.versicherung.unlesbar.teile } } };
   }
 
   /** Ein Quartal-Teil ist (inzwischen) unlesbar: leer gezeigt und gesperrt. */
   function versTeilSperren(t) {
     const leer = leererVersicherungTeil(t.jahr, t.quartal);
     versOffenLeeren(versSchluessel(t), leer);
-    const v = state.versicherung;
+    const v = kern.state.versicherung;
     const teile = versTeilGesperrt(t) ? v.unlesbar.teile : [...v.unlesbar.teile, { jahr: t.jahr, quartal: t.quartal }];
-    state = { ...state, versicherung: { ...v, teile: { ...v.teile, [t.jahr]: { ...(v.teile[t.jahr] ?? {}), [t.quartal]: leer } }, warnungen: [...v.warnungen, ...versicherungTeilWarnungen({ teil: leer, unlesbar: true })], unlesbar: { ...v.unlesbar, teile } } };
+    kern.state = { ...kern.state, versicherung: { ...v, teile: { ...v.teile, [t.jahr]: { ...(v.teile[t.jahr] ?? {}), [t.quartal]: leer } }, warnungen: [...v.warnungen, ...versicherungTeilWarnungen({ teil: leer, unlesbar: true })], unlesbar: { ...v.unlesbar, teile } } };
   }
 
   /**
@@ -1316,10 +1018,10 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     const frisch = versicherungZustand(g, 'geladen');
     if (frisch.unlesbar.main) {
       versOffenLeeren('haupt', leereVersicherung());
-      state = { ...state, versicherung: frisch };
+      kern.state = { ...kern.state, versicherung: frisch };
       return;
     }
-    const v = state.versicherung;
+    const v = kern.state.versicherung;
     let teile = frisch.teile;
     let geschrieben = frisch.geschrieben;
     if (eigene) {
@@ -1332,8 +1034,8 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       teile = { ...teile, [t.jahr]: { ...(teile[t.jahr] ?? {}), [t.quartal]: leererVersicherungTeil(t.jahr, t.quartal) } };
       versOffenLeeren(versSchluessel(t), leererVersicherungTeil(t.jahr, t.quartal));
     }
-    state = {
-      ...state,
+    kern.state = {
+      ...kern.state,
       versicherung: mitVersBestaetigt({ daten: eigene ? v.daten : gleichOder(v.daten, frisch.daten), teile: historieGleichOder(v.teile, teile), geschrieben: historieGleichOder(v.geschrieben, geschrieben), status: 'geladen', warnungen: gleichOder(v.warnungen, frisch.warnungen), unlesbar: gleichOder(v.unlesbar, frisch.unlesbar), frisch: true }),
     };
   }
@@ -1347,18 +1049,18 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     if (versHolenLaeuft) return versHolenLaeuft;
     if (!adapter.leseVersicherung) return Promise.resolve(false);
     versHolenLaeuft = (async () => {
-      const stand = schreibStand;
-      state = { ...state, versicherung: { ...state.versicherung, status: 'laedt' } };
+      const stand = kern.schreibStand;
+      kern.state = { ...kern.state, versicherung: { ...kern.state.versicherung, status: 'laedt' } };
       melden();
       let g;
       try {
         g = await mitFrist(adapter.leseVersicherung(), versicherungFristMs);
       } catch (fehler) {
-        state = { ...state, versicherung: { ...state.versicherung, status: 'fehler', frisch: false, warnungen: [TEXT_VERSICHERUNG_NICHT_GELESEN] }, ...(istAuthFehler(fehler) ? { anmeldungNoetig: true } : {}) };
+        kern.state = { ...kern.state, versicherung: { ...kern.state.versicherung, status: 'fehler', frisch: false, warnungen: [TEXT_VERSICHERUNG_NICHT_GELESEN] }, ...(istAuthFehler(fehler) ? { anmeldungNoetig: true } : {}) };
         melden();
         return false;
       }
-      versUebernehmen(g, stand !== schreibStand || schreibend > 0 || wartend.length > 0 || versSchreibtNoch());
+      versUebernehmen(g, stand !== kern.schreibStand || kern.schreibend > 0 || wartend.length > 0 || versSchreibtNoch());
       versGelesen = true;
       melden();
       return true;
@@ -1373,8 +1075,8 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
   /** Vor dem Schreiben: einmal gelesen und der Hauptteil lesbar? → Fehlertext oder null. */
   async function versBereit() {
     if (!adapter.aendereVersicherung) return TEXT_FEHLER;
-    if (!versGelesen && !(await versHolen())) return state.anmeldungNoetig ? TEXT_VERSICHERUNG_ANMELDEN : TEXT_VERSICHERUNG_NICHT_GELESEN;
-    return state.versicherung.unlesbar.main ? TEXT_VERSICHERUNG_GESPERRT : null;
+    if (!versGelesen && !(await versHolen())) return kern.state.anmeldungNoetig ? TEXT_VERSICHERUNG_ANMELDEN : TEXT_VERSICHERUNG_NICHT_GELESEN;
+    return kern.state.versicherung.unlesbar.main ? TEXT_VERSICHERUNG_GESPERRT : null;
   }
 
   /** Ändert den Hauptteil (siehe teilAendern) mit `fn(daten)`; → wie teilErgebnis. Wirft, wenn `fn` schon am angezeigten Stand ablehnt. */
@@ -1382,8 +1084,8 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     return teilErgebnis(
       await teilAendern(versOffen, 'haupt', fn, {
         leer: leereVersicherung,
-        aktuell: () => state.versicherung.daten,
-        mit: (daten) => ({ ...state, versicherung: mitVersBestaetigt({ ...state.versicherung, daten }) }),
+        aktuell: () => kern.state.versicherung.daten,
+        mit: (daten) => ({ ...kern.state, versicherung: mitVersBestaetigt({ ...kern.state.versicherung, daten }) }),
         async speichern(f) {
           try {
             return await adapter.aendereVersicherung(f);
@@ -1415,7 +1117,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
    */
   async function versJahrSichern(jahr) {
     const e = versOffen.get('haupt');
-    if (versicherungJahrBekannt(e?.basis ?? state.versicherung.daten, jahr)) return;
+    if (versicherungJahrBekannt(e?.basis ?? kern.state.versicherung.daten, jahr)) return;
     let gespeichert;
     try {
       gespeichert = await adapter.aendereVersicherung(fachlich((d) => versicherungJahrEintragen(d, jahr)));
@@ -1428,7 +1130,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     }
     if (!gespeichert) return;
     if (e) e.basis = gespeichert;
-    else state = { ...state, versicherung: { ...state.versicherung, daten: gleichOder(state.versicherung.daten, gespeichert) } };
+    else kern.state = { ...kern.state, versicherung: { ...kern.state.versicherung, daten: gleichOder(kern.state.versicherung.daten, gespeichert) } };
   }
 
   /**
@@ -1439,7 +1141,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     return teilErgebnis(
       await teilAendern(versOffen, versSchluessel(t), fn, {
         leer: () => leererVersicherungTeil(t.jahr, t.quartal),
-        aktuell: () => state.versicherung.teile[t.jahr]?.[t.quartal] ?? null,
+        aktuell: () => kern.state.versicherung.teile[t.jahr]?.[t.quartal] ?? null,
         mit: (teil) => mitVersTeil(t, teil),
         async speichern(f) {
           try {
@@ -1497,12 +1199,12 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
   }
 
   /** Wo steht die Rechnung `id` im angezeigten Stand? (rechnungFinden: gültige Fassung, ihr Teil, weitere Fassungen) */
-  const versRechnungFinden = (id) => rechnungFinden(state.versicherung.teile, id, { geschrieben: state.versicherung.geschrieben });
+  const versRechnungFinden = (id) => rechnungFinden(kern.state.versicherung.teile, id, { geschrieben: kern.state.versicherung.geschrieben });
 
   /** Alle vergebenen Kennungen von Rechnungen in allen angezeigten Teilen (auch fremde und doppelte). */
   function rechnungKennungen() {
     const ids = new Set();
-    for (const quartale of Object.values(state.versicherung.teile)) {
+    for (const quartale of Object.values(kern.state.versicherung.teile)) {
       for (const teil of Object.values(quartale ?? {})) {
         for (const r of teil?.rechnungen ?? []) ids.add(r.id);
         for (const k of teil?.fremd?.r ?? []) ids.add(k?.i);
@@ -1514,7 +1216,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
   /** Kennungen der Kategorien, auf die eine Rechnung in einem angezeigten Teil zeigt (auch fremde Rechnungen, roh mit `k`). */
   function benutzteKategorien() {
     const ids = new Set();
-    for (const quartale of Object.values(state.versicherung.teile)) {
+    for (const quartale of Object.values(kern.state.versicherung.teile)) {
       for (const teil of Object.values(quartale ?? {})) {
         for (const r of teil?.rechnungen ?? []) ids.add(r.kategorie);
         for (const k of teil?.fremd?.r ?? []) ids.add(k?.k);
@@ -1558,8 +1260,8 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
 
   /** Eine Meldung, die die Shell zeigt (auch wenn sie gleich lautet wie die vorige). */
   function versMelden(text) {
-    fehlerNr += 1;
-    state = { ...state, fehler: text, fehlerNr };
+    kern.fehlerNr += 1;
+    kern.state = { ...kern.state, fehler: text, fehlerNr: kern.fehlerNr };
     melden();
   }
 
@@ -1576,7 +1278,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     for (const t of weitere) {
       if (versTeilGesperrt(t)) continue;
       // bis zum frischen Lesen: die angezeigte Fassung im eben geschriebenen Teil
-      let gueltig = gueltigIn ? fassungVon((state.versicherung.teile[gueltigIn.jahr]?.[gueltigIn.quartal]?.rechnungen ?? []).find((r) => r.id === id)) : Infinity;
+      let gueltig = gueltigIn ? fassungVon((kern.state.versicherung.teile[gueltigIn.jahr]?.[gueltigIn.quartal]?.rechnungen ?? []).find((r) => r.id === id)) : Infinity;
       const vorher = gueltigIn
         ? fachlichAsync(async () => {
             const g = await adapter.leseVersicherungTeil(gueltigIn.jahr, gueltigIn.quartal);
@@ -1603,7 +1305,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
    * gelesen wurden (`weitereTeile`); ohne passenden Adapter der angezeigte Stand.
    */
   async function versicherungFuerSicherung() {
-    const v = state.versicherung;
+    const v = kern.state.versicherung;
     if (!adapter.leseVersicherung) return { daten: v.daten, teile: v.teile, geschrieben: v.geschrieben, rohtexte: [], weitereTeile: [] };
     const g = adapter.leseVersicherungSicherung ? await adapter.leseVersicherungSicherung() : await adapter.leseVersicherung();
     return { daten: g.daten, teile: g.teile, geschrieben: g.geschrieben ?? {}, rohtexte: g.rohtexte ?? [], weitereTeile: g.weitereTeile ?? [] };
@@ -1621,8 +1323,8 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     const pruefe = (r) => {
       if (!r.ok && !r.wartet) throw new Error(r.fehler ?? TEXT_FEHLER);
     };
-    let bleibt = state.versicherung.unlesbar.teile.length > 0;
-    for (const quartale of Object.values(state.versicherung.teile)) {
+    let bleibt = kern.state.versicherung.unlesbar.teile.length > 0;
+    for (const quartale of Object.values(kern.state.versicherung.teile)) {
       for (const teil of Object.values(quartale ?? {})) {
         const t = { jahr: teil.jahr, quartal: teil.quartal };
         if (teil.fremd) bleibt = true;
@@ -1630,7 +1332,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
         pruefe(await versTeilAendern(t, (x) => (x.fremd ? { ...leererVersicherungTeil(t.jahr, t.quartal), fremd: x.fremd } : leererVersicherungTeil(t.jahr, t.quartal))));
       }
     }
-    if (!state.versicherung.daten.polizze) return;
+    if (!kern.state.versicherung.daten.polizze) return;
     pruefe(await versHauptAendern((d) => ({ ...leereVersicherung(), ab: bleibt ? d.ab : null })));
   }
 
@@ -1651,9 +1353,6 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
   async function schichtMonatAendern(jm, fn) {
     return (await schichtMonatSchreiben(jm, fn)).neu;
   }
-
-  /** Ergebnis eines Teil-Schreibens ({ ergebnis, fehler } aus `teilAendern`) für die Oberfläche, wie `ergebnisVon`. */
-  const teilErgebnis = ({ ergebnis, fehler }) => (ergebnis === 'ok' ? { ok: true } : ergebnis === 'auth' ? { ok: false, wartet: true, fehler } : { ok: false, fehler, gemeldet: true });
 
   /**
    * Ändert die Schichtarten (siehe `schichtAendern`); gibt es noch keine, wird von den Standardarten ausgegangen. Ergebnis:
@@ -1683,13 +1382,13 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
    * Unlesbare Schichtarten oder Monate (Standardarten bzw. leer gezeigt) werden in `state.unlesbar` vermerkt, lesbare wieder herausgenommen.
    */
   async function schichtLesen(jms, { katalogNeu = false } = {}) {
-    const mitKatalog = katalogNeu || state.schicht.katalog === null;
-    const stand = schreibStand;
-    state = { ...state, schicht: { ...state.schicht, status: { ...state.schicht.status, ...Object.fromEntries(jms.map((m) => [m, 'laedt'])) } } };
+    const mitKatalog = katalogNeu || kern.state.schicht.katalog === null;
+    const stand = kern.schreibStand;
+    kern.state = { ...kern.state, schicht: { ...kern.state.schicht, status: { ...kern.state.schicht.status, ...Object.fromEntries(jms.map((m) => [m, 'laedt'])) } } };
     melden();
     const [katalog, ...monate] = await Promise.allSettled([mitKatalog ? adapter.leseSchichtarten() : null, ...jms.map((m) => adapter.leseSchichtMonat(m))]);
-    const eigene = stand !== schreibStand || schreibend > 0 || wartend.length > 0 || schichtSchreibtNoch();
-    const s = state.schicht;
+    const eigene = stand !== kern.schreibStand || kern.schreibend > 0 || wartend.length > 0 || schichtSchreibtNoch();
+    const s = kern.state.schicht;
     const neueMonate = { ...s.monate };
     const status = { ...s.status };
     let auth = false;
@@ -1712,7 +1411,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     // Unverändert gelesen: dieselben Objekte behalten. Der Push-Plan (push/plan.js `planQuellen`) vergleicht nach Identität; ein neues,
     // aber gleiches Objekt löste sonst bei jedem Blättern oder Abgleich einen Push-Abgleich samt frischem Lesen aus.
     const monateGleich = Object.keys(neueMonate).length === Object.keys(s.monate).length && Object.keys(neueMonate).every((m) => neueMonate[m] === s.monate[m]);
-    state = { ...state, schicht: { ...s, katalog: kat, monate: monateGleich ? s.monate : neueMonate, status }, ...(auth ? { anmeldungNoetig: true } : {}) };
+    kern.state = { ...kern.state, schicht: { ...s, katalog: kat, monate: monateGleich ? s.monate : neueMonate, status }, ...(auth ? { anmeldungNoetig: true } : {}) };
     melden();
     return { katalogGelesen, monateGelesen: jms.every((m) => status[m] === 'geladen') };
   }
@@ -1724,7 +1423,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
    */
   async function schichtKatalogStillErgaenzen() {
     if (schichtOffen.has('katalog')) return; // eigene Änderung der Schichtarten läuft: sie geht vor, das nächste Vorladen ergänzt
-    const vorher = state.schicht.katalog;
+    const vorher = kern.state.schicht.katalog;
     let gespeichert;
     try {
       gespeichert = await adapter.aendereSchichtarten((kat) => {
@@ -1735,14 +1434,14 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     } catch {
       return;
     }
-    if (state.schicht.katalog !== vorher || schichtOffen.has('katalog')) return; // inzwischen selbst geändert: das bringt den neuesten Stand
-    state = { ...state, schicht: { ...state.schicht, katalog: normalisiereKatalog(gespeichert ?? null).katalog } };
+    if (kern.state.schicht.katalog !== vorher || schichtOffen.has('katalog')) return; // inzwischen selbst geändert: das bringt den neuesten Stand
+    kern.state = { ...kern.state, schicht: { ...kern.state.schicht, katalog: normalisiereKatalog(gespeichert ?? null).katalog } };
     melden();
   }
 
   /** Schichtplan für die Sicherung: Katalog und alle vorhandenen Monate von Jänner 2026 bis zwölf Monate nach heute (fehlende übersprungen). */
   async function schichtFuerSicherung() {
-    if (!adapter.leseSchichtMonat) return { katalog: state.schicht.katalog, monate: state.schicht.monate };
+    if (!adapter.leseSchichtMonat) return { katalog: kern.state.schicht.katalog, monate: kern.state.schicht.monate };
     const bis = monatVor(todayVienna(jetzt()), -SCHICHT_SICHERUNG_VORAUS);
     const jms = [];
     for (let jm = SCHICHT_SICHERUNG_AB; jm <= bis; jm = monatVor(jm, -1)) jms.push(jm);
@@ -1760,7 +1459,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
 
   /** Stellt Tage auf einen früheren Stand zurück: `vorher` = [[Datum, Typ oder null], …]. → 'ok' | 'auth' | 'fehler' (wie `aendere`). */
   async function stelleTageWieder(vorher, zusatz = {}) {
-    const tage = { ...state.tage };
+    const tage = { ...kern.state.tage };
     for (const [d, t] of vorher) {
       if (t === null) delete tage[d];
       else tage[d] = { typ: t };
@@ -1776,12 +1475,9 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     });
   }
 
-  const store = {
-    getState: () => state,
-    subscribe(fn) {
-      hoerer.add(fn);
-      return () => hoerer.delete(fn);
-    },
+  Object.assign(store, {
+    getState: () => kern.state,
+    subscribe: (fn) => kern.abonnieren(fn),
     jetzt,
     heute: () => todayVienna(jetzt()),
     /** Anzahl der Änderungen, die auf die erneute Anmeldung warten. */
@@ -1789,7 +1485,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
 
     /** Startet mit zuletzt gespeicherten Daten (nur zum Anzeigen, bis die Anmeldung da ist). `stand` = Zeitpunkt der Speicherung. */
     starteAusSnapshot({ daten, gespeichertAm }) {
-      state = { ...state, ...ladeFelder(daten, state), ...(daten.schicht ? { schicht: schichtAusDaten(daten.schicht) } : {}), ...(daten.fixkosten ? { fixkosten: fixAusDaten(daten.fixkosten) } : {}), ...(daten.ziele ? { ziele: zieleZustand(daten.ziele, 'gespeichert') } : {}), ...(daten.autos ? { autos: autosZustand(daten.autos, 'gespeichert') } : {}), ...(daten.versicherung ? { versicherung: versicherungZustand(daten.versicherung, 'gespeichert') } : {}), geladen: true, nurSnapshot: true, stand: gespeichertAm, anmeldungNoetig: true };
+      kern.state = { ...kern.state, ...ladeFelder(daten, kern.state), ...(daten.schicht ? { schicht: schichtAusDaten(daten.schicht) } : {}), ...(daten.fixkosten ? { fixkosten: fixAusDaten(daten.fixkosten) } : {}), ...(daten.ziele ? { ziele: zieleZustand(daten.ziele, 'gespeichert') } : {}), ...(daten.autos ? { autos: autosZustand(daten.autos, 'gespeichert') } : {}), ...(daten.versicherung ? { versicherung: versicherungZustand(daten.versicherung, 'gespeichert') } : {}), geladen: true, nurSnapshot: true, stand: gespeichertAm, anmeldungNoetig: true };
       melden();
     },
 
@@ -1801,27 +1497,27 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
         // Der Schichtplan bleibt, wie er ist, gilt aber nicht mehr als vorgeladen: er kann so alt sein wie der letzte Start (App lag im
         // Hintergrund). Bis er frisch gelesen ist, wartet der Push-Plan (er würde sonst Erinnerungen des anderen Telefons löschen).
         // Die Sparziele kommen mit dem Kontostand (außer eine eigene Änderung ist seitdem unterwegs).
-        state = { ...state, ...ladeFelder(daten, state), ziele: zieleNachLaden(daten, zStand), schicht: { ...state.schicht, vorgeladen: null }, geladen: true, fehler: null, anmeldungNoetig: false, nurSnapshot: false, stand: null };
+        kern.state = { ...kern.state, ...ladeFelder(daten, kern.state), ziele: zieleNachLaden(daten, zStand), schicht: { ...kern.state.schicht, vorgeladen: null }, geladen: true, fehler: null, anmeldungNoetig: false, nurSnapshot: false, stand: null };
         geladeneBereiche.length = 0;
         letzteLadung = jetzt().getTime();
         einkaufGeprueft = letzteLadung;
         melden();
       } catch (fehler) {
         if (!istAuthFehler(fehler)) throw fehler;
-        state = { ...state, anmeldungNoetig: true };
+        kern.state = { ...kern.state, anmeldungNoetig: true };
         melden();
       }
     },
 
     /** Neu laden beim Zurückkehren in die App: höchstens einmal pro Minute und nicht, solange etwas auf die Anmeldung wartet. */
     async aktualisieren() {
-      if (!state.geladen || wartend.length > 0 || jetzt().getTime() - letzteLadung < MIN_ABSTAND_MS) return false;
+      if (!kern.state.geladen || wartend.length > 0 || jetzt().getTime() - letzteLadung < MIN_ABSTAND_MS) return false;
       try {
         await store.laden();
       } catch {
         return false;
       }
-      return !state.anmeldungNoetig;
+      return !kern.state.anmeldungNoetig;
     },
 
     /**
@@ -1834,10 +1530,10 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     async einkaufAktualisieren() {
       if (einkaufHolen) return einkaufHolen;
       einkaufHolen = (async () => {
-        if (!adapter.leseEinkauf || !state.geladen || state.nurSnapshot || state.anmeldungNoetig) return 'getrennt';
-        if (schreibend > 0 || wartend.length > 0) return 'warten';
-        const stand = schreibStand;
-        const vorher = state.einkauf;
+        if (!adapter.leseEinkauf || !kern.state.geladen || kern.state.nurSnapshot || kern.state.anmeldungNoetig) return 'getrennt';
+        if (kern.schreibend > 0 || wartend.length > 0) return 'warten';
+        const stand = kern.schreibStand;
+        const vorher = kern.state.einkauf;
         let liste;
         let gelesen;
         try {
@@ -1845,19 +1541,19 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
           liste = normalisiereListe(gelesen.liste);
         } catch (fehler) {
           if (!istAuthFehler(fehler)) return 'fehler';
-          state = { ...state, anmeldungNoetig: true };
+          kern.state = { ...kern.state, anmeldungNoetig: true };
           melden();
           return 'getrennt';
         }
-        if (stand !== schreibStand || schreibend > 0 || wartend.length > 0) return 'warten';
-        if (state.einkauf !== vorher) return 'gleich'; // inzwischen alles neu geladen: das ist mindestens so frisch
+        if (stand !== kern.schreibStand || kern.schreibend > 0 || wartend.length > 0) return 'warten';
+        if (kern.state.einkauf !== vorher) return 'gleich'; // inzwischen alles neu geladen: das ist mindestens so frisch
         einkaufGeprueft = jetzt().getTime();
         const andersLesbar = unlesbarMerken('einkauf', gelesen.unlesbar === true); // unlesbar geworden (oder wieder lesbar): der Hinweis ändert sich
-        if (JSON.stringify(liste) === JSON.stringify(state.einkauf)) {
+        if (JSON.stringify(liste) === JSON.stringify(kern.state.einkauf)) {
           if (andersLesbar) melden();
           return andersLesbar ? 'neu' : 'gleich';
         }
-        state = { ...state, einkauf: liste };
+        kern.state = { ...kern.state, einkauf: liste };
         melden();
         return 'neu';
       })();
@@ -1874,10 +1570,10 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     /** Speichert nach erneuter Anmeldung alles, was gewartet hat (Schreibvorgänge sind wiederholbar). */
     async wiederholeAusstehende() {
       const liste = wartend.splice(0);
-      state = { ...state, anmeldungNoetig: false, fehler: null };
+      kern.state = { ...kern.state, anmeldungNoetig: false, fehler: null };
       melden();
       for (let i = 0; i < liste.length; i += 1) {
-        if ((await ausfuehren(liste[i].schreibe, state, liste[i].optionen)) === 'auth') {
+        if ((await ausfuehren(liste[i].schreibe, kern.state, liste[i].optionen)) === 'auth') {
           wartend.push(...liste.slice(i + 1));
           return;
         }
@@ -1893,8 +1589,8 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
      * Ergebnis: true, wenn der Zeitraum jetzt da ist; false, wenn es nicht möglich war (Demo, Fehler).
      */
     sichereBereich(von, bis) {
-      if (!adapter.ladeBereich || !state.fenster) return Promise.resolve(false);
-      if (bereichAbgedeckt(von, bis, [state.fenster, ...geladeneBereiche])) return Promise.resolve(true);
+      if (!adapter.ladeBereich || !kern.state.fenster) return Promise.resolve(false);
+      if (bereichAbgedeckt(von, bis, [kern.state.fenster, ...geladeneBereiche])) return Promise.resolve(true);
       const schluessel = `${von}|${bis}`;
       if (!ladendeBereiche.has(schluessel)) {
         ladendeBereiche.set(
@@ -1913,13 +1609,13 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
      * der App bleibt dabei unverändert.
      */
     async sicherungsDaten() {
-      const roh = adapter.ladeAlles ? await adapter.ladeAlles() : state;
+      const roh = adapter.ladeAlles ? await adapter.ladeAlles() : kern.state;
       const schicht = await schichtFuerSicherung();
       const fixkosten = await fixFuerSicherung();
       const ziele = await zieleFuerSicherung();
       const autos = await autosFuerSicherung();
       const versicherung = await versicherungFuerSicherung();
-      return { settings: state.settings, tage: roh.tage, urlaub: roh.urlaub, termine: roh.termine, einkauf: state.einkauf, konto: state.konto, schicht, fixkosten, ziele, autos, versicherung };
+      return { settings: kern.state.settings, tage: roh.tage, urlaub: roh.urlaub, termine: roh.termine, einkauf: kern.state.einkauf, konto: kern.state.konto, schicht, fixkosten, ziele, autos, versicherung };
     },
 
     /**
@@ -1928,9 +1624,9 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
      * Ergebnis: true, wenn etwas geschrieben wurde.
      */
     async urlaubChecksAbgleichen() {
-      if (!adapter.gleicheUrlaubChecksAb || !state.geladen || state.nurSnapshot || checksLaufen) return false;
+      if (!adapter.gleicheUrlaubChecksAb || !kern.state.geladen || kern.state.nurSnapshot || checksLaufen) return false;
       const heute = todayVienna(jetzt());
-      const { schreiben, loeschen } = urlaubChecksAbgleich({ wunsch: urlaubChecksWunsch(state, heute), vorhanden: state.urlaubChecks ?? [], heute });
+      const { schreiben, loeschen } = urlaubChecksAbgleich({ wunsch: urlaubChecksWunsch(kern.state, heute), vorhanden: kern.state.urlaubChecks ?? [], heute });
       if (schreiben.length === 0 && loeschen.length === 0) return false;
       checksLaufen = true;
       try {
@@ -1942,7 +1638,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       }
       const weg = new Set([...loeschen, ...schreiben.map((c) => urlaubCheckEventId(c.date))]);
       const neu = schreiben.map((c) => ({ id: urlaubCheckEventId(c.date), date: c.date, titel: c.title }));
-      state = { ...state, urlaubChecks: [...(state.urlaubChecks ?? []).filter((c) => !weg.has(c.id)), ...neu].sort((a, b) => a.date.localeCompare(b.date)) };
+      kern.state = { ...kern.state, urlaubChecks: [...(kern.state.urlaubChecks ?? []).filter((c) => !weg.has(c.id)), ...neu].sort((a, b) => a.date.localeCompare(b.date)) };
       return true;
     },
 
@@ -1953,8 +1649,8 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
      * wenn das Speichern gescheitert ist (dann ist schon alles zurückgenommen und neu geladen).
      */
     async setTage(dates, typ) {
-      const vorher = dates.map((d) => [d, state.tage[d]?.typ ?? null]);
-      const tage = { ...state.tage };
+      const vorher = dates.map((d) => [d, kern.state.tage[d]?.typ ?? null]);
+      const tage = { ...kern.state.tage };
       for (const d of dates) tage[d] = { typ };
       const e = await aendere({ tage }, async (bericht) => {
         let i = 0;
@@ -1971,13 +1667,13 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
      * den Typ wieder – nicht bei einem Tag mit Konflikt (zwei Einträge: der verdrängte käme nicht zurück). Nichts da → { ok: true }.
      */
     async loescheTag(date) {
-      const vorher = state.tage[date];
+      const vorher = kern.state.tage[date];
       if (!vorher) return { ok: true };
-      const tage = { ...state.tage };
+      const tage = { ...kern.state.tage };
       delete tage[date];
       const r = ergebnisVon(await aendere({ tage }, () => adapter.loescheTag(date)));
       const zurueck = async () =>
-        ergebnisVon(await aendere({ tage: { ...state.tage, [date]: { typ: vorher.typ } } }, ohneUeberschreiben(() => (adapter.stelleTagWieder ? adapter.stelleTagWieder(date, vorher.typ) : adapter.setzeTag(date, vorher.typ)))));
+        ergebnisVon(await aendere({ tage: { ...kern.state.tage, [date]: { typ: vorher.typ } } }, ohneUeberschreiben(() => (adapter.stelleTagWieder ? adapter.stelleTagWieder(date, vorher.typ) : adapter.setzeTag(date, vorher.typ)))));
       return mitRueckgaengig(r, vorher.konflikt ? null : zurueck);
     },
 
@@ -1987,13 +1683,13 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
      */
     async urlaubHinzufuegen({ start, end }) {
       if (!(start <= end)) throw new Error('Ungültiger Zeitraum');
-      const tage = { ...state.tage };
+      const tage = { ...kern.state.tage };
       const betreuung = new Set(spanDays({ start, end }).filter((d) => KITA_TYPEN.includes(tage[d]?.typ)));
       const plan = planUmwandlung({ dates: [...betreuung], zielTyp: 'urlaub', vorhandeneBifen: betreuung });
       const entfernt = plan.loeschen.map((d) => [d, tage[d].typ]);
       for (const d of plan.loeschen) delete tage[d];
       const eintrag = { id: neueId(), start, end };
-      const e = await aendere({ tage, urlaub: [...state.urlaub, eintrag] }, async (bericht) => {
+      const e = await aendere({ tage, urlaub: [...kern.state.urlaub, eintrag] }, async (bericht) => {
         const gesamt = plan.loeschen.length + 1;
         let i = 0;
         for (const d of plan.loeschen) {
@@ -2005,7 +1701,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       });
       const zurueck = () =>
         stelleTageWieder(entfernt, {
-          zustand: { urlaub: state.urlaub.filter((u) => u.id !== eintrag.id) },
+          zustand: { urlaub: kern.state.urlaub.filter((u) => u.id !== eintrag.id) },
           vorher: () => adapter.loescheUrlaub(eintrag.id),
         });
       return mitZuruecknehmen({ ...ergebnisVon(e), id: eintrag.id, umgewandelt: plan.loeschen.length }, zurueck);
@@ -2016,10 +1712,10 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
      * einem Ereignis einer wiederkehrenden Google-Serie, siehe einzelnWiederherstellbar).
      */
     async urlaubLoeschen(id) {
-      const u = state.urlaub.find((x) => x.id === id);
-      const r = ergebnisVon(await aendere({ urlaub: state.urlaub.filter((x) => x.id !== id) }, () => adapter.loescheUrlaub(id)));
+      const u = kern.state.urlaub.find((x) => x.id === id);
+      const r = ergebnisVon(await aendere({ urlaub: kern.state.urlaub.filter((x) => x.id !== id) }, () => adapter.loescheUrlaub(id)));
       const zurueck = async () =>
-        ergebnisVon(await aendere({ urlaub: [...state.urlaub.filter((x) => x.id !== id), u] }, ohneUeberschreiben(() => (adapter.stelleUrlaubWieder ? adapter.stelleUrlaubWieder(u) : adapter.speichereUrlaub(u)))));
+        ergebnisVon(await aendere({ urlaub: [...kern.state.urlaub.filter((x) => x.id !== id), u] }, ohneUeberschreiben(() => (adapter.stelleUrlaubWieder ? adapter.stelleUrlaubWieder(u) : adapter.speichereUrlaub(u)))));
       return mitRueckgaengig(r, u && einzelnWiederherstellbar(id) ? zurueck : null);
     },
 
@@ -2029,7 +1725,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
      */
     async terminSpeichern(roh, id = null) {
       const termin = { id: id ?? neueId(), ...normalisiereTermin(roh) };
-      const termine = [...state.termine.filter((t) => t.id !== termin.id), termin];
+      const termine = [...kern.state.termine.filter((t) => t.id !== termin.id), termin];
       return { ...ergebnisVon(await aendere({ termine }, () => adapter.speichereTermin(termin))), id: termin.id };
     },
 
@@ -2039,10 +1735,10 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
      * Telefon), bleibt er unverändert (Meldung).
      */
     async terminLoeschen(id) {
-      const t = state.termine.find((x) => x.id === id);
-      const r = ergebnisVon(await aendere({ termine: state.termine.filter((x) => x.id !== id) }, () => adapter.loescheTermin(id)));
+      const t = kern.state.termine.find((x) => x.id === id);
+      const r = ergebnisVon(await aendere({ termine: kern.state.termine.filter((x) => x.id !== id) }, () => adapter.loescheTermin(id)));
       const zurueck = async () =>
-        ergebnisVon(await aendere({ termine: [...state.termine.filter((x) => x.id !== id), t] }, ohneUeberschreiben(() => (adapter.stelleTerminWieder ? adapter.stelleTerminWieder(t) : adapter.speichereTermin(t)))));
+        ergebnisVon(await aendere({ termine: [...kern.state.termine.filter((x) => x.id !== id), t] }, ohneUeberschreiben(() => (adapter.stelleTerminWieder ? adapter.stelleTerminWieder(t) : adapter.speichereTermin(t)))));
       return mitRueckgaengig(r, t && einzelnWiederherstellbar(id) ? zurueck : null);
     },
 
@@ -2054,7 +1750,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     async sachenSpeichern(roh, { wochen = 1, id = null } = {}) {
       pruefeWochen(wochen);
       if (id) {
-        const alt = state.termine.find((t) => t.id === id);
+        const alt = kern.state.termine.find((t) => t.id === id);
         const basis = normalisiereTermin({ ...roh, typ: 'kita_sache', serie: alt?.serie });
         return { ...(await termineAnlegen([{ id, ...basis }])), ids: [id], verschoben: 0, uebersprungen: [] };
       }
@@ -2073,7 +1769,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
         if (!Number.isInteger(tag) || tag < 0 || tag > 4) throw new Error('Bitte Wochentage von Montag bis Freitag wählen.');
       }
       const heute = todayVienna(jetzt());
-      const { bringzeit, abholzeit } = state.settings;
+      const { bringzeit, abholzeit } = kern.state.settings;
       const hin = serieTermine({ richtung: 'hin', date: naechsterWochentag(heute, hinTag), time: bringzeit, mitnehmen, kosten: null }, wochen);
       const heim = serieTermine({ richtung: 'heim', date: naechsterWochentag(heute, heimTag), time: abholzeit, mitnehmen, kosten: null }, wochen);
       const neue = [...hin.termine, ...heim.termine];
@@ -2143,8 +1839,8 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     async kontoLeeren() {
       if (!adapter.istDemo) throw new Error('Das geht nur in der Demo.');
       await kontoAendern(() => leeresKonto());
-      const z = state.ziele.daten;
-      if (adapter.aendereZiele && !state.ziele.unlesbar && (z.z.length > 0 || z.m.length > 0 || z.beginn)) {
+      const z = kern.state.ziele.daten;
+      if (adapter.aendereZiele && !kern.state.ziele.unlesbar && (z.z.length > 0 || z.m.length > 0 || z.beginn)) {
         const r = await zieleAendern((d) => (d.fremd ? { ...leereZiele(), fremd: d.fremd } : leereZiele()));
         if (!r.ok && !r.wartet) throw new Error(r.fehler ?? TEXT_FEHLER);
       }
@@ -2152,7 +1848,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
         const nichtBereit = await fixBereit();
         if (nichtBereit) throw new Error(nichtBereit);
         for (let nr = 0; nr < FIX_SHARDS; nr += 1) {
-          if (fixGesperrt(nr) || !(state.fixkosten.shards?.[nr]?.posten.length > 0)) continue;
+          if (fixGesperrt(nr) || !(kern.state.fixkosten.shards?.[nr]?.posten.length > 0)) continue;
           const r = await fixTeilAendern(nr, (shard) => (shard.fremd?.length > 0 ? { v: 1, posten: [], fremd: shard.fremd } : leererShard()));
           if (!r.ok && !r.wartet) throw new Error(r.fehler ?? TEXT_FEHLER);
         }
@@ -2297,14 +1993,14 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
      */
     async freiVerschieben(ziel, cents) {
       const heute = todayVienna(jetzt());
-      const konto = state.konto;
+      const konto = kern.state.konto;
       const gesperrt = zieleGesperrt();
       if (gesperrt) return { ok: false, fehler: gesperrt };
       const id = neueZielKennung();
       if (!id) return { ok: false, fehler: TEXT_FEHLER };
       const r = await zieleAendern((d) => (zielVorhanden(d, ziel), zielFreiVerschieben(d, { id, monat: heute.slice(0, 7), ziel, cents }, { konto, heute })));
       if (!r.ok) return r;
-      return { ok: true, id, cents: state.ziele.daten.m.find((v) => v.id === id)?.cents ?? cents };
+      return { ok: true, id, cents: kern.state.ziele.daten.m.find((v) => v.id === id)?.cents ?? cents };
     },
 
     /** Einkaufsliste: Artikel eintragen (Menge optional), abhaken, löschen, Gekaufte entfernen (mit Rückgängig). */
@@ -2321,7 +2017,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       await einkaufAendern((liste) => artikelEntfernen(liste, id));
     },
     async einkaufErledigteEntfernen() {
-      const r = erledigteEntfernen(state.einkauf);
+      const r = erledigteEntfernen(kern.state.einkauf);
       if (r.entfernt.length === 0) return { anzahl: 0, rueckgaengig: async () => {} };
       await einkaufAendern((liste) => erledigteEntfernen(liste).liste);
       return { anzahl: r.entfernt.length, rueckgaengig: () => einkaufAendern((liste) => wiederherstellen(liste, r)) };
@@ -2329,10 +2025,10 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
 
     /** Löscht diese Sache und, falls sie zu einer Serie gehört, alle folgenden. Gibt die Anzahl gelöschter Sachen zurück. */
     async terminLoeschenAbHier(id) {
-      const t = state.termine.find((x) => x.id === id);
+      const t = kern.state.termine.find((x) => x.id === id);
       if (!t) return 0;
-      const weg = t.serie ? state.termine.filter((x) => x.serie === t.serie && x.date >= t.date) : [t];
-      await aendere({ termine: state.termine.filter((x) => !weg.includes(x)) }, async (bericht) => {
+      const weg = t.serie ? kern.state.termine.filter((x) => x.serie === t.serie && x.date >= t.date) : [t];
+      await aendere({ termine: kern.state.termine.filter((x) => !weg.includes(x)) }, async (bericht) => {
         let i = 0;
         for (const x of weg) {
           await adapter.loescheTermin(x.id);
@@ -2344,12 +2040,12 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
 
     /** „Erledigt“: entfernt die Sache (und damit die Erinnerung). `rueckgaengig` stellt sie unverändert wieder her. */
     async terminErledigt(id) {
-      const t = state.termine.find((x) => x.id === id);
+      const t = kern.state.termine.find((x) => x.id === id);
       if (!t) return { rueckgaengig: async () => {} };
-      await aendere({ termine: state.termine.filter((x) => x.id !== id) }, () => adapter.loescheTermin(id));
+      await aendere({ termine: kern.state.termine.filter((x) => x.id !== id) }, () => adapter.loescheTermin(id));
       return {
         rueckgaengig: async () => {
-          await aendere({ termine: [...state.termine.filter((x) => x.id !== id), t] }, () => adapter.speichereTermin(t));
+          await aendere({ termine: [...kern.state.termine.filter((x) => x.id !== id), t] }, () => adapter.speichereTermin(t));
         },
       };
     },
@@ -2375,7 +2071,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
      */
     schichtVorladen() {
       if (schichtVorladenLaeuft) return schichtVorladenLaeuft;
-      if (!adapter.leseSchichtMonat || !state.geladen || state.nurSnapshot || state.anmeldungNoetig) return Promise.resolve();
+      if (!adapter.leseSchichtMonat || !kern.state.geladen || kern.state.nurSnapshot || kern.state.anmeldungNoetig) return Promise.resolve();
       const jm = todayVienna(jetzt()).slice(0, 7);
       schichtVorladenLaeuft = (async () => {
         // die Autos gleichzeitig, aber ohne Einfluss auf das Push-Tor: Termine, Schicht, Fixkosten und Kontostand warten nie auf sie
@@ -2385,12 +2081,12 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
         if (adapter.leseAutos) autosHolen();
         if (adapter.leseVersicherung) versHolen(); // ebenso die Versicherung: nur angestoßen, nie abgewartet (eigener Vorlader in der Shell)
         const [{ katalogGelesen, monateGelesen }, fixOk] = await Promise.all([schichtLesen(vorladeMonate(jm), { katalogNeu: true }), adapter.leseFixkosten ? fixLesen() : true]);
-        if (katalogGelesen && monateGelesen && fixOk && state.schicht.vorgeladen !== jm) {
-          state = { ...state, schicht: { ...state.schicht, vorgeladen: jm } };
+        if (katalogGelesen && monateGelesen && fixOk && kern.state.schicht.vorgeladen !== jm) {
+          kern.state = { ...kern.state, schicht: { ...kern.state.schicht, vorgeladen: jm } };
           melden();
         }
         // nur, wenn die Schichtarten gerade gelesen werden konnten (gespeichert wird ohnehin auf der neuesten Fassung)
-        if (katalogGelesen && state.schicht.katalog && katalogErgaenzen(state.schicht.katalog).geaendert) await schichtKatalogStillErgaenzen();
+        if (katalogGelesen && kern.state.schicht.katalog && katalogErgaenzen(kern.state.schicht.katalog).geaendert) await schichtKatalogStillErgaenzen();
       })()
         .catch(() => {}) // Hintergrund: ein Fehler darf nichts stören
         .finally(() => {
@@ -2416,8 +2112,8 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
         if (adapter.leseVersicherung) store.versicherungFrischLesen(); // ebenso
         const [schichtOk, fixOk] = await Promise.all([store.schichtAktualisieren(vorladeMonate(jm)), adapter.leseFixkosten ? store.fixFrischLesen() : true]);
         const ok = schichtOk && fixOk;
-        if (ok && state.schicht.vorgeladen !== jm) {
-          state = { ...state, schicht: { ...state.schicht, vorgeladen: jm } };
+        if (ok && kern.state.schicht.vorgeladen !== jm) {
+          kern.state = { ...kern.state, schicht: { ...kern.state.schicht, vorgeladen: jm } };
           melden();
         }
         return ok;
@@ -2436,22 +2132,22 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
      * Ergebnis: true, wenn der Stand jetzt aktuell ist; false, wenn es gerade nicht ging oder die Antwort verworfen wurde.
      */
     async schichtAktualisieren(jms) {
-      if (!adapter.leseSchichtMonat || !state.geladen || state.nurSnapshot || state.anmeldungNoetig) return false;
-      if (schreibend > 0 || wartend.length > 0 || schichtSchreibtNoch()) return false;
-      const stand = schreibStand;
+      if (!adapter.leseSchichtMonat || !kern.state.geladen || kern.state.nurSnapshot || kern.state.anmeldungNoetig) return false;
+      if (kern.schreibend > 0 || wartend.length > 0 || schichtSchreibtNoch()) return false;
+      const stand = kern.schreibStand;
       let gelesen;
       try {
         gelesen = await Promise.all([adapter.leseSchichtarten(), ...jms.map((jm) => adapter.leseSchichtMonat(jm))]);
       } catch (fehler) {
         if (istAuthFehler(fehler)) {
-          state = { ...state, anmeldungNoetig: true };
+          kern.state = { ...kern.state, anmeldungNoetig: true };
           melden();
         }
         return false;
       }
-      if (stand !== schreibStand || schreibend > 0 || wartend.length > 0 || schichtSchreibtNoch()) return false;
+      if (stand !== kern.schreibStand || kern.schreibend > 0 || wartend.length > 0 || schichtSchreibtNoch()) return false;
       const [katalog, ...monate] = gelesen;
-      const s = state.schicht;
+      const s = kern.state.schicht;
       const neu = { ...s, katalog: normalisiereKatalog(katalog?.katalog ?? null).katalog, monate: { ...s.monate }, status: { ...s.status } };
       let geaendert = unlesbarMerken('schichtarten', katalog?.unlesbar === true);
       jms.forEach((jm, i) => {
@@ -2460,7 +2156,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
         geaendert = unlesbarMerken(`schicht:${jm}`, monate[i]?.unlesbar === true) || geaendert;
       });
       if (JSON.stringify(neu) !== JSON.stringify(s)) {
-        state = { ...state, schicht: neu };
+        kern.state = { ...kern.state, schicht: neu };
         geaendert = true;
       }
       if (geaendert) melden();
@@ -2514,7 +2210,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       if (!r.ok) return r;
       if (aendern) return { ok: true, k };
       const kuerzel = String(entwurf.kuerzel ?? '').normalize('NFC').replace(/\s+/g, ' ').trim().toLocaleLowerCase('de');
-      const art = state.schicht.katalog?.arten?.[person]?.find((a) => a.kuerzel.toLocaleLowerCase('de') === kuerzel);
+      const art = kern.state.schicht.katalog?.arten?.[person]?.find((a) => a.kuerzel.toLocaleLowerCase('de') === kuerzel);
       return { ok: true, k: art?.k ?? null };
     },
     /** Art ausblenden (`archiv` true) oder zurückholen; Ergebnis wie `schichtKatalogAendern`. */
@@ -2535,26 +2231,26 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
      */
     fixFrischLesen() {
       if (fixFrischLaeuft) return fixFrischLaeuft;
-      const moeglich = () => adapter.leseFixkosten && state.geladen && !state.nurSnapshot && !state.anmeldungNoetig;
-      const eigene = () => schreibend > 0 || wartend.length > 0 || fixSchreibtNoch();
+      const moeglich = () => adapter.leseFixkosten && kern.state.geladen && !kern.state.nurSnapshot && !kern.state.anmeldungNoetig;
+      const eigene = () => kern.schreibend > 0 || wartend.length > 0 || fixSchreibtNoch();
       if (!moeglich() || eigene()) return Promise.resolve(false);
       fixFrischLaeuft = (async () => {
-        const stand = schreibStand;
+        const stand = kern.schreibStand;
         let gelesen;
         try {
           gelesen = await adapter.leseFixkosten();
         } catch (fehler) {
           if (istAuthFehler(fehler)) {
-            state = { ...state, anmeldungNoetig: true };
+            kern.state = { ...kern.state, anmeldungNoetig: true };
             melden();
           }
           return false;
         }
-        if (stand !== schreibStand || eigene()) return false;
+        if (stand !== kern.schreibStand || eigene()) return false;
         const neu = { shards: fixTeile(gelesen?.shards), status: 'geladen', warnungen: gelesen?.warnungen ?? [], unlesbar: unlesbareNummern(gelesen?.unlesbar) };
         fixGelesen = true;
-        if (JSON.stringify(neu) !== JSON.stringify(state.fixkosten)) {
-          state = { ...state, fixkosten: neu };
+        if (JSON.stringify(neu) !== JSON.stringify(kern.state.fixkosten)) {
+          kern.state = { ...kern.state, fixkosten: neu };
           melden();
         }
         return true;
@@ -2585,7 +2281,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       const nichtBereit = await fixBereit();
       if (nichtBereit) return { ok: false, fehler: nichtBereit };
       if (neu) {
-        const zuViele = postenAnzahlPruefen(state.fixkosten.shards, null);
+        const zuViele = postenAnzahlPruefen(kern.state.fixkosten.shards, null);
         if (zuViele) return { ok: false, fehler: zuViele };
         const wahl = neueFixIdFuer(posten); // erst nach dem Lesen: so ist sie sicher noch nicht vergeben, und ihr Teil hat Platz
         if (wahl.fehler) return { ok: false, fehler: wahl.fehler };
@@ -2641,8 +2337,8 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       if (nichtBereit) return { ok: false, fehler: nichtBereit };
       const nr = shardFuer(posten.id);
       if (fixGesperrt(nr)) return { ok: false, fehler: TEXT_TEIL_GESPERRT };
-      const schonDa = (state.fixkosten.shards ?? []).some((s) => s?.posten.some((p) => p.id === posten.id));
-      const zuViele = schonDa ? null : postenAnzahlPruefen(state.fixkosten.shards, posten.id);
+      const schonDa = (kern.state.fixkosten.shards ?? []).some((s) => s?.posten.some((p) => p.id === posten.id));
+      const zuViele = schonDa ? null : postenAnzahlPruefen(kern.state.fixkosten.shards, posten.id);
       if (zuViele) return { ok: false, fehler: zuViele };
       const fn = (shard) => {
         if (shard.posten.some((p) => p.id === posten.id)) return shard;
@@ -2660,7 +2356,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     /** Autos und ihren Verlauf (alle Teile des Jahres-Index) neu lesen, z. B. beim Öffnen ihrer Seite. → { ok: true } | { ok: false, fehler }; wirft nie. */
     async autosLaden() {
       if (await autosHolen()) return { ok: true };
-      return { ok: false, fehler: state.anmeldungNoetig ? TEXT_AUTOS_ANMELDEN : TEXT_AUTOS_NICHT_GELESEN };
+      return { ok: false, fehler: kern.state.anmeldungNoetig ? TEXT_AUTOS_ANMELDEN : TEXT_AUTOS_NICHT_GELESEN };
     },
 
     /**
@@ -2669,25 +2365,25 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
      */
     autosFrischLesen() {
       if (autosFrischLaeuft) return autosFrischLaeuft;
-      const moeglich = () => adapter.leseAutos && state.geladen && !state.nurSnapshot && !state.anmeldungNoetig;
-      const eigene = () => schreibend > 0 || wartend.length > 0 || autosSchreibtNoch();
+      const moeglich = () => adapter.leseAutos && kern.state.geladen && !kern.state.nurSnapshot && !kern.state.anmeldungNoetig;
+      const eigene = () => kern.schreibend > 0 || wartend.length > 0 || autosSchreibtNoch();
       if (!moeglich() || eigene()) return Promise.resolve(false);
       autosFrischLaeuft = (async () => {
-        const stand = schreibStand;
+        const stand = kern.schreibStand;
         let g;
         try {
           g = await mitFrist(adapter.leseAutos(), autosFristMs);
         } catch (fehler) {
-          state = { ...state, autos: { ...state.autos, frisch: false }, ...(istAuthFehler(fehler) ? { anmeldungNoetig: true } : {}) };
+          kern.state = { ...kern.state, autos: { ...kern.state.autos, frisch: false }, ...(istAuthFehler(fehler) ? { anmeldungNoetig: true } : {}) };
           melden();
           return false;
         }
-        if (stand !== schreibStand || eigene()) return false;
-        const vorher = state;
+        if (stand !== kern.schreibStand || eigene()) return false;
+        const vorher = kern.state;
         autosUebernehmen(g, false);
         autosGelesen = true;
-        if (JSON.stringify(state.autos) !== JSON.stringify(vorher.autos)) melden();
-        else state = vorher; // nichts geändert: derselbe Zustand (kein Neuzeichnen, kein neuer Push-Plan)
+        if (JSON.stringify(kern.state.autos) !== JSON.stringify(vorher.autos)) melden();
+        else kern.state = vorher; // nichts geändert: derselbe Zustand (kein Neuzeichnen, kein neuer Push-Plan)
         return true;
       })()
         .catch(() => false)
@@ -2786,7 +2482,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       const nichtBereit = await autosBereit();
       if (nichtBereit) return { ok: false, fehler: nichtBereit };
       const auto = x.auto;
-      if (!(state.autos.daten.autos ?? []).some((a) => a.id === auto)) return { ok: false, fehler: TEXT_AUTO_WEG };
+      if (!(kern.state.autos.daten.autos ?? []).some((a) => a.id === auto)) return { ok: false, fehler: TEXT_AUTO_WEG };
       const altJahr = x.id ? arbeitJahr(auto, x.id) : null;
       if (x.id && altJahr === null) return { ok: false, fehler: TEXT_ARBEIT_WEG };
       const id = x.id ?? neueAutosKennung(arbeitKennungen(auto));
@@ -2811,9 +2507,9 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       const weg = await autosInJahrAendern(auto, altJahr, (h) => arbeitLoeschenRein(h, id), { vorher: fachlichAsync(steht(jahr, `Die Arbeit wurde nicht verschoben – sie steht weiter im Jahr ${altJahr}.`)) });
       if (r.wartet) return weg.ok ? r : weg;
       if (weg.ok || weg.wartet) return weg.ok ? { ok: true, id, warnung } : weg;
-      fehlerNr += 1;
+      kern.fehlerNr += 1;
       const text = `Die Arbeit steht jetzt im Jahr ${jahr}, im Jahr ${altJahr} konnte sie aber nicht entfernt werden – bitte dort noch einmal löschen.`;
-      state = { ...state, fehler: text, fehlerNr };
+      kern.state = { ...kern.state, fehler: text, fehlerNr: kern.fehlerNr };
       melden();
       return { ok: false, fehler: text, gemeldet: true };
     },
@@ -2825,7 +2521,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     async arbeitLoeschen(autoId, jahr, id) {
       const nichtBereit = await autosBereit();
       if (nichtBereit) return { ok: false, fehler: nichtBereit };
-      if (!(state.autos.historie[autoId]?.[jahr]?.arbeiten ?? []).some((a) => a.id === id)) return { ok: false, fehler: TEXT_ARBEIT_WEG };
+      if (!(kern.state.autos.historie[autoId]?.[jahr]?.arbeiten ?? []).some((a) => a.id === id)) return { ok: false, fehler: TEXT_ARBEIT_WEG };
       let spur = null;
       const r = await autosInJahrAendern(autoId, jahr, (h) => {
         eintragVorhanden(h.arbeiten, h.fremd?.w, id, TEXT_ARBEIT_WEG);
@@ -2850,7 +2546,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       const { datum, km } = istObjekt(eintrag) ? eintrag : {};
       const nichtBereit = await autosBereit();
       if (nichtBereit) return { ok: false, fehler: nichtBereit };
-      if (!(state.autos.daten.autos ?? []).some((a) => a.id === autoId)) return { ok: false, fehler: TEXT_AUTO_WEG };
+      if (!(kern.state.autos.daten.autos ?? []).some((a) => a.id === autoId)) return { ok: false, fehler: TEXT_AUTO_WEG };
       const { fehler, warnung } = kmPruefen({ datum, km }, { heute, punkte: autoPunkte(autoId) });
       if (fehler) return { ok: false, fehler };
       const r = await autosInJahrAendern(autoId, Number(datum.slice(0, 4)), (h) => kmEintragen(h, { datum, km }, { heute }));
@@ -2864,9 +2560,9 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     async kmLoeschen(autoId, datum) {
       const nichtBereit = await autosBereit();
       if (nichtBereit) return { ok: false, fehler: nichtBereit };
-      if (!(state.autos.daten.autos ?? []).some((a) => a.id === autoId)) return { ok: false, fehler: TEXT_AUTO_WEG };
+      if (!(kern.state.autos.daten.autos ?? []).some((a) => a.id === autoId)) return { ok: false, fehler: TEXT_AUTO_WEG };
       const jahr = typeof datum === 'string' ? Number(datum.slice(0, 4)) : NaN;
-      if (!kmSpur(state.autos.historie[autoId]?.[jahr], datum)) return { ok: false, fehler: TEXT_KM_WEG };
+      if (!kmSpur(kern.state.autos.historie[autoId]?.[jahr], datum)) return { ok: false, fehler: TEXT_KM_WEG };
       let spur = null;
       const r = await autosInJahrAendern(autoId, jahr, (h) => {
         const s = kmSpur(h, datum);
@@ -2889,9 +2585,9 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     async satzLoeschen(id) {
       const nichtBereit = await autosBereit();
       if (nichtBereit) return { ok: false, fehler: nichtBereit };
-      const satz = (state.autos.daten.saetze ?? []).find((x) => x.id === id);
-      if (!satz) return { ok: false, fehler: (state.autos.daten.fremd?.s ?? []).some((k) => k?.i === id) ? TEXT_AUTOS_NEUER : TEXT_SATZ_WEG };
-      if (state.autos.unlesbar.shards.some((x) => x.auto === satz.auto)) return { ok: false, fehler: TEXT_SATZ_VERLAUF_GESPERRT };
+      const satz = (kern.state.autos.daten.saetze ?? []).find((x) => x.id === id);
+      if (!satz) return { ok: false, fehler: (kern.state.autos.daten.fremd?.s ?? []).some((k) => k?.i === id) ? TEXT_AUTOS_NEUER : TEXT_SATZ_WEG };
+      if (kern.state.autos.unlesbar.shards.some((x) => x.auto === satz.auto)) return { ok: false, fehler: TEXT_SATZ_VERLAUF_GESPERRT };
       const n = satzVerwendet(arbeitenDesAutos(satz.auto), id);
       if (n > 0) return { ok: false, fehler: satzVerwendetText(satz.name, n) };
       let spur = null;
@@ -2921,7 +2617,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     /** Versicherung (Polizze und alle Quartal-Teile) neu lesen, z. B. beim Öffnen ihrer Ansicht. → { ok: true } | { ok: false, fehler }; wirft nie. */
     async versicherungLaden() {
       if (await versHolen()) return { ok: true };
-      return { ok: false, fehler: state.anmeldungNoetig ? TEXT_VERSICHERUNG_ANMELDEN : TEXT_VERSICHERUNG_NICHT_GELESEN };
+      return { ok: false, fehler: kern.state.anmeldungNoetig ? TEXT_VERSICHERUNG_ANMELDEN : TEXT_VERSICHERUNG_NICHT_GELESEN };
     },
 
     /**
@@ -2930,25 +2626,25 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
      */
     versicherungFrischLesen() {
       if (versFrischLaeuft) return versFrischLaeuft;
-      const moeglich = () => adapter.leseVersicherung && state.geladen && !state.nurSnapshot && !state.anmeldungNoetig;
-      const eigene = () => schreibend > 0 || wartend.length > 0 || versSchreibtNoch();
+      const moeglich = () => adapter.leseVersicherung && kern.state.geladen && !kern.state.nurSnapshot && !kern.state.anmeldungNoetig;
+      const eigene = () => kern.schreibend > 0 || wartend.length > 0 || versSchreibtNoch();
       if (!moeglich() || eigene()) return Promise.resolve(false);
       versFrischLaeuft = (async () => {
-        const stand = schreibStand;
+        const stand = kern.schreibStand;
         let g;
         try {
           g = await mitFrist(adapter.leseVersicherung(), versicherungFristMs);
         } catch (fehler) {
-          state = { ...state, versicherung: { ...state.versicherung, frisch: false }, ...(istAuthFehler(fehler) ? { anmeldungNoetig: true } : {}) };
+          kern.state = { ...kern.state, versicherung: { ...kern.state.versicherung, frisch: false }, ...(istAuthFehler(fehler) ? { anmeldungNoetig: true } : {}) };
           melden();
           return false;
         }
-        if (stand !== schreibStand || eigene()) return false;
-        const vorher = state;
+        if (stand !== kern.schreibStand || eigene()) return false;
+        const vorher = kern.state;
         versUebernehmen(g, false);
         versGelesen = true;
-        if (JSON.stringify(state.versicherung) !== JSON.stringify(vorher.versicherung)) melden();
-        else state = vorher; // nichts geändert: derselbe Zustand (kein Neuzeichnen, kein neuer Push-Plan)
+        if (JSON.stringify(kern.state.versicherung) !== JSON.stringify(vorher.versicherung)) melden();
+        else kern.state = vorher; // nichts geändert: derselbe Zustand (kein Neuzeichnen, kein neuer Push-Plan)
         return true;
       })()
         .catch(() => false)
@@ -2969,19 +2665,19 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       const x = istObjekt(eingabe) ? eingabe : {};
       const nichtBereit = await versBereit();
       if (nichtBereit) return { ok: false, fehler: nichtBereit };
-      const alt = state.versicherung.daten.polizze;
+      const alt = kern.state.versicherung.daten.polizze;
       if (!alt) {
         const id = x.id ?? neueVersKennung(new Set());
         if (!id) return { ok: false, fehler: TEXT_FEHLER };
         const r = await versHauptSicher((d) => polizzeAnlegen(d, { ...x, id }));
         if (!r.ok) return r;
-        return state.versicherung.daten.polizze?.id === id ? { ok: true, id } : { ok: false, fehler: TEXT_POLIZZE_SCHON_DA };
+        return kern.state.versicherung.daten.polizze?.id === id ? { ok: true, id } : { ok: false, fehler: TEXT_POLIZZE_SCHON_DA };
       }
       if (x.id !== alt.id) return { ok: false, fehler: TEXT_POLIZZE_WEG };
       const bleiben = new Set((Array.isArray(x.kategorien) ? x.kategorien : []).map((k) => k?.id));
       const entfernt = alt.kategorien.filter((k) => !bleiben.has(k.id));
       if (entfernt.length > 0) {
-        if (state.versicherung.unlesbar.teile.length > 0) return { ok: false, fehler: TEXT_KATEGORIE_UNPRUEFBAR };
+        if (kern.state.versicherung.unlesbar.teile.length > 0) return { ok: false, fehler: TEXT_KATEGORIE_UNPRUEFBAR };
         const benutzt = benutzteKategorien();
         const k = entfernt.find((e) => benutzt.has(e.id));
         if (k) return { ok: false, fehler: `Die Kategorie „${k.name}“ hat noch Rechnungen – bitte diese zuerst einer anderen Kategorie zuordnen oder löschen.` };
@@ -3006,7 +2702,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       const x = istObjekt(entwurf) ? entwurf : {};
       const nichtBereit = await versBereit();
       if (nichtBereit) return { ok: false, fehler: nichtBereit };
-      const polizze = state.versicherung.daten.polizze;
+      const polizze = kern.state.versicherung.daten.polizze;
       if (!polizze) return { ok: false, fehler: TEXT_KEINE_POLIZZE };
       const f = x.id == null ? null : versRechnungFinden(x.id);
       if (x.id != null && !f) return { ok: false, fehler: TEXT_RECHNUNG_WEG };
@@ -3051,7 +2747,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       const nichtImNeuen = `Die Rechnung steht nicht mehr im ${quartalText(plan.nach)} (wohl auf dem anderen Telefon geändert oder gelöscht) – im ${quartalText(von)} bleibt sie stehen. Bitte noch einmal ansehen.`;
       // Schritt 3: die alte Fassung nur löschen, wenn sie älter ist als die frisch gelesene im neuen Teil (Fix-Runde 2 b); sonst bleibt sie
       const altGeaendert = `Die Rechnung wurde inzwischen auf dem anderen Telefon geändert – sie steht jetzt im ${quartalText(plan.nach)} und im ${quartalText(von)}. Bitte noch einmal ansehen.`;
-      let nachFrisch = fassungVon((state.versicherung.teile[plan.nach.jahr]?.[plan.nach.quartal]?.rechnungen ?? []).find((x) => x.id === id));
+      let nachFrisch = fassungVon((kern.state.versicherung.teile[plan.nach.jahr]?.[plan.nach.quartal]?.rechnungen ?? []).find((x) => x.id === id));
       const ausAlt = (t) => {
         const neu = plan.ausAlt(t, { nurAelterAls: nachFrisch });
         if (neu === t && (t.rechnungen ?? []).some((x) => x.id === id)) throw new Error(altGeaendert);
@@ -3133,7 +2829,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     },
 
     async einstellungen(teil) {
-      const settings = normalizeSettings({ ...state.settings, ...teil });
+      const settings = normalizeSettings({ ...kern.state.settings, ...teil });
       await aendere({ settings }, async () => {
         await adapter.speichereSettings(teil);
         if (unlesbarMerken('settings', false)) melden(); // nicht abgelehnt: die gespeicherten Einstellungen waren lesbar
@@ -3148,13 +2844,13 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
 
     async zuruecksetzen() {
       const daten = await adapter.zuruecksetzen();
-      state = { ...state, ...daten, schicht: daten.schicht ? schichtAusDaten(daten.schicht) : leererSchichtplan(), fixkosten: fixAusDaten(daten.fixkosten), ziele: daten.ziele ? zieleZustand(daten.ziele, 'geladen') : leererZieleZustand(), autos: daten.autos ? autosZustand(daten.autos, 'gespeichert') : leererAutosZustand(), versicherung: daten.versicherung ? versicherungZustand(daten.versicherung, 'gespeichert') : leererVersicherungZustand(), geladen: true, fehler: null };
+      kern.state = { ...kern.state, ...daten, schicht: daten.schicht ? schichtAusDaten(daten.schicht) : leererSchichtplan(), fixkosten: fixAusDaten(daten.fixkosten), ziele: daten.ziele ? zieleZustand(daten.ziele, 'geladen') : leererZieleZustand(), autos: daten.autos ? autosZustand(daten.autos, 'gespeichert') : leererAutosZustand(), versicherung: daten.versicherung ? versicherungZustand(daten.versicherung, 'gespeichert') : leererVersicherungZustand(), geladen: true, fehler: null };
       fixGelesen = false; // vor dem nächsten Ändern erst aus dem (neuen) Speicher lesen
       autosGelesen = false;
       versGelesen = false;
       melden();
       store.schichtVorladen(); // neue Beispieldaten: im Hintergrund wieder vorladen (wirft nicht)
     },
-  };
+  });
   return store;
 }
