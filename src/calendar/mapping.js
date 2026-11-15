@@ -1,7 +1,7 @@
 // Reine Umrechnung zwischen dem App-Modell und Google-Kalender-Ereignissen: kein Netz, kein DOM.
 // Grundlage: Titel sind die einzige Quelle für Mitnehmen/Kosten, die echte Startzeit gilt für die Uhrzeit,
 // und das Verhalten der API ist in Vertragsprobe (Dokument nicht im Repo) belegt.
-import { addDays, todayVienna } from '../domain/dates.js';
+import { addDays, pad2, todayVienna } from '../domain/dates.js';
 import { eventSpan, spanDays, toGoogleAllDay } from '../domain/span.js';
 import { dayEventId, istUrlaubCheckId, urlaubCheckEventId } from '../domain/ids.js';
 import { FAMILIE_SYMBOLE, FUER, TAGES_TYPEN, TYPES } from '../domain/types.js';
@@ -34,8 +34,6 @@ export const MAX_EINSTELLUNGEN_ZEICHEN = 6000; // Google kürzt `description` st
 const TERMIN_MINUTEN = 30;
 export const ERINNERUNG_VORHER = [{ method: 'popup', minutes: 1440 }, { method: 'popup', minutes: 60 }]; // 1 Tag und 1 Stunde vorher
 const ERINNERUNG_GANZTAG = [{ method: 'popup', minutes: 900 }]; // 09:00 am Vortag
-
-const pad2 = (n) => String(n).padStart(2, '0');
 
 function versteckt(typ, zusatz = {}) {
   return { fk: '1', typ, v: '1', ...zusatz };

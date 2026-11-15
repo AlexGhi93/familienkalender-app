@@ -1,4 +1,5 @@
 import { todayVienna } from '../domain/dates.js';
+import { istObjekt } from '../domain/gemeinsam.js';
 import { normalizeSettings } from '../domain/settings.js';
 import { spanDays } from '../domain/span.js';
 import { planUmwandlung } from '../domain/umwandlung.js';
@@ -137,8 +138,6 @@ function zieleZustand(gelesen, status) {
   const unlesbar = gelesen?.unlesbar === true;
   return { daten, status, unlesbar, warnungen: zieleWarnungen({ daten, unlesbar }) };
 }
-
-const istObjekt = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 
 /**
  * Autos im Zustand: `daten` = Hauptteil { v, autos, regeln, saetze, ab, fremd? } (domain/autos.js; unlesbar → leer), `historie` =

@@ -1,5 +1,5 @@
 // Die eigentliche App-Oberfläche: Tab-Leiste, Seiten, Hinweisleiste (Verbindung, Fortschritt) und alle Bildschirme.
-import { parseDate, addDays, todayVienna } from './domain/dates.js';
+import { parseDate, addDays, pad2, todayVienna } from './domain/dates.js';
 import { fuelle, h } from './ui/dom.js';
 import { entferneFehlerToast, toast } from './ui/components.js';
 import { heuteScreen } from './ui/heute-screen.js';
@@ -269,8 +269,8 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
     /** Lädt den angezeigten Monat (samt Randwochen) nach, falls er außerhalb des geladenen Fensters liegt. */
     monatLaden() {
       const { jahr, monat } = ui.monat;
-      const erster = `${jahr}-${String(monat).padStart(2, '0')}-01`;
-      const naechster = monat === 12 ? `${jahr + 1}-01-01` : `${jahr}-${String(monat + 1).padStart(2, '0')}-01`;
+      const erster = `${jahr}-${pad2(monat)}-01`;
+      const naechster = monat === 12 ? `${jahr + 1}-01-01` : `${jahr}-${pad2(monat + 1)}-01`;
       store.sichereBereich(addDays(erster, -7), addDays(naechster, 7));
     },
     /** Lädt das gewählte Kindergartenjahr nach, falls es außerhalb des geladenen Fensters liegt. */

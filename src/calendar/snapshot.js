@@ -1,6 +1,7 @@
 // Lokaler Schnappschuss der zuletzt geladenen Daten (nur auf diesem Telefon): zeigt beim Start sofort etwas an
 // und erlaubt Lesen ohne Anmeldung/Netz. Enthält Gesundheits-Titel; er bleibt im localStorage dieses Geräts.
 import { addDays, isValidDate } from '../domain/dates.js';
+import { istObjekt } from '../domain/gemeinsam.js';
 import { normalizeSettings } from '../domain/settings.js';
 import { normalisiereListe } from '../domain/einkauf.js';
 import { normalisiereKonto } from '../domain/konto.js';
@@ -18,7 +19,6 @@ const TERMIN_TYPEN = ['arzt', 'familie', 'kita_sache'];
 const MAX_SNAPSHOT_SCHICHT_MONATE = 6;
 const MONAT = /^\d{4}-(0[1-9]|1[0-2])$/;
 
-const istObjekt = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 const gueltigesDatum = (d) => typeof d === 'string' && isValidDate(d);
 
 const monatsZahl = (jm) => Number(jm.slice(0, 4)) * 12 + Number(jm.slice(5, 7));
