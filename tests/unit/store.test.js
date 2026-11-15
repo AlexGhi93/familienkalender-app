@@ -1485,3 +1485,25 @@ describe('unlesbarer Text in den älteren versteckten Ereignissen (B2)', () => {
     assert.deepEqual(store.getState().unlesbar, ['schichtarten']);
   });
 });
+
+// Die öffentlichen Methoden des Stores in 1.4.0 (sortiert): die Fassade über src/app/store/* muss genau diese bieten.
+const METHODEN_1_4_0 = [
+  'aktualisieren', 'arbeitLoeschen', 'arbeitSpeichern', 'ausstehend', 'autoLoeschen', 'autoSpeichern', 'autosFrischLesen', 'autosLaden',
+  'einkaufAktualisieren', 'einkaufEntfernen', 'einkaufErledigteEntfernen', 'einkaufGeprueftAm', 'einkaufHinzufuegen', 'einkaufUmschalten',
+  'einstellungen', 'erinnerungenPruefen', 'erinnerungenReparieren', 'erinnerungenTestBeenden', 'erinnerungenTestStarten', 'erstattungSpeichern',
+  'extraEntfernen', 'extraHinzufuegen', 'fixFrischLesen', 'fixLaden', 'fixPostenArchivieren', 'fixPostenLoeschen', 'fixPostenSpeichern',
+  'fixPostenWiederanlegen', 'fixPostenWiederherstellen', 'freiVerschieben', 'getState', 'heute', 'jetzt', 'kmLoeschen', 'kmSpeichern',
+  'kontoLeeren', 'kontoLoeschen', 'kontoNachtragen', 'kontoSpeichern', 'laden', 'loescheTag', 'polizzeSpeichern', 'pyjamasWechselSpeichern',
+  'rechnungLoeschen', 'rechnungSpeichern', 'regelLoeschen', 'regelSpeichern', 'sachenSpeichern', 'satzLoeschen', 'satzSpeichern',
+  'schichtAktualisieren', 'schichtArtArchivieren', 'schichtArtSpeichern', 'schichtArtVerschieben', 'schichtFrischLesen', 'schichtLaden',
+  'schichtNotiz', 'schichtPinsel', 'schichtSetzen', 'schichtVorladen', 'schichtZusatzEntfernen', 'schichtZusatzHinzufuegen',
+  'schichtZusatzLoeschen', 'setTag', 'setTage', 'sichereBereich', 'sicherungsDaten', 'starteAusSnapshot', 'subscribe', 'terminErledigt',
+  'terminLoeschen', 'terminLoeschenAbHier', 'terminSpeichern', 'urlaubChecksAbgleichen', 'urlaubHinzufuegen', 'urlaubLoeschen',
+  'verschiebungLoeschen', 'verschiebungWiederherstellen', 'versicherungFrischLesen', 'versicherungLaden', 'wiederholeAusstehende',
+  'zielAusblenden', 'zielBeenden', 'zielLoeschen', 'zielSpeichern', 'zielWiederherstellen', 'zielZurueckZuFrei', 'zieleLaden', 'zuruecksetzen',
+];
+
+test('die Fassade bietet genau die Methoden wie vor dem Aufteilen', () => {
+  const adapter = createDemoAdapter({ speicher: speicherAttrappe(), jetzt: () => JETZT });
+  assert.deepEqual(Object.keys(createStore(adapter)).sort(), METHODEN_1_4_0); // sortierte Liste, im Test festgeschrieben
+});
