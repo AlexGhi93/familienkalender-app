@@ -348,8 +348,10 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
 
   /**
    * Führt einen Schreibvorgang aus. Ergebnis: 'ok', 'auth' (wartet auf Anmeldung) oder 'fehler' (zurückgenommen, neu geladen).
-   * Ohne `optionen` wird bei einem Fehler alles auf `alt` zurückgesetzt und neu geladen. Mit `optionen.zurueck()` (→ neuer Zustand)
-   * wird nur das Betroffene zurückgenommen und danach `optionen.neuLesen()` statt des ganzen Ladens ausgeführt (Schichtplan).
+   * Bei einem Fehler werden nur die Felder aus `optionen.schluessel` auf ihren Wert in `alt` zurückgesetzt (ohne `schluessel` keines),
+   * dann wird neu geladen: was inzwischen in anderen Feldern gelesen oder gespeichert wurde (Autos, Schichtmonate …), bleibt stehen.
+   * Mit `optionen.zurueck()` (→ neuer Zustand) nimmt der Aufrufer selbst das Betroffene zurück, danach läuft `optionen.neuLesen()`
+   * statt des ganzen Ladens (Schichtplan).
    */
   let fehlerNr = 0; // zählt jeden gemeldeten Schreibfehler (state.fehlerNr): die Shell zeigt auch eine gleichlautende zweite Meldung
   async function ausfuehren(schreibe, alt, optionen = {}) {
@@ -395,7 +397,8 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
         melden();
         return 'fehler';
       }
-      state = { ...alt, fortschritt: null, fehler: text, fehlerNr };
+      const eigene = Object.fromEntries((optionen.schluessel ?? []).map((k) => [k, alt[k]]));
+      state = { ...state, ...eigene, fortschritt: null, fehler: text, fehlerNr };
       melden();
       try {
         const stand = zieleStand;
@@ -417,7 +420,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     const alt = state;
     state = { ...state, ...neu, fehler: null };
     melden();
-    return ausfuehren(schreibe, alt);
+    return ausfuehren(schreibe, alt, { schluessel: Object.keys(neu) });
   }
 
   /**

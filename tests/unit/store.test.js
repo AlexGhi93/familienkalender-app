@@ -5,6 +5,7 @@ import { createStore } from '../../src/app/store.js';
 import { createDemoAdapter } from '../../src/app/demo-adapter.js';
 import { createSnapshot } from '../../src/calendar/snapshot.js';
 import { leererMonat, monatText, setzeSchicht, standardKatalog, zusatzHinzufuegen } from '../../src/domain/schicht.js';
+import { autoAusVorlage } from '../../src/domain/autos.js';
 import { speicherAttrappe } from './hilfen.js';
 
 const JETZT = new Date('2026-10-14T08:00:00+02:00'); // Mittwoch
@@ -187,6 +188,66 @@ describe('Fehler beim Speichern', () => {
     await store.laden();
     await store.setTag('2026-10-14', 'krank');
     assert.equal(store.getState().fehler, 'Möglicherweise teilweise gespeichert – bitte aktualisieren.');
+  });
+});
+
+describe('gescheitertes Schreiben nimmt nur das Eigene zurück (B1)', () => {
+  /** Demo, in der das erste `setzeTag` hängt, bis der Test es mit `scheitern()` ablehnt; weitere Aufrufe speichern normal. `basis` = Adapter ohne die Störung. */
+  function mitHaengendemTag() {
+    const t = { basis: null, scheitern: null };
+    const a = aufbau({
+      aendern: (basis) => {
+        t.basis = basis;
+        return {
+          ...basis,
+          setzeTag: (d, typ) => (t.scheitern ? basis.setzeTag(d, typ) : new Promise((_, nein) => (t.scheitern = () => nein(new Error('Netz weg'))))),
+        };
+      },
+    });
+    return Object.assign(t, a);
+  }
+
+  test('ein inzwischen gespeichertes Auto bleibt sichtbar', async () => {
+    const t = mitHaengendemTag();
+    const { store } = t;
+    await store.laden();
+    await store.autosLaden();
+    const tagLauf = store.setTag('2026-10-14', 'krank'); // hängt
+    const r = await store.autoSpeichern(autoAusVorlage('fiat500', { ezDatum: '2017-07-01' })); // gelingt inzwischen
+    assert.equal(r.ok, true);
+    assert.equal(JSON.stringify(store.getState().autos.daten).includes(r.id), true);
+    t.scheitern();
+    await tagLauf;
+    assert.equal(store.getState().fehler, 'Speichern hat nicht geklappt. Bitte noch einmal versuchen.');
+    assert.equal(store.getState().tage['2026-10-14'], undefined);
+    assert.equal(JSON.stringify(store.getState().autos.daten).includes(r.id), true);
+    assert.equal(store.getState().autos.frisch, true);
+  });
+
+  test('inzwischen geladene Schichtmonate bleiben', async () => {
+    const t = mitHaengendemTag();
+    const { store } = t;
+    await store.laden();
+    const tagLauf = store.setTag('2026-10-14', 'krank'); // hängt
+    await store.schichtLaden('2026-11');
+    assert.deepEqual(Object.keys(store.getState().schicht.monate).sort(), ['2026-10', '2026-11', '2026-12']);
+    t.scheitern();
+    await tagLauf;
+    assert.equal(store.getState().tage['2026-10-14'], undefined);
+    assert.deepEqual(Object.keys(store.getState().schicht.monate).sort(), ['2026-10', '2026-11', '2026-12']);
+  });
+
+  test('zwei Tage nacheinander, der erste scheitert: der zweite bleibt und ist gespeichert', async () => {
+    const t = mitHaengendemTag();
+    const { store } = t;
+    await store.laden();
+    const erster = store.setTage(['2026-11-03'], 'krank'); // hängt und scheitert später
+    await store.setTage(['2026-11-04'], 'abwesend'); // gelingt dazwischen
+    t.scheitern();
+    await erster;
+    assert.equal(store.getState().tage['2026-11-03'], undefined);
+    assert.deepEqual(store.getState().tage['2026-11-04'], { typ: 'abwesend' });
+    assert.equal((await t.basis.laden()).tage['2026-11-04'].typ, 'abwesend');
   });
 });
 
