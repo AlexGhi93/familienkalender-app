@@ -13,12 +13,11 @@ import { sicherungAnzahlText, sicherungErstellen } from '../../src/app/sicherung
 import { TEXT_AUTOS_GESPERRT, TEXT_AUTO_WEG, TEXT_HISTORIE_GESPERRT, autoAnlegen, autoAusVorlage, autosText, historieJahrEintragen, historieText, leereAutos, leereHistorie, arbeitSetzen } from '../../src/domain/autos.js';
 import { planeErinnerungen, planQuellen, quellenGeaendert } from '../../src/push/plan.js';
 import { autoKarteModel } from '../../src/app/views/autos-faellig.js';
-import { apiAttrappe, speicherAttrappe } from './hilfen.js';
+import { KALENDER, apiAttrappe, googleStore, kennungen, speicherAttrappe } from './hilfen.js';
 
 const JETZT = new Date('2026-11-01T08:00:00+01:00');
 const HEUTE = '2026-11-01';
 const KEY = 'fk.demo.v1';
-const KALENDER = { termine: 'kt', abwesenheit: 'kab', anwesenheit: 'kan' };
 const authFehler = () => Object.assign(new Error('abgelaufen'), { name: 'AuthAbgelaufen' });
 
 function folge(start) {
@@ -38,25 +37,8 @@ function fiat(start = 5) {
 const oel = (auto, mehr = {}) => ({ auto, typ: 'oelwechsel', datum: '2026-05-10', km: 90_000, details: { filter: true }, ...mehr });
 const FREMD_ARBEIT = { i: 'neu00001', y: 'oelwechsel', d: '2026-02-01', z: { tiefer: [1, 'zwei'] } };
 
-/** Kennungen für neue Einträge der Reihe nach (für feste Tests), danach zufällig. */
-const kennungen = (...liste) => {
-  const rest = [...liste];
-  return () => rest.shift() ?? Math.random().toString(32).slice(2, 10).padEnd(8, '0');
-};
-
-/**
- * Google-Modus auf der API-Attrappe; `vorhanden` = { ereignisId: description } in „Anwesenheit“. `api` = gemeinsame Attrappe (zweites
- * Telefon). `stoeren(ereignisse)` darf Methoden der API ersetzen.
- */
-async function google({ vorhanden = {}, api = null, ids = [], stoeren = null } = {}) {
-  const t = api ?? apiAttrappe();
-  if (!api) for (const [id, description] of Object.entries(vorhanden)) await t.api.ereignisse.schreibe('kan', { id, description });
-  const ereignisse = stoeren ? stoeren({ ...t.api.ereignisse }) : t.api.ereignisse;
-  const adapter = createGoogleAdapter({ api: { ereignisse }, kalender: KALENDER, jetzt: () => JETZT });
-  const store = createStore(adapter, { jetzt: () => JETZT, autoId: kennungen(...ids) });
-  await store.laden();
-  return { ...t, store, adapter, text: (id) => t.roh('kan', id)?.description ?? null, geschrieben: () => t.log.filter((x) => !x.startsWith('GET')) };
-}
+/** Google-Modus auf der API-Attrappe (siehe googleStore); `ids` = feste Kennungen für neue Autos/Arbeiten. */
+const google = ({ ids = [], ...rest } = {}) => googleStore({ jetzt: JETZT, optionen: { autoId: kennungen(...ids) }, ...rest });
 
 const autos = (store) => store.getState().autos;
 

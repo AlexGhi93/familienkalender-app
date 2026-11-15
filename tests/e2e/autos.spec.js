@@ -2,7 +2,7 @@
 // Termin, Tesla-Reifenwechsel mit Vorschlag „vorne/hinten getauscht“, Vignette, Kilometerstand ändert die Schätzung (und bleibt nach
 // dem Neuladen), Karte auf Heute führt zum Auto (auch „+ N weitere“), Löschen mit „Rückgängig“ (Arbeit und Auto), Auto aus Vorlage,
 // Wischen im Verlauf; in Glas und Bento alle Ziele ≥ 44 px.
-import { test, expect, starteDemo, erwarteToast, WERKTAG_DATUM } from './hilfen.js';
+import { test, expect, starteDemo, erwarteToast, wischeZumLoeschen, WERKTAG_DATUM } from './hilfen.js';
 import { autoId, demoMitAutos, teslaOhneReifensaetze, vierFaellig, winterRotationFaellig } from './autos-hilfen.js';
 
 const TESLA = autoId(WERKTAG_DATUM, 'Tesla Model 3');
@@ -234,27 +234,8 @@ test('Löschen mit „Rückgängig“: eine Arbeit (Blatt und Wischen) und das g
   await expect(regel(page, 'oelwechsel').locator('.au-status')).toHaveText('✓ ok');
 
   // nach links wischen gibt „Löschen“ frei
-  const huelle = abschnitt(page, 'Verlauf').locator('.au-wisch').first();
   // (WebKit am Rechner kennt keinen Touch-Konstruktor: dort über das Blatt)
-  const gewischt = await eintraege.first().evaluate((el) => {
-    let punkt;
-    try {
-      const r = el.getBoundingClientRect();
-      punkt = (x) => new Touch({ identifier: 1, target: el, clientX: x, clientY: r.top + 20 });
-      punkt(0);
-    } catch {
-      return false;
-    }
-    const r = el.getBoundingClientRect();
-    el.dispatchEvent(new TouchEvent('touchstart', { touches: [punkt(r.right - 20)], bubbles: true }));
-    el.dispatchEvent(new TouchEvent('touchmove', { touches: [punkt(r.right - 140)], bubbles: true }));
-    el.dispatchEvent(new TouchEvent('touchend', { touches: [], bubbles: true }));
-    return true;
-  });
-  if (gewischt) {
-    await expect(huelle).toHaveClass(/offen/);
-    await huelle.locator('.au-wisch-loeschen').click();
-  } else {
+  if (!(await wischeZumLoeschen(page, eintraege.first()))) {
     await eintraege.first().click();
     await blatt(page, '🛢️ Ölwechsel ändern').getByRole('button', { name: 'Löschen' }).click();
   }

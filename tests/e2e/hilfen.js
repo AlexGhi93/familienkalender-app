@@ -275,3 +275,31 @@ export async function fehlerToastsZaehlen(page) {
     zuruecksetzen: () => page.evaluate(() => (window.fehlerToasts = 0)),
   };
 }
+
+/**
+ * Löscht eine Zeile der Listen mit „Wischen zum Löschen“ (Autos-Verlauf, Rechnungen der Versicherung): nach links wischen gibt „Löschen“
+ * frei, dann auf „Löschen“ tippen. → true, wenn gewischt wurde; false, wenn der Browser keinen Touch-Konstruktor kennt (WebKit am
+ * Rechner) – dann tut der Test nichts und geht selbst den Weg über das Blatt.
+ */
+export async function wischeZumLoeschen(page, zeile) {
+  const huelle = zeile.locator('xpath=..');
+  const gewischt = await zeile.evaluate((el) => {
+    let punkt;
+    try {
+      const r = el.getBoundingClientRect();
+      punkt = (x) => new Touch({ identifier: 1, target: el, clientX: x, clientY: r.top + 20 });
+      punkt(0);
+    } catch {
+      return false;
+    }
+    const r = el.getBoundingClientRect();
+    el.dispatchEvent(new TouchEvent('touchstart', { touches: [punkt(r.right - 20)], bubbles: true }));
+    el.dispatchEvent(new TouchEvent('touchmove', { touches: [punkt(r.right - 140)], bubbles: true }));
+    el.dispatchEvent(new TouchEvent('touchend', { touches: [], bubbles: true }));
+    return true;
+  });
+  if (!gewischt) return false;
+  await expect(huelle).toHaveClass(/offen/);
+  await huelle.locator('.au-wisch-loeschen').click();
+  return true;
+}

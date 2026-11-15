@@ -3,7 +3,7 @@
 // mit Vorschau „⚠ Limit überschritten“, „Erstattung erhalten“, Löschen mit „Rückgängig“ (Blatt und Wischen), Jahr blättern, „Polizze
 // bearbeiten“ (Limit ändern; eine Kategorie mit Rechnungen lässt sich nicht entfernen – C4) und der leere Zustand mit der Vorlage
 // „MedPLUS Privatarzt Basic“. Erwartete Zahlen aus der Domäne (jahresStand mit den Demo-Daten); die Demo („Mia“) ist erfunden.
-import { test, expect, starteDemo, erwarteToast, WERKTAG_DATUM } from './hilfen.js';
+import { test, expect, starteDemo, erwarteToast, wischeZumLoeschen, WERKTAG_DATUM } from './hilfen.js';
 import { seedDemo } from '../../src/app/seed.js';
 import { betragText } from '../../src/domain/konto.js';
 import { jahresStand, rechnungenDesJahres } from '../../src/domain/versicherung-rechnung.js';
@@ -162,27 +162,8 @@ test.describe('Versicherung im Konto-Tab (Demo)', () => {
     await erwarteToast(page, 'Wiederhergestellt ✓');
     await expect(zeilen(page)).toHaveCount(2);
 
-    const huelle = page.locator('.vs-liste .au-wisch').first();
     // (WebKit am Rechner kennt keinen Touch-Konstruktor: dort über das Blatt)
-    const gewischt = await zeilen(page).first().evaluate((el) => {
-      let punkt;
-      try {
-        const r = el.getBoundingClientRect();
-        punkt = (x) => new Touch({ identifier: 1, target: el, clientX: x, clientY: r.top + 20 });
-        punkt(0);
-      } catch {
-        return false;
-      }
-      const r = el.getBoundingClientRect();
-      el.dispatchEvent(new TouchEvent('touchstart', { touches: [punkt(r.right - 20)], bubbles: true }));
-      el.dispatchEvent(new TouchEvent('touchmove', { touches: [punkt(r.right - 140)], bubbles: true }));
-      el.dispatchEvent(new TouchEvent('touchend', { touches: [], bubbles: true }));
-      return true;
-    });
-    if (gewischt) {
-      await expect(huelle).toHaveClass(/offen/);
-      await huelle.locator('.au-wisch-loeschen').click();
-    } else {
+    if (!(await wischeZumLoeschen(page, zeilen(page).first()))) {
       await zeilen(page).first().click();
       await blatt(page, '🧾 Rechnung ändern').getByRole('button', { name: 'Löschen' }).click();
     }

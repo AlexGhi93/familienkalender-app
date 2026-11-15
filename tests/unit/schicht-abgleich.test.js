@@ -2,36 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { SCHICHT_INTERVALL_MS, createSchichtAbgleich, schichtAktualisierenFaellig } from '../../src/app/schicht-abgleich.js';
-
-/** Uhr zum Vorspulen: `vor(ms)` lässt fällige Zeitgeber der Reihe nach laufen (und wartet auf ihre Promises). */
-function uhrAttrappe() {
-  let jetzt = 0;
-  let naechsteId = 1;
-  const zeitgeber = new Map();
-  return {
-    setTimeout(fn, ms) {
-      const id = naechsteId++;
-      zeitgeber.set(id, { fn, zeit: jetzt + ms });
-      return id;
-    },
-    clearTimeout(id) {
-      zeitgeber.delete(id);
-    },
-    offen: () => zeitgeber.size,
-    async vor(ms) {
-      const ende = jetzt + ms;
-      for (;;) {
-        const faellig = [...zeitgeber.entries()].filter(([, z]) => z.zeit <= ende).sort((a, b) => a[1].zeit - b[1].zeit)[0];
-        if (!faellig) break;
-        const [id, z] = faellig;
-        zeitgeber.delete(id);
-        jetzt = z.zeit;
-        await z.fn();
-      }
-      jetzt = ende;
-    },
-  };
-}
+import { uhrAttrappe } from './hilfen.js';
 
 test('holt alle 30 Sekunden, aber nur solange aktiv() stimmt; stop() hört auf', async () => {
   assert.equal(SCHICHT_INTERVALL_MS, 30_000);
@@ -41,7 +12,7 @@ test('holt alle 30 Sekunden, aber nur solange aktiv() stimmt; stop() hört auf',
   const abgleich = createSchichtAbgleich({ aktiv: () => aktiv, holen: async () => { geholt += 1; }, uhr });
   abgleich.start();
   abgleich.start(); // zweimal starten: trotzdem nur ein Zeitgeber
-  assert.equal(uhr.offen(), 1);
+  assert.equal(uhr.offen().length, 1);
   await uhr.vor(29_999);
   assert.equal(geholt, 0);
   await uhr.vor(1);
@@ -59,7 +30,7 @@ test('holt alle 30 Sekunden, aber nur solange aktiv() stimmt; stop() hört auf',
   assert.equal(abgleich.laeuft(), false);
   await uhr.vor(120_000);
   assert.equal(geholt, 3);
-  assert.equal(uhr.offen(), 0);
+  assert.equal(uhr.offen().length, 0);
 });
 
 test('Fehler beim Holen stören nicht; stop() während des Holens plant nichts mehr ein', async () => {
@@ -83,7 +54,7 @@ test('Fehler beim Holen stören nicht; stop() während des Holens plant nichts m
   assert.equal(geholt, 2);
   await uhr.vor(5000);
   assert.equal(geholt, 2);
-  assert.equal(uhr.offen(), 0);
+  assert.equal(uhr.offen().length, 0);
 });
 
 test('Rückkehr in die App: höchstens einmal pro Minute neu holen', () => {

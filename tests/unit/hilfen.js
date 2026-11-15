@@ -2,6 +2,11 @@
 import { normalizeSettings } from '../../src/domain/settings.js';
 import { leereListe } from '../../src/domain/einkauf.js';
 import { leeresKonto } from '../../src/domain/konto.js';
+import { createStore } from '../../src/app/store.js';
+import { createGoogleAdapter } from '../../src/calendar/google-adapter.js';
+
+/** Die drei Kalender der Attrappe: Termine, Abwesenheit, Anwesenheit (dort liegen die versteckten Daten). */
+export const KALENDER = { termine: 'kt', abwesenheit: 'kab', anwesenheit: 'kan' };
 
 /** localStorage-Ersatz im Arbeitsspeicher; `kaputt: true` wirft bei jedem Zugriff (privater Modus, voller Speicher). */
 export function speicherAttrappe(anfang = {}, { kaputt = false } = {}) {
@@ -77,4 +82,67 @@ export function apiAttrappe({ zeitstempel = false } = {}) {
     },
   };
   return { api: { ereignisse }, roh: (k, id) => von(k).get(id) ?? null, log, zaehler };
+}
+
+/** Uhr zum Vorspulen: `vor(ms)` lässt fällige Zeitgeber der Reihe nach laufen (und wartet auf ihre Promises). */
+export function uhrAttrappe() {
+  let jetzt = 0;
+  let naechsteId = 1;
+  const zeitgeber = new Map();
+  return {
+    setTimeout(fn, ms) {
+      const id = naechsteId++;
+      zeitgeber.set(id, { fn, zeit: jetzt + ms });
+      return id;
+    },
+    clearTimeout(id) {
+      zeitgeber.delete(id);
+    },
+    /** Wartezeiten der offenen Zeitgeber (ms ab jetzt). */
+    offen: () => [...zeitgeber.values()].map((z) => z.zeit - jetzt),
+    async vor(ms) {
+      const ende = jetzt + ms;
+      for (;;) {
+        const faellig = [...zeitgeber.entries()].filter(([, z]) => z.zeit <= ende).sort((a, b) => a[1].zeit - b[1].zeit)[0];
+        if (!faellig) break;
+        const [id, z] = faellig;
+        zeitgeber.delete(id);
+        jetzt = z.zeit;
+        await z.fn();
+      }
+      jetzt = ende;
+    },
+  };
+}
+
+/** Kennungen für neue Einträge der Reihe nach (für feste Tests), danach zufällig. */
+export const kennungen = (...liste) => {
+  const rest = [...liste];
+  return () => rest.shift() ?? Math.random().toString(32).slice(2, 10).padEnd(8, '0');
+};
+
+/**
+ * Google-Modus auf der API-Attrappe; `vorhanden` = { ereignisId: description } in „Anwesenheit“. `api` = gemeinsame Attrappe (zweites
+ * Telefon). `stoeren(ereignisse)` darf Methoden der API ersetzen. `zeitstempel` = jedes Schreiben trägt `updated` ein (wie Google).
+ * `jetzt` = die Uhrzeit (Date) für Adapter und Speicher; `optionen` geht an `createStore` (z. B. `autoId`, `versicherungId`).
+ * Lesen: `text(id)` = Beschreibung des Ereignisses in „Anwesenheit“, `geschrieben()` = alle Schreibzugriffe, `merken()`/`neu()` = die seit der Marke.
+ */
+export async function googleStore({ jetzt, vorhanden = {}, api = null, stoeren = null, zeitstempel = false, optionen = {} } = {}) {
+  const t = api ?? apiAttrappe({ zeitstempel });
+  if (!api) for (const [id, description] of Object.entries(vorhanden)) await t.api.ereignisse.schreibe('kan', { id, description });
+  const ereignisse = stoeren ? stoeren({ ...t.api.ereignisse }) : t.api.ereignisse;
+  const adapter = createGoogleAdapter({ api: { ereignisse }, kalender: KALENDER, jetzt: () => jetzt });
+  const store = createStore(adapter, { jetzt: () => jetzt, ...optionen });
+  await store.laden();
+  const geschrieben = () => t.log.filter((x) => !x.startsWith('GET'));
+  let marke = 0;
+  return {
+    ...t,
+    store,
+    adapter,
+    text: (id) => t.roh('kan', id)?.description ?? null,
+    geschrieben,
+    merken: () => (marke = geschrieben().length),
+    neu: () => geschrieben().slice(marke),
+  };
 }

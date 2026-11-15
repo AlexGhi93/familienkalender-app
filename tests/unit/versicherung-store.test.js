@@ -14,12 +14,11 @@ import { addDays } from '../../src/domain/dates.js';
 import { fassungJetzt, rechnungPruefen } from '../../src/domain/versicherung.js';
 import { TEXT_RECHNUNG_WEG, TEXT_POLIZZE_WEG, TEXT_VERSICHERUNG_GESPERRT, TEXT_VERSICHERUNG_TEIL_GESPERRT, leererVersicherungTeil, leereVersicherung, polizzeAnlegen, polizzeAusVorlage, rechnungSetzen, versicherungJahrEintragen, versicherungTeilText, versicherungText } from '../../src/domain/versicherung.js';
 import { alleRechnungen, rechnungenDesJahres, rechnungFinden } from '../../src/domain/versicherung-rechnung.js';
-import { apiAttrappe, speicherAttrappe } from './hilfen.js';
+import { KALENDER, apiAttrappe, googleStore, kennungen, speicherAttrappe } from './hilfen.js';
 
 const JETZT = new Date('2026-11-08T08:00:00+01:00');
 const HEUTE = '2026-11-08';
 const KEY = 'fk.demo.v1';
-const KALENDER = { termine: 'kt', abwesenheit: 'kab', anwesenheit: 'kan' };
 const authFehler = () => Object.assign(new Error('abgelaufen'), { name: 'AuthAbgelaufen' });
 const TEXT_NICHT_GELESEN = 'Die Versicherung konnte nicht gelesen werden. Bitte noch einmal versuchen.';
 
@@ -30,35 +29,8 @@ const rechnung = (mehr = {}) => ({ id: 'rech0001', kategorie: 'physio', datum: '
 const teilText = (jahr, quartal, ...rechnungen) => versicherungTeilText(rechnungen.reduce((t, r) => rechnungSetzen(t, r, { heute: HEUTE }), leererVersicherungTeil(jahr, quartal)));
 const FREMD_RECHNUNG = { i: 'neu00001', k: 'physio', d: 20261101, b: 100, e: 20261102, zz: 1 };
 
-/** Kennungen für neue Einträge der Reihe nach (für feste Tests), danach zufällig. */
-const kennungen = (...liste) => {
-  const rest = [...liste];
-  return () => rest.shift() ?? Math.random().toString(32).slice(2, 10).padEnd(8, '0');
-};
-
-/**
- * Google-Modus auf der API-Attrappe; `vorhanden` = { ereignisId: description } in „Anwesenheit“. `api` = gemeinsame Attrappe (zweites
- * Telefon). `stoeren(ereignisse)` darf Methoden der API ersetzen. `zeitstempel` = jedes Schreiben trägt `updated` ein (wie Google).
- */
-async function google({ vorhanden = {}, api = null, ids = [], stoeren = null, zeitstempel = false, frist, jetzt = JETZT } = {}) {
-  const t = api ?? apiAttrappe({ zeitstempel });
-  if (!api) for (const [id, description] of Object.entries(vorhanden)) await t.api.ereignisse.schreibe('kan', { id, description });
-  const ereignisse = stoeren ? stoeren({ ...t.api.ereignisse }) : t.api.ereignisse;
-  const adapter = createGoogleAdapter({ api: { ereignisse }, kalender: KALENDER, jetzt: () => jetzt });
-  const store = createStore(adapter, { jetzt: () => jetzt, versicherungId: kennungen(...ids), ...(frist ? { versicherungFristMs: frist } : {}) });
-  await store.laden();
-  const schreibLog = () => t.log.filter((x) => !x.startsWith('GET'));
-  let marke = 0;
-  return {
-    ...t,
-    store,
-    adapter,
-    text: (id) => t.roh('kan', id)?.description ?? null,
-    /** Ab jetzt mitschreiben; `neu()` = die Schreibzugriffe seit der letzten Marke. */
-    merken: () => (marke = schreibLog().length),
-    neu: () => schreibLog().slice(marke),
-  };
-}
+/** Google-Modus auf der API-Attrappe (siehe googleStore); `ids` = feste Kennungen, `frist` = Zeitlimit der Versicherung, `jetzt` = andere Uhrzeit. */
+const google = ({ ids = [], frist, jetzt = JETZT, ...rest } = {}) => googleStore({ jetzt, optionen: { versicherungId: kennungen(...ids), ...(frist ? { versicherungFristMs: frist } : {}) }, ...rest });
 
 const vers = (store) => store.getState().versicherung;
 const rechnungen = (store, jahr) => rechnungenDesJahres(vers(store).teile, jahr, { geschrieben: vers(store).geschrieben });
