@@ -249,12 +249,18 @@ function zielVorhanden(daten, id) {
   throw new Error((daten.fremd?.z ?? []).some((k) => k?.i === id) ? TEXT_ZIEL_NEUER : TEXT_ZIEL_GELOESCHT);
 }
 
+/** Die Bereiche, deren Lesbarkeit jedes Laden meldet (`daten.unlesbar`); Schichtarten und Schichtmonate meldet das Lesen des Schichtplans. */
+const LADE_BEREICHE = Object.freeze(['einkauf', 'konto', 'settings']);
+
 /**
  * Übernimmt aus dem, was ein Adapter liefert, nur die Felder des Zustands. Den Schichtplan nicht: er wird erst beim Öffnen seiner Seite
- * geladen (`schichtLaden`); die Demo liefert ihn zwar mit, aber so verhalten sich Demo und Google gleich.
+ * geladen (`schichtLaden`); die Demo liefert ihn zwar mit, aber so verhalten sich Demo und Google gleich. `unlesbar`: Einkauf, Konto
+ * und Einstellungen gelten, wie dieses Laden sie meldet (fehlt die Angabe – Demo, Schnappschuss –, sind sie lesbar); was das Lesen des
+ * Schichtplans vermerkt hat, bleibt.
  */
 function ladeFelder(daten, state) {
   return {
+    unlesbar: [...(state.unlesbar ?? []).filter((b) => !LADE_BEREICHE.includes(b)), ...(daten.unlesbar ?? []).filter((b) => LADE_BEREICHE.includes(b))].sort(),
     settings: daten.settings ?? state.settings,
     tage: daten.tage ?? {},
     urlaub: daten.urlaub ?? [],
@@ -276,7 +282,7 @@ function ladeFelder(daten, state) {
  * - Mehr als drei Schreibvorgänge melden ihren Fortschritt (`state.fortschritt`).
  */
 export function createStore(adapter, { jetzt = () => new Date(), neueId = zufaelligeId, fixId = neueFixId, zielId = neueZielId, autoId = neueAutoId, autosFristMs = 20_000, versicherungId = () => neueVersicherungId(), versicherungFristMs = 20_000 } = {}) {
-  let state = { geladen: false, settings: normalizeSettings(), tage: {}, urlaub: [], termine: [], einkauf: leereListe(), konto: leeresKonto(), schicht: leererSchichtplan(), fixkosten: leereFixkosten(), ziele: leererZieleZustand(), autos: leererAutosZustand(), versicherung: leererVersicherungZustand(), fehler: null, fortschritt: null, anmeldungNoetig: false, fenster: null };
+  let state = { geladen: false, settings: normalizeSettings(), tage: {}, urlaub: [], termine: [], einkauf: leereListe(), konto: leeresKonto(), schicht: leererSchichtplan(), fixkosten: leereFixkosten(), ziele: leererZieleZustand(), autos: leererAutosZustand(), versicherung: leererVersicherungZustand(), unlesbar: [], fehler: null, fortschritt: null, anmeldungNoetig: false, fenster: null };
   const hoerer = new Set();
   const wartend = []; // Schreibvorgänge, die wegen abgelaufener Anmeldung noch fehlen
   const geladeneBereiche = [];
@@ -350,11 +356,33 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
   };
 
   /**
+   * `state.unlesbar` = Bereiche der älteren versteckten Ereignisse, deren Text diese Version nicht lesen kann (sortiert): 'einkauf',
+   * 'konto', 'settings', 'schichtarten', 'schicht:JJJJ-MM'. Sie werden leer bzw. mit Standardwerten gezeigt, die Oberfläche zeigt oben
+   * den Hinweis, und der Adapter lehnt jedes Ändern ab (Fehler „Unlesbar“) – nichts wird überschrieben. Vermerkt wird beim Lesen
+   * (`laden`, Schichtplan, Einkaufsliste) und wenn ein Schreiben mit „Unlesbar“ abgelehnt wird; ein späteres lesbares Lesen oder ein
+   * gelungenes Speichern nimmt den Bereich wieder heraus. Trägt `bereich` ein (`ist`) oder nimmt ihn heraus; → ob sich etwas geändert hat
+   * (gemeldet wird hier nicht).
+   */
+  function unlesbarMerken(bereich, ist) {
+    if (state.unlesbar.includes(bereich) === ist) return false;
+    state = { ...state, unlesbar: ist ? [...state.unlesbar, bereich].sort() : state.unlesbar.filter((b) => b !== bereich) };
+    return true;
+  }
+  /** Was ein Adapter gelesen hat ({ …, unlesbar? }; die Demo nennt `unlesbar` nie = lesbar): vermerkt den Bereich und gibt das Gelesene zurück. */
+  function gelesenMerken(bereich, gelesen) {
+    unlesbarMerken(bereich, gelesen?.unlesbar === true);
+    return gelesen;
+  }
+  const istUnlesbarFehler = (fehler) => fehler?.name === 'Unlesbar' && typeof fehler.bereich === 'string';
+
+  /**
    * Führt einen Schreibvorgang aus. Ergebnis: 'ok', 'auth' (wartet auf Anmeldung) oder 'fehler' (zurückgenommen, neu geladen).
    * Bei einem Fehler werden nur die Felder aus `optionen.schluessel` auf ihren Wert in `alt` zurückgesetzt (ohne `schluessel` keines),
    * dann wird neu geladen: was inzwischen in anderen Feldern gelesen oder gespeichert wurde (Autos, Schichtmonate …), bleibt stehen.
    * Mit `optionen.zurueck()` (→ neuer Zustand) nimmt der Aufrufer selbst das Betroffene zurück, danach läuft `optionen.neuLesen()`
-   * statt des ganzen Ladens (Schichtplan).
+   * statt des ganzen Ladens (Schichtplan). Lehnt der Adapter ab, weil der gespeicherte Text unlesbar ist (Fehler „Unlesbar“, auch beim
+   * Nachholen nach dem Anmelden), wurde nichts geschrieben: gezeigt wird seine Meldung, und der Bereich kommt in `state.unlesbar` – auf
+   * beiden Wegen (mit und ohne `optionen.zurueck`).
    */
   let fehlerNr = 0; // zählt jeden gemeldeten Schreibfehler (state.fehlerNr): die Shell zeigt auch eine gleichlautende zweite Meldung
   async function ausfuehren(schreibe, alt, optionen = {}) {
@@ -387,10 +415,12 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       // Lehnt eine reine Änderung auf der neuesten Fassung ab (z. B. das andere Telefon hat dasselbe Kürzel schon vergeben), zählt ihre Meldung.
       fehlerNr += 1; // dieselbe Meldung zweimal hintereinander wird trotzdem zweimal gezeigt
       let text = gesamt > 1 && erledigt > 0 ? `Gespeichert: ${erledigt} von ${gesamt}. Bitte noch einmal versuchen; Gespeichertes bleibt erhalten.` : TEXT_FEHLER;
-      if (FACHLICH.has(fehler)) text = fehler.message;
+      const unlesbar = istUnlesbarFehler(fehler);
+      if (FACHLICH.has(fehler) || unlesbar) text = fehler.message;
       optionen.beiFehler?.(fehler, text);
       if (optionen.zurueck) {
         state = { ...optionen.zurueck(), fortschritt: null, fehler: text, fehlerNr };
+        if (unlesbar) unlesbarMerken(fehler.bereich, true);
         melden();
         try {
           await optionen.neuLesen();
@@ -402,6 +432,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       }
       const eigene = Object.fromEntries((optionen.schluessel ?? []).map((k) => [k, alt[k]]));
       state = { ...state, ...eigene, fortschritt: null, fehler: text, fehlerNr };
+      if (unlesbar) unlesbarMerken(fehler.bereich, true); // bleibt, auch wenn das Neu-Laden gleich scheitert
       melden();
       try {
         const stand = zieleStand;
@@ -503,11 +534,12 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     const neu = fn(state.einkauf);
     await aendere({ einkauf: neu }, async () => {
       const gespeichert = await adapter.aendereEinkauf(fn);
+      const wiederLesbar = unlesbarMerken('einkauf', false); // nicht abgelehnt: die neueste Fassung war lesbar
       if (gespeichert) {
         einkaufGeprueft = jetzt().getTime(); // gespeichert wurde auf der neuesten Fassung: die Liste ist jetzt aktuell
         state = { ...state, einkauf: gespeichert };
-        melden();
       }
+      if (gespeichert || wiederLesbar) melden();
     });
   }
 
@@ -519,10 +551,9 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     const neu = fn(state.konto);
     return aendere({ konto: neu }, async () => {
       const gespeichert = await adapter.aendereKonto(fn);
-      if (gespeichert) {
-        state = { ...state, konto: gespeichert };
-        melden();
-      }
+      const wiederLesbar = unlesbarMerken('konto', false); // nicht abgelehnt: die neueste Fassung war lesbar
+      if (gespeichert) state = { ...state, konto: gespeichert };
+      if (gespeichert || wiederLesbar) melden();
     });
   }
 
@@ -1607,8 +1638,12 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
   const schichtMonatSchreiben = (jm, fn) =>
     schichtAendern(jm, fn, {
       leer: () => leererMonat(jm),
-      speichern: (f) => adapter.aendereSchichtMonat(jm, f),
-      lesen: async () => (await adapter.leseSchichtMonat(jm)).monat ?? null,
+      speichern: async (f) => {
+        const gespeichert = await adapter.aendereSchichtMonat(jm, f);
+        unlesbarMerken(`schicht:${jm}`, false); // nicht abgelehnt: die neueste Fassung war lesbar
+        return gespeichert;
+      },
+      lesen: async () => gelesenMerken(`schicht:${jm}`, await adapter.leseSchichtMonat(jm)).monat ?? null,
       normalisiere: (m) => normalisiereMonat(m, jm).monat,
     });
 
@@ -1629,8 +1664,12 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
   async function schichtKatalogAendern(fn) {
     const { ergebnis, fehler } = await schichtAendern('katalog', fn, {
       leer: standardKatalog,
-      speichern: (f) => adapter.aendereSchichtarten(f),
-      lesen: async () => (await adapter.leseSchichtarten()).katalog ?? null,
+      speichern: async (f) => {
+        const gespeichert = await adapter.aendereSchichtarten(f);
+        unlesbarMerken('schichtarten', false); // nicht abgelehnt: die neueste Fassung war lesbar
+        return gespeichert;
+      },
+      lesen: async () => gelesenMerken('schichtarten', await adapter.leseSchichtarten()).katalog ?? null,
       normalisiere: (k) => normalisiereKatalog(k).katalog,
     });
     return teilErgebnis({ ergebnis, fehler }); // gemeldet: die Meldung steht schon in state.fehler (die Shell zeigt sie)
@@ -1641,6 +1680,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
    * gleichzeitig. Status je Monat: 'laedt' → 'geladen' oder 'fehler' (abgelaufene Anmeldung setzt zusätzlich `anmeldungNoetig`). Fehlt
    * der Katalog im Kalender, gelten die Standardarten. Wurde inzwischen selbst etwas geändert, bleibt Vorhandenes, wie es ist (die
    * Antwort könnte älter sein). Ergebnis: { katalogGelesen, monateGelesen } – ob die Schichtarten bzw. alle Monate gelesen werden konnten.
+   * Unlesbare Schichtarten oder Monate (Standardarten bzw. leer gezeigt) werden in `state.unlesbar` vermerkt, lesbare wieder herausgenommen.
    */
   async function schichtLesen(jms, { katalogNeu = false } = {}) {
     const mitKatalog = katalogNeu || state.schicht.katalog === null;
@@ -1662,9 +1702,11 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       }
       if (!(eigene && s.monate[m])) neueMonate[m] = gleichOder(s.monate[m], normalisiereMonat(r.value?.monat ?? null, m).monat);
       status[m] = 'geladen';
+      gelesenMerken(`schicht:${m}`, r.value);
     });
     let kat = s.katalog;
     const katalogGelesen = mitKatalog && katalog.status === 'fulfilled';
+    if (katalogGelesen) gelesenMerken('schichtarten', katalog.value);
     if (mitKatalog && katalog.status === 'rejected') auth ||= istAuthFehler(katalog.reason);
     else if (katalogGelesen && (kat === null || (katalogNeu && !eigene))) kat = gleichOder(kat, normalisiereKatalog(katalog.value?.katalog ?? null).katalog);
     // Unverändert gelesen: dieselben Objekte behalten. Der Push-Plan (push/plan.js `planQuellen`) vergleicht nach Identität; ein neues,
@@ -1797,8 +1839,10 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
         const stand = schreibStand;
         const vorher = state.einkauf;
         let liste;
+        let gelesen;
         try {
-          liste = normalisiereListe((await adapter.leseEinkauf()).liste);
+          gelesen = await adapter.leseEinkauf();
+          liste = normalisiereListe(gelesen.liste);
         } catch (fehler) {
           if (!istAuthFehler(fehler)) return 'fehler';
           state = { ...state, anmeldungNoetig: true };
@@ -1808,7 +1852,11 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
         if (stand !== schreibStand || schreibend > 0 || wartend.length > 0) return 'warten';
         if (state.einkauf !== vorher) return 'gleich'; // inzwischen alles neu geladen: das ist mindestens so frisch
         einkaufGeprueft = jetzt().getTime();
-        if (JSON.stringify(liste) === JSON.stringify(state.einkauf)) return 'gleich';
+        const andersLesbar = unlesbarMerken('einkauf', gelesen.unlesbar === true); // unlesbar geworden (oder wieder lesbar): der Hinweis ändert sich
+        if (JSON.stringify(liste) === JSON.stringify(state.einkauf)) {
+          if (andersLesbar) melden();
+          return andersLesbar ? 'neu' : 'gleich';
+        }
         state = { ...state, einkauf: liste };
         melden();
         return 'neu';
@@ -2405,14 +2453,17 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       const [katalog, ...monate] = gelesen;
       const s = state.schicht;
       const neu = { ...s, katalog: normalisiereKatalog(katalog?.katalog ?? null).katalog, monate: { ...s.monate }, status: { ...s.status } };
+      let geaendert = unlesbarMerken('schichtarten', katalog?.unlesbar === true);
       jms.forEach((jm, i) => {
         neu.monate[jm] = normalisiereMonat(monate[i]?.monat ?? null, jm).monat;
         neu.status[jm] = 'geladen';
+        geaendert = unlesbarMerken(`schicht:${jm}`, monate[i]?.unlesbar === true) || geaendert;
       });
       if (JSON.stringify(neu) !== JSON.stringify(s)) {
         state = { ...state, schicht: neu };
-        melden();
+        geaendert = true;
       }
+      if (geaendert) melden();
       return true;
     },
 
@@ -3083,7 +3134,10 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
 
     async einstellungen(teil) {
       const settings = normalizeSettings({ ...state.settings, ...teil });
-      await aendere({ settings }, () => adapter.speichereSettings(teil));
+      await aendere({ settings }, async () => {
+        await adapter.speichereSettings(teil);
+        if (unlesbarMerken('settings', false)) melden(); // nicht abgelehnt: die gespeicherten Einstellungen waren lesbar
+      });
     },
 
     /** Erinnerungen (nur mit Google): prüfen, reparieren, Test-Erinnerung starten/beenden. Fehler der Anmeldung laufen nach oben. */

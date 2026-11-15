@@ -607,7 +607,7 @@ describe('Monat', () => {
     const text0 = monatText(m0);
     const json0 = JSON.parse(text0);
     assert.ok(!('n' in json0) && !('z' in json0));
-    assert.deepEqual(monatAusText(text0, '2026-10'), { monat: m0, warnungen: [] });
+    assert.deepEqual(monatAusText(text0, '2026-10'), { monat: m0, warnungen: [], unlesbar: false });
 
     let m = setzeSchicht(m0, { person: 'papa', tag: 1, k: 'A' });
     m = setzeNotiz(m, { person: 'papa', tag: 13, text: 'Dienst 12' });
@@ -616,13 +616,13 @@ describe('Monat', () => {
     const json = JSON.parse(text);
     assert.deepEqual(json.n, { papa: { 13: 'Dienst 12' } }); // leere Personen fallen weg
     assert.deepEqual(json.z, { mama: { 21: [{ k: 'F', von: '18:30', bis: '20:00' }] } });
-    assert.deepEqual(monatAusText(text, '2026-10'), { monat: m, warnungen: [] });
+    assert.deepEqual(monatAusText(text, '2026-10'), { monat: m, warnungen: [], unlesbar: false });
 
     const kaputt = monatAusText('{kaputt', '2026-10');
     assert.deepEqual(kaputt.monat, m0);
     assert.ok(kaputt.warnungen.length > 0);
-    assert.deepEqual(monatAusText('', '2026-10'), { monat: m0, warnungen: [] });
-    assert.deepEqual(monatAusText(undefined, '2026-10'), { monat: m0, warnungen: [] });
+    assert.deepEqual(monatAusText('', '2026-10'), { monat: m0, warnungen: [], unlesbar: false });
+    assert.deepEqual(monatAusText(undefined, '2026-10'), { monat: m0, warnungen: [], unlesbar: false });
   });
 
   test('Größe: übervoller Monat wird abgelehnt, ein typischer passt', () => {

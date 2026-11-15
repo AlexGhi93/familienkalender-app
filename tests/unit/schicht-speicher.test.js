@@ -160,8 +160,8 @@ describe('Google-Adapter: Schichtplan', () => {
   test('fehlende Ereignisse: null; Ändern legt sie an, danach wird gelesen und ergänzt', async () => {
     const { api, roh } = apiAttrappe();
     const adapter = createGoogleAdapter({ api, kalender, jetzt: JETZT });
-    assert.deepEqual(await adapter.leseSchichtarten(), { katalog: null });
-    assert.deepEqual(await adapter.leseSchichtMonat('2026-10'), { monat: null });
+    assert.deepEqual(await adapter.leseSchichtarten(), { katalog: null, unlesbar: false });
+    assert.deepEqual(await adapter.leseSchichtMonat('2026-10'), { monat: null, unlesbar: false });
 
     let gesehen;
     const erst = await adapter.aendereSchichtMonat('2026-10', (alt) => ((gesehen = alt), mitSchicht(alt)));
@@ -169,13 +169,13 @@ describe('Google-Adapter: Schichtplan', () => {
     assert.equal(roh('kan', 'fksch202610').summary, '🗓️ fk Schichtplan (nicht löschen)');
     const zweit = await adapter.aendereSchichtMonat('2026-10', (alt) => setzeNotiz(alt, { person: 'mama', tag: 13, text: 'Dienst 12' }));
     assert.equal(zweit.t.papa[0], 'A');
-    assert.deepEqual(await adapter.leseSchichtMonat('2026-10'), { monat: zweit, warnungen: [] });
+    assert.deepEqual(await adapter.leseSchichtMonat('2026-10'), { monat: zweit, warnungen: [], unlesbar: false });
     assert.notDeepEqual(erst, zweit);
 
     const katalog = await adapter.aendereSchichtarten((alt) => ((gesehen = alt), alt));
     assert.deepEqual(gesehen, standardKatalog());
     assert.equal(roh('kan', 'fkschichtarten').summary, '🗓️ fk Schichtarten (nicht löschen)');
-    assert.deepEqual(await adapter.leseSchichtarten(), { katalog, warnungen: [] });
+    assert.deepEqual(await adapter.leseSchichtarten(), { katalog, warnungen: [], unlesbar: false });
   });
 
   test('Änderung ohne Wirkung (gleicher Inhalt): nur gelesen, nichts geschrieben; das Ergebnis kommt trotzdem zurück', async () => {
@@ -196,6 +196,6 @@ describe('Google-Adapter: Schichtplan', () => {
     const { api } = apiAttrappe();
     await api.ereignisse.schreibe('kan', { id: 'fksch202611', status: 'cancelled' });
     const adapter = createGoogleAdapter({ api, kalender, jetzt: JETZT });
-    assert.deepEqual(await adapter.leseSchichtMonat('2026-11'), { monat: null });
+    assert.deepEqual(await adapter.leseSchichtMonat('2026-11'), { monat: null, unlesbar: false });
   });
 });

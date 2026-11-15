@@ -6,6 +6,8 @@ import { abschnitt, chip, farbe, toast } from './components.js';
 import { aktualisiertText, einkaufModel, EINKAUF_FARBE } from '../app/views/einkauf-model.js';
 import { MAX_MENGE, MAX_TEXT, hinzufuegen } from '../domain/einkauf.js';
 import { zeigeRueckgaengig } from './fortschritt.js';
+import { gesperrtHinweis } from './formular.js';
+import { UNLESBAR_TEXT } from '../domain/unlesbar.js';
 
 /** Bei einem Fehler (z. B. gerade erst abgelaufene Anmeldung) meldet der Store selbst; hier nur, was er nicht abfängt. */
 const sicher = (versprechen) => versprechen.catch((fehler) => toast(fehler?.message ?? 'Das hat nicht geklappt. Bitte noch einmal versuchen.'));
@@ -241,6 +243,7 @@ export function einkaufScreen({ store, ui }) {
     { class: 'screen einkauf' },
     kopf.zieh,
     h('h1', { class: 'gruss' }, 'Einkaufsliste 🛒'),
+    store.getState().unlesbar.includes('einkauf') ? gesperrtHinweis(UNLESBAR_TEXT.einkauf) : null,
     h('p', { class: 'datum' }, leer ? 'Schreib auf, was fehlt – dann vergisst es niemand.' : m.anzahlOffen === 0 ? 'Alles im Wagen 🎉' : `${m.anzahlOffen} Artikel offen`),
     kopf.stand,
     h(

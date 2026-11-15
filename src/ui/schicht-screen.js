@@ -7,6 +7,8 @@ import { FEIERTAG_EMOJI } from '../app/views/gemeinsam.js';
 import { rasterFilter, schichtMonatModel } from '../app/views/schicht-model.js';
 import { stempelt } from './schicht-bewegung.js';
 import { gemaltJetzt, mitZeiten, musterKlassen, pinselLeiste, pinselTippen, pinselUmschalten } from './schicht-pinsel.js';
+import { gesperrtHinweis } from './formular.js';
+import { UNLESBAR_TEXT } from '../domain/unlesbar.js';
 
 const PERSON = { papa: { name: 'Papa', emoji: '👨' }, mama: { name: 'Mama', emoji: '👩' } };
 const FILTER = [
@@ -79,6 +81,7 @@ export function schichtScreen({ store, ui }) {
   const rund = (zeichen, text, ziel) => h('button', { class: 'rund', type: 'button', 'aria-label': text, onClick: () => ui.setzeSchichtMonat(ziel) }, zeichen);
   const personZeile = (p, inhalt) => h('div', { class: 'sp-person-zeile', 'data-person': p }, h('b', {}, `${PERSON[p].emoji} ${PERSON[p].name}`), inhalt);
   const gemalt = gemaltJetzt(); // Haken für Glas/Bento: der eben gemalte Streifen stempelt
+  const { unlesbar } = store.getState(); // unlesbare Schichtarten bzw. der angezeigte Monat: leer gezeigt, nicht änderbar
 
   return h(
     'section',
@@ -93,6 +96,8 @@ export function schichtScreen({ store, ui }) {
         '✏️ Eintragen',
       ),
     ),
+    unlesbar.includes('schichtarten') ? gesperrtHinweis(UNLESBAR_TEXT.schichtarten) : null,
+    unlesbar.includes(`schicht:${ui.schicht.jm}`) ? gesperrtHinweis(UNLESBAR_TEXT.schicht) : null,
     h('div', { class: 'monat-kopf sp-monat' }, rund('‹', 'Vorheriger Monat', m.vorher), h('h2', {}, m.titel), rund('›', 'Nächster Monat', m.nachher)),
     h(
       'div',

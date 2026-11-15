@@ -12,7 +12,8 @@ import { fixkostenInhalt, kontoUmschalter } from './fixkosten-screen.js';
 import { kontoBesuchBeginnt, sparzieleInhalt } from './sparziele-screen.js';
 import { versicherungInhalt } from './versicherung-screen.js';
 import { geloeschtMelden, sicherLoeschen } from './fortschritt.js';
-import { einmalSpeichern, erledigt } from './formular.js';
+import { einmalSpeichern, erledigt, gesperrtHinweis } from './formular.js';
+import { UNLESBAR_TEXT } from '../domain/unlesbar.js';
 
 const GRUEN = '#2F9E5B';
 const HINWEIS_EINGABE = 'Bitte einen Betrag eingeben, z. B. 20.711 oder 1.234,56.';
@@ -441,6 +442,7 @@ export function kontoScreen({ store, ui }) {
     { class: 'screen konto' },
     h('h1', { class: 'gruss' }, 'Kontostand 💶'),
     kontoUmschalter(ui),
+    store.getState().unlesbar.includes('konto') ? gesperrtHinweis(UNLESBAR_TEXT.konto) : null,
     h('p', { class: 'datum' }, 'Am letzten Tag des Monats tragt ihr den Gesamtstand eurer Konten ein; so seht ihr, wie viel ihr spart.'),
     m.eintrag ? eintragKarte(m, ctx) : h('article', { class: 'karte hinweis' }, h('div', { class: 'karte-zeile' }, h('span', { class: 'emoji' }, '🗓️'), h('div', { class: 'karte-text' }, h('b', {}, m.naechster), h('small', {}, 'Frühere Monate trägst du weiter unten mit „Nachtragen“ ein.')))),
     m.nachtragen ? abschnitt('Nachtragen', nachtragKarte(m, ctx)) : null,

@@ -8,8 +8,8 @@ import { FAMILIE_SYMBOLE, FUER, TAGES_TYPEN, TYPES } from '../domain/types.js';
 import { buildDayTitle, needsTimeResync, ohneKlammer, parseKitaSacheLabel, parseTerminTitle, withTime } from '../domain/titles.js';
 import { notizAusBeschreibung } from '../domain/notiz.js';
 import { normalisiereRegister, registerText } from '../push/geraete.js';
-import { einkaufAusText, einkaufText } from '../domain/einkauf.js';
-import { kontoAusText, kontoText } from '../domain/konto.js';
+import { einkaufText, pruefeListe } from '../domain/einkauf.js';
+import { kontoText, pruefeKonto } from '../domain/konto.js';
 import { katalogAusText, katalogText, monatAusText, monatText } from '../domain/schicht.js';
 import { FIX_SHARDS, shardLesen, shardText } from '../domain/fixkosten.js';
 import { zieleLesen, zieleText, zieleWarnungen } from '../domain/sparziele.js';
@@ -18,6 +18,8 @@ import { leererVersicherungTeil, pruefeVersicherung, pruefeVersicherungTeil, ver
 import { classifyEvent } from '../domain/classify.js';
 import { zeitAusDateTime } from '../domain/format.js';
 import { DEFAULT_SETTINGS, normalizeSettings } from '../domain/settings.js';
+import { istObjekt } from '../domain/gemeinsam.js';
+import { huelleLesen } from '../domain/unlesbar.js';
 import { terminAnzeige } from '../app/views/gemeinsam.js';
 import { CONFIG } from './config.js';
 
@@ -196,9 +198,9 @@ export function einkaufZuEreignis(liste) {
   };
 }
 
-/** Liest die Liste; kaputtes oder fehlendes JSON ergibt die leere Liste (nichts wird gelöscht oder erraten). */
+/** Liest die Liste: { liste, unlesbar }. Fehlender Text = leere Liste; `unlesbar` (kaputt oder neuere Version) = leer gezeigt, nie überschrieben. */
 export function einkaufAusEreignis(event) {
-  return { liste: einkaufAusText(event?.description) };
+  return pruefeListe(event?.description);
 }
 
 /** Kontostände als verstecktes Ereignis (JSON in `description`, wie Einkauf, Einstellungen und Geräte am 2000-01-01 in „Anwesenheit“). Der Titel nennt keine Beträge. */
@@ -219,9 +221,9 @@ export function kontoZuEreignis(konto) {
   };
 }
 
-/** Liest das Konto; kaputtes oder fehlendes JSON ergibt das leere Konto (nichts wird gelöscht oder erraten). */
+/** Liest das Konto: { konto, unlesbar }. Fehlender Text = leeres Konto; `unlesbar` (kaputt oder neuere Version) = leer gezeigt, nie überschrieben. */
 export function kontoAusEreignis(event) {
-  return { konto: kontoAusText(event?.description) };
+  return pruefeKonto(event?.description);
 }
 
 /** ID des Schichtplans eines Monats: 'JJJJ-MM' → `fksch<JJJJMM>` (Google erlaubt in IDs nur 0-9 und a-v). */
@@ -256,7 +258,7 @@ export function schichtartenZuEreignis(katalog) {
   return schichtEreignis(SCHICHTARTEN_ID, '🗓️ fk Schichtarten (nicht löschen)', katalogText(katalog), 'schichtarten');
 }
 
-/** Liest die Schichtarten; fehlendes JSON ergibt die Standardarten, kaputtes die Standardarten mit Warnung. */
+/** Liest die Schichtarten: { katalog, warnungen, unlesbar }; fehlender Text ergibt die Standardarten, unlesbarer die Standardarten mit Warnung (nie überschrieben). */
 export function schichtartenAusEreignis(event) {
   return katalogAusText(event?.description);
 }
@@ -266,7 +268,7 @@ export function schichtMonatZuEreignis(monat) {
   return schichtEreignis(schichtMonatId(monat?.jm), '🗓️ fk Schichtplan (nicht löschen)', monatText(monat), 'schicht');
 }
 
-/** Liest den Monat `jm`; fehlendes JSON ergibt den leeren Monat, kaputtes den leeren Monat mit Warnung. */
+/** Liest den Monat `jm`: { monat, warnungen, unlesbar }; fehlender Text ergibt den leeren Monat, unlesbarer den leeren Monat mit Warnung (nie überschrieben). */
 export function schichtMonatAusEreignis(event, jm) {
   return monatAusText(event?.description, jm);
 }
@@ -513,31 +515,37 @@ export function versicherungAusTexten(hauptText, teilTextVon, { bis } = {}) {
   return { daten: haupt.daten, teile, warnungen, unlesbar: { teile: unlesbar }, rohtexte };
 }
 
-/** Liest das Register; unbrauchbares JSON ergibt `register: null` (nichts wird gelöscht oder erraten). */
+/**
+ * Liest das Register: { register | null, warnung?, unlesbar }. `unlesbar` nur bei einer NEUEREN Version (Objekt mit ganzzahligem `v` > 1):
+ * dann wird es nie überschrieben. Kaputtes oder sonst unbrauchbares JSON ergibt weiter `register: null` und wird neu angelegt – das
+ * Register heilt sich selbst (jedes Telefon trägt sich wieder ein), eine dauerhafte Sperre nähme den Push ohne Ausweg in der App.
+ */
 export function geraeteAusEreignis(event) {
   const text = event?.description;
-  if (typeof text !== 'string' || text.trim() === '') return { register: null };
+  if (typeof text !== 'string' || text.trim() === '') return { register: null, unlesbar: false };
+  let roh;
   try {
-    return { register: normalisiereRegister(JSON.parse(text)) };
+    roh = JSON.parse(text);
   } catch {
-    return { register: null, warnung: 'JSON' };
+    return { register: null, warnung: 'JSON', unlesbar: false };
   }
+  if (istObjekt(roh) && Number.isInteger(roh.v) && roh.v > 1) return { register: null, unlesbar: true };
+  return { register: normalisiereRegister(roh), unlesbar: false };
 }
 
-/** Liest die Einstellungen; Fehlendes oder Ungültiges wird zum Standardwert, mit Liste der betroffenen Felder (`warnungen`). */
+/**
+ * Liest die Einstellungen: { settings, warnungen, unlesbar }. Fehlendes oder Ungültiges wird zum Standardwert, mit Liste der betroffenen
+ * Felder (`warnungen`). `unlesbar` = diese Version kann den Text nicht lesen (kaputtes JSON, kein Objekt, ein `v` ungleich 1; ganz
+ * ohne `v` – erste Fassungen – bleibt lesbar): Standardwerte mit Warnung 'JSON', der Text wird aber nie überschrieben (siehe unlesbar.js).
+ */
 export function einstellungenAusEreignis(event) {
   const standard = normalizeSettings();
-  const text = event?.description;
-  if (typeof text !== 'string' || text.trim() === '') return { settings: standard, warnungen: [] };
-  let daten;
+  const huelle = huelleLesen(event?.description, { ohneV: true });
+  if (huelle.art === 'leer') return { settings: standard, warnungen: [], unlesbar: false };
+  if (huelle.art === 'unlesbar') return { settings: standard, warnungen: ['JSON'], unlesbar: true };
+  const daten = huelle.roh;
   try {
-    daten = JSON.parse(text);
-  } catch {
-    return { settings: standard, warnungen: ['JSON'] };
-  }
-  if (daten === null || typeof daten !== 'object' || Array.isArray(daten)) return { settings: standard, warnungen: ['JSON'] };
-  try {
-    return { settings: normalizeSettings(daten), warnungen: [] };
+    return { settings: normalizeSettings(daten), warnungen: [], unlesbar: false };
   } catch {
     // einzelne Felder prüfen: Gültiges bleibt, Ungültiges fällt auf den Standard zurück
   }
@@ -552,7 +560,7 @@ export function einstellungenAusEreignis(event) {
       warnungen.push(feld);
     }
   }
-  return { settings: normalizeSettings(akzeptiert), warnungen };
+  return { settings: normalizeSettings(akzeptiert), warnungen, unlesbar: false };
 }
 
 /**

@@ -6,7 +6,8 @@ import { createDemoAdapter } from '../../src/app/demo-adapter.js';
 import { createSnapshot } from '../../src/calendar/snapshot.js';
 import { leererMonat, monatText, setzeSchicht, standardKatalog, zusatzHinzufuegen } from '../../src/domain/schicht.js';
 import { autoAusVorlage } from '../../src/domain/autos.js';
-import { speicherAttrappe } from './hilfen.js';
+import { UNLESBAR_TEXT } from '../../src/domain/unlesbar.js';
+import { googleStore, speicherAttrappe } from './hilfen.js';
 
 const JETZT = new Date('2026-10-14T08:00:00+02:00'); // Mittwoch
 
@@ -1338,5 +1339,149 @@ describe('Schichtplan vor dem Senden des Push-Plans frisch lesen (zwei Telefone)
     const { store } = aufbau({ aendern: (a) => ({ ...a, leseSchichtMonat: async (jm) => (log.push(jm), a.leseSchichtMonat(jm)) }) });
     assert.equal(await store.schichtFrischLesen(), false);
     assert.deepEqual(log, []);
+  });
+});
+
+describe('unlesbarer Text in den älteren versteckten Ereignissen (B2)', () => {
+  const KONTO = JSON.stringify({ v: 1, p: { papa: { '2026-09': 500_00 }, mama: {} }, x: [] });
+  const NEUER = '{"v":2,"p":{"papa":{"2026-09":50000},"mama":{}},"neu":true}';
+  const JM = '2026-10';
+  /** Das andere Telefon (oder eine Beschädigung) ersetzt den Text eines versteckten Ereignisses; danach zählt `t.neu()` nur das Eigene. */
+  async function fremdSchreiben(t, id, description) {
+    await t.api.ereignisse.schreibe('kan', { id, description });
+    t.merken();
+  }
+
+  test('am Anfang und in der Demo: keine unlesbaren Bereiche (der Demo-Adapter nennt keine)', async () => {
+    const { store } = aufbau();
+    assert.deepEqual(store.getState().unlesbar, []);
+    await store.laden();
+    await store.schichtLaden(JM);
+    assert.equal(await store.schichtAktualisieren([JM]), true);
+    assert.deepEqual(store.getState().unlesbar, []);
+    assert.deepEqual(await store.kontoSpeichern({ person: 'papa', monat: '2026-10', cents: 100_00 }, { demo: true }), { ok: true });
+    assert.deepEqual(store.getState().unlesbar, []);
+  });
+
+  test('laden nennt die unlesbaren Bereiche (sortiert); ein späteres lesbares Laden nimmt sie wieder heraus', async () => {
+    const t = await googleStore({ jetzt: JETZT, vorhanden: { fkkonto: NEUER, fkeinkauf: '{kaputt', fkeinstellungen: '[1]' } });
+    assert.deepEqual(t.store.getState().unlesbar, ['einkauf', 'konto', 'settings']);
+    await fremdSchreiben(t, 'fkkonto', KONTO);
+    await t.store.laden();
+    assert.deepEqual(t.store.getState().unlesbar, ['einkauf', 'settings']);
+    assert.equal(t.store.getState().konto.p.papa['2026-09'], 500_00);
+  });
+
+  test('wartende Änderung trifft nach dem Anmelden auf unlesbaren Text: zurückgenommen, gemeldet, nichts geschrieben (Review Focus 2)', async () => {
+    let abgelaufen = true;
+    const t = await googleStore({
+      jetzt: JETZT,
+      vorhanden: { fkkonto: KONTO },
+      stoeren: (e) => ({ ...e, aendere: async (...a) => { if (abgelaufen) throw authFehler(); return e.aendere(...a); } }),
+    });
+    const { store } = t;
+    const r = await store.kontoSpeichern({ person: 'papa', monat: '2026-10', cents: 100_00 }, { demo: true });
+    assert.deepEqual([r.ok, r.wartet], [false, true]);
+    assert.equal(store.getState().konto.p.papa['2026-10'], 100_00); // sichtbar, wartet
+    assert.equal(store.ausstehend(), 1);
+
+    await fremdSchreiben(t, 'fkkonto', NEUER); // inzwischen schreibt das andere Telefon mit einer neueren Version
+    abgelaufen = false;
+    const nrVorher = store.getState().fehlerNr ?? 0;
+    await store.wiederholeAusstehende();
+
+    assert.equal(store.getState().fehler, UNLESBAR_TEXT.konto);
+    assert.deepEqual(store.getState().unlesbar, ['konto']);
+    assert.equal(t.neu().length, 0); // nichts geschrieben
+    assert.equal(t.text('fkkonto'), NEUER);
+    assert.deepEqual(store.getState().konto, { v: 1, p: { papa: {}, mama: {} }, x: [] }); // der Stand nach dem Neu-Laden: die eigene Eingabe ist weg
+    assert.equal(store.getState().fehlerNr, nrVorher + 1); // genau eine Meldung
+    assert.equal(store.ausstehend(), 0);
+  });
+
+  test('Kontostand direkt auf unlesbarem Text: { ok: false, gemeldet } mit der Meldung des Bereichs, zurückgenommen, nichts geschrieben', async () => {
+    const t = await googleStore({ jetzt: JETZT, vorhanden: { fkkonto: KONTO } });
+    await fremdSchreiben(t, 'fkkonto', '{"v":1,"p":'); // abgeschnitten
+    const r = await t.store.kontoSpeichern({ person: 'papa', monat: '2026-10', cents: 100_00 }, { demo: true });
+    assert.deepEqual(r, { ok: false, fehler: UNLESBAR_TEXT.konto, gemeldet: true });
+    assert.deepEqual([t.store.getState().fehler, t.store.getState().unlesbar], [UNLESBAR_TEXT.konto, ['konto']]);
+    assert.equal(t.store.getState().konto.p.papa['2026-10'], undefined);
+    assert.deepEqual([t.neu(), t.text('fkkonto')], [[], '{"v":1,"p":']);
+  });
+
+  test('scheitert nach der Ablehnung auch das Neu-Laden, bleibt der Bereich trotzdem als unlesbar vermerkt', async () => {
+    let netzWeg = false;
+    const t = await googleStore({ jetzt: JETZT, vorhanden: { fkkonto: KONTO }, stoeren: (e) => ({ ...e, liste: async (...a) => { if (netzWeg) throw new Error('Netz'); return e.liste(...a); } }) });
+    await fremdSchreiben(t, 'fkkonto', NEUER);
+    netzWeg = true;
+    await t.store.kontoSpeichern({ person: 'papa', monat: '2026-10', cents: 100_00 }, { demo: true });
+    assert.deepEqual(t.store.getState().unlesbar, ['konto']);
+    assert.equal(t.store.getState().konto.p.papa['2026-10'], undefined);
+    assert.deepEqual(t.neu(), []);
+  });
+
+  test('Einkaufsliste und Einstellungen: abgelehnt mit der Meldung des Bereichs, nichts geschrieben', async () => {
+    const t = await googleStore({ jetzt: JETZT });
+    await fremdSchreiben(t, 'fkeinkauf', '{"v":2,"e":[]}');
+    await t.store.einkaufHinzufuegen('Milch');
+    assert.deepEqual([t.store.getState().fehler, t.store.getState().unlesbar, t.store.getState().einkauf.e], [UNLESBAR_TEXT.einkauf, ['einkauf'], []]);
+    await fremdSchreiben(t, 'fkeinstellungen', '{"v":2,"kindname":"Mia"}');
+    await t.store.einstellungen({ kindname: 'Lena' });
+    assert.deepEqual([t.store.getState().fehler, t.store.getState().unlesbar], [UNLESBAR_TEXT.settings, ['einkauf', 'settings']]);
+    assert.equal(t.store.getState().settings.kindname, '');
+    assert.deepEqual([t.neu(), t.text('fkeinkauf'), t.text('fkeinstellungen')], [[], '{"v":2,"e":[]}', '{"v":2,"kindname":"Mia"}']);
+  });
+
+  test('ein Speichern, das gelingt, nimmt den Bereich wieder heraus (der Text war also lesbar)', async () => {
+    const t = await googleStore({ jetzt: JETZT, vorhanden: { fkkonto: NEUER, fkeinkauf: '{kaputt' } });
+    assert.deepEqual(t.store.getState().unlesbar, ['einkauf', 'konto']);
+    await fremdSchreiben(t, 'fkkonto', KONTO); // repariert (z. B. aus der Sicherung)
+    assert.deepEqual(await t.store.kontoSpeichern({ person: 'papa', monat: '2026-10', cents: 100_00 }, { demo: true }), { ok: true });
+    assert.deepEqual(t.store.getState().unlesbar, ['einkauf']);
+    assert.deepEqual(t.store.getState().konto.p.papa, { '2026-09': 500_00, '2026-10': 100_00 });
+  });
+
+  test('Schichtplan: schichtLaden vermerkt unlesbare Monate und Schichtarten; lesbar gelesen verschwinden sie wieder', async () => {
+    const t = await googleStore({ jetzt: JETZT, vorhanden: { fksch202610: '{"v":2,"t":{}}', fkschichtarten: '{kaputt' } });
+    await t.store.schichtLaden(JM);
+    assert.deepEqual(t.store.getState().unlesbar, ['schicht:2026-10', 'schichtarten']);
+    assert.deepEqual(t.store.getState().schicht.monate[JM], leererMonat(JM));
+    assert.deepEqual(t.store.getState().schicht.katalog, standardKatalog());
+    assert.deepEqual(t.geschrieben(), ['PUT fksch202610', 'PUT fkschichtarten']); // nur der Aufbau des Tests
+
+    await fremdSchreiben(t, 'fksch202610', monatText(setzeSchicht(leererMonat(JM), { person: 'papa', tag: 1, k: 'A' })));
+    assert.equal(await t.store.schichtAktualisieren([JM]), true);
+    assert.deepEqual(t.store.getState().unlesbar, ['schichtarten']);
+    assert.equal(t.store.getState().schicht.monate[JM].t.papa[0], 'A');
+  });
+
+  test('Schichtplan: ein Tipp auf einen (inzwischen) unlesbaren Monat wird zurückgenommen und gemeldet, nichts geschrieben; andere Monate gehen weiter', async () => {
+    const t = await googleStore({ jetzt: JETZT });
+    const { store } = t;
+    await store.schichtLaden(JM);
+    await fremdSchreiben(t, 'fksch202610', '{"v":2,"t":{},"neu":1}');
+    const nrVorher = store.getState().fehlerNr ?? 0;
+    await store.schichtSetzen(JM, 7, 'papa', 'A');
+    assert.deepEqual([store.getState().fehler, store.getState().unlesbar, store.getState().fehlerNr], [UNLESBAR_TEXT.schicht, ['schicht:2026-10'], nrVorher + 1]);
+    assert.deepEqual(store.getState().schicht.monate[JM], leererMonat(JM));
+    assert.deepEqual([t.neu(), t.text('fksch202610')], [[], '{"v":2,"t":{},"neu":1}']);
+
+    await store.schichtSetzen('2026-11', 7, 'papa', 'A'); // ein anderer Monat ist nicht gesperrt
+    assert.equal(store.getState().schicht.monate['2026-11'].t.papa[6], 'A');
+    assert.deepEqual(t.neu(), ['POST fksch202611']);
+    assert.deepEqual(store.getState().unlesbar, ['schicht:2026-10']);
+  });
+
+  test('Schichtarten: unlesbar → Ändern abgelehnt mit der Meldung, das stille Ergänzen im Hintergrund schreibt auch nichts', async () => {
+    const t = await googleStore({ jetzt: JETZT, vorhanden: { fkschichtarten: '{"v":2,"arten":{}}' } });
+    const { store } = t;
+    t.merken();
+    await store.schichtVorladen();
+    assert.deepEqual(store.getState().unlesbar, ['schichtarten']);
+    assert.deepEqual(t.neu(), []);
+    const r = await store.schichtArtSpeichern('papa', { kuerzel: 'BS', name: 'Bereitschaft', farbe: 'grau' });
+    assert.deepEqual(r, { ok: false, fehler: UNLESBAR_TEXT.schichtarten, gemeldet: true });
+    assert.deepEqual([t.neu(), t.text('fkschichtarten')], [[], '{"v":2,"arten":{}}']);
+    assert.deepEqual(store.getState().unlesbar, ['schichtarten']);
   });
 });

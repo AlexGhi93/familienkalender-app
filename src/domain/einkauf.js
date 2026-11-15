@@ -5,6 +5,7 @@
 // Form: { v: 1, e: [{ i: Kennung, t: Text, m: Menge, g: 0|1 (gekauft/im Wagen), z: Zeitpunkt in Sekunden }], h: { Text: wie oft gekauft } }
 
 import { sauberText } from './gemeinsam.js';
+import { huelleLesen } from './unlesbar.js';
 
 export const MAX_ARTIKEL = 80;
 export const MAX_TEXT = 40;
@@ -70,15 +71,20 @@ export function normalisiereListe(roh) {
   return { v: 1, e, h: begrenzeHaeufig(h) };
 }
 
-/** Text aus dem Kalender → Liste (kaputtes JSON ergibt die leere Liste). */
-export function einkaufAusText(text) {
-  if (typeof text !== 'string' || text.trim() === '') return leereListe();
-  try {
-    return normalisiereListe(JSON.parse(text));
-  } catch {
-    return leereListe();
-  }
+/**
+ * Text aus dem Kalender → { liste, unlesbar }. Kein Text = es gibt noch keine Liste (leer, lesbar). `unlesbar` = diese Version kann den
+ * Text nicht lesen (kaputtes JSON, kein Objekt, andere Version `v`, `e` keine Liste): leer gezeigt, der Text aber nie überschrieben
+ * (siehe unlesbar.js). Einzelne ungültige Artikel in einer gültigen Hülle werden wie bisher verworfen.
+ */
+export function pruefeListe(text) {
+  const huelle = huelleLesen(text);
+  if (huelle.art === 'leer') return { liste: leereListe(), unlesbar: false };
+  if (huelle.art === 'unlesbar' || !Array.isArray(huelle.roh.e)) return { liste: leereListe(), unlesbar: true };
+  return { liste: normalisiereListe(huelle.roh), unlesbar: false };
 }
+
+/** Text aus dem Kalender → Liste (fehlender oder unlesbarer Text ergibt die leere Liste). Ob er unlesbar war: `pruefeListe`. */
+export const einkaufAusText = (text) => pruefeListe(text).liste;
 
 /**
  * Artikel hinzufügen. Derselbe Name (Groß/Klein egal) steht nur einmal da: ist er offen, ersetzt eine neue Menge die alte;

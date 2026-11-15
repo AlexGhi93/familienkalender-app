@@ -145,3 +145,46 @@ test.describe('Login-Dienst (an)', () => {
     expect(google.dienste.filter((url) => url.includes('familienkalender-login'))).toEqual([`${DIENST}/v1/anmelden`]);
   });
 });
+
+test.describe('Unlesbarer Text in den älteren versteckten Ereignissen (B2)', () => {
+  const versteckt = (id, description) => ({ id, summary: 'fk (nicht löschen)', description, start: { date: '2000-01-01' }, end: { date: '2000-01-02' }, transparency: 'transparent' });
+  const hinweis = (page) => page.locator('.screen .fk-meldung.warn');
+
+  test('Kontostand, Einkaufsliste, Einstellungen und Schichtplan: Hinweis oben auf der Seite; Eintragen wird abgelehnt und schreibt nichts', async ({ page }) => {
+    const NEUER = '{"v":2,"neu":true}';
+    const google = await starteGoogleVerbunden(page, {
+      route: '#/einkauf',
+      ereignisse: [versteckt('fkkonto', NEUER), versteckt('fkeinkauf', '{"v":1,"e":[{"i":"a","t":"Mil'), versteckt('fkeinstellungen', NEUER), versteckt('fkschichtarten', NEUER), versteckt('fksch202610', NEUER)],
+    });
+    await expect(hinweis(page)).toHaveText(/Nicht änderbar.*Die Einkaufsliste ist unlesbar \(beschädigt oder von einer neueren App-Version\)/);
+    await page.getByLabel('Artikel', { exact: true }).fill('Milch');
+    await page.getByRole('button', { name: 'Zur Liste hinzufügen' }).click();
+    await erwarteToast(page, 'Die Einkaufsliste ist unlesbar');
+    await expect(page.locator('.ek-zeile')).toHaveCount(0);
+    await expect(hinweis(page)).toHaveCount(1);
+
+    await page.goto('/#/konto');
+    await expect(hinweis(page)).toContainText('Die Kontostände sind unlesbar');
+    await page.goto('/#/mehr');
+    await expect(hinweis(page)).toContainText('Die Einstellungen sind unlesbar');
+    await page.goto('/#/schicht');
+    await expect(hinweis(page)).toHaveCount(2);
+    await expect(hinweis(page).first()).toContainText('Die Schichtarten sind unlesbar');
+    await expect(hinweis(page).last()).toContainText('Dieser Monat des Schichtplans ist unlesbar');
+    await page.getByRole('button', { name: 'Nächster Monat' }).click();
+    await expect(hinweis(page)).toHaveCount(1); // der November ist lesbar (noch leer)
+
+    expect(google.geschrieben.filter((x) => /fk(konto|einkauf|einstellungen|sch)/.test(x))).toEqual([]);
+    for (const id of ['fkkonto', 'fkeinstellungen', 'fkschichtarten', 'fksch202610']) expect(google.ereignis(id).description).toBe(NEUER);
+    expect(google.ereignis('fkeinkauf').description).toBe('{"v":1,"e":[{"i":"a","t":"Mil');
+  });
+
+  test('alles lesbar: kein Hinweis', async ({ page }) => {
+    await starteGoogleVerbunden(page, { route: '#/einkauf' });
+    for (const route of ['#/einkauf', '#/konto', '#/mehr', '#/schicht']) {
+      await page.goto(`/${route}`);
+      await expect(page.locator('h1.gruss')).toBeVisible();
+      await expect(hinweis(page)).toHaveCount(0);
+    }
+  });
+});

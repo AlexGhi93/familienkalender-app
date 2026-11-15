@@ -6,7 +6,8 @@
 // x = Sonderbeträge (z. B. Weihnachtsgeld oder eine größere Ausgabe): sie ändern keinen Kontostand, werden aber aus der Ersparnis herausgerechnet („ohne Extra“).
 
 import { pad2 } from './dates.js';
-import { sauberText } from './gemeinsam.js';
+import { istObjekt, sauberText } from './gemeinsam.js';
+import { huelleLesen } from './unlesbar.js';
 
 export const PERSONEN = Object.freeze(['papa', 'mama']);
 export const MAX_MONATE = 96; // je Person (ungünstigster Fall ≈ 4 KB)
@@ -81,15 +82,20 @@ export function kontoText(konto) {
   return text;
 }
 
-/** Text aus dem Kalender → Konto (kaputtes oder fehlendes JSON ergibt das leere Konto; nichts wird erraten). */
-export function kontoAusText(text) {
-  if (typeof text !== 'string' || text.trim() === '') return leeresKonto();
-  try {
-    return normalisiereKonto(JSON.parse(text));
-  } catch {
-    return leeresKonto();
-  }
+/**
+ * Text aus dem Kalender → { konto, unlesbar }. Kein Text = es gibt noch kein Konto (leer, lesbar). `unlesbar` = diese Version kann den
+ * Text nicht lesen (kaputtes JSON, kein Objekt, andere Version `v`, `p` fehlt): das Konto wird leer gezeigt, der Text aber nie
+ * überschrieben (siehe unlesbar.js). Einzelne ungültige Einträge in einer gültigen Hülle werden wie bisher verworfen.
+ */
+export function pruefeKonto(text) {
+  const huelle = huelleLesen(text);
+  if (huelle.art === 'leer') return { konto: leeresKonto(), unlesbar: false };
+  if (huelle.art === 'unlesbar' || !istObjekt(huelle.roh.p)) return { konto: leeresKonto(), unlesbar: true };
+  return { konto: normalisiereKonto(huelle.roh), unlesbar: false };
 }
+
+/** Text aus dem Kalender → Konto (fehlender oder unlesbarer Text ergibt das leere Konto; nichts wird erraten). Ob er unlesbar war: `pruefeKonto`. */
+export const kontoAusText = (text) => pruefeKonto(text).konto;
 
 /**
  * Eingabe → ganze Cent oder null. Deutsch (`1.234,56`, `20.711`) und einfach (`1234.56`, `20711`), mit Minus (auch − und –), Plus, `€` und Leerzeichen.

@@ -13,6 +13,7 @@
 // Monat im Speicher: { v: 1, jm: 'JJJJ-MM', t, n, z } immer vollständig; t[person] hat ein Zeichen je Tag (Zeichen i = Tag i+1, LEER = nichts).
 
 import { istObjekt, sauberText, zeichen } from './gemeinsam.js';
+import { huelleLesen } from './unlesbar.js';
 
 export const SCHICHT_PERSONEN = Object.freeze(['papa', 'mama']);
 export const MAX_SCHICHT_ZEICHEN = 6000; // wie beim Kontostand: Google kürzt Beschreibungen still bei 8192 Zeichen
@@ -310,16 +311,16 @@ export function katalogText(katalog) {
   return text;
 }
 
-/** Text aus dem Kalender → { katalog, warnungen } (leer → Standardarten; kaputt → Standardarten mit Warnung). */
+/**
+ * Text aus dem Kalender → { katalog, warnungen, unlesbar } (leer → Standardarten). `unlesbar` = diese Version kann den Text nicht lesen
+ * (kaputtes JSON, kein Objekt, andere Version `v`, `arten` fehlt): Standardarten mit Warnung, der Text wird aber nie überschrieben
+ * (siehe unlesbar.js). Einzelne ungültige Arten in einer gültigen Hülle werden wie bisher verworfen.
+ */
 export function katalogAusText(text) {
-  if (typeof text !== 'string' || text.trim() === '') return normalisiereKatalog(null);
-  let roh;
-  try {
-    roh = JSON.parse(text);
-  } catch {
-    return { katalog: standardKatalog(), warnungen: ['Die Schichtarten waren unlesbar; es werden die Standardarten gezeigt.'] };
-  }
-  return normalisiereKatalog(roh);
+  const huelle = huelleLesen(text);
+  if (huelle.art === 'leer') return { ...normalisiereKatalog(null), unlesbar: false };
+  const unlesbar = huelle.art === 'unlesbar' || !istObjekt(huelle.roh.arten);
+  return { ...normalisiereKatalog(unlesbar ? false : huelle.roh), unlesbar }; // false = unbrauchbar → Standardarten mit Warnung
 }
 
 // ---------------------------------------------------------------- Monat
@@ -463,16 +464,16 @@ export function monatText(m) {
   return text;
 }
 
-/** Text aus dem Kalender → { monat, warnungen } (leer → leerer Monat; kaputt → leerer Monat mit Warnung). */
+/**
+ * Text aus dem Kalender → { monat, warnungen, unlesbar } (leer → leerer Monat). `unlesbar` = diese Version kann den Text nicht lesen
+ * (kaputtes JSON, kein Objekt, andere Version `v`, `t` fehlt): leerer Monat mit Warnung, der Text wird aber nie überschrieben
+ * (siehe unlesbar.js). Zu kurze Zeilen, ungültige Zeichen, Notizen oder Zusätze in einer gültigen Hülle bleiben nachsichtig wie bisher.
+ */
 export function monatAusText(text, jm) {
-  if (typeof text !== 'string' || text.trim() === '') return normalisiereMonat(null, jm);
-  let roh;
-  try {
-    roh = JSON.parse(text);
-  } catch {
-    return { monat: leererMonat(jm), warnungen: [`Der Schichtplan ${jm} war unlesbar; er wird leer gezeigt.`] };
-  }
-  return normalisiereMonat(roh, jm);
+  const huelle = huelleLesen(text);
+  if (huelle.art === 'leer') return { ...normalisiereMonat(null, jm), unlesbar: false };
+  const unlesbar = huelle.art === 'unlesbar' || !istObjekt(huelle.roh.t);
+  return { ...normalisiereMonat(unlesbar ? false : huelle.roh, jm), unlesbar }; // false = unbrauchbar → leerer Monat mit Warnung
 }
 
 function pruefeTag(monat, tag) {

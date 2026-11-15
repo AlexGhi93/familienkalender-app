@@ -9,6 +9,7 @@ import { leererMonat, standardKatalog } from '../domain/schicht.js';
 import { leererShard, teilGesperrtFehler } from '../domain/fixkosten.js';
 import { leereZiele, zieleGesperrtFehler } from '../domain/sparziele.js';
 import { istUrlaubCheckId } from '../domain/ids.js';
+import { unlesbarFehler } from '../domain/unlesbar.js';
 import { autosGesperrtFehler, autosLesen, historieGesperrtFehler, leereAutos, leereHistorie } from '../domain/autos.js';
 import { leererVersicherungTeil, leereVersicherung, pruefeVersicherung, versicherungGesperrtFehler, versicherungTeilGesperrtFehler } from '../domain/versicherung.js';
 import { ereignisseZuZustand } from './zustand.js';
@@ -37,9 +38,19 @@ export function createGoogleAdapter({ api, kalender, jetzt = () => new Date(), a
 
   async function einstellungenLesen() {
     const e = await api.ereignisse.holen(kalender.anwesenheit, EINSTELLUNGEN_ID); // per ID, nicht per Liste (Vertragsprobe C12)
-    if (!e || e.status === 'cancelled') return { settings: normalizeSettings(), warnungen: [] };
+    if (!e || e.status === 'cancelled') return { settings: normalizeSettings(), warnungen: [], unlesbar: false };
     return einstellungenAusEreignis(e);
   }
+
+  /**
+   * `lesen` für aendereVersteckt bei den älteren Bereichen: `ausEreignis(e)` → { [feld], unlesbar }. Unlesbarer Text (kaputt oder neuere
+   * Version) wird nie überschrieben: Fehler „Unlesbar“ mit `bereich`, bevor die Änderung überhaupt läuft (siehe domain/unlesbar.js).
+   */
+  const lesbarOderFehler = (ausEreignis, feld, bereich) => (e) => {
+    const g = ausEreignis(e);
+    if (g.unlesbar) throw unlesbarFehler(bereich);
+    return g[feld];
+  };
 
   async function ereignisseLesen(von, bis) {
     const gruppen = await Promise.all(KALENDER.map(async (k) => (await api.ereignisse.liste(kalender[k], { von, bis })).map((event) => ({ kalender: k, event }))));
@@ -117,15 +128,17 @@ export function createGoogleAdapter({ api, kalender, jetzt = () => new Date(), a
       const { von, bis } = ladeFenster(heute, settings);
       const z = ereignisseZuZustand({ ereignisse: await ereignisseLesen(von, bis), settings });
       await titelKorrigieren(z.resync);
-      const einkauf = (await this.leseEinkauf()).liste;
+      const einkaufGelesen = await this.leseEinkauf();
       // Sparziele werden mit dem Kontostand gerechnet. Scheitert nur ihr Lesen (Netz, 500 …), lädt der Rest trotzdem: `ziele: null`
       // (der Store sperrt sie dann bis zum nächsten Lesen); eine abgelaufene Anmeldung läuft wie sonst nach oben.
       const zieleGelesen = this.leseZiele().catch((fehler) => {
         if (fehler?.name === 'AuthAbgelaufen') throw fehler;
         return null;
       });
-      const [{ konto }, ziele] = await Promise.all([this.leseKonto(), zieleGelesen]);
-      return { settings, tage: z.tage, urlaub: z.urlaub, termine: z.termine, konflikte: z.konflikte, warnungen: gelesen.warnungen, fenster: { von, bis }, einkauf, konto, ziele, urlaubChecks: z.urlaubChecks };
+      const [kontoGelesen, ziele] = await Promise.all([this.leseKonto(), zieleGelesen]);
+      // `unlesbar` = Bereiche, deren Text diese Version nicht lesen kann (leer bzw. mit Standardwerten gezeigt, nie überschrieben), sortiert
+      const unlesbar = [einkaufGelesen.unlesbar && 'einkauf', kontoGelesen.unlesbar && 'konto', gelesen.unlesbar && 'settings'].filter(Boolean);
+      return { settings, tage: z.tage, urlaub: z.urlaub, termine: z.termine, konflikte: z.konflikte, warnungen: gelesen.warnungen, fenster: { von, bis }, einkauf: einkaufGelesen.liste, konto: kontoGelesen.konto, ziele, urlaubChecks: z.urlaubChecks, unlesbar };
     },
 
     /** Urlaub-Checks im Kalender „Termine“ anlegen/aktualisieren (`schreiben`) und löschen (`loeschen`); nur eigene IDs (`fkc…`), Fremdes bleibt unberührt. */
@@ -215,35 +228,44 @@ export function createGoogleAdapter({ api, kalender, jetzt = () => new Date(), a
       return { schonDa: false };
     },
 
-    /** Register der Push-Telefone (verstecktes Ereignis „fkgeraete“): { register | null }. */
+    /** Register der Push-Telefone (verstecktes Ereignis „fkgeraete“): { register | null, unlesbar } (`unlesbar` = von einer neueren Version, siehe geraeteAusEreignis). */
     async leseGeraete() {
       const e = await api.ereignisse.holen(kalender.anwesenheit, GERAETE_ID);
-      return !e || e.status === 'cancelled' ? { register: null } : geraeteAusEreignis(e);
+      return !e || e.status === 'cancelled' ? { register: null, unlesbar: false } : geraeteAusEreignis(e);
     },
 
-    /** Ändert das Register: `aenderung(register | null)` gibt das neue Register zurück (oder null = nichts tun). */
+    /**
+     * Ändert das Register: `aenderung(register | null)` gibt das neue Register zurück (oder null = nichts tun). Stammt die neueste Fassung
+     * von einer neueren Version, wird nichts geschrieben (Fehler „Unlesbar“); kaputtes JSON gilt als „kein Register“ und wird neu angelegt.
+     */
     aendereGeraete: (aenderung) =>
-      aendereVersteckt({ id: GERAETE_ID, lesen: (e) => geraeteAusEreignis(e).register, bauen: geraeteZuEreignis, fehler: 'Das Geräte-Register konnte nicht gespeichert werden. Bitte noch einmal versuchen.' }, aenderung),
+      aendereVersteckt({ id: GERAETE_ID, lesen: lesbarOderFehler(geraeteAusEreignis, 'register', 'geraete'), bauen: geraeteZuEreignis, fehler: 'Das Geräte-Register konnte nicht gespeichert werden. Bitte noch einmal versuchen.' }, aenderung),
 
-    /** Gemeinsame Einkaufsliste (verstecktes Ereignis „fkeinkauf“): { liste } (leer, wenn es noch keine gibt). */
+    /** Gemeinsame Einkaufsliste (verstecktes Ereignis „fkeinkauf“): { liste, unlesbar } (leer, wenn es noch keine gibt oder der Text unlesbar ist). */
     async leseEinkauf() {
       const e = await api.ereignisse.holen(kalender.anwesenheit, EINKAUF_ID);
-      return !e || e.status === 'cancelled' ? { liste: einkaufAusEreignis(null).liste } : einkaufAusEreignis(e);
+      return einkaufAusEreignis(!e || e.status === 'cancelled' ? null : e);
     },
 
-    /** Ändert die Einkaufsliste: `aenderung(liste)` → neue Liste, angewendet auf die NEUESTE Fassung bei Google; gibt die gespeicherte Liste zurück. */
+    /**
+     * Ändert die Einkaufsliste: `aenderung(liste)` → neue Liste, angewendet auf die NEUESTE Fassung bei Google; gibt die gespeicherte Liste
+     * zurück. Ist die neueste Fassung unlesbar, wird nichts geschrieben (Fehler „Unlesbar“).
+     */
     aendereEinkauf: (aenderung) =>
-      aendereVersteckt({ id: EINKAUF_ID, lesen: (e) => einkaufAusEreignis(e).liste, bauen: einkaufZuEreignis, fehler: 'Die Einkaufsliste konnte nicht gespeichert werden. Bitte noch einmal versuchen.', leer: () => einkaufAusEreignis(null).liste }, aenderung),
+      aendereVersteckt({ id: EINKAUF_ID, lesen: lesbarOderFehler(einkaufAusEreignis, 'liste', 'einkauf'), bauen: einkaufZuEreignis, fehler: 'Die Einkaufsliste konnte nicht gespeichert werden. Bitte noch einmal versuchen.', leer: () => einkaufAusEreignis(null).liste }, aenderung),
 
-    /** Kontostände von Papa und Mama (verstecktes Ereignis „fkkonto“): { konto } (leer, wenn es noch keins gibt). */
+    /** Kontostände von Papa und Mama (verstecktes Ereignis „fkkonto“): { konto, unlesbar } (leer, wenn es noch keins gibt oder der Text unlesbar ist). */
     async leseKonto() {
       const e = await api.ereignisse.holen(kalender.anwesenheit, KONTO_ID);
-      return !e || e.status === 'cancelled' ? { konto: kontoAusEreignis(null).konto } : kontoAusEreignis(e);
+      return kontoAusEreignis(!e || e.status === 'cancelled' ? null : e);
     },
 
-    /** Ändert die Kontostände: `aenderung(konto)` → neues Konto, angewendet auf die NEUESTE Fassung bei Google; gibt das gespeicherte Konto zurück. */
+    /**
+     * Ändert die Kontostände: `aenderung(konto)` → neues Konto, angewendet auf die NEUESTE Fassung bei Google; gibt das gespeicherte Konto
+     * zurück. Ist die neueste Fassung unlesbar, wird nichts geschrieben (Fehler „Unlesbar“): sonst ginge der ganze Verlauf verloren.
+     */
     aendereKonto: (aenderung) =>
-      aendereVersteckt({ id: KONTO_ID, lesen: (e) => kontoAusEreignis(e).konto, bauen: kontoZuEreignis, fehler: 'Der Kontostand konnte nicht gespeichert werden. Bitte noch einmal versuchen.', leer: () => kontoAusEreignis(null).konto }, aenderung),
+      aendereVersteckt({ id: KONTO_ID, lesen: lesbarOderFehler(kontoAusEreignis, 'konto', 'konto'), bauen: kontoZuEreignis, fehler: 'Der Kontostand konnte nicht gespeichert werden. Bitte noch einmal versuchen.', leer: () => kontoAusEreignis(null).konto }, aenderung),
 
     /**
      * Sparziele (verstecktes Ereignis „fksparen“): { daten, unlesbar, warnungen, text } – fehlt es: leere Daten. `unlesbar` = diese
@@ -269,25 +291,37 @@ export function createGoogleAdapter({ api, kalender, jetzt = () => new Date(), a
       return aendereVersteckt({ id: ZIELE_ID, lesen, bauen: zieleZuEreignis, fehler: 'Die Sparziele konnten nicht gespeichert werden. Bitte noch einmal versuchen.', leer: leereZiele }, aenderung);
     },
 
-    /** Schichtarten (verstecktes Ereignis „fkschichtarten“): { katalog, warnungen }, oder { katalog: null }, wenn es noch keine gibt. Nicht beim Start geladen. */
+    /**
+     * Schichtarten (verstecktes Ereignis „fkschichtarten“): { katalog, warnungen, unlesbar }, oder { katalog: null, unlesbar: false }, wenn
+     * es noch keine gibt. `unlesbar` = Standardarten gezeigt, der Text wird nie überschrieben. Nicht beim Start geladen.
+     */
     async leseSchichtarten() {
       const e = await api.ereignisse.holen(kalender.anwesenheit, SCHICHTARTEN_ID);
-      return !e || e.status === 'cancelled' ? { katalog: null } : schichtartenAusEreignis(e);
+      return !e || e.status === 'cancelled' ? { katalog: null, unlesbar: false } : schichtartenAusEreignis(e);
     },
 
-    /** Ändert die Schichtarten: `aenderung(katalog)` → neuer Katalog, angewendet auf die NEUESTE Fassung (fehlt sie: Standardarten); gibt den gespeicherten zurück. */
+    /**
+     * Ändert die Schichtarten: `aenderung(katalog)` → neuer Katalog, angewendet auf die NEUESTE Fassung (fehlt sie: Standardarten); gibt
+     * den gespeicherten zurück. Ist die neueste Fassung unlesbar, wird nichts geschrieben (Fehler „Unlesbar“).
+     */
     aendereSchichtarten: (aenderung) =>
-      aendereVersteckt({ id: SCHICHTARTEN_ID, lesen: (e) => schichtartenAusEreignis(e).katalog, bauen: schichtartenZuEreignis, fehler: 'Die Schichtarten konnten nicht gespeichert werden. Bitte noch einmal versuchen.', leer: standardKatalog }, aenderung),
+      aendereVersteckt({ id: SCHICHTARTEN_ID, lesen: lesbarOderFehler(schichtartenAusEreignis, 'katalog', 'schichtarten'), bauen: schichtartenZuEreignis, fehler: 'Die Schichtarten konnten nicht gespeichert werden. Bitte noch einmal versuchen.', leer: standardKatalog }, aenderung),
 
-    /** Schichtplan eines Monats 'JJJJ-MM' (verstecktes Ereignis „fksch<JJJJMM>“): { monat, warnungen }, oder { monat: null }, wenn es ihn noch nicht gibt. */
+    /**
+     * Schichtplan eines Monats 'JJJJ-MM' (verstecktes Ereignis „fksch<JJJJMM>“): { monat, warnungen, unlesbar }, oder { monat: null,
+     * unlesbar: false }, wenn es ihn noch nicht gibt. `unlesbar` = leer gezeigt, der Text wird nie überschrieben.
+     */
     async leseSchichtMonat(jm) {
       const e = await api.ereignisse.holen(kalender.anwesenheit, schichtMonatId(jm));
-      return !e || e.status === 'cancelled' ? { monat: null } : schichtMonatAusEreignis(e, jm);
+      return !e || e.status === 'cancelled' ? { monat: null, unlesbar: false } : schichtMonatAusEreignis(e, jm);
     },
 
-    /** Ändert einen Monat: `aenderung(monat)` → neuer Monat, angewendet auf die NEUESTE Fassung (fehlt sie: leerer Monat); gibt den gespeicherten zurück. */
+    /**
+     * Ändert einen Monat: `aenderung(monat)` → neuer Monat, angewendet auf die NEUESTE Fassung (fehlt sie: leerer Monat); gibt den
+     * gespeicherten zurück. Ist die neueste Fassung unlesbar, wird nichts geschrieben (Fehler „Unlesbar“, `bereich` = 'schicht:JJJJ-MM').
+     */
     aendereSchichtMonat: (jm, aenderung) =>
-      aendereVersteckt({ id: schichtMonatId(jm), lesen: (e) => schichtMonatAusEreignis(e, jm).monat, bauen: (monat) => schichtMonatZuEreignis({ ...monat, jm }), fehler: 'Der Schichtplan konnte nicht gespeichert werden. Bitte noch einmal versuchen.', leer: () => leererMonat(jm) }, aenderung),
+      aendereVersteckt({ id: schichtMonatId(jm), lesen: lesbarOderFehler((e) => schichtMonatAusEreignis(e, jm), 'monat', `schicht:${jm}`), bauen: (monat) => schichtMonatZuEreignis({ ...monat, jm }), fehler: 'Der Schichtplan konnte nicht gespeichert werden. Bitte noch einmal versuchen.', leer: () => leererMonat(jm) }, aenderung),
 
     /**
      * Fixkosten (4 versteckte Ereignisse „fkfest0“ … „fkfest3“, gleichzeitig gelesen): { shards: [Teil | null ×4], warnungen, unlesbar }.
@@ -459,9 +493,13 @@ export function createGoogleAdapter({ api, kalender, jetzt = () => new Date(), a
     starteTestErinnerung: () => starteTestErinnerung(api, kalender, jetzt),
     beendeTestErinnerung: () => beendeTestErinnerung(api, kalender),
 
-    /** Schreibt nur die geänderten Felder auf den aktuellen Stand im Kalender (Änderungen des anderen Telefons gehen nicht verloren). */
+    /**
+     * Schreibt nur die geänderten Felder auf den aktuellen Stand im Kalender (Änderungen des anderen Telefons gehen nicht verloren).
+     * Sind die gespeicherten Einstellungen unlesbar (kaputt oder neuere Version), wird nichts geschrieben (Fehler „Unlesbar“).
+     */
     async speichereSettings(teil) {
       const vorhanden = await api.ereignisse.holen(kalender.anwesenheit, EINSTELLUNGEN_ID);
+      const lesen = lesbarOderFehler(einstellungenAusEreignis, 'settings', 'settings');
       if (!vorhanden || vorhanden.status === 'cancelled') {
         settings = normalizeSettings({ ...settings, ...teil });
         await api.ereignisse.schreibe(kalender.anwesenheit, einstellungenZuEreignis(settings).body);
@@ -469,7 +507,7 @@ export function createGoogleAdapter({ api, kalender, jetzt = () => new Date(), a
       }
       let zusammen = settings;
       await api.ereignisse.aendere(kalender.anwesenheit, EINSTELLUNGEN_ID, (aktuell) => {
-        zusammen = normalizeSettings({ ...einstellungenAusEreignis(aktuell).settings, ...teil });
+        zusammen = normalizeSettings({ ...lesen(aktuell), ...teil }); // unlesbar (auch erst inzwischen) → Fehler, nichts wird geschrieben
         return { description: einstellungenZuEreignis(zusammen).body.description };
       });
       settings = zusammen;

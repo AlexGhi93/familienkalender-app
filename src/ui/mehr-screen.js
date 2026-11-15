@@ -9,6 +9,8 @@ import { mitnehmenInhalt, sachenEigeneInhalt, schliessTageInhalt } from './liste
 import { kontostandInhalt } from './kontostand-karte.js';
 import { menue } from './menue.js';
 import { einstellungsFeld } from './einstellungs-feld.js';
+import { gesperrtHinweis } from './formular.js';
+import { UNLESBAR_TEXT } from '../domain/unlesbar.js';
 import { nachrichtenInhalt } from './nachrichten-einstellungen.js';
 import { bringenHolenInhalt } from './bringen-holen.js';
 import { einrichtungsFormen } from '../app/nachrichten.js';
@@ -245,6 +247,7 @@ export function mehrScreen({ store, ui }) {
     'section',
     { class: 'screen mehr-seite' },
     h('h1', { class: 'gruss' }, 'Mehr ⚙️'),
+    store.getState().unlesbar.includes('settings') ? gesperrtHinweis(UNLESBAR_TEXT.settings) : null,
     menue({ eintraege: [kontoApp], startIndex: animieren ? 0 : null }),
     menue({ eintraege: einstellungen, startIndex: animieren ? 1 : null }),
   );

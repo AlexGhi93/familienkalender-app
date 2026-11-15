@@ -184,10 +184,10 @@ describe('ereignisZuEintrag', () => {
 describe('versteckte Ereignisse zurücklesen', () => {
   test('Einstellungen: gültig, leer, kaputtes JSON, einzelne ungültige Felder', () => {
     const gut = einstellungenZuEreignis(mitName).body;
-    assert.deepEqual(ereignisZuEintrag({ ...gut, status: 'confirmed' }, 'anwesenheit', settings), { art: 'einstellungen', settings: mitName, warnungen: [] });
-    assert.deepEqual(einstellungenAusEreignis({ description: '' }), { settings, warnungen: [] });
-    assert.deepEqual(einstellungenAusEreignis({ description: '{kaputt' }), { settings, warnungen: ['JSON'] });
-    assert.deepEqual(einstellungenAusEreignis({ description: '[1,2]' }), { settings, warnungen: ['JSON'] });
+    assert.deepEqual(ereignisZuEintrag({ ...gut, status: 'confirmed' }, 'anwesenheit', settings), { art: 'einstellungen', settings: mitName, warnungen: [], unlesbar: false });
+    assert.deepEqual(einstellungenAusEreignis({ description: '' }), { settings, warnungen: [], unlesbar: false });
+    assert.deepEqual(einstellungenAusEreignis({ description: '{kaputt' }), { settings, warnungen: ['JSON'], unlesbar: true });
+    assert.deepEqual(einstellungenAusEreignis({ description: '[1,2]' }), { settings, warnungen: ['JSON'], unlesbar: true });
     const teils = einstellungenAusEreignis({ description: JSON.stringify({ v: 1, kindname: 'Mia', bringzeit: '7 Uhr', zielWochen: 99, unbekannt: 1 }) });
     assert.deepEqual(teils.warnungen, ['bringzeit', 'zielWochen']);
     assert.deepEqual([teils.settings.kindname, teils.settings.bringzeit, teils.settings.zielWochen], ['Mia', '07:30', 5]);
@@ -195,11 +195,11 @@ describe('versteckte Ereignisse zurücklesen', () => {
 
   test('Einkauf, Konto, Geräte', () => {
     assert.deepEqual(einkaufAusEreignis(einkaufZuEreignis({ v: 1, e: [{ i: 'a', t: 'Milch', m: '', g: 0, z: 1 }], h: {} }).body).liste.e[0].t, 'Milch');
-    assert.deepEqual(einkaufAusEreignis(undefined), { liste: leereListe() });
-    assert.deepEqual(kontoAusEreignis({ description: 'kaputt' }), { konto: leeresKonto() });
-    assert.deepEqual(geraeteAusEreignis({ description: '' }), { register: null });
-    assert.deepEqual(geraeteAusEreignis({ description: '{' }), { register: null, warnung: 'JSON' });
-    assert.deepEqual(geraeteAusEreignis({ description: '{"v":2}' }), { register: null });
+    assert.deepEqual(einkaufAusEreignis(undefined), { liste: leereListe(), unlesbar: false });
+    assert.deepEqual(kontoAusEreignis({ description: 'kaputt' }), { konto: leeresKonto(), unlesbar: true });
+    assert.deepEqual(geraeteAusEreignis({ description: '' }), { register: null, unlesbar: false });
+    assert.deepEqual(geraeteAusEreignis({ description: '{' }), { register: null, warnung: 'JSON', unlesbar: false });
+    assert.deepEqual(geraeteAusEreignis({ description: '{"v":2}' }), { register: null, unlesbar: true }); // neuere Version: gesperrt
   });
 });
 
@@ -264,8 +264,8 @@ describe('Schichtplan: versteckte Ereignisse', () => {
   });
 
   test('zurücklesen: gleicher Katalog, gleicher Monat', () => {
-    assert.deepEqual(schichtartenAusEreignis(schichtartenZuEreignis(standardKatalog()).body), { katalog: standardKatalog(), warnungen: [] });
-    assert.deepEqual(schichtMonatAusEreignis(schichtMonatZuEreignis(monat).body, '2026-10'), { monat, warnungen: [] });
+    assert.deepEqual(schichtartenAusEreignis(schichtartenZuEreignis(standardKatalog()).body), { katalog: standardKatalog(), warnungen: [], unlesbar: false });
+    assert.deepEqual(schichtMonatAusEreignis(schichtMonatZuEreignis(monat).body, '2026-10'), { monat, warnungen: [], unlesbar: false });
   });
 
   test('kaputte Beschreibung: leerer Monat bzw. Standardarten mit Warnung, ohne Ausnahme', () => {
@@ -275,7 +275,7 @@ describe('Schichtplan: versteckte Ereignisse', () => {
     const k = schichtartenAusEreignis({ description: '[1,2' });
     assert.deepEqual(k.katalog, standardKatalog());
     assert.equal(k.warnungen.length, 1);
-    assert.deepEqual(schichtMonatAusEreignis(undefined, '2026-02'), { monat: leererMonat('2026-02'), warnungen: [] });
+    assert.deepEqual(schichtMonatAusEreignis(undefined, '2026-02'), { monat: leererMonat('2026-02'), warnungen: [], unlesbar: false });
   });
 
   test('ereignisZuEintrag ignoriert Schichtarten und alle Schichtmonate', () => {
