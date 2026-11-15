@@ -35,6 +35,7 @@ import {
   vorladeMonate,
   zusatzEntfernen,
   zusatzHinzufuegen,
+  zusatzWiederherstellen,
 } from '../../src/domain/schicht.js';
 
 const kopie = (x) => structuredClone(x);
@@ -682,5 +683,87 @@ describe('Monat', () => {
     const z = monatZaehlung(mitE, k, 'papa');
     assert.equal(z.dienste, 7);
     assert.deepEqual(z.jeArt.at(-1), { k: 'I', kuerzel: 'E', anzahl: 2 });
+  });
+});
+
+describe('Monat: unbekannte Felder (fremd) und unlesbarer Text', () => {
+  const LEER30 = '.'.repeat(30);
+  const O = { papa: { 3: { k: 'A', von: '08:00', bis: '12:00' } } };
+
+  test('unbekannte Felder eines Monats bleiben erhalten (fremd), v bleibt 1', () => {
+    const { monat, unlesbar } = monatAusText(JSON.stringify({ v: 1, t: { papa: LEER30, mama: LEER30 }, o: O, w: [1] }), '2026-11');
+    assert.equal(unlesbar, false);
+    assert.deepEqual(monat.fremd, { o: O, w: [1] });
+    const zurueck = JSON.parse(monatText(setzeSchicht(monat, { person: 'papa', tag: 5, k: 'A' })));
+    assert.deepEqual([zurueck.v, zurueck.o, zurueck.w, zurueck.fremd, zurueck.jm], [1, O, [1], undefined, undefined]);
+    assert.equal(zurueck.t.papa[4], 'A');
+  });
+
+  test('fremd übersteht auch Notiz und Zusatz (hinzufügen, wiederherstellen, entfernen)', () => {
+    const { monat } = monatAusText(JSON.stringify({ v: 1, t: { papa: LEER30, mama: LEER30 }, o: O }), '2026-11');
+    const zusatz = { person: 'mama', tag: 2, k: 'A', von: '07:00', bis: '08:00' };
+    let m = setzeNotiz(monat, { person: 'papa', tag: 3, text: 'Dienst 12' });
+    m = zusatzHinzufuegen(m, zusatz);
+    assert.deepEqual(JSON.parse(monatText(m)), { v: 1, t: { papa: LEER30, mama: LEER30 }, n: { papa: { 3: 'Dienst 12' } }, z: { mama: { 2: [{ k: 'A', von: '07:00', bis: '08:00' }] } }, o: O });
+    m = zusatzWiederherstellen(zusatzEntfernen(m, zusatz), zusatz, 0);
+    m = setzeNotiz(zusatzEntfernen(m, zusatz), { person: 'papa', tag: 3, text: '' });
+    assert.deepEqual(m.fremd, { o: O });
+    assert.deepEqual(JSON.parse(monatText(m)), { v: 1, t: { papa: LEER30, mama: LEER30 }, o: O });
+  });
+
+  test('normalisiereMonat ist mit fremd wiederholbar (nichts verschachtelt sich)', () => {
+    const einmal = normalisiereMonat({ v: 1, t: { papa: LEER30, mama: LEER30 }, o: O }, '2026-11').monat;
+    assert.deepEqual(einmal.fremd, { o: O });
+    assert.deepEqual(normalisiereMonat(einmal, '2026-11').monat, einmal);
+    assert.deepEqual(monatAusText(monatText(einmal), '2026-11').monat, einmal); // schreiben und lesen: derselbe Monat
+  });
+
+  test('reservierte Namen landen nie in fremd und fremd überschreibt nie v, t, n, z', () => {
+    // im Text sind „fremd“ und „jm“ reserviert: sie werden wie bisher nicht übernommen (und nicht als Behälter gelesen)
+    const text = JSON.stringify({ v: 1, t: { papa: LEER30, mama: LEER30 }, jm: '1999-01', fremd: { o: O, t: 'x' }, w: 1 });
+    const { monat, unlesbar } = monatAusText(text, '2026-11');
+    assert.equal(unlesbar, false);
+    assert.equal(monat.jm, '2026-11');
+    assert.deepEqual(monat.fremd, { w: 1 });
+    // im Speicher: ein Behälter mit reservierten Namen kann die eigenen Felder nicht ersetzen
+    const boese = { ...leererMonat('2026-11'), fremd: { v: 2, t: 'x', n: 1, z: 1, jm: 'x', fremd: { a: 1 }, o: O } };
+    assert.deepEqual(normalisiereMonat(boese, '2026-11').monat, { ...leererMonat('2026-11'), fremd: { o: O } });
+    assert.deepEqual(JSON.parse(monatText(boese)), { v: 1, t: { papa: LEER30, mama: LEER30 }, o: O });
+    // ein Behälter, der kein Objekt ist, oder ein leerer: kein fremd
+    for (const fremd of ['x', [1], null, {}]) assert.equal('fremd' in normalisiereMonat({ ...leererMonat('2026-11'), fremd }, '2026-11').monat, false);
+  });
+
+  test('fremd wird roh übernommen, ohne Warnung, auch mit dem Namen __proto__', () => {
+    const text = `{"v":1,"t":{"papa":"${LEER30}","mama":"${LEER30}"},"__proto__":{"x":1},"o":null,"q":"${'ä'.repeat(50)}"}`;
+    const { monat, warnungen } = monatAusText(text, '2026-11');
+    assert.deepEqual(warnungen, []);
+    assert.deepEqual(Object.keys(monat.fremd), ['__proto__', 'o', 'q']);
+    assert.equal(Object.getPrototypeOf(monat.fremd), Object.prototype);
+    assert.equal(monatText(monat), text);
+  });
+
+  test('ein Monat ohne unbekannte Felder hat kein fremd und denselben Text wie bisher', () => {
+    assert.equal('fremd' in leererMonat('2026-11'), false);
+    assert.equal('fremd' in monatAusText(JSON.stringify({ v: 1, t: { papa: LEER30, mama: LEER30 } }), '2026-11').monat, false);
+    assert.equal(monatText(leererMonat('2026-11')), JSON.stringify({ v: 1, t: { papa: LEER30, mama: LEER30 } }));
+  });
+
+  test('v: 2 oder fehlendes t: unlesbar, leer gezeigt', () => {
+    assert.equal(monatAusText('{"v":2,"t":{}}', '2026-11').unlesbar, true);
+    assert.equal(monatAusText('{"v":1}', '2026-11').unlesbar, true);
+    assert.equal(monatAusText('', '2026-11').unlesbar, false);
+    // unlesbar: leerer Monat, nichts aus dem unlesbaren Text wird als fremd übernommen
+    assert.deepEqual(monatAusText('{"v":2,"t":{},"o":1}', '2026-11').monat, leererMonat('2026-11'));
+    assert.deepEqual(monatAusText('{"v":1,"o":1}', '2026-11').monat, leererMonat('2026-11'));
+  });
+
+  test('fremd zählt zur Größe: zu groß wird abgelehnt, nie stillschweigend gekürzt (Review Focus 1)', () => {
+    const m = { ...leererMonat('2026-11'), fremd: { o: 'x'.repeat(6000) } };
+    assert.throws(() => monatText(m), { message: 'Zu viele Notizen in diesem Monat. Bitte einige kürzen oder löschen.' });
+    // genau an der Grenze passt es noch; eine Notiz dazu wird dann abgelehnt, statt fremd zu kürzen
+    const leerLaenge = monatText(leererMonat('2026-11')).length;
+    const knapp = { ...leererMonat('2026-11'), fremd: { o: 'x'.repeat(MAX_SCHICHT_ZEICHEN - leerLaenge - ',"o":""'.length) } };
+    assert.equal(monatText(knapp).length, MAX_SCHICHT_ZEICHEN);
+    assert.throws(() => setzeNotiz(knapp, { person: 'papa', tag: 1, text: 'x' }), { message: 'Zu viele Notizen in diesem Monat. Bitte einige kürzen oder löschen.' });
   });
 });

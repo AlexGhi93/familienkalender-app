@@ -5,7 +5,7 @@ import { createDemoAdapter } from '../../src/app/demo-adapter.js';
 import { createGoogleAdapter } from '../../src/calendar/google-adapter.js';
 import { seedDemo } from '../../src/app/seed.js';
 import { LEER, leererMonat, normalisiereMonat, setzeNotiz, setzeSchicht, standardKatalog } from '../../src/domain/schicht.js';
-import { speicherAttrappe } from './hilfen.js';
+import { googleStore, speicherAttrappe } from './hilfen.js';
 
 const JETZT = () => new Date('2026-10-14T08:00:00+02:00');
 const KEY = 'fk.demo.v1';
@@ -197,5 +197,73 @@ describe('Google-Adapter: Schichtplan', () => {
     await api.ereignisse.schreibe('kan', { id: 'fksch202611', status: 'cancelled' });
     const adapter = createGoogleAdapter({ api, kalender, jetzt: JETZT });
     assert.deepEqual(await adapter.leseSchichtMonat('2026-11'), { monat: null, unlesbar: false });
+  });
+
+  describe('unbekannte Felder (fremd) und unlesbarer Text', () => {
+    const LEER30 = LEER.repeat(30);
+    const O = { papa: { 3: { k: 'A', von: '08:00', bis: '12:00' } } };
+
+    test('aendereSchichtMonat lässt unbekannte Felder im Kalender stehen', async () => {
+      const { api, roh } = apiAttrappe();
+      await api.ereignisse.schreibe('kan', { id: 'fksch202611', description: JSON.stringify({ v: 1, t: { papa: LEER30, mama: LEER30 }, o: O, w: [1] }) });
+      const adapter = createGoogleAdapter({ api, kalender, jetzt: JETZT });
+      assert.deepEqual((await adapter.leseSchichtMonat('2026-11')).monat.fremd, { o: O, w: [1] });
+      let gesehen;
+      const monat = await adapter.aendereSchichtMonat('2026-11', (m) => ((gesehen = m), setzeSchicht(m, { person: 'mama', tag: 1, k: 'A' })));
+      assert.deepEqual(gesehen.fremd, { o: O, w: [1] });
+      assert.deepEqual(monat.fremd, { o: O, w: [1] });
+      assert.deepEqual(JSON.parse(roh('kan', 'fksch202611').description).o, O);
+      assert.deepEqual(JSON.parse(roh('kan', 'fksch202611').description), { v: 1, t: { papa: LEER30, mama: `A${LEER.repeat(29)}` }, o: O, w: [1] });
+      // auch nach Notiz und noch einer Schicht (jedes Mal neu von Google gelesen)
+      await adapter.aendereSchichtMonat('2026-11', (m) => setzeNotiz(m, { person: 'papa', tag: 2, text: 'Dienst 12' }));
+      await adapter.aendereSchichtMonat('2026-11', (m) => setzeSchicht(m, { person: 'mama', tag: 1, k: null }));
+      assert.deepEqual(JSON.parse(roh('kan', 'fksch202611').description), { v: 1, t: { papa: LEER30, mama: LEER30 }, n: { papa: { 2: 'Dienst 12' } }, o: O, w: [1] });
+    });
+
+    test('aendereSchichtMonat: zu große unbekannte Felder werden nicht gekürzt, das Schreiben wird abgelehnt', async () => {
+      const { api, roh, patches } = apiAttrappe();
+      const leer = JSON.stringify({ v: 1, t: { papa: LEER30, mama: LEER30 } });
+      const vorher = JSON.stringify({ v: 1, t: { papa: LEER30, mama: LEER30 }, o: 'x'.repeat(6000 - leer.length - ',"o":""'.length) }); // genau 6000 Zeichen
+      assert.equal(vorher.length, 6000);
+      await api.ereignisse.schreibe('kan', { id: 'fksch202611', description: vorher });
+      const adapter = createGoogleAdapter({ api, kalender, jetzt: JETZT });
+      await assert.rejects(adapter.aendereSchichtMonat('2026-11', (m) => ({ ...m, n: { ...m.n, papa: { 1: 'x' } } })), { message: 'Zu viele Notizen in diesem Monat. Bitte einige kürzen oder löschen.' });
+      assert.equal(roh('kan', 'fksch202611').description, vorher);
+      assert.deepEqual(patches, []);
+    });
+
+    test('über den Store (Pinsel, Notiz, Zusatz und zurück): unbekannte Felder bleiben im Kalender und im Zustand', async () => {
+      const vorher = { v: 1, t: { papa: LEER30, mama: LEER30 }, o: O, w: [1] };
+      const g = await googleStore({ jetzt: new Date('2026-11-10T08:00:00+01:00'), vorhanden: { fksch202611: JSON.stringify(vorher) } });
+      await g.store.schichtLaden('2026-11');
+      const fremdImZustand = () => g.store.getState().schicht.monate['2026-11'].fremd;
+      assert.deepEqual(fremdImZustand(), { o: O, w: [1] });
+      await g.store.schichtPinsel('2026-11', 4, 'papa', 'A');
+      assert.deepEqual(JSON.parse(g.text('fksch202611')), { ...vorher, t: { papa: `...A${LEER.repeat(26)}`, mama: LEER30 } });
+      await g.store.schichtNotiz('2026-11', 4, 'papa', 'Dienst 12');
+      await g.store.schichtZusatzHinzufuegen('2026-11', 5, 'mama', { k: 'A', von: '07:00', bis: '08:00' });
+      assert.deepEqual([JSON.parse(g.text('fksch202611')).o, JSON.parse(g.text('fksch202611')).w, fremdImZustand()], [O, [1], { o: O, w: [1] }]);
+      const geloescht = await g.store.schichtZusatzLoeschen('2026-11', 5, 'mama', { k: 'A', von: '07:00', bis: '08:00' });
+      await geloescht.rueckgaengig();
+      await g.store.schichtZusatzEntfernen('2026-11', 5, 'mama', { k: 'A', von: '07:00', bis: '08:00' });
+      await g.store.schichtNotiz('2026-11', 4, 'papa', '');
+      await g.store.schichtSetzen('2026-11', 4, 'papa', null);
+      assert.deepEqual(JSON.parse(g.text('fksch202611')), vorher);
+      assert.deepEqual(fremdImZustand(), { o: O, w: [1] });
+      assert.equal(await g.store.schichtAktualisieren(['2026-11']), true);
+      assert.deepEqual(fremdImZustand(), { o: O, w: [1] });
+    });
+
+    test('aendereSchichtMonat überschreibt einen unlesbaren Monat nicht', async () => {
+      for (const vorher of ['{"v":2,"t":{},"o":1}', '{"v":1,"o":1}', '{kaputt']) {
+        const { api, roh, patches } = apiAttrappe();
+        await api.ereignisse.schreibe('kan', { id: 'fksch202611', description: vorher });
+        const adapter = createGoogleAdapter({ api, kalender, jetzt: JETZT });
+        await assert.rejects(adapter.aendereSchichtMonat('2026-11', (m) => m), { name: 'Unlesbar', bereich: 'schicht:2026-11' });
+        await assert.rejects(adapter.aendereSchichtMonat('2026-11', (m) => setzeSchicht(m, { person: 'mama', tag: 1, k: 'A' })), { name: 'Unlesbar', bereich: 'schicht:2026-11' });
+        assert.equal(roh('kan', 'fksch202611').description, vorher, vorher);
+        assert.deepEqual(patches, [], vorher);
+      }
+    });
   });
 });

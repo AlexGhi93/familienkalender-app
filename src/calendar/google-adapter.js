@@ -309,7 +309,8 @@ export function createGoogleAdapter({ api, kalender, jetzt = () => new Date(), a
 
     /**
      * Schichtplan eines Monats 'JJJJ-MM' (verstecktes Ereignis „fksch<JJJJMM>“): { monat, warnungen, unlesbar }, oder { monat: null,
-     * unlesbar: false }, wenn es ihn noch nicht gibt. `unlesbar` = leer gezeigt, der Text wird nie überschrieben.
+     * unlesbar: false }, wenn es ihn noch nicht gibt. `unlesbar` = leer gezeigt, der Text wird nie überschrieben. Felder, die diese
+     * Version nicht kennt, stehen roh in `monat.fremd`.
      */
     async leseSchichtMonat(jm) {
       const e = await api.ereignisse.holen(kalender.anwesenheit, schichtMonatId(jm));
@@ -319,6 +320,7 @@ export function createGoogleAdapter({ api, kalender, jetzt = () => new Date(), a
     /**
      * Ändert einen Monat: `aenderung(monat)` → neuer Monat, angewendet auf die NEUESTE Fassung (fehlt sie: leerer Monat); gibt den
      * gespeicherten zurück. Ist die neueste Fassung unlesbar, wird nichts geschrieben (Fehler „Unlesbar“, `bereich` = 'schicht:JJJJ-MM').
+     * Was in `monat.fremd` steht (unbekannte Felder), wird unverändert wieder mitgeschrieben – solange `aenderung` es nicht entfernt.
      */
     aendereSchichtMonat: (jm, aenderung) =>
       aendereVersteckt({ id: schichtMonatId(jm), lesen: lesbarOderFehler((e) => schichtMonatAusEreignis(e, jm), 'monat', `schicht:${jm}`), bauen: (monat) => schichtMonatZuEreignis({ ...monat, jm }), fehler: 'Der Schichtplan konnte nicht gespeichert werden. Bitte noch einmal versuchen.', leer: () => leererMonat(jm) }, aenderung),

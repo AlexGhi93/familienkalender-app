@@ -2,6 +2,8 @@
 // Rein, ohne DOM und ohne Netz. Die Daten liegen als kleines JSON in versteckten Kalenderereignissen:
 //   „fkschichtarten“  – der Katalog: { v: 1, arten: { papa: Art[], mama: Art[] }, ergaenzt?: ['E'] } (ergaenzt: siehe katalogErgaenzen)
 //   „fksch<JJJJMM>“   – ein Monat:   { v: 1, t: { papa: '…', mama: '…' }, n?: { person: { tag: Notiz } }, z?: { person: { tag: Zusatz[] } } }
+//                       Weitere Felder der ersten Ebene (von einer neueren Version) werden nicht verstanden, aber unverändert
+//                       mitgeschrieben (im Speicher: `fremd`); die Namen v, t, n, z, jm und fremd sind dafür reserviert.
 // Jede Änderung ist eine reine Funktion (alt → neu), die auf die NEUESTE Fassung angewendet wird; das Argument wird nie verändert,
 // und wo es geht ist sie wiederholbar (zweimal angewendet = einmal angewendet).
 //
@@ -10,7 +12,8 @@
 // erinnern: nur bei Zusätzen und dort immer vorhanden (fehlt es in einem alten Katalog → true); bei Diensten gibt es das Feld nicht.
 // k = interne Kennung (ein Zeichen aus SCHLUESSEL_ZEICHEN), je Person eindeutig und NIE wiederverwendet (auch nicht nach dem Archivieren):
 // Kürzel, Name und Farbe lassen sich jederzeit ändern, alte Tage bleiben trotzdem richtig.
-// Monat im Speicher: { v: 1, jm: 'JJJJ-MM', t, n, z } immer vollständig; t[person] hat ein Zeichen je Tag (Zeichen i = Tag i+1, LEER = nichts).
+// Monat im Speicher: { v: 1, jm: 'JJJJ-MM', t, n, z, fremd? } – t, n, z immer vollständig; t[person] hat ein Zeichen je Tag (Zeichen i = Tag i+1,
+// LEER = nichts); fremd = { Name: roher Wert } der unbekannten Felder, nur wenn es welche gibt.
 
 import { istObjekt, sauberText, zeichen } from './gemeinsam.js';
 import { huelleLesen } from './unlesbar.js';
@@ -424,7 +427,24 @@ function leseZusaetze(roh, person, tage, warnungen) {
   return aus;
 }
 
-/** Prüft einen gelesenen Monat nachsichtig (zu kurz → aufgefüllt, zu lang → gekürzt, ungültige Zeichen → LEER); `jm` gilt immer. */
+/** Namen der ersten Ebene eines Monats, die diese Version selbst führt – alle anderen sind „fremd“ (siehe fremdeFelder). */
+const MONAT_EIGENE = new Set(['v', 't', 'n', 'z', 'jm', 'fremd']);
+
+/**
+ * Felder der ersten Ebene, die diese Version nicht kennt (eine neuere schreibt z. B. Angaben je Tag in ein eigenes Feld): roh und
+ * unverändert, damit monatText sie wieder mitschreibt; null, wenn es keine gibt. `roh` ist der gelesene Text ODER ein Monat aus dem
+ * Speicher – dort liegen sie schon im Behälter `fremd` (er wird übernommen, nicht verschachtelt). Die eigenen Namen kommen nie hinein.
+ */
+function fremdeFelder(roh) {
+  const paare = [...Object.entries(istObjekt(roh.fremd) ? roh.fremd : {}), ...Object.entries(roh)].filter(([name]) => !MONAT_EIGENE.has(name));
+  return paare.length > 0 ? Object.fromEntries(paare) : null; // fromEntries: auch ein Feld „__proto__“ bleibt ein gewöhnliches Feld
+}
+
+/**
+ * Prüft einen gelesenen Monat nachsichtig (zu kurz → aufgefüllt, zu lang → gekürzt, ungültige Zeichen → LEER); `jm` gilt immer.
+ * Unbekannte Felder der ersten Ebene bleiben in `monat.fremd` (nur wenn es welche gibt). Wiederholbar: ein Monat aus dem Speicher
+ * (mit `jm` und `fremd`) kommt gleich wieder heraus.
+ */
 export function normalisiereMonat(roh, jm) {
   const tage = tageImMonat(jm);
   if (roh === null || roh === undefined) return { monat: leererMonat(jm), warnungen: [] };
@@ -442,6 +462,8 @@ export function normalisiereMonat(roh, jm) {
     monat.n[person] = leseNotizen(n[person], person, tage, warnungen);
     monat.z[person] = leseZusaetze(z[person], person, tage, warnungen);
   }
+  const fremd = fremdeFelder(roh);
+  if (fremd) monat.fremd = fremd;
   return { monat, warnungen };
 }
 
@@ -451,7 +473,11 @@ function ohneLeere(jePerson) {
   return voll.length > 0 ? Object.fromEntries(voll.map((p) => [p, jePerson[p]])) : null;
 }
 
-/** Der Monat als Text für die Beschreibung des Kalenderereignisses (ohne jm und ohne leere n/z); zu große Monate werden abgelehnt. */
+/**
+ * Der Monat als Text für die Beschreibung des Kalenderereignisses (ohne jm und ohne leere n/z); die unbekannten Felder aus `fremd`
+ * stehen wieder auf der ersten Ebene (nach den eigenen, `v` bleibt 1). Zu große Monate werden abgelehnt – `fremd` zählt mit und wird
+ * nie gekürzt.
+ */
 export function monatText(m) {
   const { monat } = normalisiereMonat(m, m?.jm);
   const aus = { v: 1, t: monat.t };
@@ -459,7 +485,7 @@ export function monatText(m) {
   const z = ohneLeere(monat.z);
   if (n) aus.n = n;
   if (z) aus.z = z;
-  const text = JSON.stringify(aus);
+  const text = JSON.stringify({ ...aus, ...monat.fremd });
   if (text.length > MAX_SCHICHT_ZEICHEN) throw new Error(ZU_GROSS_MONAT);
   return text;
 }
@@ -468,12 +494,15 @@ export function monatText(m) {
  * Text aus dem Kalender → { monat, warnungen, unlesbar } (leer → leerer Monat). `unlesbar` = diese Version kann den Text nicht lesen
  * (kaputtes JSON, kein Objekt, andere Version `v`, `t` fehlt): leerer Monat mit Warnung, der Text wird aber nie überschrieben
  * (siehe unlesbar.js). Zu kurze Zeilen, ungültige Zeichen, Notizen oder Zusätze in einer gültigen Hülle bleiben nachsichtig wie bisher.
+ * Unbekannte Felder der ersten Ebene → `monat.fremd`; ein Feld namens „fremd“ im Text ist reserviert und wird (wie „jm“) nicht gelesen.
  */
 export function monatAusText(text, jm) {
   const huelle = huelleLesen(text);
   if (huelle.art === 'leer') return { ...normalisiereMonat(null, jm), unlesbar: false };
   const unlesbar = huelle.art === 'unlesbar' || !istObjekt(huelle.roh.t);
-  return { ...normalisiereMonat(unlesbar ? false : huelle.roh, jm), unlesbar }; // false = unbrauchbar → leerer Monat mit Warnung
+  if (unlesbar) return { ...normalisiereMonat(false, jm), unlesbar }; // false = unbrauchbar → leerer Monat mit Warnung
+  const { fremd: _reserviert, ...roh } = huelle.roh; // im Text gibt es keinen Behälter „fremd“
+  return { ...normalisiereMonat(roh, jm), unlesbar };
 }
 
 function pruefeTag(monat, tag) {

@@ -7,6 +7,7 @@ import { codeErzeugen, codeLesen, freigabeVorschau, teile } from '../../src/cale
 import { normalizeSettings } from '../../src/domain/settings.js';
 import { leereListe } from '../../src/domain/einkauf.js';
 import { leeresKonto } from '../../src/domain/konto.js';
+import { leererMonat, monatAusText, monatText } from '../../src/domain/schicht.js';
 import { standardSpeicher } from '../../src/app/speicher.js';
 import { speicherAttrappe } from './hilfen.js';
 
@@ -131,6 +132,21 @@ describe('Schnappschuss', () => {
       const s = speicherAttrappe();
       createSnapshot({ speicher: s, jetzt: () => new Date('2026-10-22T06:00:00.000Z') }).speichern({ ...state, schicht: { katalog: null, monate: monate('2026-09', 8) } }, '2026-10-22');
       assert.deepEqual(Object.keys(JSON.parse(s.getItem(SNAPSHOT_KEY)).schicht.monate).sort(), ['2026-09', '2026-10', '2026-11', '2026-12', '2027-01', '2027-02']);
+    });
+
+    test('Schnappschuss: fremd eines Schichtmonats übersteht speichern und lesen', () => {
+      const O = { papa: { 3: { k: 'A', von: '08:00', bis: '12:00' } } };
+      const monat = monatAusText(JSON.stringify({ v: 1, t: { papa: `A${'.'.repeat(30)}`, mama: '.'.repeat(31) }, o: O, w: [1] }), '2026-10').monat;
+      const s = speicherAttrappe();
+      const snap = createSnapshot({ speicher: s, jetzt: () => new Date('2026-10-22T06:00:00.000Z') });
+      assert.equal(snap.speichern({ ...state, schicht: { katalog: null, monate: { '2026-10': monat, '2026-11': leererMonat('2026-11') } } }, '2026-10-22'), true);
+      const gelesen = snap.lesen().daten.schicht.monate;
+      assert.deepEqual(gelesen['2026-10'].fremd, { o: O, w: [1] });
+      assert.deepEqual(gelesen['2026-10'], monat);
+      assert.equal('fremd' in gelesen['2026-11'], false);
+      // aus dem gelesenen Schnappschuss entsteht wieder derselbe Kalendertext (nichts verschachtelt, nichts verloren)
+      assert.equal(monatText(gelesen['2026-10']), monatText(monat));
+      assert.deepEqual(JSON.parse(monatText(gelesen['2026-10'])).o, O);
     });
 
     test('lesen: zu viele Monate werden um den Monat des Speicherns gekürzt, nicht auf die neuesten', () => {
