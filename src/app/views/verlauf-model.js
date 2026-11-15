@@ -2,6 +2,7 @@
 // Anwesenheitstage (Krabbelstube/Kindergarten) und Sachen für die Einrichtung gehören nicht hinein.
 import { addDays, isWerktag } from '../../domain/dates.js';
 import { isFeiertag } from '../../domain/feiertage.js';
+import { jahrVon } from '../../domain/gemeinsam.js';
 import { TYPES } from '../../domain/types.js';
 import { MONATE, datumKurz } from '../format-de.js';
 import { terminAnzeige, typText } from './gemeinsam.js';
@@ -128,7 +129,6 @@ export function verlaufEintraege(state) {
   return eintraege;
 }
 
-const jahrVon = (datum) => Number(datum.slice(0, 4));
 const aufsteigend = (a, b) => a.start.localeCompare(b.start) || a.zeit.localeCompare(b.zeit);
 
 /**

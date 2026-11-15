@@ -1,6 +1,4 @@
-import { parseDate } from './dates.js';
-
-const pad2 = (n) => String(n).padStart(2, '0');
+import { pad2, parseDate } from './dates.js';
 
 /** 11 Werktage -> '2 Wochen 1 Tag' (eine Woche = 5 Werktage). */
 export function werktageText(n) {
@@ -29,6 +27,9 @@ export function kurzDatum(s) {
   const { m, d } = parseDate(s);
   return `${pad2(d)}.${pad2(m)}.`;
 }
+
+/** '2026-10-29' → '29.10.2026'. */
+export const datumText = (d) => `${d.slice(8, 10)}.${d.slice(5, 7)}.${d.slice(0, 4)}`;
 
 /** '2026-10-08T09:15:00+02:00' -> '09:15' */
 export function zeitAusDateTime(dateTime) {

@@ -36,7 +36,7 @@
 // sich rückgängig machen (verschiebungLoeschen); ältere bleiben fest. Für „Rückgängig“ nach dem Löschen: zielSpur → zielWiederherstellen.
 // Alles, was ein Datum „heute“ braucht, wirft sofort bei einem ungültigen (kein Text 'JJJJ-MM-TT'), siehe heutePruefen.
 
-import { isValidDate } from './dates.js';
+import { istDatum, istMonat, istObjekt, sauber, zeichen } from './gemeinsam.js';
 import { heutePruefen, sparVerlauf, zieleBeginn, zielSchluss } from './sparziele-rechnung.js';
 
 export { heutePruefen, sparMonate, sparVerlauf, startMonat, zieleBeginn, zielSchluss, zielMonat } from './sparziele-rechnung.js';
@@ -87,13 +87,9 @@ const VERSCHIEBUNG_SCHLUESSEL = new Set(['i', 'm', 'z', 'c']);
 const FEHLER_BETRAG = 'Bitte einen Zielbetrag zwischen 1 € und 999.999 € eingeben.';
 const FEHLER_DATUM = 'Bitte angeben, bis wann gespart wird.';
 
-/** Bereinigter Text; was kein Text ist, ergibt '' – nie ein Fehler. */
-const sauber = (text) => (typeof text === 'string' ? text.normalize('NFC').replace(/\s+/g, ' ').trim() : '');
-const zeichen = (text) => [...text].length; // Zeichen, nicht UTF-16-Einheiten
-const istObjekt = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
-const istMonat = (x) => typeof x === 'string' && MONAT.test(x);
 const istKennung = (x) => typeof x === 'string' && KENNUNG.test(x);
-const istDatum = (x) => istMonat(x) || (typeof x === 'string' && isValidDate(x));
+/** Ein Datum 'JJJJ-MM-TT' oder (Ziel „bis Monat“) ein Monat 'JJJJ-MM'. */
+const istDatumOderMonat = (x) => istMonat(x) || istDatum(x);
 const istBetrag = (c) => Number.isInteger(c) && c >= MIN_ZIEL_CENTS && c <= MAX_ZIEL_CENTS;
 const istBetrag1 = (c) => Number.isInteger(c) && c >= 1 && c <= MAX_ZIEL_CENTS; // Verschiebung: ab 1 Cent
 const istEnde = (b) => istObjekt(b) && istMonat(b.monat) && ZIEL_ENDE_ARTEN.includes(b.art);
@@ -119,7 +115,7 @@ function aufbauFehler(e) {
   if (zeichen(name) > MAX_ZIEL_NAME) return `Der Name darf höchstens ${MAX_ZIEL_NAME} Zeichen haben.`;
   if (!ZIEL_EMOJIS.includes(e.emoji)) return 'Bitte ein Symbol wählen.';
   if (!istBetrag(e.zielCents)) return FEHLER_BETRAG;
-  if (!istDatum(e.datum)) return FEHLER_DATUM;
+  if (!istDatumOderMonat(e.datum)) return FEHLER_DATUM;
   if (e.id !== undefined && !istKennung(e.id)) return 'Ungültige Kennung.';
   if (e.erstellt !== undefined && !istMonat(e.erstellt)) return 'Ungültiger Startmonat.';
   if (e.beendet !== undefined && e.beendet !== null && !istEnde(e.beendet)) return 'Ungültiger Abschluss.';
@@ -333,7 +329,7 @@ export function zielSetzen(daten, ziel, { heute } = {}) {
   const alt = liste.find((z) => z.id === ziel.id);
   const wiederOeffnen = Boolean(alt) && abgeschlossenAm(alt, heute);
   if (wiederOeffnen && alt.beendet) throw new Error('Ein abgeschlossenes Ziel lässt sich nicht mehr ändern.');
-  if (wiederOeffnen && !(istDatum(ziel.datum) && ziel.datum.slice(0, 7) >= heute.slice(0, 7))) throw new Error(TEXT_NUR_MIT_NEUEM_DATUM);
+  if (wiederOeffnen && !(istDatumOderMonat(ziel.datum) && ziel.datum.slice(0, 7) >= heute.slice(0, 7))) throw new Error(TEXT_NUR_MIT_NEUEM_DATUM);
   const entwurf = alt ? { ...ziel, erstellt: alt.erstellt, beendet: alt.beendet, aus: wiederOeffnen ? undefined : alt.aus } : { ...ziel, beendet: undefined, aus: undefined };
   const fehler = zielPruefen(entwurf, { heute, daten });
   if (fehler) throw new Error(fehler);
@@ -426,7 +422,7 @@ export function zielSpur(daten, id) {
 }
 
 /** Gehört die Kennung `id` einem Eintrag, den nur eine neuere Version versteht (`art` 'z' = Ziele, 'm' = Verschiebungen)? */
-const fremdeKennung = (daten, id, art) => (daten?.fremd?.[art] ?? []).some((k) => k?.i === id);
+const fremdInDaten = (daten, id, art) => (daten?.fremd?.[art] ?? []).some((k) => k?.i === id);
 
 /** `liste` mit `eintrag` an der Stelle `stelle` (begrenzt auf 0 … Länge). */
 const eingefuegt = (liste, eintrag, stelle) => {
@@ -448,7 +444,7 @@ export function zielWiederherstellen(daten, spur, { heute } = {}) {
   const liste = daten.z ?? [];
   const vorhanden = liste.find((z) => z.id === ziel.id);
   if (vorhanden && !(vorhanden.geloescht && !ziel.geloescht)) return daten;
-  if (fremdeKennung(daten, ziel.id, 'z')) throw new Error(TEXT_KENNUNG_NEUER);
+  if (fremdInDaten(daten, ziel.id, 'z')) throw new Error(TEXT_KENNUNG_NEUER);
   if (!abgeschlossenAm(ziel, heute)) {
     const laufend = liste.filter((z) => z.id !== ziel.id && !abgeschlossenAm(z, heute)).length + (daten.fremd?.z?.length ?? 0);
     if (laufend >= MAX_ZIELE_AKTIV) throw new Error(`Höchstens ${MAX_ZIELE_AKTIV} laufende Sparziele.`);
@@ -457,7 +453,7 @@ export function zielWiederherstellen(daten, spur, { heute } = {}) {
   for (const { verschiebung, stelle } of spur.verschiebungen ?? []) {
     const v = normalisiereVerschiebung(verschiebung);
     if (!v || v.ziel !== ziel.id || m.some((x) => x.id === v.id)) continue;
-    if (fremdeKennung(daten, v.id, 'm')) throw new Error(TEXT_KENNUNG_NEUER);
+    if (fremdInDaten(daten, v.id, 'm')) throw new Error(TEXT_KENNUNG_NEUER);
     m = eingefuegt(m, v, stelle);
   }
   if (m.length + (daten.fremd?.m?.length ?? 0) > MAX_VERSCHIEBUNGEN) throw new Error(TEXT_VERSCHIEBUNGEN_VOLL);
@@ -471,7 +467,7 @@ export function zielWiederherstellen(daten, spur, { heute } = {}) {
 function laufendesZielFuer(daten, zielId, heute, { fehltWirft }) {
   const z = (daten.z ?? []).find((x) => x.id === zielId);
   if (!z) {
-    if (fremdeKennung(daten, zielId, 'z')) throw new Error(TEXT_ZIEL_NEUERE_VERSION);
+    if (fremdInDaten(daten, zielId, 'z')) throw new Error(TEXT_ZIEL_NEUERE_VERSION);
     if (fehltWirft) throw new Error(TEXT_ZIEL_WEG);
     return null;
   }
@@ -505,7 +501,7 @@ export function verschiebungWiederherstellen(daten, { verschiebung, stelle } = {
   if (!v) throw new Error('Ungültige Verschiebung.');
   const m = daten.m ?? [];
   if (m.some((x) => x.id === v.id)) return daten;
-  if (fremdeKennung(daten, v.id, 'm')) throw new Error(TEXT_KENNUNG_NEUER);
+  if (fremdInDaten(daten, v.id, 'm')) throw new Error(TEXT_KENNUNG_NEUER);
   if (v.monat < heute.slice(0, 7)) throw new Error(TEXT_VERSCHIEBUNG_ALT);
   laufendesZielFuer(daten, v.ziel, heute, { fehltWirft: true });
   if (m.length + (daten.fremd?.m?.length ?? 0) >= MAX_VERSCHIEBUNGEN) throw new Error(`Höchstens ${MAX_VERSCHIEBUNGEN} Verschiebungen.`);

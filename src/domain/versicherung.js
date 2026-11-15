@@ -27,7 +27,9 @@
 // Jede Änderung ist eine reine Funktion Daten → Daten (das Argument bleibt unverändert, zweimal angewendet = einmal angewendet), die
 // nach HTTP 412 auf die NEUESTE Fassung angewendet wird. Zwei Telefone, die im selben Quartal Rechnungen eintragen, behalten beide.
 
-import { addDays, heutePruefen, isValidDate } from './dates.js';
+import { addDays, heutePruefen } from './dates.js';
+import { datumText } from './format.js';
+import { fremdeKennung, istDatum, istObjekt, sauber, tiefFrieren, zeichen } from './gemeinsam.js';
 
 export const MAX_VERSICHERUNG_ZEICHEN = 6000; // wie Kontostand/Fixkosten/Sparziele/Autos: Google kürzt Beschreibungen still bei 8192 Zeichen
 export const MAX_VERSICHERUNG_TEIL_ZEICHEN = 6000;
@@ -54,15 +56,6 @@ export const fassungJetzt = (jetzt = new Date()) => Math.min(MAX_FASSUNG, Math.m
 
 /** Neue Fassung: mindestens `jetzt`, und größer als jede der vorigen (fehlende zählen nicht). */
 const naechsteFassung = (jetzt, ...vorige) => Math.min(MAX_FASSUNG, Math.max(jetzt, ...vorige.filter(Number.isInteger).map((f) => f + 1)));
-
-/** Friert ein Objekt samt allem darin ein (Vorlagen sind fest). */
-function tiefFrieren(x) {
-  if (x !== null && typeof x === 'object' && !Object.isFrozen(x)) {
-    Object.values(x).forEach(tiefFrieren);
-    Object.freeze(x);
-  }
-  return x;
-}
 
 // ---------------------------------------------------------------- Vorlagen
 
@@ -114,20 +107,13 @@ const ID_LAENGE = 8;
 const MIN_JAHR = 2000;
 const MAX_JAHR = 2100;
 
-/** Bereinigter Text; was kein Text ist, ergibt '' – nie ein Fehler. */
-const sauber = (text) => (typeof text === 'string' ? text.normalize('NFC').replace(/\s+/g, ' ').trim() : '');
-const zeichen = (text) => [...text].length;
-const istObjekt = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 const istKennung = (x) => typeof x === 'string' && KENNUNG.test(x);
 const istKategorieKennung = (x) => typeof x === 'string' && KATEGORIE_KENNUNG.test(x);
-const istDatum = (x) => typeof x === 'string' && isValidDate(x);
 const leer = (x) => x === undefined || x === null || x === '';
 const istCent = (x) => Number.isInteger(x) && x >= 0 && x <= MAX_BETRAG_CENT;
 const istJahr = (j) => Number.isInteger(j) && j >= MIN_JAHR && j <= MAX_JAHR;
 const istQuartal = (q) => Number.isInteger(q) && q >= 1 && q <= 4;
-const fremdeKennung = (liste, id) => (liste ?? []).some((k) => k?.i === id);
 const gleich = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-const datumText = (d) => `${d.slice(8, 10)}.${d.slice(5, 7)}.${d.slice(0, 4)}`;
 
 /** Neue Kennung aus 0-9 und a-v (8 Zeichen) für Polizze und Rechnungen. `zufall` wie Math.random (für Tests). */
 export function neueVersicherungId(zufall = Math.random) {
@@ -503,7 +489,7 @@ export function normalisiereRechnung(roh) {
 }
 
 /** 'JJJJ-MM-TT' → Zahl JJJJMMTT (kurzes Datum im Kalender). */
-const kurzDatum = (d) => Number(d.replaceAll('-', ''));
+const datumZahl = (d) => Number(d.replaceAll('-', ''));
 /** Zahl JJJJMMTT → 'JJJJ-MM-TT'; alles andere (auch Text) → null (→ fremd). */
 const langDatum = (n) => {
   if (!Number.isInteger(n) || n < 10000101 || n > 99991231) return null;
@@ -512,10 +498,10 @@ const langDatum = (n) => {
 };
 
 function kurzRechnung(r) {
-  const k = { i: r.id, k: r.kategorie, d: kurzDatum(r.datum), b: r.betragCent, e: kurzDatum(r.eingereichtAm) };
+  const k = { i: r.id, k: r.kategorie, d: datumZahl(r.datum), b: r.betragCent, e: datumZahl(r.eingereichtAm) };
   if (r.erstattetCent !== undefined) {
     k.r = r.erstattetCent;
-    k.t = kurzDatum(r.erstattetAm);
+    k.t = datumZahl(r.erstattetAm);
   }
   if (r.stelle) k.s = r.stelle;
   if (r.notiz) k.n = r.notiz;

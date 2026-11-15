@@ -1,4 +1,5 @@
 import { isValidDate } from './dates.js';
+import { istObjekt } from './gemeinsam.js';
 import { SEP } from './titles.js';
 import { ARZT_SUBTYPEN } from './types.js';
 
@@ -99,8 +100,6 @@ function pruefeText(wert, feld, max, muster = null) {
   if (text.length > max || (text !== '' && muster && !muster.test(text))) throw fehler(feld);
   return text;
 }
-
-const istObjekt = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 
 /** Wochenplan { b: [7], h: [7] } mit '' | 'papa' | 'mama'; Ungültiges wirft. */
 function pruefeDienstplan(wert) {

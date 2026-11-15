@@ -1,8 +1,6 @@
 // Uhrzeit und Datum, die man mit der Zifferntastatur schreibt: lesen (tolerant), beim Tippen formatieren, anzeigen.
 // Rein und ohne DOM; die Eingabefelder in src/ui/eingabefelder.js benutzen das.
-import { addDays, isValidDate } from './dates.js';
-
-const pad2 = (n) => String(n).padStart(2, '0');
+import { addDays, isValidDate, pad2 } from './dates.js';
 
 /** '0730', '730', '7:30', '7.30', '7 30', '19' → 'HH:MM'; Ungültiges → null. Zwei Ziffern oder weniger sind volle Stunden. */
 export function zeitAusEingabe(text) {

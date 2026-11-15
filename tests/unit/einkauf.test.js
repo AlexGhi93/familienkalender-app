@@ -163,3 +163,11 @@ describe('normalisiereListe / einkaufAusText', () => {
     assert.deepEqual(einkaufAusText(einkaufText(l)), l);
   });
 });
+
+// alter Text aus dem Kalender (NFD) und neue Eingabe (NFC) sind derselbe Artikel
+test('NFD aus dem Kalender und NFC vom Telefon: ein Artikel, eine Häufigkeit', () => {
+  const alt = normalisiereListe({ v: 1, e: [{ i: 'a1b2c3d4', t: 'A\u0308pfel', m: '', g: 0, z: 1 }], h: { 'A\u0308pfel': 2, '\u00C4pfel': 1 } });
+  assert.equal(alt.e[0].t, '\u00C4pfel');
+  assert.deepEqual(alt.h, { '\u00C4pfel': 3 });
+  assert.equal(hinzufuegen(alt, { text: '\u00C4pfel' }, { jetzt: 2000, id: 'e5f6a7b8' }).e.length, 1);
+});

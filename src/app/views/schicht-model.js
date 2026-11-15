@@ -1,7 +1,7 @@
 // Ansicht des Schichtplans (ohne DOM): ein Monat als Raster Montag bis Sonntag mit zwei Streifen je Tag (oben Papa, unten Mama),
 // Marken für Zusatz (z. B. DB) und Notiz, die Zählung je Person und die Legende. Dazu der Filter „Beide · Papa · Mama“,
 // den sich jedes Telefon selbst merkt (localStorage).
-import { addDays, eachDay, weekday } from '../../domain/dates.js';
+import { addDays, eachDay, pad2, weekday } from '../../domain/dates.js';
 import { feiertagName } from '../../domain/feiertage.js';
 import { monatVor } from '../../domain/konto.js';
 import { PALETTE, SCHICHT_PERSONEN, aktiveArten, artAendern, artFuer, artHinzufuegen, istNacht, monatZaehlung, schichtAm, standardKatalog, tageImMonat } from '../../domain/schicht.js';
@@ -11,7 +11,6 @@ const SCHICHT_FILTER = Object.freeze(['beide', 'papa', 'mama']);
 export const SCHICHT_FILTER_SCHLUESSEL = 'fk.schicht.filter.v1';
 
 const gueltigerFilter = (filter) => (SCHICHT_FILTER.includes(filter) ? filter : 'beide');
-const pad2 = (n) => String(n).padStart(2, '0');
 
 /** Gemerkter Filter dieses Telefons; ohne Speicher, bei Unsinn oder Fehlern „beide“. */
 export function schichtFilterLesen(speicher = globalThis.localStorage) {

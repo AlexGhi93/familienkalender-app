@@ -1,6 +1,4 @@
-import { addDays } from './dates.js';
-
-const pad2 = (n) => String(n).padStart(2, '0');
+import { addDays, pad2 } from './dates.js';
 
 /** Ostersonntag (Gauß/Meeus-Algorithmus), als 'JJJJ-MM-TT'. */
 export function easterSunday(year) {

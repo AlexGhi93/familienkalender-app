@@ -1,14 +1,14 @@
 // Autos: was bald oder überfällig ist – für die Karte „🚗 Auto“ auf Heute und die Push-Erinnerungen (push/plan.js `autoErinnerungen`).
 // Rein (ohne DOM, ohne Netz, ohne Uhr: `heute` kommt herein); gerechnet wird mit domain/autos-rechnung.js. Texte nennen nur Auto, Sache,
 // Datum und km.
-import { addDays, diffDays, isValidDate } from '../../domain/dates.js';
-import { datumText, kmText } from '../../domain/autos.js';
+import { addDays, diffDays } from '../../domain/dates.js';
+import { kmText } from '../../domain/autos.js';
+import { datumText, kurzDatum } from '../../domain/format.js';
+import { istDatum } from '../../domain/gemeinsam.js';
 import { autoUebersicht, autosHistorien } from '../../domain/autos-rechnung.js';
 
 const RANG = { ueberfaellig: 0, bald: 1 };
 const MAX_ZEILEN = 3;
-const kurzDatum = (d) => `${d.slice(8, 10)}.${d.slice(5, 7)}.`;
-const istDatum = (x) => typeof x === 'string' && isValidDate(x);
 
 /** km für den Text: ab 1.000 auf Hunderter, darunter auf Zehner gerundet („ca. 15.200 km“). */
 const caKm = (km) => kmText(Math.abs(km) >= 1000 ? Math.round(km / 100) * 100 : Math.round(km / 10) * 10);

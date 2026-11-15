@@ -271,3 +271,8 @@ describe('Verlauf und Zusammenfassung', () => {
     assert.equal(s.durchschnittOhne, -10000);
   });
 });
+
+test('Bezeichnung eines Sonderbetrags wird NFC gelesen', () => {
+  const k = normalisiereKonto({ v: 1, p: { papa: {}, mama: {} }, x: [{ i: 'a1b2c3d4', p: 'papa', m: '2026-10', c: 100, t: 'Pra\u0308mie' }] });
+  assert.equal(k.x[0].t, 'Pr\u00E4mie');
+});

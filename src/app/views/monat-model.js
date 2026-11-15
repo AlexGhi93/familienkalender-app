@@ -1,4 +1,4 @@
-import { addDays, eachDay, isWerktag, weekday } from '../../domain/dates.js';
+import { addDays, eachDay, isWerktag, pad2, weekday } from '../../domain/dates.js';
 import { feiertagName } from '../../domain/feiertage.js';
 import { einrichtungFor } from '../../domain/modus.js';
 import { TYPES } from '../../domain/types.js';
@@ -6,7 +6,6 @@ import { euroText } from '../../domain/format.js';
 import { MONATE, monatTitel } from '../format-de.js';
 import { FEIERTAG_EMOJI, FEIERTAG_FARBE, tagTyp, termineAm, urlaubTageSet } from './gemeinsam.js';
 
-const pad2 = (n) => String(n).padStart(2, '0');
 
 export function vorherigerMonat(jahr, monat) {
   return monat === 1 ? { jahr: jahr - 1, monat: 12 } : { jahr, monat: monat - 1 };

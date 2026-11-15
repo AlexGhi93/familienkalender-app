@@ -17,7 +17,8 @@
 // Ein Posten liegt immer im Teil shardFuer(id); jede Änderung betrifft genau einen Teil und ist eine reine Funktion Teil → Teil, die
 // (nach HTTP 412) auf die NEUESTE Fassung angewendet wird: das Argument wird nie verändert, zweimal angewendet = einmal angewendet.
 
-import { addDays, diffDays, isValidDate } from './dates.js';
+import { addDays, diffDays, isValidDate, pad2, plusMonate } from './dates.js';
+import { istObjekt, sauber, zeichen } from './gemeinsam.js';
 
 export const MAX_FIX_POSTEN = 100; // insgesamt, archivierte mitgezählt
 export const FIX_SHARDS = 4;
@@ -118,11 +119,6 @@ export const teilGesperrtFehler = () => Object.assign(new Error(TEXT_TEIL_GESPER
 const KURZ_SCHLUESSEL = new Set(['i', 'n', 'c', 'u', 'm', 'd', 's', 'k', 'w', 'r', 't', 'a']);
 const VERTRAG_SCHLUESSEL = new Set(['b', 'l', 'f']);
 
-const pad2 = (n) => String(n).padStart(2, '0');
-/** Bereinigter Text; was kein Text ist (auch beschädigtes JSON wie {"toString":1}), ergibt '' – nie ein Fehler. */
-const sauber = (text) => (typeof text === 'string' ? text.normalize('NFC').replace(/\s+/g, ' ').trim() : '');
-const zeichen = (text) => [...text].length; // Zeichen, nicht UTF-16-Einheiten
-const istObjekt = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 const tageImMonat = (jahr, monat) => new Date(Date.UTC(jahr, monat, 0)).getUTCDate();
 /** 'JJJJ-MM' → fortlaufende Monatsnummer (für Abstände in Monaten). */
 export const monatsIndex = (jm) => Number(jm.slice(0, 4)) * 12 + Number(jm.slice(5, 7)) - 1;
@@ -135,22 +131,6 @@ function tagWert(t) {
   if (t === 'letzter') return t;
   const n = zahl(t);
   return Number.isInteger(n) && n >= 1 && n <= 31 && (typeof t === 'number' || /^[1-9]\d?$/.test(t)) ? String(n) : null;
-}
-
-/**
- * Datum plus `n` Monate (negativ = zurück). Ein Tag, den es im Zielmonat nicht gibt, wird auf das Monatsende gekürzt (31.03. − 1 Monat = 28./29.02.).
- * Mit `monatsende` bleibt ein Monatsletzter ein Monatsletzter (30.09. + 1 Monat = 31.10.).
- */
-function plusMonate(datum, n, monatsende = false) {
-  const jahr = Number(datum.slice(0, 4));
-  const monat = Number(datum.slice(5, 7));
-  const tag = Number(datum.slice(8, 10));
-  const index = jahr * 12 + monat - 1 + n;
-  const zj = Math.floor(index / 12);
-  const zm = (index % 12) + 1;
-  const letzter = tageImMonat(zj, zm);
-  const zt = monatsende && tag === tageImMonat(jahr, monat) ? letzter : Math.min(tag, letzter);
-  return `${zj}-${pad2(zm)}-${pad2(zt)}`;
 }
 
 // ---------------------------------------------------------------- Prüfen und Normalisieren

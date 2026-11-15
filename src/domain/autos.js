@@ -39,7 +39,9 @@
 // Jede Änderung ist eine reine Funktion Daten → Daten (das Argument bleibt unverändert, zweimal angewendet = einmal angewendet), die
 // nach HTTP 412 auf die NEUESTE Fassung angewendet wird. Zwei Telefone, die im selben Jahr Arbeiten eintragen, behalten beide.
 
-import { addDays, diffDays, heutePruefen, isValidDate } from './dates.js';
+import { addDays, diffDays, heutePruefen, pad2 } from './dates.js';
+import { datumText } from './format.js';
+import { fremdeKennung, istDatum, istMonat, istObjekt, jahrVon, sauber, tiefFrieren, zeichen } from './gemeinsam.js';
 
 export const MAX_AUTOS = 4; // mit vollen Vorlagen (≈ 1.500 Zeichen je Auto) passen etwa 4 in die 6000 Zeichen
 const MAX_REGELN = 80; // insgesamt (die Vorlagen bringen 9–10 je Auto)
@@ -59,15 +61,6 @@ export const KM_FENSTER_TAGE = 90; // Durchschnitt aus den letzten 90 Tagen (mit
 export const BALD_TAGE = 30; // „bald“: höchstens 30 Tage …
 export const BALD_KM = 1000; // … oder höchstens 1.000 km bis zum Termin
 export const ROTATION_KM = 10_000; // Tesla: Reifen alle 10.000 km rotieren (Owner's Manual, siehe Vorlage)
-
-/** Friert ein Objekt samt allem darin ein (Vorlagen und Typen sind fest). */
-function tiefFrieren(x) {
-  if (x !== null && typeof x === 'object' && !Object.isFrozen(x)) {
-    Object.values(x).forEach(tiefFrieren);
-    Object.freeze(x);
-  }
-  return x;
-}
 
 export const AUTO_FARBEN = tiefFrieren([
   { id: 'blau', name: 'Blau' },
@@ -227,7 +220,6 @@ export const historieGesperrtFehler = () => Object.assign(new Error(TEXT_HISTORI
 // ---------------------------------------------------------------- Hilfen
 
 const KENNUNG = /^[0-9a-v]{4,16}$/;
-const MONAT = /^\d{4}-(0[1-9]|1[0-2])$/;
 const VORLAGE_SCHLUESSEL = /^[a-z0-9-]{1,30}$/;
 const FIN = /^[A-HJ-NPR-Z0-9]{17}$/;
 const ID_ZEICHEN = '0123456789abcdefghijklmnopqrstuv';
@@ -237,15 +229,8 @@ const MAX_JAHR = 2100;
 const TYPEN = new Map(ARBEIT_TYPEN.map((t) => [t.id, t]));
 const FARBEN = AUTO_FARBEN.map((f) => f.id);
 const REIFEN_ART_IDS = REIFEN_ARTEN.map((r) => r.id);
-const pad2 = (n) => String(n).padStart(2, '0');
 
-/** Bereinigter Text; was kein Text ist, ergibt '' – nie ein Fehler. */
-const sauber = (text) => (typeof text === 'string' ? text.normalize('NFC').replace(/\s+/g, ' ').trim() : '');
-const zeichen = (text) => [...text].length;
-const istObjekt = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 const istKennung = (x) => typeof x === 'string' && KENNUNG.test(x);
-const istMonat = (x) => typeof x === 'string' && MONAT.test(x);
-const istDatum = (x) => typeof x === 'string' && isValidDate(x);
 const leer = (x) => x === undefined || x === null || x === '';
 /** 12 oder '12' → 12; sonst NaN (Formularfelder liefern Text). */
 const ganzzahl = (x) => (typeof x === 'number' ? x : typeof x === 'string' && /^\d+$/.test(x.trim()) ? Number(x.trim()) : NaN);
@@ -254,8 +239,6 @@ const istJahr = (j) => istGanz(j, MIN_JAHR, MAX_JAHR);
 
 /** 21693 → '21.693 km'. */
 export const kmText = (km) => `${String(km).replace(/\B(?=(\d{3})+(?!\d))/g, '.')} km`;
-/** '2026-10-29' → '29.10.2026'. */
-export const datumText = (d) => `${d.slice(8, 10)}.${d.slice(5, 7)}.${d.slice(0, 4)}`;
 
 /** Neue Kennung aus 0-9 und a-v (8 Zeichen) für Autos, Regeln, Reifensätze und Arbeiten. `zufall` wie Math.random (für Tests). */
 export function neueAutoId(zufall = Math.random) {
@@ -810,7 +793,6 @@ function mitAutos(alt, { autos = alt.autos, regeln = alt.regeln, saetze = alt.sa
   return neu;
 }
 
-const fremdeKennung = (liste, id) => (liste ?? []).some((k) => k?.i === id);
 const autoDa = (daten, id) => (daten.autos ?? []).some((a) => a.id === id);
 
 /** Ersetzt den Eintrag mit derselben Kennung an seiner Stelle oder hängt ihn an; gleich → null (nichts zu tun). */
@@ -1029,8 +1011,6 @@ function mitHistorie(alt, arbeiten, km) {
   historieText(neu);
   return neu;
 }
-
-const jahrVon = (datum) => Number(datum.slice(0, 4));
 
 /**
  * Trägt eine Arbeit ein oder ändert die mit derselben Kennung (an derselben Stelle). Sie muss zu Auto und Jahr des Teils gehören (ein

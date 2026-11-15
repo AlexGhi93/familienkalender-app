@@ -4,6 +4,8 @@
 //
 // Form: { v: 1, e: [{ i: Kennung, t: Text, m: Menge, g: 0|1 (gekauft/im Wagen), z: Zeitpunkt in Sekunden }], h: { Text: wie oft gekauft } }
 
+import { sauberText } from './gemeinsam.js';
+
 export const MAX_ARTIKEL = 80;
 export const MAX_TEXT = 40;
 export const MAX_MENGE = 12;
@@ -11,7 +13,6 @@ export const MAX_HAEUFIG = 30;
 const MAX_EINKAUF_ZEICHEN = 6000; // Google kürzt Beschreibungen still bei 8192 Zeichen (Vertragsprobe C11b)
 
 const KENNUNG = /^[A-Za-z0-9_-]{1,16}$/;
-const sauber = (text) => String(text ?? '').replace(/\s+/g, ' ').trim();
 const schluessel = (text) => text.toLocaleLowerCase('de');
 const sekunden = (ms) => Math.floor(ms / 1000);
 
@@ -26,8 +27,8 @@ export function einkaufText(liste) {
 
 function artikel(a) {
   if (!a || typeof a !== 'object') return null;
-  const t = sauber(a.t);
-  const m = sauber(a.m);
+  const t = sauberText(a.t);
+  const m = sauberText(a.m);
   const ok = typeof a.i === 'string' && KENNUNG.test(a.i) && t !== '' && t.length <= MAX_TEXT && m.length <= MAX_MENGE && (a.g === 0 || a.g === 1) && Number.isFinite(a.z) && a.z >= 0;
   return ok ? { i: a.i, t, m, g: a.g, z: a.z } : null;
 }
@@ -61,8 +62,9 @@ export function normalisiereListe(roh) {
   const h = {};
   if (roh.h && typeof roh.h === 'object' && !Array.isArray(roh.h)) {
     for (const [name, anzahl] of Object.entries(roh.h)) {
-      const n = sauber(name);
-      if (n !== '' && n.length <= MAX_TEXT && Number.isInteger(anzahl) && anzahl >= 1 && anzahl <= 999) h[n] = anzahl;
+      const n = sauberText(name);
+      // zwei Schreibweisen desselben Namens (z. B. alter Text ohne NFC und neuer mit) zählen zusammen, höchstens 999
+      if (n !== '' && n.length <= MAX_TEXT && Number.isInteger(anzahl) && anzahl >= 1 && anzahl <= 999) h[n] = Math.min(999, (h[n] ?? 0) + anzahl);
     }
   }
   return { v: 1, e, h: begrenzeHaeufig(h) };
@@ -83,8 +85,8 @@ export function einkaufAusText(text) {
  * war er schon abgehakt, kommt er zurück auf „offen“. `jetzt` in Millisekunden, `id` für neue Artikel.
  */
 export function hinzufuegen(liste, { text, menge = '' }, { jetzt, id }) {
-  const t = sauber(text);
-  const m = sauber(menge);
+  const t = sauberText(text);
+  const m = sauberText(menge);
   if (t === '') throw new Error('Bitte einen Artikel eingeben.');
   if (t.length > MAX_TEXT) throw new Error(`Der Artikel ist zu lang (höchstens ${MAX_TEXT} Zeichen).`);
   if (m.length > MAX_MENGE) throw new Error(`Die Menge ist zu lang (höchstens ${MAX_MENGE} Zeichen).`);

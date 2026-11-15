@@ -1,7 +1,9 @@
 const DAY_MS = 86_400_000;
 const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
-const pad2 = (n) => String(n).padStart(2, '0');
+/** 7 → '07' (Monat, Tag, Stunde zweistellig). */
+export const pad2 = (n) => String(n).padStart(2, '0');
+const tageImMonat = (jahr, monat) => new Date(Date.UTC(jahr, monat, 0)).getUTCDate();
 
 export function parseDate(s) {
   const m = DATE_RE.exec(s);
@@ -37,6 +39,22 @@ export function isValidDate(s) {
 function fromMs(ms) {
   const dt = new Date(ms);
   return `${String(dt.getUTCFullYear()).padStart(4, '0')}-${pad2(dt.getUTCMonth() + 1)}-${pad2(dt.getUTCDate())}`;
+}
+
+/**
+ * Datum plus `n` Monate (negativ = zurück). Ein Tag, den es im Zielmonat nicht gibt, wird auf das Monatsende gekürzt (31.03. − 1 Monat = 28./29.02.).
+ * Mit `monatsende` bleibt ein Monatsletzter ein Monatsletzter (30.09. + 1 Monat = 31.10.).
+ */
+export function plusMonate(datum, n, monatsende = false) {
+  const jahr = Number(datum.slice(0, 4));
+  const monat = Number(datum.slice(5, 7));
+  const tag = Number(datum.slice(8, 10));
+  const index = jahr * 12 + monat - 1 + n;
+  const zj = Math.floor(index / 12);
+  const zm = (index % 12) + 1;
+  const letzter = tageImMonat(zj, zm);
+  const zt = monatsende && tag === tageImMonat(jahr, monat) ? letzter : Math.min(tag, letzter);
+  return `${zj}-${pad2(zm)}-${pad2(zt)}`;
 }
 
 export function addDays(s, n) {

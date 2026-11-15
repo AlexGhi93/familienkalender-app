@@ -18,24 +18,17 @@
 // - Reifen: km je Satz = Summe der Strecken, in denen er montiert war (aus den Reifenwechseln: vom km des Wechsels bis zum nächsten);
 //   eine Rotation (oder ein Reifenwechsel mit „vorne/hinten getauscht“) setzt die km seit der Rotation des Satzes auf 0.
 
-import { addDays, diffDays, heutePruefen, isValidDate } from './dates.js';
+import { addDays, diffDays, heutePruefen, plusMonate } from './dates.js';
 import { letzterTag } from './konto.js';
-import { AUTO_VORLAGEN, BALD_KM, BALD_TAGE, KM_FENSTER_TAGE, MAX_KM_PRO_TAG, ROTATION_KM, datumText, kmText, monatPlus } from './autos.js';
+import { AUTO_VORLAGEN, BALD_KM, BALD_TAGE, KM_FENSTER_TAGE, MAX_KM_PRO_TAG, ROTATION_KM, kmText, monatPlus } from './autos.js';
+import { datumText } from './format.js';
+import { istDatum, istMonat } from './gemeinsam.js';
 
 const QUELLE_WINTERREIFEN = 'https://www.oesterreich.gv.at/de/themen/mobilitaet/kfz/10/2/Seite.063100';
 const MAX_TAGE_VORAUS = 36_500; // weiter als 100 Jahre: kein Datum (z. B. riesige Rest-km bei fast stehendem Auto)
 const RANG = Object.freeze({ ueberfaellig: 0, bald: 1, ok: 2, unbekannt: 3 });
 
-const istDatum = (x) => typeof x === 'string' && isValidDate(x);
-const istMonat = (x) => typeof x === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(x);
 const frueher = (a, b) => (a.datum < b.datum ? -1 : a.datum > b.datum ? 1 : (a.km ?? 0) - (b.km ?? 0));
-
-/** Datum plus `n` Monate; ein Tag, den es im Zielmonat nicht gibt, wird aufs Monatsende gekürzt (31.01. + 1 Monat = 28./29.02.). */
-function plusMonate(datum, n) {
-  const ende = letzterTag(monatPlus(datum.slice(0, 7), n));
-  const tag = `${ende.slice(0, 8)}${datum.slice(8, 10)}`;
-  return tag <= ende ? tag : ende;
-}
 
 // ---------------------------------------------------------------- Punkte und Arbeiten eines Autos
 

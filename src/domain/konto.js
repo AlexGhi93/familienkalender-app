@@ -5,6 +5,9 @@
 // Form: { v: 1, p: { papa: { 'JJJJ-MM': Cent }, mama: { 'JJJJ-MM': Cent } }, x: [{ i: Kennung, p: Person, m: 'JJJJ-MM', c: Cent mit Vorzeichen, t: Name }] }
 // x = Sonderbeträge (z. B. Weihnachtsgeld oder eine größere Ausgabe): sie ändern keinen Kontostand, werden aber aus der Ersparnis herausgerechnet („ohne Extra“).
 
+import { pad2 } from './dates.js';
+import { sauberText } from './gemeinsam.js';
+
 export const PERSONEN = Object.freeze(['papa', 'mama']);
 export const MAX_MONATE = 96; // je Person (ungünstigster Fall ≈ 4 KB)
 export const MAX_CENTS = 999_999_999; // ±9.999.999,99 €
@@ -15,12 +18,9 @@ const MAX_NACHTRAG_MONATE = 24; // so weit zurück lässt sich ein früherer Mon
 
 const MONAT = /^\d{4}-(0[1-9]|1[0-2])$/;
 const KENNUNG = /^[A-Za-z0-9_-]{4,16}$/;
-const pad2 = (n) => String(n).padStart(2, '0');
 const istBetrag = (c) => typeof c === 'number' && Number.isInteger(c) && Math.abs(c) <= MAX_CENTS;
 
 export const leeresKonto = () => ({ v: 1, p: { papa: {}, mama: {} }, x: [] });
-
-const sauber = (text) => String(text ?? '').replace(/\s+/g, ' ').trim();
 
 /** 'JJJJ-MM' → letzter Kalendertag 'JJJJ-MM-TT' (auch Schaltjahre). */
 export function letzterTag(monat) {
@@ -58,7 +58,7 @@ function bereinigeExtras(roh) {
   const extras = [];
   for (const e of roh) {
     if (!e || typeof e !== 'object') continue;
-    const t = sauber(e.t);
+    const t = sauberText(e.t);
     const gueltig = typeof e.i === 'string' && KENNUNG.test(e.i) && !gesehen.has(e.i) && PERSONEN.includes(e.p) && MONAT.test(String(e.m)) && istBetrag(e.c) && e.c !== 0 && t !== '' && t.length <= MAX_EXTRA_TEXT;
     if (!gueltig) continue;
     gesehen.add(e.i);
@@ -169,7 +169,7 @@ export function fuegeExtraHinzu(konto, { person, monat, cents, text, id }, { heu
   if (monat > String(heute).slice(0, 7)) throw new Error('Dieser Monat hat noch nicht begonnen.');
   if (!istBetrag(cents)) throw new Error('Der Betrag ist ungültig.');
   if (cents === 0) throw new Error('Der Betrag darf nicht 0 sein.');
-  const name = sauber(text);
+  const name = sauberText(text);
   if (name === '') throw new Error('Bitte eine Bezeichnung eingeben.');
   if (name.length > MAX_EXTRA_TEXT) throw new Error(`Die Bezeichnung ist zu lang (höchstens ${MAX_EXTRA_TEXT} Zeichen).`);
   if (typeof id !== 'string' || !KENNUNG.test(id)) throw new Error('Ungültige Kennung.');

@@ -1,7 +1,9 @@
 // View-Modell der Autos (Seite „Autos“, Seite eines Autos, Blätter zum Eintragen) – rein, ohne DOM: alles kommt aus state.autos und
 // wird mit domain/autos-rechnung.js gerechnet. Texte sind fertig für die Anzeige (deutsch), Zahlen als Zahl dazu (Bewegung, Balken).
 // Persönliche Daten (Kennzeichen, FIN) kommen nur aus den Daten des Nutzers.
-import { diffDays, isValidDate } from '../../domain/dates.js';
+import { diffDays } from '../../domain/dates.js';
+import { datumText, kurzDatum } from '../../domain/format.js';
+import { istDatum } from '../../domain/gemeinsam.js';
 import { betragText, centsAusText } from '../../domain/konto.js';
 import { MONATE } from '../format-de.js';
 import {
@@ -15,7 +17,6 @@ import {
   TEXT_AUTOS_GESPERRT,
   arbeitPruefen,
   autoAusVorlage,
-  datumText,
   kmPruefen,
   kmText,
   monatPlus,
@@ -45,9 +46,7 @@ export const TEXT_DATENSCHUTZ = 'Kennzeichen, FIN und Fahrzeugdaten stehen verst
 export const TEXT_VIGNETTE_ONLINE = 'Online gekauft gilt die Vignette erst ab dem 18. Tag – im Geschäft (ÖAMTC, Tankstelle, Trafik) sofort.';
 
 const TYPEN = new Map(ARBEIT_TYPEN.map((t) => [t.id, t]));
-const istDatum = (x) => typeof x === 'string' && isValidDate(x);
 const monatName = (jm) => `${MONATE[Number(jm.slice(5, 7)) - 1]} ${jm.slice(0, 4)}`;
-const kurzDatum = (d) => `${d.slice(8, 10)}.${d.slice(5, 7)}.`;
 
 /** Kilometer zur Anzeige; geschätzte mit „ca.“ davor. */
 const kmAnzeige = (km, geschaetzt) => `${geschaetzt ? 'ca. ' : ''}${kmText(km)}`;

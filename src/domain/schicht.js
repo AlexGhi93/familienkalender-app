@@ -12,6 +12,8 @@
 // Kürzel, Name und Farbe lassen sich jederzeit ändern, alte Tage bleiben trotzdem richtig.
 // Monat im Speicher: { v: 1, jm: 'JJJJ-MM', t, n, z } immer vollständig; t[person] hat ein Zeichen je Tag (Zeichen i = Tag i+1, LEER = nichts).
 
+import { istObjekt, sauberText, zeichen } from './gemeinsam.js';
+
 export const SCHICHT_PERSONEN = Object.freeze(['papa', 'mama']);
 export const MAX_SCHICHT_ZEICHEN = 6000; // wie beim Kontostand: Google kürzt Beschreibungen still bei 8192 Zeichen
 export const MAX_ARTEN = 24; // je Person, archivierte mitgezählt
@@ -52,13 +54,10 @@ const MONAT = /^\d{4}-(0[1-9]|1[0-2])$/;
 const UHRZEIT = /^([01]\d|2[0-3]):[0-5]\d$/;
 const ZU_GROSS_MONAT = 'Zu viele Notizen in diesem Monat. Bitte einige kürzen oder löschen.';
 
-const sauber = (text) => String(text ?? '').normalize('NFC').replace(/\s+/g, ' ').trim();
-const zeichen = (text) => [...text].length; // Zeichen (nicht UTF-16-Einheiten), damit „Ü“ oder ein Emoji als eines zählt
 const kuerzen = (text, max) => [...text].slice(0, max).join('').trimEnd();
 const istSchluessel = (k) => typeof k === 'string' && k.length === 1 && SCHLUESSEL_ZEICHEN.includes(k);
-const istObjekt = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 // Kürzel vergleichen wie angezeigt: geputzt (Leerzeichen, NFC) und ohne Groß-/Kleinschreibung – ein ungeputztes „ E“ ist dasselbe wie „E“
-const gleichesKuerzel = (a, b) => sauber(a).toLocaleLowerCase('de') === sauber(b).toLocaleLowerCase('de');
+const gleichesKuerzel = (a, b) => sauberText(a).toLocaleLowerCase('de') === sauberText(b).toLocaleLowerCase('de');
 
 function pruefePerson(person) {
   if (!SCHICHT_PERSONEN.includes(person)) throw new Error('Ungültige Person (Papa oder Mama).');
@@ -110,7 +109,7 @@ export function standardKatalog() {
 }
 
 function uhrzeit(wert) {
-  const t = sauber(wert);
+  const t = sauberText(wert);
   if (t === '') return undefined;
   if (!UHRZEIT.test(t)) throw new Error('Bitte eine Uhrzeit wie 07:30 eingeben.');
   return t;
@@ -118,10 +117,10 @@ function uhrzeit(wert) {
 
 /** Prüft einen Entwurf aus dem Formular streng und gibt die bereinigten Felder zurück (ohne k und archiv). */
 function pruefeEntwurf(e) {
-  const name = sauber(e?.name);
+  const name = sauberText(e?.name);
   if (name === '') throw new Error('Bitte einen Namen eingeben.');
   if (zeichen(name) > MAX_NAME) throw new Error(`Der Name darf höchstens ${MAX_NAME} Zeichen haben.`);
-  const kuerzel = sauber(e.kuerzel);
+  const kuerzel = sauberText(e.kuerzel);
   if (zeichen(kuerzel) < 1 || zeichen(kuerzel) > MAX_KUERZEL) throw new Error('Das Kürzel muss 1 bis 3 Zeichen haben.');
   if (!FARBEN.has(e.farbe)) throw new Error('Unbekannte Farbe.');
   const gruppe = e.gruppe ?? 'dienst';
@@ -224,8 +223,8 @@ function leseArt(roh, person, gesehen, warnungen) {
     warnungen.push(`Doppelte Schichtart „${roh.k}“ (${person}) entfernt.`);
     return null;
   }
-  const name = sauber(roh.name);
-  const kuerzel = sauber(roh.kuerzel);
+  const name = sauberText(roh.name);
+  const kuerzel = sauberText(roh.kuerzel);
   const gruppe = roh.gruppe ?? 'dienst';
   if (name === '' || zeichen(name) > MAX_NAME || zeichen(kuerzel) < 1 || zeichen(kuerzel) > MAX_KUERZEL || !GRUPPEN.includes(gruppe)) {
     warnungen.push(`Ungültige Schichtart „${roh.k}“ (${person}) entfernt.`);
@@ -381,7 +380,7 @@ function leseNotizen(roh, person, tage, warnungen) {
   const aus = {};
   for (const [schluessel, wert] of Object.entries(roh)) {
     const tag = tagAusSchluessel(schluessel, tage);
-    const text = typeof wert === 'string' ? sauber(wert) : '';
+    const text = typeof wert === 'string' ? sauberText(wert) : '';
     if (tag === null || typeof wert !== 'string') {
       warnungen.push(`Ungültige Notiz (${person}, ${schluessel}) entfernt.`);
       continue;
@@ -526,7 +525,7 @@ function passt(monat) {
 export function setzeNotiz(monat, { person, tag, text }) {
   pruefePerson(person);
   pruefeTag(monat, tag);
-  const notiz = sauber(text);
+  const notiz = sauberText(text);
   if (zeichen(notiz) > MAX_NOTIZ) throw new Error(`Höchstens ${MAX_NOTIZ} Zeichen.`);
   const alt = monat.n[person][tag];
   if (notiz === '') return alt === undefined ? monat : mitTagEintrag(monat, 'n', person, tag, undefined);

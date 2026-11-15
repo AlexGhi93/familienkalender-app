@@ -20,6 +20,7 @@ import {
 } from '../../domain/fixkosten.js';
 import { betragText, centsAusText, deltaText, monatVor } from '../../domain/konto.js';
 import { datumAnzeige } from '../../domain/eingabe.js';
+import { kurzDatum } from '../../domain/format.js';
 import { monatText } from '../format-de.js';
 import { kontoModel } from './konto-model.js';
 
@@ -58,7 +59,6 @@ const DIAGRAMM_HINWEIS = 'Wird mit jedem Monat länger (bis 6 Monate).';
 const BETRAG_FEHLER = 'Bitte einen Betrag zwischen 0,01 € und 99.999,99 € eingeben.';
 
 const plusMonate = (jm, n) => monatVor(jm, -n);
-const kurzDatum = (iso) => `${iso.slice(8, 10)}.${iso.slice(5, 7)}.`;
 const intervallText = (monate) => FIX_INTERVALLE.find((i) => i.monate === monate)?.text ?? `alle ${monate} Monate`;
 const tagText = (tag) => (tag === 'letzter' ? 'am Monatsletzten' : `am ${tag}.`);
 const ungefaehrText = (posten, cents) => `${posten.ungefaehr ? '~ ' : ''}${betragText(cents)}`;

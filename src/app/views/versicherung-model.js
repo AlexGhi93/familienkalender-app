@@ -2,9 +2,10 @@
 // ⏳ eingereicht und ✓ erstattet getrennt, Rechnungen des Jahres – neueste zuerst – mit „⚠ Limit überschritten“), die Entwürfe der Blätter
 // (Rechnung, Erstattung, Polizze) und die Texte der Push-Erinnerungen (push/plan.js `versicherungErinnerungen`, Spec §6).
 // Rein (ohne DOM, ohne Netz, ohne Uhr: `heute` kommt herein); gerechnet wird nur mit domain/versicherung-rechnung.js.
-import { isValidDate } from '../../domain/dates.js';
 import { betragText, centsAusText } from '../../domain/konto.js';
 import { datumAnzeige } from '../../domain/eingabe.js';
+import { kurzDatum } from '../../domain/format.js';
+import { istDatum } from '../../domain/gemeinsam.js';
 import {
   MAX_BETRAG_CENT,
   MAX_KATEGORIEN,
@@ -28,8 +29,6 @@ const ERSTATTUNG_ANTEIL = 0.8; // Vorschlag „80 % wären …“ (Spec §2: mei
 /** Kurze Namen der Kategorien der Vorlage (Push-Texte, Liste der Rechnungen); eigene Kategorien behalten ihren Namen. */
 const KURZ = { arzt: 'Privatarzt', physio: 'Physiotherapie', psycho: 'Psychotherapie', medi: 'Medikamente', heil: 'Heilbehelfe' };
 
-const istDatum = (x) => typeof x === 'string' && isValidDate(x);
-const kurzDatum = (d) => `${d.slice(8, 10)}.${d.slice(5, 7)}.`;
 const hatErstattung = (r) => Number.isInteger(r?.erstattetCent);
 const prozent = (teil, ganz) => (ganz > 0 ? Math.max(0, Math.min(100, Math.round((teil / ganz) * 100))) : teil > 0 ? 100 : 0);
 const euroFeld = (cents) => (Number.isInteger(cents) ? betragText(cents).replace(' €', '') : '');
