@@ -17,7 +17,7 @@
 // Ein Posten liegt immer im Teil shardFuer(id); jede Änderung betrifft genau einen Teil und ist eine reine Funktion Teil → Teil, die
 // (nach HTTP 412) auf die NEUESTE Fassung angewendet wird: das Argument wird nie verändert, zweimal angewendet = einmal angewendet.
 
-import { addDays, diffDays, isValidDate, pad2, plusMonate } from './dates.js';
+import { addDays, diffDays, isValidDate, pad2, plusMonate, tageImMonat } from './dates.js';
 import { istObjekt, sauber, zeichen } from './gemeinsam.js';
 
 export const MAX_FIX_POSTEN = 100; // insgesamt, archivierte mitgezählt
@@ -119,7 +119,6 @@ export const teilGesperrtFehler = () => Object.assign(new Error(TEXT_TEIL_GESPER
 const KURZ_SCHLUESSEL = new Set(['i', 'n', 'c', 'u', 'm', 'd', 's', 'k', 'w', 'r', 't', 'a']);
 const VERTRAG_SCHLUESSEL = new Set(['b', 'l', 'f']);
 
-const tageImMonat = (jahr, monat) => new Date(Date.UTC(jahr, monat, 0)).getUTCDate();
 /** 'JJJJ-MM' → fortlaufende Monatsnummer (für Abstände in Monaten). */
 export const monatsIndex = (jm) => Number(jm.slice(0, 4)) * 12 + Number(jm.slice(5, 7)) - 1;
 

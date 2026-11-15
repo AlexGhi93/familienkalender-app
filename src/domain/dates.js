@@ -3,7 +3,8 @@ const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 /** 7 → '07' (Monat, Tag, Stunde zweistellig). */
 export const pad2 = (n) => String(n).padStart(2, '0');
-const tageImMonat = (jahr, monat) => new Date(Date.UTC(jahr, monat, 0)).getUTCDate();
+/** Anzahl der Tage im Monat (`monat` 1–12), auch Schaltjahre. */
+export const tageImMonat = (jahr, monat) => new Date(Date.UTC(jahr, monat, 0)).getUTCDate();
 
 export function parseDate(s) {
   const m = DATE_RE.exec(s);
