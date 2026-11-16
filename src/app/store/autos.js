@@ -2,7 +2,8 @@ import { todayVienna } from '../../domain/dates.js';
 import { istObjekt } from '../../domain/gemeinsam.js';
 import { TEXT_AUTOS_GESPERRT, TEXT_AUTO_WEG, TEXT_HISTORIE_GESPERRT, arbeitLoeschen as arbeitLoeschenRein, arbeitPruefen, arbeitSetzen, arbeitSpur, arbeitWiederherstellen, autoAnlegen, autoLoeschen as autoLoeschenRein, autoSetzen, autoSpur, autoWiederherstellen, autosWarnungen, historieJahrBekannt, historieJahrEintragen, historieWarnungen, kmEintragen, kmLoeschen as kmLoeschenRein, kmPruefen, kmSpur, kmWiederherstellen, leereAutos, leereHistorie, regelLoeschen as regelLoeschenRein, regelSetzen, regelSpur, regelWiederherstellen, satzLoeschen as satzLoeschenRein, satzSetzen, satzSpur, satzVerwendet, satzVerwendetText, satzWiederherstellen } from '../../domain/autos.js';
 import { autosHistorien, kmPunkte } from '../../domain/autos-rechnung.js';
-import { FACHLICH, TEXT_AUTOS_NEUER, TEXT_FEHLER, eintragVorhanden, gleichOder, historieGleichOder, istAuthFehler, mitFrist } from './kern.js';
+import { TEXT_FEHLER, gleichOder } from './kern.js';
+import { TEXT_AUTOS_NEUER, createGeteilt, eintragVorhanden, neueKennung } from './geteilt.js';
 
 const TEXT_AUTOS_NICHT_GELESEN = 'Die Autos konnten nicht gelesen werden. Bitte noch einmal versuchen.';
 const TEXT_AUTOS_ANMELDEN = 'Bitte zuerst neu anmelden; danach lassen sich die Autos ändern.';
@@ -43,154 +44,31 @@ export function autosZustand(gelesen, status) {
  * → { methoden (öffentliche Methoden des Stores), intern (was Fassade und Schichtplan brauchen) }.
  */
 export function createAutosSlice(kern, { autoId, autosFristMs }) {
-  const { adapter, jetzt, wartend, melden, teilAendern, teilErgebnis, mitRueckgaengig, fachlich, fachlichAsync } = kern;
-  // ---------------------------------------------------------------- Autos
-  // Je Teil eine Warteschlange (wie Schichtplan und Fixkosten, siehe teilAendern): 'haupt' (fkautos) und 'h:<auto>:<jahr>' (Verlauf-Teil).
-  const autosOffen = new Map();
-  const autosSchreibtNoch = () => autosOffen.size > 0;
-  let autosGelesen = false; // seit dem Start (oder dem Zurücksetzen) schon einmal aus dem Kalender gelesen? Erst dann wird geschrieben.
-  let autosHolenLaeuft = null; // laufendes Lesen: mehrfaches Anstoßen fragt nur einmal
-  let autosFrischLaeuft = null; // laufendes Frisch-Lesen vor dem Push-Plan (siehe autosFrischLesen)
-  const teilSchluessel = (auto, jahr) => `h:${auto}:${jahr}`;
-  const teilGesperrt = (auto, jahr) => kern.state.autos.unlesbar.shards.some((x) => x.auto === auto && x.jahr === jahr);
-
-  /** Leert die Warteschlange eines Teils (nach „unlesbar“: ihr Speichern würde ohnehin abgelehnt). */
-  function autosOffenLeeren(schluessel, basis) {
-    const e = autosOffen.get(schluessel);
-    if (e) {
-      e.basis = basis;
-      e.offen.length = 0;
-    }
-  }
-
-  /**
-   * `autos` mit `bestaetigt` (siehe leererAutosZustand), solange eigene Änderungen offen sind: Hauptteil und Teile mit offenen Änderungen
-   * stehen dort mit ihrer `basis` (dem zuletzt gespeicherten Stand); ohne offene Änderungen fällt `bestaetigt` weg.
-   */
-  function mitBestaetigt(autos) {
-    const { bestaetigt: _alt, ...rest } = autos;
-    const offen = [...autosOffen.entries()].filter(([, e]) => e.offen.length > 0);
-    if (offen.length === 0) return rest;
-    let daten = rest.daten;
-    let historie = rest.historie;
-    for (const [schluessel, e] of offen) {
-      if (schluessel === 'haupt') daten = e.basis;
-      else {
-        const [, auto, jahr] = schluessel.split(':');
-        historie = { ...historie, [auto]: { ...(historie[auto] ?? {}), [jahr]: e.basis } };
-      }
-    }
-    return { ...rest, bestaetigt: { daten, historie } };
-  }
-
-  /** Der Hauptteil ist (inzwischen) unlesbar: alles leer und gesperrt. */
-  function autosHauptSperren() {
-    autosOffenLeeren('haupt', leereAutos());
-    kern.state = { ...kern.state, autos: { ...kern.state.autos, daten: leereAutos(), historie: {}, warnungen: autosWarnungen({ unlesbar: true }), unlesbar: { main: true, shards: kern.state.autos.unlesbar.shards } } };
-  }
-
-  /** Ein Verlauf-Teil ist (inzwischen) unlesbar: leer gezeigt und gesperrt. */
-  function autosTeilSperren(auto, jahr) {
-    const leer = leereHistorie(auto, jahr);
-    autosOffenLeeren(teilSchluessel(auto, jahr), leer);
-    const a = kern.state.autos;
-    const shards = teilGesperrt(auto, jahr) ? a.unlesbar.shards : [...a.unlesbar.shards, { auto, jahr }];
-    kern.state = { ...kern.state, autos: { ...a, historie: { ...a.historie, [auto]: { ...(a.historie[auto] ?? {}), [jahr]: leer } }, warnungen: [...a.warnungen, ...historieWarnungen({ historie: leer, unlesbar: true })], unlesbar: { ...a.unlesbar, shards } } };
-  }
-
-  /**
-   * Übernimmt frisch Gelesenes (`g` wie aus adapter.leseAutos). `eigene` = inzwischen selbst etwas geändert: dann bleiben angezeigter
-   * Hauptteil und angezeigte Teile (die Antwort könnte älter sein), neu gefundene Teile kommen dazu. Unlesbares gilt immer (leer,
-   * gesperrt). Unverändert Gelesenes behält seine Identität (der Push-Plan vergleicht nach Identität).
-   */
-  function autosUebernehmen(g, eigene) {
-    const frisch = autosZustand(g, 'geladen');
-    if (frisch.unlesbar.main) {
-      autosOffenLeeren('haupt', leereAutos());
-      kern.state = { ...kern.state, autos: frisch };
-      return;
-    }
-    const a = kern.state.autos;
-    let historie = frisch.historie;
-    if (eigene) {
-      historie = { ...frisch.historie };
-      for (const [auto, jahre] of Object.entries(a.historie)) historie[auto] = { ...(historie[auto] ?? {}), ...jahre };
-    }
-    for (const { auto, jahr } of frisch.unlesbar.shards) {
-      historie = { ...historie, [auto]: { ...(historie[auto] ?? {}), [jahr]: leereHistorie(auto, jahr) } };
-      autosOffenLeeren(teilSchluessel(auto, jahr), leereHistorie(auto, jahr));
-    }
-    kern.state = { ...kern.state, autos: mitBestaetigt({ daten: eigene ? a.daten : gleichOder(a.daten, frisch.daten), historie: historieGleichOder(a.historie, historie), status: 'geladen', warnungen: gleichOder(a.warnungen, frisch.warnungen), unlesbar: gleichOder(a.unlesbar, frisch.unlesbar), frisch: true }) };
-  }
-
-  /**
-   * Liest Autos und alle Teile des Jahres-Index. Status 'laedt' → 'geladen' bzw. 'fehler' (die zuletzt gelesenen Daten bleiben; abgelaufene
-   * Anmeldung setzt zusätzlich `anmeldungNoetig`). → true, wenn gelesen. Höchstens ein Lesen gleichzeitig; wirft nicht.
-   */
-  function autosHolen() {
-    if (autosHolenLaeuft) return autosHolenLaeuft;
-    if (!adapter.leseAutos) return Promise.resolve(false);
-    autosHolenLaeuft = (async () => {
-      const stand = kern.schreibStand;
-      kern.state = { ...kern.state, autos: { ...kern.state.autos, status: 'laedt' } };
-      melden();
-      let g;
-      try {
-        g = await mitFrist(adapter.leseAutos(), autosFristMs); // hängt es, gilt es als Fehler: der Vorlader der Shell versucht es später wieder
-      } catch (fehler) {
-        kern.state = { ...kern.state, autos: { ...kern.state.autos, status: 'fehler', frisch: false, warnungen: [TEXT_AUTOS_NICHT_GELESEN] }, ...(istAuthFehler(fehler) ? { anmeldungNoetig: true } : {}) };
-        melden();
-        return false;
-      }
-      autosUebernehmen(g, stand !== kern.schreibStand || kern.schreibend > 0 || wartend.length > 0 || autosSchreibtNoch());
-      autosGelesen = true;
-      melden();
-      return true;
-    })()
-      .catch(() => false)
-      .finally(() => {
-        autosHolenLaeuft = null;
-      });
-    return autosHolenLaeuft;
-  }
-
-  /** Vor dem Schreiben: einmal gelesen und der Hauptteil lesbar? → Fehlertext oder null. */
-  async function autosBereit() {
-    if (!adapter.aendereAutos) return TEXT_FEHLER;
-    if (!autosGelesen && !(await autosHolen())) return kern.state.anmeldungNoetig ? TEXT_AUTOS_ANMELDEN : TEXT_AUTOS_NICHT_GELESEN;
-    return kern.state.autos.unlesbar.main ? TEXT_AUTOS_GESPERRT : null;
-  }
-
-  /** Ändert den Hauptteil (siehe teilAendern) mit `fn(daten)`; → wie teilErgebnis. Wirft, wenn `fn` schon am angezeigten Stand ablehnt. */
-  async function autosHauptAendern(fn) {
-    return teilErgebnis(
-      await teilAendern(autosOffen, 'haupt', fn, {
-        leer: leereAutos,
-        aktuell: () => kern.state.autos.daten,
-        mit: (daten) => ({ ...kern.state, autos: mitBestaetigt({ ...kern.state.autos, daten }) }),
-        async speichern(f) {
-          try {
-            return await adapter.aendereAutos(f);
-          } catch (e) {
-            if (e?.name === 'AutosGesperrt') {
-              FACHLICH.add(e);
-              autosHauptSperren();
-            }
-            throw e;
-          }
-        },
-        async lesen() {
-          const g = await adapter.leseAutos();
-          if (g.unlesbar?.main) {
-            autosHauptSperren();
-            return null;
-          }
-          return g.daten;
-        },
-        normalisiere: (d) => d ?? leereAutos(),
-      }),
-    );
-  }
+  const { adapter, jetzt, melden, mitRueckgaengig, fachlich, fachlichAsync } = kern;
+  // Hauptteil ('haupt' = fkautos) und Verlauf-Teile ('h:<auto>:<jahr>') laufen über die gemeinsame Maschine (geteilt.js).
+  const maschine = createGeteilt(kern, {
+    bereich: 'autos',
+    teileFeld: 'historie',
+    nebenFelder: [],
+    unlesbarFeld: 'shards',
+    teilFelder: ['auto', 'jahr'],
+    teilKuerzel: 'h',
+    adapter: { lesen: 'leseAutos', aendern: 'aendereAutos', teilLesen: 'leseHistorie', teilAendern: 'aendereHistorie' },
+    teilAntwort: 'historie',
+    gesperrt: { haupt: 'AutosGesperrt', teil: 'HistorieGesperrt' },
+    zustand: autosZustand,
+    leererHaupt: leereAutos,
+    leererTeil: ({ auto, jahr }) => leereHistorie(auto, jahr),
+    hauptWarnungen: () => autosWarnungen({ unlesbar: true }),
+    teilWarnungen: (leer) => historieWarnungen({ historie: leer, unlesbar: true }),
+    vorTeilSchreiben: ({ auto, jahr }) => indexSichern(auto, jahr),
+    texte: { nichtGelesen: TEXT_AUTOS_NICHT_GELESEN, anmelden: TEXT_AUTOS_ANMELDEN, gesperrt: TEXT_AUTOS_GESPERRT },
+    fristMs: autosFristMs,
+  });
+  const { offen: autosOffen, holen: autosHolen, bereit: autosBereit, hauptAendern: autosHauptAendern, hauptSicher: autosHauptSicher } = maschine;
+  const teilGesperrt = (auto, jahr) => maschine.teilGesperrt({ auto, jahr });
+  /** Ändert NUR den Verlauf-Teil von `auto` im Jahr `jahr` mit `fn(historie)` (siehe teilAendern in geteilt.js; `optionen` = { vorher }). */
+  const autosTeilAendern = (auto, jahr, fn, optionen) => maschine.teilAendern({ auto, jahr }, fn, optionen);
 
   /**
    * Vor dem Schreiben eines Teils: steht `jahr` im zuletzt GESPEICHERTEN Jahres-Index? Sonst zuerst dort eintragen – in DEMSELBEN
@@ -204,42 +82,6 @@ export function createAutosSlice(kern, { autoId, autosFristMs }) {
     if (!gespeichert) return;
     if (e) e.basis = gespeichert;
     else kern.state = { ...kern.state, autos: { ...kern.state.autos, daten: gleichOder(kern.state.autos.daten, gespeichert) } };
-  }
-
-  /**
-   * Ändert NUR den Verlauf-Teil von `auto` im Jahr `jahr` mit `fn(historie)`; → wie teilErgebnis. Wirft wie autosHauptAendern.
-   * `vorher()` (optional, async) läuft in jedem Schreibvorgang (auch beim Nachholen) vor dem Schreiben und darf fachlich ablehnen.
-   */
-  async function autosTeilAendern(auto, jahr, fn, { vorher = null } = {}) {
-    return teilErgebnis(
-      await teilAendern(autosOffen, teilSchluessel(auto, jahr), fn, {
-        leer: () => leereHistorie(auto, jahr),
-        aktuell: () => kern.state.autos.historie[auto]?.[jahr] ?? null,
-        mit: (h) => ({ ...kern.state, autos: mitBestaetigt({ ...kern.state.autos, historie: { ...kern.state.autos.historie, [auto]: { ...(kern.state.autos.historie[auto] ?? {}), [jahr]: h } } }) }),
-        async speichern(f) {
-          try {
-            if (vorher) await vorher();
-            await indexSichern(auto, jahr);
-            return await adapter.aendereHistorie(auto, jahr, f);
-          } catch (e) {
-            if (e?.name === 'HistorieGesperrt') {
-              FACHLICH.add(e);
-              autosTeilSperren(auto, jahr);
-            }
-            throw e;
-          }
-        },
-        async lesen() {
-          const g = await adapter.leseHistorie(auto, jahr);
-          if (g.unlesbar) {
-            autosTeilSperren(auto, jahr);
-            return null;
-          }
-          return g.historie;
-        },
-        normalisiere: (h) => h ?? leereHistorie(auto, jahr),
-      }),
-    );
   }
 
   /**
@@ -264,14 +106,7 @@ export function createAutosSlice(kern, { autoId, autosFristMs }) {
   }
 
   /** Neue Kennung (über `autoId`, 0-9a-v), die in `vergeben` noch nicht vorkommt; sonst null. */
-  function neueAutosKennung(vergeben) {
-    for (let versuch = 0; versuch < 20; versuch += 1) {
-      const id = autoId();
-      if (typeof id !== 'string' || id === '') return null;
-      if (!vergeben.has(id)) return id;
-    }
-    return null;
-  }
+  const neueAutosKennung = (vergeben) => neueKennung(autoId, vergeben);
 
   /** Alle vergebenen Kennungen im angezeigten Hauptteil (Autos, Regeln, Reifensätze, auch fremde). */
   function hauptKennungen() {
@@ -293,17 +128,6 @@ export function createAutosSlice(kern, { autoId, autosFristMs }) {
 
   /** Die km-Punkte des Autos `auto` (angezeigter Stand) für die Warnungen beim Eintragen. */
   const autoPunkte = (auto) => kmPunkte(autosHistorien(kern.state.autos), (kern.state.autos.daten.autos ?? []).find((a) => a.id === auto) ?? auto);
-
-  /** Änderung am Hauptteil für die Oberfläche: erst bereit, dann `fn`; nie ein Wurf. */
-  async function autosHauptSicher(fn) {
-    const nichtBereit = await autosBereit();
-    if (nichtBereit) return { ok: false, fehler: nichtBereit };
-    try {
-      return await autosHauptAendern(fn);
-    } catch (e) {
-      return { ok: false, fehler: e?.message || TEXT_FEHLER }; // schon am angezeigten Stand abgelehnt: nichts geändert
-    }
-  }
 
   /**
    * Autos für die Sicherung: frisch aus dem Kalender (Anmeldefehler laufen nach oben), dazu roh alle Verlauf-Teile, die der Index nicht
@@ -355,33 +179,7 @@ export function createAutosSlice(kern, { autoId, autosFristMs }) {
      * gehen vor, gemeldet wird nur eine echte Änderung. → true = aktuell, false = ging gerade nicht. Wirft nicht.
      */
     autosFrischLesen() {
-      if (autosFrischLaeuft) return autosFrischLaeuft;
-      const moeglich = () => adapter.leseAutos && kern.state.geladen && !kern.state.nurSnapshot && !kern.state.anmeldungNoetig;
-      const eigene = () => kern.schreibend > 0 || wartend.length > 0 || autosSchreibtNoch();
-      if (!moeglich() || eigene()) return Promise.resolve(false);
-      autosFrischLaeuft = (async () => {
-        const stand = kern.schreibStand;
-        let g;
-        try {
-          g = await mitFrist(adapter.leseAutos(), autosFristMs);
-        } catch (fehler) {
-          kern.state = { ...kern.state, autos: { ...kern.state.autos, frisch: false }, ...(istAuthFehler(fehler) ? { anmeldungNoetig: true } : {}) };
-          melden();
-          return false;
-        }
-        if (stand !== kern.schreibStand || eigene()) return false;
-        const vorher = kern.state;
-        autosUebernehmen(g, false);
-        autosGelesen = true;
-        if (JSON.stringify(kern.state.autos) !== JSON.stringify(vorher.autos)) melden();
-        else kern.state = vorher; // nichts geändert: derselbe Zustand (kein Neuzeichnen, kein neuer Push-Plan)
-        return true;
-      })()
-        .catch(() => false)
-        .finally(() => {
-          autosFrischLaeuft = null;
-        });
-      return autosFrischLaeuft;
+      return maschine.frischLesen();
     },
 
     /**
@@ -613,7 +411,7 @@ export function createAutosSlice(kern, { autoId, autosFristMs }) {
       autosLeeren,
       autosFuerSicherung,
       set autosGelesen(wert) {
-        autosGelesen = wert;
+        maschine.gelesen = wert;
       },
     },
   };

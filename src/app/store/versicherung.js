@@ -2,7 +2,8 @@ import { todayVienna } from '../../domain/dates.js';
 import { istObjekt } from '../../domain/gemeinsam.js';
 import { TEXT_POLIZZE_WEG, TEXT_RECHNUNG_WEG, TEXT_VERSICHERUNG_GESPERRT, TEXT_VERSICHERUNG_TEIL_GESPERRT, erstattungSetzen, fassungJetzt, leererVersicherungTeil, leereVersicherung, polizzeAendern, polizzeAnlegen, rechnungJahr, rechnungLoeschen as rechnungLoeschenRein, rechnungPruefen, rechnungQuartal, rechnungSetzen, rechnungSpur, rechnungTeilWechseln, rechnungWiederherstellen, versicherungJahrBekannt, versicherungJahrEintragen, versicherungTeilWarnungen, versicherungWarnungen } from '../../domain/versicherung.js';
 import { rechnungFinden } from '../../domain/versicherung-rechnung.js';
-import { FACHLICH, TEXT_FEHLER, eintragVorhanden, gleichOder, historieGleichOder, istAuthFehler, mitFrist } from './kern.js';
+import { FACHLICH, TEXT_FEHLER, gleichOder } from './kern.js';
+import { createGeteilt, eintragVorhanden, neueKennung } from './geteilt.js';
 
 const TEXT_VERSICHERUNG_NICHT_GELESEN = 'Die Versicherung konnte nicht gelesen werden. Bitte noch einmal versuchen.';
 const TEXT_VERSICHERUNG_ANMELDEN = 'Bitte zuerst neu anmelden; danach lässt sich die Versicherung ändern.';
@@ -50,170 +51,34 @@ export function versicherungZustand(gelesen, status) {
  * → { methoden (öffentliche Methoden des Stores), intern (was Fassade und Schichtplan brauchen) }.
  */
 export function createVersicherungSlice(kern, { store, versicherungId, versicherungFristMs }) {
-  const { adapter, jetzt, wartend, melden, teilAendern, teilErgebnis, mitRueckgaengig, fachlich, fachlichAsync } = kern;
-  // ---------------------------------------------------------------- Versicherung
-  // Je Teil eine Warteschlange (wie bei den Autos, siehe teilAendern): 'haupt' (fkversicherung: Polizze + erstes Jahr) und
-  // 't:<jahr>:<quartal>' (Quartal-Teil fkvr<JJJJ><Q> mit den Rechnungen).
-  const versOffen = new Map();
-  const versSchreibtNoch = () => versOffen.size > 0;
-  let versGelesen = false; // seit dem Start (oder dem Zurücksetzen) schon einmal aus dem Kalender gelesen? Erst dann wird geschrieben.
-  let versHolenLaeuft = null; // laufendes Lesen: mehrfaches Anstoßen fragt nur einmal
-  let versFrischLaeuft = null; // laufendes Frisch-Lesen vor dem Push-Plan (siehe versicherungFrischLesen)
-  const versSchluessel = ({ jahr, quartal }) => `t:${jahr}:${quartal}`;
+  const { adapter, jetzt, melden, mitRueckgaengig, fachlich, fachlichAsync } = kern;
+  // Hauptteil ('haupt' = fkversicherung: Polizze + erstes Jahr) und Quartal-Teile ('t:<jahr>:<quartal>' = fkvr<JJJJ><Q> mit den
+  // Rechnungen) laufen über die gemeinsame Maschine (geteilt.js); ein Teil heißt hier überall `t` = { jahr, quartal }.
+  const maschine = createGeteilt(kern, {
+    bereich: 'versicherung',
+    teileFeld: 'teile',
+    nebenFelder: ['geschrieben'],
+    unlesbarFeld: 'teile',
+    teilFelder: ['jahr', 'quartal'],
+    teilKuerzel: 't',
+    adapter: { lesen: 'leseVersicherung', aendern: 'aendereVersicherung', teilLesen: 'leseVersicherungTeil', teilAendern: 'aendereVersicherungTeil' },
+    teilAntwort: 'teil',
+    gesperrt: { haupt: 'VersicherungGesperrt', teil: 'VersicherungTeilGesperrt' },
+    zustand: versicherungZustand,
+    leererHaupt: leereVersicherung,
+    leererTeil: (t) => leererVersicherungTeil(t.jahr, t.quartal),
+    hauptWarnungen: () => versicherungWarnungen({ unlesbar: true }),
+    teilWarnungen: (leer) => versicherungTeilWarnungen({ teil: leer, unlesbar: true }),
+    vorTeilSchreiben: (t) => versJahrSichern(t.jahr),
+    texte: { nichtGelesen: TEXT_VERSICHERUNG_NICHT_GELESEN, anmelden: TEXT_VERSICHERUNG_ANMELDEN, gesperrt: TEXT_VERSICHERUNG_GESPERRT },
+    fristMs: versicherungFristMs,
+  });
+  const { offen: versOffen, teilGesperrt: versTeilGesperrt, hauptSperren: versHauptSperren, holen: versHolen, bereit: versBereit, hauptAendern: versHauptAendern, teilAendern: versTeilAendern, hauptSicher: versHauptSicher } = maschine;
   const gleicherTeil = (a, b) => a.jahr === b.jahr && a.quartal === b.quartal;
-  const versTeilGesperrt = (t) => kern.state.versicherung.unlesbar.teile.some((x) => gleicherTeil(x, t));
   const teilVonRechnung = (r) => ({ jahr: rechnungJahr(r), quartal: rechnungQuartal(r) });
   const quartalText = ({ jahr, quartal }) => `${quartal}. Quartal ${jahr}`;
   /** Der zuletzt GESPEICHERTE Hauptteil (offene eigene Änderungen nicht mitgezählt). */
   const versHauptBasis = () => versOffen.get('haupt')?.basis ?? kern.state.versicherung.daten;
-
-  /** Leert die Warteschlange eines Teils (nach „unlesbar“: ihr Speichern würde ohnehin abgelehnt). */
-  function versOffenLeeren(schluessel, basis) {
-    const e = versOffen.get(schluessel);
-    if (e) {
-      e.basis = basis;
-      e.offen.length = 0;
-    }
-  }
-
-  /**
-   * `versicherung` mit `bestaetigt` = { daten, teile } (der zuletzt GESPEICHERTE Stand), solange eigene Änderungen offen sind: für den
-   * Schnappschuss – eine Änderung, die auf die Anmeldung wartet, darf nach einem Neustart nicht als gespeichert erscheinen.
-   */
-  function mitVersBestaetigt(v) {
-    const { bestaetigt: _alt, ...rest } = v;
-    const offen = [...versOffen.entries()].filter(([, e]) => e.offen.length > 0);
-    if (offen.length === 0) return rest;
-    let daten = rest.daten;
-    let teile = rest.teile;
-    for (const [schluessel, e] of offen) {
-      if (schluessel === 'haupt') daten = e.basis;
-      else {
-        const [, jahr, quartal] = schluessel.split(':');
-        teile = { ...teile, [jahr]: { ...(teile[jahr] ?? {}), [quartal]: e.basis } };
-      }
-    }
-    return { ...rest, bestaetigt: { daten, teile } };
-  }
-
-  /** Zustand mit dem Quartal-Teil `t` = `teil` (die anderen bleiben). */
-  const mitVersTeil = (t, teil) => ({ ...kern.state, versicherung: mitVersBestaetigt({ ...kern.state.versicherung, teile: { ...kern.state.versicherung.teile, [t.jahr]: { ...(kern.state.versicherung.teile[t.jahr] ?? {}), [t.quartal]: teil } } }) });
-
-  /** Der Hauptteil ist (inzwischen) unlesbar: alles leer und gesperrt. */
-  function versHauptSperren() {
-    versOffenLeeren('haupt', leereVersicherung());
-    kern.state = { ...kern.state, versicherung: { ...kern.state.versicherung, daten: leereVersicherung(), teile: {}, warnungen: versicherungWarnungen({ unlesbar: true }), unlesbar: { main: true, teile: kern.state.versicherung.unlesbar.teile } } };
-  }
-
-  /** Ein Quartal-Teil ist (inzwischen) unlesbar: leer gezeigt und gesperrt. */
-  function versTeilSperren(t) {
-    const leer = leererVersicherungTeil(t.jahr, t.quartal);
-    versOffenLeeren(versSchluessel(t), leer);
-    const v = kern.state.versicherung;
-    const teile = versTeilGesperrt(t) ? v.unlesbar.teile : [...v.unlesbar.teile, { jahr: t.jahr, quartal: t.quartal }];
-    kern.state = { ...kern.state, versicherung: { ...v, teile: { ...v.teile, [t.jahr]: { ...(v.teile[t.jahr] ?? {}), [t.quartal]: leer } }, warnungen: [...v.warnungen, ...versicherungTeilWarnungen({ teil: leer, unlesbar: true })], unlesbar: { ...v.unlesbar, teile } } };
-  }
-
-  /**
-   * Übernimmt frisch Gelesenes (`g` wie aus adapter.leseVersicherung). `eigene` = inzwischen selbst etwas geändert: dann bleiben
-   * angezeigter Hauptteil und angezeigte Teile (die Antwort könnte älter sein), neu gefundene Teile kommen dazu. Unlesbares gilt immer
-   * (leer, gesperrt). Unverändert Gelesenes behält seine Identität (der Push-Plan vergleicht nach Identität).
-   */
-  function versUebernehmen(g, eigene) {
-    const frisch = versicherungZustand(g, 'geladen');
-    if (frisch.unlesbar.main) {
-      versOffenLeeren('haupt', leereVersicherung());
-      kern.state = { ...kern.state, versicherung: frisch };
-      return;
-    }
-    const v = kern.state.versicherung;
-    let teile = frisch.teile;
-    let geschrieben = frisch.geschrieben;
-    if (eigene) {
-      teile = { ...frisch.teile };
-      for (const [jahr, quartale] of Object.entries(v.teile)) teile[jahr] = { ...(teile[jahr] ?? {}), ...quartale };
-      geschrieben = { ...frisch.geschrieben };
-      for (const [jahr, quartale] of Object.entries(v.geschrieben ?? {})) geschrieben[jahr] = { ...(geschrieben[jahr] ?? {}), ...quartale };
-    }
-    for (const t of frisch.unlesbar.teile) {
-      teile = { ...teile, [t.jahr]: { ...(teile[t.jahr] ?? {}), [t.quartal]: leererVersicherungTeil(t.jahr, t.quartal) } };
-      versOffenLeeren(versSchluessel(t), leererVersicherungTeil(t.jahr, t.quartal));
-    }
-    kern.state = {
-      ...kern.state,
-      versicherung: mitVersBestaetigt({ daten: eigene ? v.daten : gleichOder(v.daten, frisch.daten), teile: historieGleichOder(v.teile, teile), geschrieben: historieGleichOder(v.geschrieben, geschrieben), status: 'geladen', warnungen: gleichOder(v.warnungen, frisch.warnungen), unlesbar: gleichOder(v.unlesbar, frisch.unlesbar), frisch: true }),
-    };
-  }
-
-  /**
-   * Liest Hauptteil und alle Quartal-Teile (ab dem ersten Jahr bis morgen). Status 'laedt' → 'geladen' bzw. 'fehler' (die zuletzt
-   * gelesenen Daten bleiben; abgelaufene Anmeldung setzt zusätzlich `anmeldungNoetig`). Mit Frist (api.js kennt kein Timeout): ein
-   * hängendes Lesen gilt danach als Fehler und wird beim nächsten Anstoßen wiederholt. → true, wenn gelesen. Höchstens eines gleichzeitig; wirft nicht.
-   */
-  function versHolen() {
-    if (versHolenLaeuft) return versHolenLaeuft;
-    if (!adapter.leseVersicherung) return Promise.resolve(false);
-    versHolenLaeuft = (async () => {
-      const stand = kern.schreibStand;
-      kern.state = { ...kern.state, versicherung: { ...kern.state.versicherung, status: 'laedt' } };
-      melden();
-      let g;
-      try {
-        g = await mitFrist(adapter.leseVersicherung(), versicherungFristMs);
-      } catch (fehler) {
-        kern.state = { ...kern.state, versicherung: { ...kern.state.versicherung, status: 'fehler', frisch: false, warnungen: [TEXT_VERSICHERUNG_NICHT_GELESEN] }, ...(istAuthFehler(fehler) ? { anmeldungNoetig: true } : {}) };
-        melden();
-        return false;
-      }
-      versUebernehmen(g, stand !== kern.schreibStand || kern.schreibend > 0 || wartend.length > 0 || versSchreibtNoch());
-      versGelesen = true;
-      melden();
-      return true;
-    })()
-      .catch(() => false)
-      .finally(() => {
-        versHolenLaeuft = null;
-      });
-    return versHolenLaeuft;
-  }
-
-  /** Vor dem Schreiben: einmal gelesen und der Hauptteil lesbar? → Fehlertext oder null. */
-  async function versBereit() {
-    if (!adapter.aendereVersicherung) return TEXT_FEHLER;
-    if (!versGelesen && !(await versHolen())) return kern.state.anmeldungNoetig ? TEXT_VERSICHERUNG_ANMELDEN : TEXT_VERSICHERUNG_NICHT_GELESEN;
-    return kern.state.versicherung.unlesbar.main ? TEXT_VERSICHERUNG_GESPERRT : null;
-  }
-
-  /** Ändert den Hauptteil (siehe teilAendern) mit `fn(daten)`; → wie teilErgebnis. Wirft, wenn `fn` schon am angezeigten Stand ablehnt. */
-  async function versHauptAendern(fn) {
-    return teilErgebnis(
-      await teilAendern(versOffen, 'haupt', fn, {
-        leer: leereVersicherung,
-        aktuell: () => kern.state.versicherung.daten,
-        mit: (daten) => ({ ...kern.state, versicherung: mitVersBestaetigt({ ...kern.state.versicherung, daten }) }),
-        async speichern(f) {
-          try {
-            return await adapter.aendereVersicherung(f);
-          } catch (e) {
-            if (e?.name === 'VersicherungGesperrt') {
-              FACHLICH.add(e);
-              versHauptSperren();
-            }
-            throw e;
-          }
-        },
-        async lesen() {
-          const g = await adapter.leseVersicherung();
-          if (g.unlesbar?.main) {
-            versHauptSperren();
-            return null;
-          }
-          return g.daten;
-        },
-        normalisiere: (d) => d ?? leereVersicherung(),
-      }),
-    );
-  }
 
   /**
    * Vor dem Schreiben eines Quartal-Teils: kennt der zuletzt GESPEICHERTE Hauptteil sein Jahr? Sonst zuerst dort eintragen – in DEMSELBEN
@@ -239,42 +104,6 @@ export function createVersicherungSlice(kern, { store, versicherungId, versicher
   }
 
   /**
-   * Ändert NUR den Quartal-Teil `t` = { jahr, quartal } mit `fn(teil)`; → wie teilErgebnis. Wirft wie versHauptAendern. `vorher()`
-   * (optional, async) läuft in jedem Schreibvorgang (auch beim Nachholen) vor dem Schreiben und darf fachlich ablehnen.
-   */
-  async function versTeilAendern(t, fn, { vorher = null } = {}) {
-    return teilErgebnis(
-      await teilAendern(versOffen, versSchluessel(t), fn, {
-        leer: () => leererVersicherungTeil(t.jahr, t.quartal),
-        aktuell: () => kern.state.versicherung.teile[t.jahr]?.[t.quartal] ?? null,
-        mit: (teil) => mitVersTeil(t, teil),
-        async speichern(f) {
-          try {
-            if (vorher) await vorher();
-            await versJahrSichern(t.jahr);
-            return await adapter.aendereVersicherungTeil(t.jahr, t.quartal, f);
-          } catch (e) {
-            if (e?.name === 'VersicherungTeilGesperrt') {
-              FACHLICH.add(e);
-              versTeilSperren(t);
-            }
-            throw e;
-          }
-        },
-        async lesen() {
-          const g = await adapter.leseVersicherungTeil(t.jahr, t.quartal);
-          if (g.unlesbar) {
-            versTeilSperren(t);
-            return null;
-          }
-          return g.teil;
-        },
-        normalisiere: (teil) => teil ?? leererVersicherungTeil(t.jahr, t.quartal),
-      }),
-    );
-  }
-
-  /**
    * Ändert den Quartal-Teil `t` mit `fn(teil)`. Kennt der zuletzt GESPEICHERTE Hauptteil das Jahr noch nicht, wird es zuerst dort
    * eingetragen und erst danach der Teil geschrieben (beim Nachholen sichert das versJahrSichern im Teil selbst). Gesperrt (unlesbar)
    * → Meldung. `optionen` siehe versTeilAendern. → wie teilErgebnis; wirft nie.
@@ -287,17 +116,6 @@ export function createVersicherungSlice(kern, { store, versicherungId, versicher
         if (!r.ok && !r.wartet) return r;
       }
       return await versTeilAendern(t, fn, optionen);
-    } catch (e) {
-      return { ok: false, fehler: e?.message || TEXT_FEHLER }; // schon am angezeigten Stand abgelehnt: nichts geändert
-    }
-  }
-
-  /** Änderung am Hauptteil für die Oberfläche: erst bereit, dann `fn`; nie ein Wurf. */
-  async function versHauptSicher(fn) {
-    const nichtBereit = await versBereit();
-    if (nichtBereit) return { ok: false, fehler: nichtBereit };
-    try {
-      return await versHauptAendern(fn);
     } catch (e) {
       return { ok: false, fehler: e?.message || TEXT_FEHLER }; // schon am angezeigten Stand abgelehnt: nichts geändert
     }
@@ -331,14 +149,7 @@ export function createVersicherungSlice(kern, { store, versicherungId, versicher
   }
 
   /** Neue Kennung (über `versicherungId`, 0-9a-v), die in `vergeben` noch nicht vorkommt; sonst null. */
-  function neueVersKennung(vergeben) {
-    for (let versuch = 0; versuch < 20; versuch += 1) {
-      const id = versicherungId();
-      if (typeof id !== 'string' || id === '') return null;
-      if (!vergeben.has(id)) return id;
-    }
-    return null;
-  }
+  const neueVersKennung = (vergeben) => neueKennung(versicherungId, vergeben);
 
   /**
    * Steht die Rechnung `id` (frisch gelesen) im Teil `t`? Sonst fachliche Ablehnung mit `text` – für die Schritte beim Verschieben.
@@ -453,33 +264,7 @@ export function createVersicherungSlice(kern, { store, versicherungId, versicher
      * Änderungen gehen vor, gemeldet wird nur eine echte Änderung. → true = aktuell, false = ging gerade nicht. Wirft nicht.
      */
     versicherungFrischLesen() {
-      if (versFrischLaeuft) return versFrischLaeuft;
-      const moeglich = () => adapter.leseVersicherung && kern.state.geladen && !kern.state.nurSnapshot && !kern.state.anmeldungNoetig;
-      const eigene = () => kern.schreibend > 0 || wartend.length > 0 || versSchreibtNoch();
-      if (!moeglich() || eigene()) return Promise.resolve(false);
-      versFrischLaeuft = (async () => {
-        const stand = kern.schreibStand;
-        let g;
-        try {
-          g = await mitFrist(adapter.leseVersicherung(), versicherungFristMs);
-        } catch (fehler) {
-          kern.state = { ...kern.state, versicherung: { ...kern.state.versicherung, frisch: false }, ...(istAuthFehler(fehler) ? { anmeldungNoetig: true } : {}) };
-          melden();
-          return false;
-        }
-        if (stand !== kern.schreibStand || eigene()) return false;
-        const vorher = kern.state;
-        versUebernehmen(g, false);
-        versGelesen = true;
-        if (JSON.stringify(kern.state.versicherung) !== JSON.stringify(vorher.versicherung)) melden();
-        else kern.state = vorher; // nichts geändert: derselbe Zustand (kein Neuzeichnen, kein neuer Push-Plan)
-        return true;
-      })()
-        .catch(() => false)
-        .finally(() => {
-          versFrischLaeuft = null;
-        });
-      return versFrischLaeuft;
+      return maschine.frischLesen();
     },
 
     /**
@@ -664,10 +449,10 @@ export function createVersicherungSlice(kern, { store, versicherungId, versicher
       versicherungLeeren,
       versicherungFuerSicherung,
       get versGelesen() {
-        return versGelesen;
+        return maschine.gelesen;
       },
       set versGelesen(wert) {
-        versGelesen = wert;
+        maschine.gelesen = wert;
       },
     },
   };

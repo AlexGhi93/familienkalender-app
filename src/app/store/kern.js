@@ -9,7 +9,6 @@ export const FACHLICH = new WeakSet();
 const TEXT_ANMELDEN = 'Bitte neu anmelden: deine Änderung wird danach gespeichert.';
 const TEXT_UNKLAR = 'Möglicherweise teilweise gespeichert – bitte aktualisieren.';
 const TEXT_SCHON_WIEDER_DA = 'Das ist inzwischen wieder eingetragen (wohl auf dem anderen Telefon) – nichts überschrieben.';
-export const TEXT_AUTOS_NEUER = 'Diesen Eintrag hat das andere Telefon mit einer neueren App-Version geändert. Bitte die App aktualisieren.';
 
 /** Ergebnis mit `rueckgaengig` – nur bei Erfolg und nur, wenn es ein Rückgängig gibt. */
 const mitRueckgaengig = (r, rueckgaengig) => (r.ok && rueckgaengig ? { ...r, rueckgaengig } : r);
@@ -18,44 +17,6 @@ export const istAuthFehler = (fehler) => fehler?.name === 'AuthAbgelaufen';
 
 /** `alt`, wenn `neu` denselben Inhalt hat (gleiches JSON), sonst `neu`: so bleibt die Identität unveränderter Daten erhalten. */
 export const gleichOder = (alt, neu) => (alt != null && JSON.stringify(alt) === JSON.stringify(neu) ? alt : neu);
-
-/**
- * `zusage` mit Frist: antwortet sie nicht binnen `ms`, wird abgelehnt (Name 'Zeitueberschreitung'); eine spätere Antwort zählt nicht mehr.
- * api.js kennt kein Timeout – ohne Frist bliebe ein hängendes Lesen der Autos für immer „laufend“ und würde nie wiederholt (Review T3 M3).
- */
-export function mitFrist(zusage, ms) {
-  let zeitgeber;
-  const frist = new Promise((_, nein) => {
-    // nicht unref(): sonst endet unter Node 22 die Ereignisschleife, während nur noch die Frist wartet (Test bricht ab); `finally` räumt ohnehin auf
-    zeitgeber = setTimeout(() => nein(Object.assign(new Error('Keine Antwort (Zeitüberschreitung).'), { name: 'Zeitueberschreitung' })), ms);
-  });
-  return Promise.race([zusage, frist]).finally(() => clearTimeout(zeitgeber));
-}
-
-/** Wie gleichOder, aber je Verlauf-Teil (zweistufig – auch für die Quartal-Teile der Versicherung): unveränderte Teile (und, ist alles gleich, das ganze Objekt) behalten ihre Identität. */
-export function historieGleichOder(alt, neu) {
-  let gleich = Object.keys(alt ?? {}).length === Object.keys(neu).length;
-  const ergebnis = {};
-  for (const [auto, jahre] of Object.entries(neu)) {
-    const a = alt?.[auto] ?? {};
-    const teile = {};
-    let autoGleich = Object.keys(a).length === Object.keys(jahre).length;
-    for (const [jahr, h] of Object.entries(jahre)) {
-      teile[jahr] = gleichOder(a[jahr], h);
-      if (teile[jahr] !== a[jahr]) autoGleich = false;
-    }
-    ergebnis[auto] = autoGleich ? a : teile;
-    if (ergebnis[auto] !== alt?.[auto]) gleich = false;
-  }
-  return gleich ? alt : ergebnis;
-}
-
-/** Ist `id` in `liste` (gelesene Einträge) oder unter den fremden (`fremd`, roh mit `i`)? Wirft sonst mit `weg` bzw. TEXT_AUTOS_NEUER. */
-export function eintragVorhanden(liste, fremd, id, weg) {
-  const x = (liste ?? []).find((e) => e.id === id);
-  if (x) return x;
-  throw new Error((fremd ?? []).some((k) => k?.i === id) ? TEXT_AUTOS_NEUER : weg);
-}
 
 /** Die Bereiche, deren Lesbarkeit jedes Laden meldet (`daten.unlesbar`); Schichtarten und Schichtmonate meldet das Lesen des Schichtplans. */
 const LADE_BEREICHE = Object.freeze(['einkauf', 'konto', 'settings']);
