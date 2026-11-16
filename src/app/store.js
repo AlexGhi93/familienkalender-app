@@ -11,9 +11,9 @@ import { autosZustand, createAutosSlice, leererAutosZustand } from './store/auto
 import { createEinkaufKontoSlice } from './store/einkauf-konto.js';
 import { createFixkostenSlice, fixAusDaten, leereFixkosten } from './store/fixkosten.js';
 import { createKalenderSlice } from './store/kalender.js';
+import { createSchichtSlice, leererSchichtplan, schichtAusDaten } from './store/schicht.js';
 import { createSparzieleSlice, leererZieleZustand, zieleZustand } from './store/sparziele.js';
 import { createVersicherungSlice, leererVersicherungZustand, versicherungZustand } from './store/versicherung.js';
-import { createSchichtSlice, leererSchichtplan, schichtAusDaten } from './store/schicht.js';
 
 const MIN_ABSTAND_MS = 60_000; // höchstens einmal pro Minute neu laden
 
@@ -34,7 +34,7 @@ const zufaelligeId = () => `u${Array.from({ length: 11 }, () => Math.floor(Math.
 export function createStore(adapter, { jetzt = () => new Date(), neueId = zufaelligeId, fixId = neueFixId, zielId = neueZielId, autoId = neueAutoId, autosFristMs = 20_000, versicherungId = () => neueVersicherungId(), versicherungFristMs = 20_000 } = {}) {
   const kern = createKern({ adapter, jetzt, neueId });
   const { wartend, melden, ausfuehren } = kern;
-  const store = {};
+  const store = {}; // die Scheiben rufen einander nur über die öffentlichen Methoden der Fassade (unten gefüllt)
   kern.state = { geladen: false, settings: normalizeSettings(), tage: {}, urlaub: [], termine: [], einkauf: leereListe(), konto: leeresKonto(), schicht: leererSchichtplan(), fixkosten: leereFixkosten(), ziele: leererZieleZustand(), autos: leererAutosZustand(), versicherung: leererVersicherungZustand(), unlesbar: [], fehler: null, fortschritt: null, anmeldungNoetig: false, fenster: null };
   let letzteLadung = 0;
 
@@ -50,6 +50,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
   const { autosHolen, autosLeeren, autosFuerSicherung } = autosScheibe.intern;
   const versScheibe = createVersicherungSlice(kern, { store, versicherungId, versicherungFristMs });
   const { versHolen, versicherungLeeren, versicherungFuerSicherung } = versScheibe.intern;
+  // zuletzt: das Vorladen des Schichtplans stößt das Lesen der Fixkosten, der Autos und der Versicherung an
   const schichtScheibe = createSchichtSlice(kern, { store, fixLesen, autosHolen, versHolen });
   const { schichtFuerSicherung } = schichtScheibe.intern;
 
