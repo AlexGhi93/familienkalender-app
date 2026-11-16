@@ -1,24 +1,18 @@
 import { todayVienna } from '../domain/dates.js';
 import { istObjekt } from '../domain/gemeinsam.js';
 import { normalizeSettings } from '../domain/settings.js';
-import { spanDays } from '../domain/span.js';
-import { planUmwandlung } from '../domain/umwandlung.js';
 import { entfernen as artikelEntfernen, erledigteEntfernen, hinzufuegen as artikelHinzufuegen, leereListe, normalisiereListe, umschalten as artikelUmschalten, wiederherstellen } from '../domain/einkauf.js';
-import { urlaubCheckEventId } from '../domain/ids.js';
-import { normalisiereTermin } from './termin.js';
-import { urlaubChecksAbgleich, urlaubChecksWunsch } from './urlaub-check.js';
 import { entferneExtra, entferneStand, extraWiederherstellen, fuegeExtraHinzu, leeresKonto, monatVor, normalisiereKonto, setzeStand, standWiederherstellen } from '../domain/konto.js';
 import { artAendern, artArchivieren, artHinzufuegen, artVerschieben, katalogErgaenzen, leererMonat, normalisiereKatalog, normalisiereMonat, schaltePinsel, schichtAm, setzeNotiz, setzeSchicht, standardKatalog, tageImMonat, vorladeMonate, zusatzEntfernen, zusatzHinzufuegen, zusatzWiederherstellen } from '../domain/schicht.js';
 import { FIX_SHARDS, TEXT_FIX_UNLESBAR, TEXT_FIX_VOLL, TEXT_TEIL_GESPERRT, leererShard, neueFixId, normalisiereShard, postenAnzahlPruefen, postenArchivieren, postenLoeschen, postenPruefen, postenSetzen, postenWiederanlegen, postenWiederherstellen, shardFuer } from '../domain/fixkosten.js';
-import { MAX_SERIEN_WOCHEN, naechsterWochentag, wochenSerie } from './serie.js';
 import { TEXT_AUTOS_GESPERRT, TEXT_AUTO_WEG, TEXT_HISTORIE_GESPERRT, arbeitLoeschen as arbeitLoeschenRein, arbeitPruefen, arbeitSetzen, arbeitSpur, arbeitWiederherstellen, autoAnlegen, autoLoeschen as autoLoeschenRein, autoSetzen, autoSpur, autoWiederherstellen, autosWarnungen, historieJahrBekannt, historieJahrEintragen, historieWarnungen, kmEintragen, kmLoeschen as kmLoeschenRein, kmPruefen, kmSpur, kmWiederherstellen, leereAutos, leereHistorie, neueAutoId, regelLoeschen as regelLoeschenRein, regelSetzen, regelSpur, regelWiederherstellen, satzLoeschen as satzLoeschenRein, satzSetzen, satzSpur, satzVerwendet, satzVerwendetText, satzWiederherstellen } from '../domain/autos.js';
 import { autosHistorien, kmPunkte } from '../domain/autos-rechnung.js';
 import { TEXT_POLIZZE_WEG, TEXT_RECHNUNG_WEG, TEXT_VERSICHERUNG_GESPERRT, TEXT_VERSICHERUNG_TEIL_GESPERRT, erstattungSetzen, fassungJetzt, leererVersicherungTeil, leereVersicherung, neueVersicherungId, polizzeAendern, polizzeAnlegen, rechnungJahr, rechnungLoeschen as rechnungLoeschenRein, rechnungPruefen, rechnungQuartal, rechnungSetzen, rechnungSpur, rechnungTeilWechseln, rechnungWiederherstellen, versicherungJahrBekannt, versicherungJahrEintragen, versicherungTeilWarnungen, versicherungWarnungen } from '../domain/versicherung.js';
 import { rechnungFinden } from '../domain/versicherung-rechnung.js';
 import { TEXT_ZIELE_GESPERRT, TEXT_ZIELE_NICHT_GELADEN, freiVerschieben as zielFreiVerschieben, leereZiele, neueZielId, startMonat, verschiebungLoeschen as verschiebungLoeschenRein, verschiebungWiederherstellen as verschiebungWiederherstellenRein, zielAusblenden as zielAusblendenRein, zielBeenden as zielBeendenRein, zielLoeschen as zielLoeschenRein, zielSchluss, zielSetzen, zielSpur, zielWiederherstellen as zielWiederherstellenRein, zieleWarnungen } from '../domain/sparziele.js';
 import { FACHLICH, TEXT_AUTOS_NEUER, TEXT_FEHLER, createKern, eintragVorhanden, gleichOder, historieGleichOder, istAuthFehler, ladeFelder, mitFrist } from './store/kern.js';
+import { createKalenderSlice } from './store/kalender.js';
 
-const KITA_TYPEN = ['kita_essen', 'kita_ohne'];
 const MIN_ABSTAND_MS = 60_000; // höchstens einmal pro Minute neu laden
 const SCHICHT_SICHERUNG_AB = '2026-01'; // erster Monat, den die Sicherung nach einem Schichtplan fragt
 const SCHICHT_SICHERUNG_VORAUS = 12; // … bis zwölf Monate nach dem laufenden
@@ -49,28 +43,8 @@ const TEXT_POLIZZE_SCHON_DA = 'Auf dem anderen Telefon wurde inzwischen schon ei
 const TEXT_KOPIE_GEAENDERT = 'Gespeichert. Die Rechnung wurde inzwischen auf dem anderen Telefon geändert – bitte noch einmal ansehen.';
 const TEXT_KATEGORIE_UNPRUEFBAR = 'Ein Teil der Rechnungen ist unlesbar – ob die Kategorie dort noch vorkommt, lässt sich nicht prüfen. Bitte die App auf beiden Telefonen aktualisieren.';
 
-/**
- * Lässt sich ein gelöschter Termin (oder Urlaub) genau so wieder anlegen? Nicht, wenn er ein Termin einer in Google Kalender
- * wiederkehrenden Serie ist (Kennung „<Serie>_<Zeitpunkt>“): neu geschrieben würde daraus ein anderes, einzelnes Ereignis.
- */
-const einzelnWiederherstellbar = (id) => typeof id === 'string' && id !== '' && !id.includes('_');
-
-/** Ergebnis eines Eintragens mit `rueckgaengig` – auch, wenn es nur auf die Anmeldung wartet (es bleibt sichtbar); nicht nach einem Fehlschlag. */
-const mitZuruecknehmen = (r, rueckgaengig) => (r.ok || r.wartet ? { ...r, rueckgaengig } : r);
-
 /** Zufällige ID aus den Zeichen 0-9 und a-v: so darf sie auch als Google-Ereignis-ID dienen. */
 const zufaelligeId = () => `u${Array.from({ length: 11 }, () => Math.floor(Math.random() * 32).toString(32)).join('')}`;
-
-/** Liegt [von, bis) vollständig in den Bereichen `bereiche` ({ von, bis }, auch mehrere aneinander anschließende oder überlappende)? */
-function bereichAbgedeckt(von, bis, bereiche) {
-  let bisHier = von;
-  for (const b of [...bereiche].sort((x, y) => x.von.localeCompare(y.von))) {
-    if (b.von > bisHier) break;
-    if (b.bis > bisHier) bisHier = b.bis;
-    if (bisHier >= bis) return true;
-  }
-  return bisHier >= bis;
-}
 
 /**
  * Schichtplan im Zustand: `katalog` null = noch nicht gelesen (die Ansicht zeigt dann die Standardarten). `vorgeladen` = der Monat
@@ -204,39 +178,10 @@ function zielVorhanden(daten, id) {
  */
 export function createStore(adapter, { jetzt = () => new Date(), neueId = zufaelligeId, fixId = neueFixId, zielId = neueZielId, autoId = neueAutoId, autosFristMs = 20_000, versicherungId = () => neueVersicherungId(), versicherungFristMs = 20_000 } = {}) {
   const kern = createKern({ adapter, jetzt, neueId });
-  const { wartend, melden, unlesbarMerken, gelesenMerken, ausfuehren, aendere, teilAendern, ergebnisVon, teilErgebnis, mitRueckgaengig, fachlich, fachlichAsync, ohneUeberschreiben } = kern;
+  const { wartend, melden, unlesbarMerken, gelesenMerken, ausfuehren, aendere, teilAendern, ergebnisVon, teilErgebnis, mitRueckgaengig, fachlich, fachlichAsync } = kern;
   const store = {};
   kern.state = { geladen: false, settings: normalizeSettings(), tage: {}, urlaub: [], termine: [], einkauf: leereListe(), konto: leeresKonto(), schicht: leererSchichtplan(), fixkosten: leereFixkosten(), ziele: leererZieleZustand(), autos: leererAutosZustand(), versicherung: leererVersicherungZustand(), unlesbar: [], fehler: null, fortschritt: null, anmeldungNoetig: false, fenster: null };
-  const geladeneBereiche = [];
-  kern.nachNeuLaden(() => () => {
-    geladeneBereiche.length = 0;
-  });
-  const ladendeBereiche = new Map(); // Schlüssel „von|bis“ → laufendes Laden (dieselbe Zusage für jeden, der denselben Bereich anfordert)
-
-  /** Lädt [von, bis) und übernimmt Tage, Urlaub und Termine dieses Zeitraums; Ergebnis wie sichereBereich. */
-  async function bereichLaden(von, bis) {
-    let erfolg = false;
-    try {
-      const d = await adapter.ladeBereich(von, bis);
-      const tage = { ...kern.state.tage };
-      for (const k of Object.keys(tage)) if (k >= von && k < bis) delete tage[k];
-      Object.assign(tage, d.tage);
-      kern.state = {
-        ...kern.state,
-        tage,
-        termine: [...kern.state.termine.filter((t) => !(t.date >= von && t.date < bis)), ...d.termine],
-        urlaub: [...kern.state.urlaub.filter((u) => !d.urlaub.some((x) => x.id === u.id)), ...d.urlaub],
-      };
-      geladeneBereiche.push({ von, bis });
-      erfolg = true;
-    } catch (fehler) {
-      kern.state = istAuthFehler(fehler) ? { ...kern.state, anmeldungNoetig: true } : { ...kern.state, fehler: 'Dieser Zeitraum konnte nicht geladen werden.' };
-    }
-    melden();
-    return erfolg;
-  }
   let letzteLadung = 0;
-  let checksLaufen = false;
   let einkaufGeprueft = null; // wann die Einkaufsliste zuletzt mit dem Kalender abgeglichen war (ms): Laden, Aktualisieren, eigenes Speichern
   let einkaufHolen = null; // laufende Abfrage der Einkaufsliste: mehrfaches Anstoßen fragt nur einmal
   let schichtVorladenLaeuft = null; // laufendes Vorladen des Schichtplans: mehrfaches Anstoßen fragt nur einmal
@@ -278,36 +223,6 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
   }
   /** Ist Ändern gerade verboten? → Meldung oder null (unlesbar, oder nicht (erfolgreich) gelesen). */
   const zieleGesperrt = () => (kern.state.ziele.unlesbar ? TEXT_ZIELE_GESPERRT : kern.state.ziele.status === 'geladen' || kern.state.ziele.status === 'gespeichert' ? null : TEXT_ZIELE_NICHT_GELADEN);
-  const pruefeWochen = (wochen) => {
-    if (!Number.isInteger(wochen) || wochen < 1 || wochen > MAX_SERIEN_WOCHEN) throw new Error(`Wochen: bitte 1 bis ${MAX_SERIEN_WOCHEN} wählen.`);
-  };
-
-  /** Termine einer wöchentlichen Serie ab `roh.date` (Feiertage, Urlaub usw. werden verschoben oder übersprungen). */
-  function serieTermine(roh, wochen) {
-    const basis = normalisiereTermin({ ...roh, typ: 'kita_sache', serie: undefined });
-    const plan = wochenSerie(kern.state, { start: basis.date, wochen, richtung: basis.richtung, heute: todayVienna(jetzt()) });
-    const serie = neueId();
-    return {
-      termine: plan.eintraege.map((e) => ({ id: neueId(), ...basis, date: e.date, serie })),
-      verschoben: plan.eintraege.filter((e) => e.verschobenVon).length,
-      uebersprungen: plan.uebersprungen,
-    };
-  }
-
-  /** Legt Termine an (oder ersetzt die mit derselben Kennung). Wirft sofort, wenn es keinen gibt; sonst → wie `ergebnisVon`. */
-  async function termineAnlegen(neue) {
-    if (neue.length === 0) throw new Error('In diesem Zeitraum gibt es keinen passenden Tag.');
-    const ids = new Set(neue.map((t) => t.id));
-    const e = await aendere({ termine: [...kern.state.termine.filter((t) => !ids.has(t.id)), ...neue] }, async (bericht) => {
-      let i = 0;
-      for (const t of neue) {
-        await adapter.speichereTermin(t);
-        bericht((i += 1), neue.length);
-      }
-    });
-    return ergebnisVon(e);
-  }
-
   /**
    * Ändert die Einkaufsliste: `fn(liste)` → neue Liste. Sofort sichtbar; bei Google wird `fn` auf die NEUESTE Fassung angewendet,
    * damit zwei Telefone sich nicht überschreiben. Wirft sofort (ohne etwas zu ändern), wenn `fn` die Eingabe ablehnt.
@@ -1457,24 +1372,8 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     return { katalog: katalog ? normalisiereKatalog(katalog).katalog : null, monate };
   }
 
-  /** Stellt Tage auf einen früheren Stand zurück: `vorher` = [[Datum, Typ oder null], …]. → 'ok' | 'auth' | 'fehler' (wie `aendere`). */
-  async function stelleTageWieder(vorher, zusatz = {}) {
-    const tage = { ...kern.state.tage };
-    for (const [d, t] of vorher) {
-      if (t === null) delete tage[d];
-      else tage[d] = { typ: t };
-    }
-    return aendere({ tage, ...zusatz.zustand }, async (bericht) => {
-      if (zusatz.vorher) await zusatz.vorher();
-      let i = 0;
-      for (const [d, t] of vorher) {
-        if (t === null) await adapter.loescheTag(d);
-        else await adapter.setzeTag(d, t);
-        bericht((i += 1), vorher.length);
-      }
-    });
-  }
-
+  const kalenderScheibe = createKalenderSlice(kern, { store });
+  const { geladeneBereiche } = kalenderScheibe.intern;
   Object.assign(store, {
     getState: () => kern.state,
     subscribe: (fn) => kern.abonnieren(fn),
@@ -1583,25 +1482,6 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     },
 
     /**
-     * Holt Tage, Urlaub und Termine eines Zeitraums nach (Monat zurückblättern); mehrfaches Anfordern lädt nur einmal: wer einen
-     * Bereich anfordert, der gerade geladen wird, wartet auf dasselbe Laden. Abgedeckt ist ein Zeitraum auch durch mehrere
-     * aneinander anschließende geladene Bereiche (z. B. „Ältere laden“ Schritt für Schritt).
-     * Ergebnis: true, wenn der Zeitraum jetzt da ist; false, wenn es nicht möglich war (Demo, Fehler).
-     */
-    sichereBereich(von, bis) {
-      if (!adapter.ladeBereich || !kern.state.fenster) return Promise.resolve(false);
-      if (bereichAbgedeckt(von, bis, [kern.state.fenster, ...geladeneBereiche])) return Promise.resolve(true);
-      const schluessel = `${von}|${bis}`;
-      if (!ladendeBereiche.has(schluessel)) {
-        ladendeBereiche.set(
-          schluessel,
-          bereichLaden(von, bis).finally(() => ladendeBereiche.delete(schluessel)),
-        );
-      }
-      return ladendeBereiche.get(schluessel);
-    },
-
-    /**
      * Alle Daten für die Sicherung. Mit Google wird der gesamte Verlauf aus den Kalendern geholt (Anmeldefehler laufen nach oben);
      * in der Demo steht ohnehin alles im Zustand. Der Schichtplan wird in beiden Fällen Monat für Monat gelesen, die Fixkosten (alle vier
      * Teile), die Sparziele (`ziele` = { daten, unlesbar, text }), die Autos (`autos` = { daten, historie, rohtexte }) und die Versicherung
@@ -1616,169 +1496,6 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       const autos = await autosFuerSicherung();
       const versicherung = await versicherungFuerSicherung();
       return { settings: kern.state.settings, tage: roh.tage, urlaub: roh.urlaub, termine: roh.termine, einkauf: kern.state.einkauf, konto: kern.state.konto, schicht, fixkosten, ziele, autos, versicherung };
-    },
-
-    /**
-     * Gleicht die Urlaub-Checks im Kalender mit dem Stand des Urlaubs ab (am 1.3., 1.5., 1.7. um 09:00, solange noch Urlaub offen ist).
-     * Nur mit Google und frisch geladenen Daten; Fehler (z. B. abgelaufene Anmeldung) sind kein Problem: beim nächsten Öffnen erneut.
-     * Ergebnis: true, wenn etwas geschrieben wurde.
-     */
-    async urlaubChecksAbgleichen() {
-      if (!adapter.gleicheUrlaubChecksAb || !kern.state.geladen || kern.state.nurSnapshot || checksLaufen) return false;
-      const heute = todayVienna(jetzt());
-      const { schreiben, loeschen } = urlaubChecksAbgleich({ wunsch: urlaubChecksWunsch(kern.state, heute), vorhanden: kern.state.urlaubChecks ?? [], heute });
-      if (schreiben.length === 0 && loeschen.length === 0) return false;
-      checksLaufen = true;
-      try {
-        await adapter.gleicheUrlaubChecksAb({ schreiben, loeschen });
-      } catch {
-        return false;
-      } finally {
-        checksLaufen = false;
-      }
-      const weg = new Set([...loeschen, ...schreiben.map((c) => urlaubCheckEventId(c.date))]);
-      const neu = schreiben.map((c) => ({ id: urlaubCheckEventId(c.date), date: c.date, titel: c.title }));
-      kern.state = { ...kern.state, urlaubChecks: [...(kern.state.urlaubChecks ?? []).filter((c) => !weg.has(c.id)), ...neu].sort((a, b) => a.date.localeCompare(b.date)) };
-      return true;
-    },
-
-    setTag: (date, typ) => store.setTage([date], typ),
-
-    /**
-     * Setzt den Typ für mehrere Tage. → wie `ergebnisVon`, dazu `rueckgaengig()` (stellt die Tage auf den früheren Stand) – nicht,
-     * wenn das Speichern gescheitert ist (dann ist schon alles zurückgenommen und neu geladen).
-     */
-    async setTage(dates, typ) {
-      const vorher = dates.map((d) => [d, kern.state.tage[d]?.typ ?? null]);
-      const tage = { ...kern.state.tage };
-      for (const d of dates) tage[d] = { typ };
-      const e = await aendere({ tage }, async (bericht) => {
-        let i = 0;
-        for (const d of dates) {
-          await adapter.setzeTag(d, typ);
-          bericht((i += 1), dates.length);
-        }
-      });
-      return mitZuruecknehmen(ergebnisVon(e), () => stelleTageWieder(vorher));
-    },
-
-    /**
-     * Löscht den Eintrag eines Tages. → { ok, fehler?, gemeldet?, wartet?, rueckgaengig? } (siehe `ergebnisVon`); `rueckgaengig()` setzt
-     * den Typ wieder – nicht bei einem Tag mit Konflikt (zwei Einträge: der verdrängte käme nicht zurück). Nichts da → { ok: true }.
-     */
-    async loescheTag(date) {
-      const vorher = kern.state.tage[date];
-      if (!vorher) return { ok: true };
-      const tage = { ...kern.state.tage };
-      delete tage[date];
-      const r = ergebnisVon(await aendere({ tage }, () => adapter.loescheTag(date)));
-      const zurueck = async () =>
-        ergebnisVon(await aendere({ tage: { ...kern.state.tage, [date]: { typ: vorher.typ } } }, ohneUeberschreiben(() => (adapter.stelleTagWieder ? adapter.stelleTagWieder(date, vorher.typ) : adapter.setzeTag(date, vorher.typ)))));
-      return mitRueckgaengig(r, vorher.konflikt ? null : zurueck);
-    },
-
-    /**
-     * Legt einen Urlaub an; Betreuungstage darin werden umgewandelt (gelöscht). Wirft sofort bei einem ungültigen Zeitraum.
-     * → wie `ergebnisVon`, dazu { id, umgewandelt } und `rueckgaengig()` (nicht, wenn das Speichern gescheitert ist).
-     */
-    async urlaubHinzufuegen({ start, end }) {
-      if (!(start <= end)) throw new Error('Ungültiger Zeitraum');
-      const tage = { ...kern.state.tage };
-      const betreuung = new Set(spanDays({ start, end }).filter((d) => KITA_TYPEN.includes(tage[d]?.typ)));
-      const plan = planUmwandlung({ dates: [...betreuung], zielTyp: 'urlaub', vorhandeneBifen: betreuung });
-      const entfernt = plan.loeschen.map((d) => [d, tage[d].typ]);
-      for (const d of plan.loeschen) delete tage[d];
-      const eintrag = { id: neueId(), start, end };
-      const e = await aendere({ tage, urlaub: [...kern.state.urlaub, eintrag] }, async (bericht) => {
-        const gesamt = plan.loeschen.length + 1;
-        let i = 0;
-        for (const d of plan.loeschen) {
-          await adapter.loescheTag(d);
-          bericht((i += 1), gesamt);
-        }
-        await adapter.speichereUrlaub(eintrag);
-        bericht(gesamt, gesamt);
-      });
-      const zurueck = () =>
-        stelleTageWieder(entfernt, {
-          zustand: { urlaub: kern.state.urlaub.filter((u) => u.id !== eintrag.id) },
-          vorher: () => adapter.loescheUrlaub(eintrag.id),
-        });
-      return mitZuruecknehmen({ ...ergebnisVon(e), id: eintrag.id, umgewandelt: plan.loeschen.length }, zurueck);
-    },
-
-    /**
-     * Löscht einen Urlaub. → wie `loescheTag`; `rueckgaengig()` schreibt denselben Zeitraum mit derselben Kennung wieder (nicht bei
-     * einem Ereignis einer wiederkehrenden Google-Serie, siehe einzelnWiederherstellbar).
-     */
-    async urlaubLoeschen(id) {
-      const u = kern.state.urlaub.find((x) => x.id === id);
-      const r = ergebnisVon(await aendere({ urlaub: kern.state.urlaub.filter((x) => x.id !== id) }, () => adapter.loescheUrlaub(id)));
-      const zurueck = async () =>
-        ergebnisVon(await aendere({ urlaub: [...kern.state.urlaub.filter((x) => x.id !== id), u] }, ohneUeberschreiben(() => (adapter.stelleUrlaubWieder ? adapter.stelleUrlaubWieder(u) : adapter.speichereUrlaub(u)))));
-      return mitRueckgaengig(r, u && einzelnWiederherstellbar(id) ? zurueck : null);
-    },
-
-    /**
-     * Legt einen Termin an oder ändert ihn (mit `id`). Wirft bei ungültigen Eingaben sofort einen Error mit deutscher Meldung.
-     * → wie `ergebnisVon`, dazu `id` (auch wenn das Speichern gescheitert ist: dann steht der Termin nicht mehr im Zustand).
-     */
-    async terminSpeichern(roh, id = null) {
-      const termin = { id: id ?? neueId(), ...normalisiereTermin(roh) };
-      const termine = [...kern.state.termine.filter((t) => t.id !== termin.id), termin];
-      return { ...ergebnisVon(await aendere({ termine }, () => adapter.speichereTermin(termin))), id: termin.id };
-    },
-
-    /**
-     * Löscht einen Termin (oder eine einzelne Sache, auch aus einer Serie). → wie `loescheTag`; `rueckgaengig()` schreibt ihn unverändert
-     * mit derselben Kennung wieder – nicht bei einem Termin einer wiederkehrenden Google-Serie; ist er inzwischen wieder da (anderes
-     * Telefon), bleibt er unverändert (Meldung).
-     */
-    async terminLoeschen(id) {
-      const t = kern.state.termine.find((x) => x.id === id);
-      const r = ergebnisVon(await aendere({ termine: kern.state.termine.filter((x) => x.id !== id) }, () => adapter.loescheTermin(id)));
-      const zurueck = async () =>
-        ergebnisVon(await aendere({ termine: [...kern.state.termine.filter((x) => x.id !== id), t] }, ohneUeberschreiben(() => (adapter.stelleTerminWieder ? adapter.stelleTerminWieder(t) : adapter.speichereTermin(t)))));
-      return mitRueckgaengig(r, t && einzelnWiederherstellbar(id) ? zurueck : null);
-    },
-
-    /**
-     * Sachen für Krabbelstube/Kindergarten: einmalig (`wochen` = 1), als wöchentliche Serie (`wochen` > 1)
-     * oder, mit `id`, als Änderung genau dieser Sache. Wirft sofort bei ungültigen Eingaben. → wie `ergebnisVon`, dazu
-     * { ids, verschoben, uebersprungen }.
-     */
-    async sachenSpeichern(roh, { wochen = 1, id = null } = {}) {
-      pruefeWochen(wochen);
-      if (id) {
-        const alt = kern.state.termine.find((t) => t.id === id);
-        const basis = normalisiereTermin({ ...roh, typ: 'kita_sache', serie: alt?.serie });
-        return { ...(await termineAnlegen([{ id, ...basis }])), ids: [id], verschoben: 0, uebersprungen: [] };
-      }
-      if (wochen === 1) {
-        const termin = { id: neueId(), ...normalisiereTermin({ ...roh, typ: 'kita_sache', serie: undefined }) };
-        return { ...(await termineAnlegen([termin])), ids: [termin.id], verschoben: 0, uebersprungen: [] };
-      }
-      const r = serieTermine(roh, wochen);
-      return { ...(await termineAnlegen(r.termine)), ids: r.termine.map((t) => t.id), verschoben: r.verschoben, uebersprungen: r.uebersprungen };
-    },
-
-    /** Pyjamas-Wechsel: wöchentlich „Pyjamas hinbringen“ (hinTag) und „Pyjamas heimholen“ (heimTag), Mo = 0 … Fr = 4. → wie `sachenSpeichern`. */
-    async pyjamasWechselSpeichern({ hinTag = 0, heimTag = 4, wochen = 8, mitnehmen = ['Pyjamas'] } = {}) {
-      pruefeWochen(wochen);
-      for (const tag of [hinTag, heimTag]) {
-        if (!Number.isInteger(tag) || tag < 0 || tag > 4) throw new Error('Bitte Wochentage von Montag bis Freitag wählen.');
-      }
-      const heute = todayVienna(jetzt());
-      const { bringzeit, abholzeit } = kern.state.settings;
-      const hin = serieTermine({ richtung: 'hin', date: naechsterWochentag(heute, hinTag), time: bringzeit, mitnehmen, kosten: null }, wochen);
-      const heim = serieTermine({ richtung: 'heim', date: naechsterWochentag(heute, heimTag), time: abholzeit, mitnehmen, kosten: null }, wochen);
-      const neue = [...hin.termine, ...heim.termine];
-      return {
-        ...(await termineAnlegen(neue)),
-        ids: neue.map((t) => t.id),
-        verschoben: hin.verschoben + heim.verschoben,
-        uebersprungen: [...hin.uebersprungen, ...heim.uebersprungen],
-      };
     },
 
     /**
@@ -2021,33 +1738,6 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       if (r.entfernt.length === 0) return { anzahl: 0, rueckgaengig: async () => {} };
       await einkaufAendern((liste) => erledigteEntfernen(liste).liste);
       return { anzahl: r.entfernt.length, rueckgaengig: () => einkaufAendern((liste) => wiederherstellen(liste, r)) };
-    },
-
-    /** Löscht diese Sache und, falls sie zu einer Serie gehört, alle folgenden. Gibt die Anzahl gelöschter Sachen zurück. */
-    async terminLoeschenAbHier(id) {
-      const t = kern.state.termine.find((x) => x.id === id);
-      if (!t) return 0;
-      const weg = t.serie ? kern.state.termine.filter((x) => x.serie === t.serie && x.date >= t.date) : [t];
-      await aendere({ termine: kern.state.termine.filter((x) => !weg.includes(x)) }, async (bericht) => {
-        let i = 0;
-        for (const x of weg) {
-          await adapter.loescheTermin(x.id);
-          bericht((i += 1), weg.length);
-        }
-      });
-      return weg.length;
-    },
-
-    /** „Erledigt“: entfernt die Sache (und damit die Erinnerung). `rueckgaengig` stellt sie unverändert wieder her. */
-    async terminErledigt(id) {
-      const t = kern.state.termine.find((x) => x.id === id);
-      if (!t) return { rueckgaengig: async () => {} };
-      await aendere({ termine: kern.state.termine.filter((x) => x.id !== id) }, () => adapter.loescheTermin(id));
-      return {
-        rueckgaengig: async () => {
-          await aendere({ termine: [...kern.state.termine.filter((x) => x.id !== id), t] }, () => adapter.speichereTermin(t));
-        },
-      };
     },
 
     /**
@@ -2828,20 +2518,6 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       return mitRueckgaengig(r, spur ? zurueck : null);
     },
 
-    async einstellungen(teil) {
-      const settings = normalizeSettings({ ...kern.state.settings, ...teil });
-      await aendere({ settings }, async () => {
-        await adapter.speichereSettings(teil);
-        if (unlesbarMerken('settings', false)) melden(); // nicht abgelehnt: die gespeicherten Einstellungen waren lesbar
-      });
-    },
-
-    /** Erinnerungen (nur mit Google): prüfen, reparieren, Test-Erinnerung starten/beenden. Fehler der Anmeldung laufen nach oben. */
-    erinnerungenPruefen: () => adapter.pruefeErinnerungen(),
-    erinnerungenReparieren: () => adapter.repariereErinnerungen(),
-    erinnerungenTestStarten: () => adapter.starteTestErinnerung(),
-    erinnerungenTestBeenden: () => adapter.beendeTestErinnerung(),
-
     async zuruecksetzen() {
       const daten = await adapter.zuruecksetzen();
       kern.state = { ...kern.state, ...daten, schicht: daten.schicht ? schichtAusDaten(daten.schicht) : leererSchichtplan(), fixkosten: fixAusDaten(daten.fixkosten), ziele: daten.ziele ? zieleZustand(daten.ziele, 'geladen') : leererZieleZustand(), autos: daten.autos ? autosZustand(daten.autos, 'gespeichert') : leererAutosZustand(), versicherung: daten.versicherung ? versicherungZustand(daten.versicherung, 'gespeichert') : leererVersicherungZustand(), geladen: true, fehler: null };
@@ -2851,6 +2527,6 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       melden();
       store.schichtVorladen(); // neue Beispieldaten: im Hintergrund wieder vorladen (wirft nicht)
     },
-  });
+  }, kalenderScheibe.methoden);
   return store;
 }
