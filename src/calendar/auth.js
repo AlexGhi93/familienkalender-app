@@ -37,6 +37,7 @@ const TEXTE = {
   berechtigung: 'Bitte im Google-Fenster bei beiden Kalender-Berechtigungen das Häkchen setzen und noch einmal tippen.',
   dienst: 'Der Anmelde-Dienst ist gerade nicht erreichbar. Bitte noch einmal tippen – die Anmeldung gilt dann wie bisher eine Stunde.',
   sitzung_abgelaufen: 'Die dauerhafte Anmeldung ist abgelaufen. Bitte noch einmal tippen und neu anmelden.',
+  netz: 'Das Telefon hat gerade kein Internet. Bitte noch einmal tippen, sobald die Verbindung wieder da ist.',
 };
 // Der Google-Code (z. B. „invalid_client“) hilft bei der Fehlersuche; nur kurze Kleinbuchstaben, damit nie etwas Geheimes in der Meldung landet.
 const codeText = (code) => (typeof code === 'string' && /^[a-z_]{1,40}$/.test(code) ? code : null);
@@ -63,7 +64,8 @@ function ladeGisImBrowser() {
 
 /**
  * `gis` = google.accounts.oauth2 (oder `ladeGis()` liefert es bei Bedarf). `jetzt` ist für Tests austauschbar.
- * Login-Dienst: `dienst` = Adresse (leer = aus), `speicher` = localStorage, `fetch`, `planen`/`abbrechen` = Zeitgeber, `zufall` = state.
+ * Login-Dienst: `dienst` = Adresse (leer = aus), `speicher` = localStorage, `fetch`, `planen`/`abbrechen` = Zeitgeber, `zufall` = state,
+ * `online` = hat das Telefon Netz? (Standard: navigator.onLine, siehe createLoginDienst).
  */
 export function createAuth({
   gis = null,
@@ -78,6 +80,7 @@ export function createAuth({
   planen = (fn, ms) => setTimeout(fn, ms),
   abbrechen = (id) => clearTimeout(id),
   zufall = zufallsText,
+  online,
 } = {}) {
   let token = null;
   let ausgestelltAm = 0;
@@ -90,13 +93,14 @@ export function createAuth({
   const hoerer = new Set();
 
   // Login-Dienst (nur wenn eingerichtet)
-  const dienstApi = dienst ? createLoginDienst({ basis: dienst, fetch }) : null;
+  const dienstApi = dienst ? createLoginDienst({ basis: dienst, fetch, ...(online ? { online } : {}) }) : null;
   const ablage = dienstApi ? (speicher === undefined ? standardSpeicher() : speicher) : null;
   let sitzung = dienstApi ? sitzungLesen(ablage) : null; // dieses Telefon ist dauerhaft angemeldet
   let oauth2 = gis; // google.accounts.oauth2 für den Code-Client (im Tipp synchron nutzbar)
   let still = null; // laufende stille Anmeldung (Promise)
   let erneuerung = null; // Zeitgeber fürs stille Erneuern vor dem Ablauf
   let dienstAus = false; // der Dienst war zuletzt nicht erreichbar
+  let funkloch = false; // die letzte stille Anfrage scheiterte ohne Netz ('netz'): keine Störung des Dienstes, nur für die Meldung beim Tipp
   let fehlversuchAm = 0;
   let zustimmung = false; // nächster Code-Versuch mit Kontoauswahl und Zustimmung (nach „kein Dauerzugang“)
   let nurStunde = false; // Google gab auch mit Zustimmung keinen Dauerzugang: bis zum Neuladen der Token-Flow
@@ -194,6 +198,17 @@ export function createAuth({
     }, erneuernInMs(ablauf, jetzt()));
   }
 
+  /** Die stille Erneuerung ist gescheitert (Dienst oder Netz) und die Sitzung gibt es noch: in NEUVERSUCH_MS noch einmal, sonst bliebe der Zeitgeber aus. */
+  function neuversuchPlanen() {
+    if (erneuerung !== null) abbrechen(erneuerung);
+    erneuerung = null;
+    if (sitzung === null) return;
+    erneuerung = planen(() => {
+      erneuerung = null;
+      stillAnmelden();
+    }, NEUVERSUCH_MS);
+  }
+
   function tokenUebernehmen(antwort) {
     token = antwort.access_token;
     ausgestelltAm = jetzt();
@@ -213,7 +228,8 @@ export function createAuth({
   /**
    * Holt ohne Tipp und ohne Google-Fenster ein frisches Token über den Dienst (nur mit Sitzung). Ergebnis: true, wenn danach
    * ein gültiges Token da ist. Bei „abgelaufen“ (Sitzung ungültig) wird die Sitzung gelöscht; ist der Dienst nicht
-   * erreichbar, bleibt alles, wie es ist (frühestens nach NEUVERSUCH_MS wird wieder gefragt).
+   * erreichbar, bleibt alles, wie es ist (frühestens nach NEUVERSUCH_MS wird wieder gefragt). Ein Funkloch ('netz') ist keine
+   * Störung des Dienstes: der nächste Aufruf fragt sofort wieder. In beiden Fällen versucht es der Zeitgeber nach NEUVERSUCH_MS erneut.
    */
   function stillAnmelden() {
     if (!dienstApi) return Promise.resolve(false);
@@ -226,6 +242,7 @@ export function createAuth({
       .token(s)
       .then((r) => {
         if (sitzung !== s) return tokenGueltig(); // inzwischen abgemeldet oder neu angemeldet: Antwort verwerfen
+        funkloch = r.art === 'netz';
         if (r.art === 'ok') {
           dienstAus = false;
           tokenUebernehmen(r);
@@ -237,8 +254,11 @@ export function createAuth({
           schonAngemeldet = true; // → „abgelaufen“: die Oberfläche bietet „Verbinden“ an (dann wieder mit Google-Fenster)
           return false;
         }
-        dienstAus = true;
-        fehlversuchAm = jetzt();
+        if (!funkloch) {
+          dienstAus = true;
+          fehlversuchAm = jetzt();
+        }
+        neuversuchPlanen();
         return tokenGueltig();
       })
       .finally(() => {
@@ -253,7 +273,7 @@ export function createAuth({
   function stillWeg() {
     laufend = stillAnmelden()
       .then((ok) => {
-        if (!ok) throw fehler(sitzung === null ? 'sitzung_abgelaufen' : 'dienst');
+        if (!ok) throw fehler(sitzung === null ? 'sitzung_abgelaufen' : funkloch ? 'netz' : 'dienst');
       })
       .finally(() => {
         laufend = null;
@@ -324,6 +344,7 @@ export function createAuth({
         }
         if (r.art === 'berechtigung') throw fehler('berechtigung');
         if (r.art === 'code') throw fehler('unbekannt', 'invalid_grant');
+        if (r.art === 'netz') throw fehler('netz'); // Funkloch: der Dienst gilt nicht als gestört, der nächste Tipp nimmt wieder diesen Weg
         dienstAus = true;
         fehlversuchAm = jetzt();
         throw fehler('dienst');

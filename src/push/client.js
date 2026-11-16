@@ -12,6 +12,9 @@ const TAGE_VORAUS = 60;
 // Sonst bliebe er liegen, wenn danach nichts mehr anstößt (z. B. eine eigene Änderung wurde fertig gespeichert, ohne Meldung).
 const NACHHOLEN_MS = Object.freeze([30_000, 120_000, 600_000]);
 const TAG_MS = 24 * 3600_000;
+// Auch ein unveränderter Plan geht nach dieser Zeit noch einmal hinaus (siehe syncEinmal): der Plan beim Push-Dienst gehört der ganzen
+// Familie, und das andere Telefon kann ihn inzwischen ohne Autos oder Versicherung ersetzt haben (dort ging deren Lesen gerade nicht).
+export const PLAN_HOECHSTALTER_MS = 6 * 60 * 60_000;
 const K = { geraet: 'fk.push.geraet.v1', aktiv: 'fk.push.aktiv.v1', digest: 'fk.push.digest.v1', stand: 'fk.push.stand.v1', erloschen: 'fk.push.erloschen.v1', person: 'fk.push.person.v1', personen: 'fk.push.personen.v1' };
 const enc = new TextEncoder();
 
@@ -40,14 +43,29 @@ export function erkenneUmgebung(navigator, fenster) {
   return { ios, installiert, pushUnterstuetzt, name };
 }
 
+/**
+ * Standard für `vorbereiten`: Schichtplan und Fixkosten frisch lesen (`store.schichtFrischLesen`, entscheidet allein, ob gesendet wird)
+ * und so lange auf das Frisch-Lesen der Autos und der Versicherung warten (beide enden von selbst nach ihrer Frist von 20 s). Ohne das
+ * Warten ginge der erste Plan nach dem Öffnen ohne ihre Erinnerungen hinaus. Scheitern sie, hält das den Plan nicht auf: er geht dann
+ * mit dem hinaus, was frisch ist (siehe plan.js).
+ */
+async function frischVorDemSenden(store) {
+  if (!store.schichtFrischLesen) return true;
+  const schicht = store.schichtFrischLesen(); // stößt Autos und Versicherung selbst an; die Aufrufe unten bekommen dann dasselbe Lesen
+  const nebenher = Promise.allSettled([store.autosFrischLesen, store.versicherungFrischLesen].map(async (lesen) => lesen?.call(store)));
+  const ok = await schicht;
+  await nebenher;
+  return ok;
+}
+
 const NICHT_ERREICHBAR = () => new PushFehler('dienst-nicht-erreichbar', 'Der Push-Dienst ist gerade nicht erreichbar. Google Kalender erinnert trotzdem.');
 
 /**
  * `store` (getState), `adapter` (leseGeraete, aendereGeraete), `config` ({ dienst, vapidPublic }), `fetch`, `navigator`, `Notification`,
  * `speicher` (localStorage-artig), `umgebung` (siehe erkenneUmgebung), `jetzt`, `zeitgeber` ({ setze, loesche }).
- * `vorbereiten()` → true, wenn der Zustand jetzt frisch genug zum Senden ist (Standard: `store.schichtFrischLesen`, liest Schichtplan und Fixkosten).
+ * `vorbereiten()` → true, wenn der Zustand jetzt frisch genug zum Senden ist (Standard: `frischVorDemSenden`, liest Schichtplan und Fixkosten und wartet auf Autos und Versicherung).
  */
-export function createPush({ store, adapter, config, fetch, navigator, Notification, speicher, umgebung, jetzt = () => new Date(), zeitgeber = { setze: (f, ms) => setTimeout(f, ms), loesche: (id) => clearTimeout(id) }, vorbereiten = () => (store.schichtFrischLesen ? store.schichtFrischLesen() : true) }) {
+export function createPush({ store, adapter, config, fetch, navigator, Notification, speicher, umgebung, jetzt = () => new Date(), zeitgeber = { setze: (f, ms) => setTimeout(f, ms), loesche: (id) => clearTimeout(id) }, vorbereiten = () => frischVorDemSenden(store) }) {
   let letzterFehler = null;
   let timer = null;
   let nachholen = null; // Zeitgeber für das Nachholen eines wartenden Abgleichs (höchstens einer)
@@ -201,7 +219,7 @@ export function createPush({ store, adapter, config, fetch, navigator, Notificat
 
   /**
    * Hält den Plan beim Push-Dienst aktuell. Läuft nur nach einem frischen Laden aus Google (nie aus dem gespeicherten Stand) und nur,
-   * wenn sich etwas geändert hat (oder mit `erzwingen`). Gibt { art: 'uebersprungen' | 'wartet' | 'unveraendert' | 'gesendet', … } zurück.
+   * wenn sich etwas geändert hat oder die letzte Sendung PLAN_HOECHSTALTER_MS her ist (oder mit `erzwingen`). Gibt { art: 'uebersprungen' | 'wartet' | 'unveraendert' | 'gesendet', … } zurück.
    * 'wartet': Schichtplan und Fixkosten sind für den laufenden Monat noch nicht vorgeladen (siehe planQuellen). Das Telefon steht dann
    * schon im Register, aber kein Plan geht hinaus – er würde die Erinnerungen an Zusätze und Kündigungsfristen löschen. Ebenso, wenn
    * Schichtplan oder Fixkosten vor dem Senden nicht frisch gelesen werden konnten (Lesefehler, eigene Änderung wird noch gespeichert). Ein wartender Abgleich wird nachgeholt
@@ -251,7 +269,10 @@ export function createPush({ store, adapter, config, fetch, navigator, Notificat
     const plan = await planeErinnerungen(state, { jetzt: jetzt(), tage: TAGE_VORAUS });
     const geraete = register.geraete;
     const digest = await planDigest(register.fid, plan, geraete); // ändert sich auch, wenn sich ändert, wer welche Erinnerung bekommt
-    if (!erzwingen && speicher.getItem(K.digest) === digest) return { art: 'unveraendert' };
+    // Unverändert heißt nur: DIESES Telefon hat diesen Plan zuletzt so gesendet. Was beim Dienst liegt, kann das andere Telefon inzwischen
+    // ersetzt haben; darum gilt das höchstens PLAN_HOECHSTALTER_MS lang (fehlt der Zeitpunkt oder liegt er in der Zukunft: senden).
+    const alter = jetzt().getTime() - Number(speicher.getItem(K.stand) ?? NaN);
+    if (!erzwingen && speicher.getItem(K.digest) === digest && alter >= 0 && alter < PLAN_HOECHSTALTER_MS) return { art: 'unveraendert' };
 
     const von = jetzt().getTime();
     const items = await baueMeldungen(plan, geraete);

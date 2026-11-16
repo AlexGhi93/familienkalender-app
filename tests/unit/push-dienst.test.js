@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { planeErinnerungen } from '../../src/push/plan.js';
 import { baueMeldungen, fuerGeraet, planDigest } from '../../src/push/meldungen.js';
 import { mitGeraet, neuesRegister, normalisiereRegister, personenMitTelefon } from '../../src/push/geraete.js';
-import { createPush } from '../../src/push/client.js';
+import { PLAN_HOECHSTALTER_MS, createPush } from '../../src/push/client.js';
 import { createStore } from '../../src/app/store.js';
 import { createDemoAdapter } from '../../src/app/demo-adapter.js';
 import { speicherAttrappe } from './hilfen.js';
@@ -161,7 +161,7 @@ test('personenMitTelefon: wem mindestens ein Telefon im Register gehört; Telefo
 });
 
 /** createPush mit nachgebauten Teilen: Speicher, Abonnement, Register im „Kalender“ und Push-Dienst (merkt sich die PUTs). */
-async function aufbau({ person = '', eigenePerson, state = zustand({ dienstErinnerung: 'dienst' }), store, vorbereiten, zeitgeber, geraeteFehler = () => false } = {}) {
+async function aufbau({ person = '', eigenePerson, state = zustand({ dienstErinnerung: 'dienst' }), store, vorbereiten, zeitgeber, geraeteFehler = () => false, jetzt = () => JETZT } = {}) {
   const daten = new Map([['fk.push.geraet.v1', 'eigenTel1'], ['fk.push.aktiv.v1', '1']]);
   if (person) daten.set('fk.push.person.v1', person);
   const speicher = { getItem: (k) => daten.get(k) ?? null, setItem: (k, v) => daten.set(k, String(v)), removeItem: (k) => daten.delete(k) };
@@ -200,7 +200,7 @@ async function aufbau({ person = '', eigenePerson, state = zustand({ dienstErinn
     Notification: { permission: 'granted', requestPermission: async () => 'granted' },
     speicher,
     umgebung: { ios: false, installiert: true, pushUnterstuetzt: true, name: 'Android' },
-    jetzt: () => JETZT,
+    jetzt,
     zeitgeber: zeitgeber ?? { setze: (f) => ((geplant = f), 1), loesche: () => {} },
   });
   return { push, speicher, schreiben, anfragen, register: () => register, setzeRegister: (r) => (register = r), geplant: () => geplant, setzeZustand: (s) => (aktuell = s) };
@@ -512,4 +512,83 @@ test('Ausschalten bricht ein geplantes Nachholen ab', async () => {
   assert.deepEqual(uhr.offen(), [30_000]);
   await t.push.deaktivieren();
   assert.deepEqual(uhr.offen(), []);
+});
+
+// ---------- B9: ein Telefon, dessen Plan ohne Autos/Versicherung hinausging, wird vom anderen wieder ergänzt ----------
+
+test('gleicher Plan, letzte Sendung älter als 6 Stunden: wird noch einmal gesendet (B9)', async () => {
+  assert.equal(PLAN_HOECHSTALTER_MS, 6 * 60 * 60_000);
+  let ms = JETZT.getTime();
+  // nur ein Termin in vier Wochen: in den nächsten Stunden fällt keine Erinnerung aus dem Plan (sonst änderte sich der Fingerabdruck von selbst)
+  const state = { ...zustand(), termine: [{ id: 'arzt9', typ: 'arzt', subtyp: 'kinderarzt', date: '2026-11-10', time: '10:00', mitnehmen: ['e-card'] }] };
+  const t = await aufbau({ person: 'papa', eigenePerson: 'papa', state, jetzt: () => new Date(ms) });
+  assert.equal((await t.push.sync()).art, 'gesendet');
+  assert.equal((await t.push.sync()).art, 'unveraendert');
+  const digest = t.speicher.getItem('fk.push.digest.v1');
+  ms += PLAN_HOECHSTALTER_MS - 1;
+  assert.equal((await t.push.sync()).art, 'unveraendert', 'jünger als 6 Stunden: nichts zu tun');
+  assert.equal(t.anfragen.length, 1);
+  ms += 1;
+  assert.equal((await t.push.sync()).art, 'gesendet');
+  assert.equal(t.anfragen.length, 2);
+  assert.equal(t.speicher.getItem('fk.push.digest.v1'), digest, 'derselbe Plan (nur deshalb zählt das Alter)');
+  assert.deepEqual(t.anfragen[1].body.items.map((i) => [i.id, i.an]), t.anfragen[0].body.items.map((i) => [i.id, i.an]), 'der ganze Plan, nicht nur ein Teil');
+  assert.equal(t.speicher.getItem('fk.push.stand.v1'), String(ms), 'die 6 Stunden zählen ab der neuen Sendung');
+  assert.equal((await t.push.sync()).art, 'unveraendert');
+});
+
+test('gleicher Plan, aber Zeitpunkt der letzten Sendung fehlt oder ist unbrauchbar: wird gesendet', async () => {
+  const t = await aufbau({ person: 'papa', eigenePerson: 'papa' });
+  assert.equal((await t.push.sync()).art, 'gesendet');
+  for (const kaputt of [null, 'x', String(JETZT.getTime() + 60_000)]) {
+    if (kaputt === null) t.speicher.removeItem('fk.push.stand.v1');
+    else t.speicher.setItem('fk.push.stand.v1', kaputt); // auch „in der Zukunft“ (Uhr des Telefons verstellt)
+    assert.equal((await t.push.sync()).art, 'gesendet', String(kaputt));
+    assert.equal((await t.push.sync()).art, 'unveraendert', String(kaputt));
+  }
+});
+
+test('vor dem Senden wird auf Autos und Versicherung gewartet; ihr Scheitern hält den Plan nicht auf', async () => {
+  const state = zustand();
+  const lauf = [];
+  const store = {
+    getState: () => state,
+    schichtFrischLesen: async () => (lauf.push('schicht'), true),
+    autosFrischLesen: () => new Promise((fertig) => setTimeout(() => (lauf.push('autos'), fertig(false)), 50)),
+    versicherungFrischLesen: () => new Promise((_, nein) => setTimeout(() => (lauf.push('versicherung'), nein(new Error('Netz'))), 20)),
+  };
+  const t = await aufbau({ store });
+  const r = await t.push.sync();
+  assert.deepEqual(lauf, ['schicht', 'versicherung', 'autos'], 'sync() endet erst nach beiden');
+  assert.equal(r.art, 'gesendet');
+  assert.equal(t.anfragen.length, 1);
+});
+
+test('die Autos des anderen Telefons sind schon im ersten Plan (nicht erst im nächsten)', async () => {
+  const auto = { id: 'auto0001', name: 'Testauto', neuGekauft: true, ezDatum: '2026-01-10' };
+  const regel = { id: 'regoel01', auto: 'auto0001', aktiv: true, typ: 'oelwechsel', name: 'Ölwechsel', intervallKm: 15000 };
+  const historie = { auto0001: { 2026: { v: 1, auto: 'auto0001', jahr: 2026, arbeiten: [{ id: 'arboel01', auto: 'auto0001', typ: 'oelwechsel', datum: '2026-01-20', km: 234, details: {} }], km: [{ datum: '2026-10-01', km: 12000 }, { datum: '2026-10-10', km: 12400 }] } } };
+  const ohne = zustand();
+  const mit = { ...ohne, autos: { daten: { v: 1, autos: [auto], regeln: [regel], saetze: [], jahre: {} }, historie, status: 'geladen', warnungen: [], unlesbar: { shards: [] }, frisch: true } };
+  const autoIds = (await plane(mit)).filter((p) => p.titel.startsWith('🚗')).map((p) => p.id);
+  assert.ok(autoIds.length > 0, 'Vorbedingung: das Auto hat Erinnerungen in den nächsten 60 Tagen');
+  let aktuell = ohne;
+  const store = {
+    getState: () => aktuell,
+    schichtFrischLesen: async () => true,
+    autosFrischLesen: () => new Promise((fertig) => setTimeout(() => ((aktuell = mit), fertig(true)), 20)), // das Lesen dauert länger als der Schichtplan
+  };
+  const t = await aufbau({ store });
+  assert.equal((await t.push.sync()).art, 'gesendet');
+  const gesendet = new Set(t.anfragen[0].body.items.map((i) => i.id));
+  assert.ok(autoIds.every((id) => gesendet.has(id)), 'die Auto-Erinnerungen gehen gleich mit');
+});
+
+test('auch nach dem Warten auf Autos und Versicherung: ohne frischen Schichtplan wird nichts gesendet', async () => {
+  const state = zustand();
+  let autos = 0;
+  const t = await aufbau({ store: { getState: () => state, schichtFrischLesen: async () => false, autosFrischLesen: async () => ((autos += 1), true), versicherungFrischLesen: async () => true } });
+  assert.equal((await t.push.sync({ erzwingen: true })).art, 'wartet');
+  assert.equal(autos, 1);
+  assert.equal(t.anfragen.length, 0);
 });

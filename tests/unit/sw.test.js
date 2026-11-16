@@ -1,4 +1,4 @@
-// Service Worker (sw.js): wird mit node:vm in einem falschen `self` geladen. T10 erweitert die Attrappe (clients, registration).
+// Service Worker (sw.js): wird mit node:vm in einem falschen `self` geladen (mit `clients` und `registration` für den Tipp auf eine Erinnerung).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -49,4 +49,80 @@ test('activate räumt alte Einträge mit Query weg, alles andere bleibt', async 
   const sw = swLaden({ vorhanden: ['https://app.test/src/app/version.js?1', 'https://app.test/src/app/version.js?2', 'https://app.test/index.html'] });
   await sw.ausloesen('activate');
   assert.deepEqual(sw.gespeichert(), ['https://app.test/index.html']);
+});
+
+// ---------- Tipp auf eine Erinnerung (B13) ----------
+
+const klick = (u) => ({ notification: { close() {}, data: u === undefined ? undefined : { u } } });
+
+/** Ein offenes Fenster der App: merkt sich Nachrichten, Fokus und (verbotenes) Neuladen. */
+function fensterAttrappe() {
+  const fenster = {
+    nachrichten: [],
+    navigiert: 0,
+    fokus: 0,
+    focus: async () => ((fenster.fokus += 1), fenster),
+    postMessage: (m) => void fenster.nachrichten.push(structuredClone(m)), // Kopie: Objekte aus dem vm-Kontext haben einen anderen Prototyp
+    navigate: async () => void (fenster.navigiert += 1),
+  };
+  return fenster;
+}
+
+/** `self.clients` mit den offenen Fenstern; `geoeffnet` sammelt die Adressen von openWindow. */
+function klienten(fenster = []) {
+  const geoeffnet = [];
+  return { geoeffnet, clients: { matchAll: async () => fenster, openWindow: async (adresse) => void geoeffnet.push(String(adresse)) } };
+}
+const BEREICH = { scope: 'https://app.test/' };
+
+test('Tipp auf eine Erinnerung bei offener App: Nachricht statt Neuladen (B13)', async () => {
+  const fenster = fensterAttrappe();
+  const k = klienten([fenster]);
+  const sw = swLaden({ clients: k.clients, registration: BEREICH });
+  await sw.ausloesen('notificationclick', klick('#/autos/abcd1234'));
+  assert.deepEqual(fenster.nachrichten, [{ art: 'fk-ziel', u: '#/autos/abcd1234' }]);
+  assert.equal(fenster.navigiert, 0);
+  assert.equal(fenster.fokus, 1);
+  assert.deepEqual(k.geoeffnet, [], 'kein zweites Fenster');
+});
+
+test('offene App: nur ein Fenster bekommt das Ziel; scheitert der Fokus, kommt das Ziel trotzdem an', async () => {
+  const erstes = fensterAttrappe();
+  const zweites = fensterAttrappe();
+  erstes.focus = async () => {
+    throw new Error('nicht erlaubt');
+  };
+  const k = klienten([erstes, zweites]);
+  const sw = swLaden({ clients: k.clients, registration: BEREICH });
+  await sw.ausloesen('notificationclick', klick('#/konto'));
+  assert.deepEqual(erstes.nachrichten, [{ art: 'fk-ziel', u: '#/konto' }]);
+  assert.deepEqual(zweites.nachrichten, []);
+  assert.equal(erstes.navigiert + zweites.navigiert, 0);
+  assert.deepEqual(k.geoeffnet, []);
+});
+
+test('ohne offenes Fenster: öffnet index.html mit dem Ziel', async () => {
+  const { geoeffnet, clients } = klienten();
+  const sw = swLaden({ clients, registration: BEREICH });
+  await sw.ausloesen('notificationclick', klick('#/konto'));
+  assert.equal(geoeffnet[0], 'https://app.test/index.html#/konto');
+  assert.equal(geoeffnet.length, 1);
+});
+
+test('ohne offenes Fenster, App in einem Unterordner: index.html im Bereich des Service Workers', async () => {
+  const { geoeffnet, clients } = klienten();
+  const sw = swLaden({ clients, registration: { scope: 'https://seite.test/kalender/' }, origin: 'https://seite.test' });
+  await sw.ausloesen('notificationclick', klick('#/autos/abcd1234'));
+  assert.deepEqual(geoeffnet, ['https://seite.test/kalender/index.html#/autos/abcd1234']);
+});
+
+test('Erinnerung ohne oder mit fremdem Ziel: führt zu Heute (nie zu einer anderen Adresse)', async () => {
+  for (const u of [undefined, '', 'https://boese.test/', '//boese.test/', '../anderswo.html', 42]) {
+    const { geoeffnet, clients } = klienten();
+    await swLaden({ clients, registration: BEREICH }).ausloesen('notificationclick', klick(u));
+    assert.deepEqual(geoeffnet, ['https://app.test/index.html#/heute'], String(u));
+    const fenster = fensterAttrappe();
+    await swLaden({ clients: klienten([fenster]).clients, registration: BEREICH }).ausloesen('notificationclick', klick(u));
+    assert.deepEqual(fenster.nachrichten, [{ art: 'fk-ziel', u: '#/heute' }], String(u));
+  }
 });

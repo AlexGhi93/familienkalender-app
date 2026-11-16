@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createAuth } from '../../src/calendar/auth.js';
 import { createApi } from '../../src/calendar/api.js';
-import { LOGIN_KEY } from '../../src/calendar/login-dienst.js';
+import { LOGIN_KEY, NEUVERSUCH_MS } from '../../src/calendar/login-dienst.js';
 
 const DIENST = 'https://login.example';
 const S1 = 'S'.repeat(42) + 'A';
@@ -60,7 +60,7 @@ const OK_ANMELDEN = { status: 200, body: { sitzung: S1, access_token: 'ya29.erst
 let tokenNr = 0;
 const okToken = () => ({ status: 200, body: { access_token: `ya29.still-${(tokenNr += 1)}`, expires_in: 3600 } });
 
-function aufbau({ speicher = speicherImArbeitsspeicher(), regeln = {}, dienst = DIENST } = {}) {
+function aufbau({ speicher = speicherImArbeitsspeicher(), regeln = {}, dienst = DIENST, netz = { an: true } } = {}) {
   const gis = falschesGis();
   const d = falscherDienst({ '/v1/anmelden': OK_ANMELDEN, '/v1/token': okToken, '/v1/abmelden': { status: 204 }, ...regeln });
   const uhr = { t: START };
@@ -71,6 +71,7 @@ function aufbau({ speicher = speicherImArbeitsspeicher(), regeln = {}, dienst = 
     dienst,
     speicher,
     fetch: d.fetch,
+    online: () => netz.an,
     planen: (fn, ms) => geplant.push({ fn, ms }) - 1,
     abbrechen: (id) => {
       if (geplant[id]) geplant[id].abgebrochen = true;
@@ -80,7 +81,7 @@ function aufbau({ speicher = speicherImArbeitsspeicher(), regeln = {}, dienst = 
   });
   const meldungen = [];
   auth.onStatus((s) => meldungen.push(s));
-  return { auth, gis, d, uhr, geplant, speicher, meldungen };
+  return { auth, gis, d, uhr, geplant, speicher, meldungen, netz };
 }
 
 const warten = () => new Promise((r) => setTimeout(r, 0));
@@ -377,4 +378,101 @@ test('Verbindung bricht beim Lesen der Antwort ab: Netzwerk, kein roher TypeErro
 test('hängende Anfrage endet nach zeitlimitMs als Netzwerk', async () => {
   const api = createApi({ token: async () => 't', zeitlimitMs: 20, fetch: (_u, { signal }) => new Promise((_, nein) => signal.addEventListener('abort', () => nein(signal.reason))) });
   await assert.rejects(api.ereignisse.holen('k', 'fkkonto'), { name: 'Netzwerk' });
+});
+
+// ---------- B11: ein Funkloch ist keine Störung des Login-Dienstes ----------
+
+test('Funkloch beim Zurückkommen: keine Störung, Tipp auf Verbinden bleibt beim stillen Weg (B11)', async () => {
+  const { auth, gis, d, uhr, speicher, netz } = aufbau({ speicher: mitSitzung(S1) });
+  await auth.stillAnmelden();
+  uhr.t += 61 * MIN; // Token abgelaufen, das Telefon kommt aus dem Flugmodus zurück – das Funknetz ist noch nicht da
+  netz.an = false;
+  d.regeln['/v1/token'] = new TypeError('Failed to fetch');
+  assert.equal(await auth.stillAnmelden(), false);
+  assert.equal(speicher.daten.has(LOGIN_KEY), true, 'die Sitzung bleibt');
+  assert.equal(auth.baldAbgelaufen(), false);
+  // Tipp auf „Verbinden“ noch ohne Netz: kein Google-Fenster, verständliche Meldung
+  await assert.rejects(auth.anmelden(), (e) => e.name === 'AnmeldeFehler' && e.art === 'netz' && !/Anmelde-Dienst|eine Stunde/.test(e.message));
+  assert.deepEqual(gis.log, [], 'kein Google-Fenster');
+  assert.equal(d.anfragen.length, 3, 'jeder Versuch fragt wirklich (keine Sperre von einer Minute)');
+  // das Netz ist da: der nächste Tipp klappt sofort und still
+  netz.an = true;
+  d.regeln['/v1/token'] = okToken;
+  await auth.anmelden();
+  assert.deepEqual(gis.log, [], 'weiter ohne Google-Fenster');
+  assert.equal(auth.status(), 'verbunden');
+  assert.match(auth.token(), /^ya29\.still-/);
+});
+
+test('Funkloch: token() fragt beim nächsten Abruf sofort wieder (keine Sperre von einer Minute)', async () => {
+  const { auth, gis, d, netz } = aufbau({ speicher: mitSitzung(S1), regeln: { '/v1/token': new TypeError('Failed to fetch') }, netz: { an: false } });
+  await assert.rejects(Promise.resolve().then(() => auth.token()), { name: 'AuthAbgelaufen' });
+  netz.an = true;
+  d.regeln['/v1/token'] = okToken;
+  assert.match(await auth.token(), /^ya29\.still-/, 'gleich danach, ohne eine Minute zu warten');
+  assert.equal(d.anfragen.length, 2);
+  assert.deepEqual(gis.log, []);
+});
+
+test('Funkloch beim ersten Anmelden (Code-Weg): Meldung zum Netz, der nächste Tipp öffnet wieder den Code-Weg', async () => {
+  const { auth, gis, netz } = aufbau({ regeln: { '/v1/anmelden': new TypeError('Failed to fetch') } });
+  const p = auth.anmelden();
+  netz.an = false; // das Netz bricht weg, während das Google-Fenster offen ist
+  gis.codeAntwort({ code: '4/0Abc' });
+  await assert.rejects(p, (e) => e.art === 'netz');
+  auth.anmelden().catch(() => {});
+  assert.equal(gis.anzahl('requestCode'), 2, 'kein Stunden-Weg: der Dienst gilt nicht als gestört');
+  assert.equal(gis.anzahl('requestAccessToken'), 0);
+});
+
+// ---------- B12: nach einer gescheiterten stillen Erneuerung bleibt der Zeitgeber gestellt ----------
+
+test('gescheiterte stille Erneuerung plant die nächste nach NEUVERSUCH_MS (B12)', async () => {
+  const { auth, d, uhr, geplant } = aufbau({ speicher: mitSitzung(S1) });
+  await auth.stillAnmelden();
+  const offen = () => geplant.filter((g) => !g.abgebrochen && !g.gelaufen);
+  const ausloesen = async () => {
+    const z = offen().at(-1);
+    z.gelaufen = true;
+    uhr.t += z.ms;
+    z.fn();
+    await warten();
+    await warten();
+  };
+  assert.deepEqual(offen().map((g) => g.ms), [55 * MIN]);
+  d.regeln['/v1/token'] = { status: 502, body: { fehler: 'google' } }; // der Dienst antwortet gerade nicht richtig
+  await ausloesen();
+  assert.deepEqual(geplant.at(-1).ms, NEUVERSUCH_MS);
+  assert.deepEqual(offen().map((g) => g.ms), [NEUVERSUCH_MS], 'genau ein Zeitgeber');
+  assert.equal(d.anfragen.length, 2);
+  await ausloesen(); // scheitert wieder: weiter jede Minute
+  assert.equal(d.anfragen.length, 3);
+  assert.deepEqual(offen().map((g) => g.ms), [NEUVERSUCH_MS]);
+  d.regeln['/v1/token'] = okToken;
+  const alt = auth.token();
+  await ausloesen();
+  assert.notEqual(auth.token(), alt, 'erneuert, ohne dass jemand die App anfasst');
+  assert.deepEqual(offen().map((g) => g.ms), [55 * MIN], 'danach wieder der normale Takt');
+});
+
+test('B12 auch im Funkloch und ohne Token (Start ohne Netz); ohne Sitzung wird nichts geplant', async () => {
+  const { auth, d, uhr, geplant, netz } = aufbau({ speicher: mitSitzung(S1), regeln: { '/v1/token': new TypeError('Failed to fetch') }, netz: { an: false } });
+  assert.equal(await auth.stillAnmelden(), false);
+  assert.deepEqual(geplant.filter((g) => !g.abgebrochen).map((g) => g.ms), [NEUVERSUCH_MS]);
+  netz.an = true;
+  d.regeln['/v1/token'] = okToken;
+  uhr.t += NEUVERSUCH_MS;
+  geplant.at(-1).fn();
+  await warten();
+  await warten();
+  assert.equal(auth.status(), 'verbunden');
+
+  const b = aufbau({ speicher: mitSitzung(S1), regeln: { '/v1/token': { status: 401, body: { fehler: 'abgelaufen' } } } });
+  assert.equal(await b.auth.stillAnmelden(), false);
+  assert.deepEqual(b.geplant.filter((g) => !g.abgebrochen), [], 'Sitzung abgelaufen: kein neuer Versuch');
+
+  const c = aufbau({ speicher: mitSitzung(S1), regeln: { '/v1/token': new TypeError('Failed to fetch') } });
+  await c.auth.stillAnmelden();
+  c.auth.abmelden();
+  assert.deepEqual(c.geplant.filter((g) => !g.abgebrochen), [], 'abgemeldet: der geplante Versuch ist abgebrochen');
 });

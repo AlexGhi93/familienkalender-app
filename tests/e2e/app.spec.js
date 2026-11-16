@@ -96,3 +96,16 @@ test('„Mit Google einrichten“ führt zum Willkommen; die Demo bleibt erhalte
   await page.getByRole('button', { name: /Demo weiter ansehen/ }).click();
   await expect(page.locator('nav.tabs')).toBeVisible();
 });
+
+test('Tipp auf eine Erinnerung bei offener App: die Nachricht vom Service Worker wechselt die Seite, ohne neu zu laden (B13)', async ({ page }) => {
+  await starteDemo(page, { route: '#/heute' });
+  await page.evaluate(() => (window.__nichtNeuGeladen = true));
+  const nachricht = (data) => page.evaluate((d) => void navigator.serviceWorker.dispatchEvent(new MessageEvent('message', { data: d })), data);
+  await nachricht({ art: 'fk-ziel', u: '#/app' });
+  await expect(page.getByRole('heading', { name: 'Konto & App 👤' })).toBeVisible();
+  expect(new URL(page.url()).hash).toBe('#/app');
+  // alles andere wird überhört: fremde Art, Ziel ohne „#/“, kein Text
+  for (const fremd of [{ art: 'anderes', u: '#/heute' }, { art: 'fk-ziel', u: 'https://example.org/' }, { art: 'fk-ziel', u: 7 }, null, 'fk-ziel']) await nachricht(fremd);
+  expect(new URL(page.url()).hash).toBe('#/app');
+  expect(await page.evaluate(() => window.__nichtNeuGeladen)).toBe(true);
+});

@@ -76,20 +76,28 @@ self.addEventListener('push', (event) => {
   event.waitUntil(self.registration.showNotification(titel, optionen));
 });
 
+// Tipp auf eine Erinnerung. Ist die App offen, bekommt sie das Ziel als Nachricht und wechselt selbst dorthin (src/main.js) – kein
+// `navigate`: die App läuft unter …/index.html, ein anderer Pfad lüde sie neu und noch nicht Gespeichertes ginge verloren. Ist sie zu,
+// wird index.html mit dem Ziel geöffnet (dieselbe Adresse wie `start_url`, also auch offline im Zwischenspeicher).
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const ziel = new URL(event.notification.data?.u ?? '#/heute', self.registration.scope).href;
+  const u = event.notification.data?.u;
+  const ziel = typeof u === 'string' && u.startsWith('#/') ? u : '#/heute';
   event.waitUntil(
     (async () => {
       const fenster = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
       for (const f of fenster) {
         if ('focus' in f) {
-          await f.focus();
-          if ('navigate' in f) await f.navigate(ziel).catch(() => {});
+          try {
+            await f.focus();
+          } catch {
+            // nicht nach vorn geholt: das Ziel kommt trotzdem an
+          }
+          f.postMessage({ art: 'fk-ziel', u: ziel });
           return;
         }
       }
-      await self.clients.openWindow(ziel);
+      await self.clients.openWindow(new URL(`index.html${ziel}`, self.registration.scope).href);
     })(),
   );
 });

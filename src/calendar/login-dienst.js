@@ -52,10 +52,19 @@ const gueltigesToken = (d) =>
  * Anfragen an den Dienst unter `basis`. Jede Methode liefert ein Ergebnis, wirft nie:
  * { art: 'ok', access_token, expires_in, sitzung? } oder { art } mit
  * 'abgelaufen' (Sitzung ungültig: neu anmelden), 'kein-dauerzugang' (Google gab kein Refresh-Token),
- * 'berechtigung' (Kalender-Berechtigung nicht erteilt), 'code' (Google-Code abgelehnt) oder
+ * 'berechtigung' (Kalender-Berechtigung nicht erteilt), 'code' (Google-Code abgelehnt),
+ * 'netz' (die Anfrage kam nicht hinaus und das Telefon ist laut `online()` ohne Netz: ein Funkloch, keine Störung des Dienstes) oder
  * 'dienst' (nicht erreichbar, Zeitlimit, Serverfehler, unerwartete Antwort).
  */
-export function createLoginDienst({ basis, fetch = (...a) => globalThis.fetch(...a), zeitlimitMs = ZEITLIMIT_MS }) {
+export function createLoginDienst({ basis, fetch = (...a) => globalThis.fetch(...a), zeitlimitMs = ZEITLIMIT_MS, online = () => globalThis.navigator?.onLine !== false }) {
+  const ohneNetz = () => {
+    try {
+      return online() === false;
+    } catch {
+      return false;
+    }
+  };
+
   async function post(pfad, body, extra = {}) {
     let res;
     try {
@@ -69,7 +78,7 @@ export function createLoginDienst({ basis, fetch = (...a) => globalThis.fetch(..
         ...extra,
       });
     } catch {
-      return { status: 0, daten: null };
+      return { status: 0, daten: null, netz: ohneNetz() };
     }
     let daten = null;
     try {
@@ -80,7 +89,8 @@ export function createLoginDienst({ basis, fetch = (...a) => globalThis.fetch(..
     return { status: res.status, daten };
   }
 
-  const fehlerArt = ({ status, daten }) => {
+  const fehlerArt = ({ status, daten, netz }) => {
+    if (netz === true) return 'netz';
     if (status === 401) return 'abgelaufen';
     if (status === 409 && daten?.fehler === 'kein-dauerzugang') return 'kein-dauerzugang';
     if (status === 403 && daten?.fehler === 'berechtigung-fehlt') return 'berechtigung';

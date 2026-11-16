@@ -107,3 +107,21 @@ test('Dienst: abmelden mit keepalive, 204 = ok', async () => {
   assert.equal(f.anfragen[0].init.keepalive, true);
   assert.deepEqual(f.anfragen[0].body, { sitzung: SITZUNG });
 });
+
+test('offline: token() meldet netz, nicht dienst', async () => {
+  const d = createLoginDienst({ basis: 'https://d.test', online: () => false, fetch: async () => { throw new TypeError('offline'); } });
+  assert.deepEqual(await d.token('s'.repeat(43)), { art: 'netz' });
+  assert.deepEqual(await d.anmelden('4/0Abc'), { art: 'netz' });
+  assert.deepEqual(await d.abmelden('s'.repeat(43)), { art: 'netz' });
+});
+
+test('online, aber die Anfrage scheitert: weiter dienst; offline mit Antwort vom Dienst zählt die Antwort', async () => {
+  const wirft = async () => { throw new TypeError('Failed to fetch'); };
+  assert.deepEqual(await createLoginDienst({ basis: 'https://d.test', online: () => true, fetch: wirft }).token(SITZUNG), { art: 'dienst' });
+  assert.deepEqual(await createLoginDienst({ basis: 'https://d.test', fetch: wirft }).token(SITZUNG), { art: 'dienst' }, 'Standard: navigator.onLine (in Node nicht false)');
+  assert.deepEqual(await createLoginDienst({ basis: 'https://d.test', online: () => { throw new Error('kaputt'); }, fetch: wirft }).token(SITZUNG), { art: 'dienst' });
+  const f = falschesFetch({ status: 401, body: { fehler: 'abgelaufen' } });
+  assert.deepEqual(await createLoginDienst({ basis: 'https://d.test', online: () => false, fetch: f.fetch }).token(SITZUNG), { art: 'abgelaufen' });
+  const g = falschesFetch({ status: 502, body: { fehler: 'google' } });
+  assert.deepEqual(await createLoginDienst({ basis: 'https://d.test', online: () => false, fetch: g.fetch }).token(SITZUNG), { art: 'dienst' });
+});
