@@ -1,8 +1,8 @@
 import { todayVienna } from '../domain/dates.js';
 import { istObjekt } from '../domain/gemeinsam.js';
 import { normalizeSettings } from '../domain/settings.js';
-import { entfernen as artikelEntfernen, erledigteEntfernen, hinzufuegen as artikelHinzufuegen, leereListe, normalisiereListe, umschalten as artikelUmschalten, wiederherstellen } from '../domain/einkauf.js';
-import { entferneExtra, entferneStand, extraWiederherstellen, fuegeExtraHinzu, leeresKonto, monatVor, normalisiereKonto, setzeStand, standWiederherstellen } from '../domain/konto.js';
+import { leereListe } from '../domain/einkauf.js';
+import { leeresKonto, monatVor, normalisiereKonto } from '../domain/konto.js';
 import { artAendern, artArchivieren, artHinzufuegen, artVerschieben, katalogErgaenzen, leererMonat, normalisiereKatalog, normalisiereMonat, schaltePinsel, schichtAm, setzeNotiz, setzeSchicht, standardKatalog, tageImMonat, vorladeMonate, zusatzEntfernen, zusatzHinzufuegen, zusatzWiederherstellen } from '../domain/schicht.js';
 import { FIX_SHARDS, TEXT_FIX_UNLESBAR, TEXT_FIX_VOLL, TEXT_TEIL_GESPERRT, leererShard, neueFixId, normalisiereShard, postenAnzahlPruefen, postenArchivieren, postenLoeschen, postenPruefen, postenSetzen, postenWiederanlegen, postenWiederherstellen, shardFuer } from '../domain/fixkosten.js';
 import { TEXT_AUTOS_GESPERRT, TEXT_AUTO_WEG, TEXT_HISTORIE_GESPERRT, arbeitLoeschen as arbeitLoeschenRein, arbeitPruefen, arbeitSetzen, arbeitSpur, arbeitWiederherstellen, autoAnlegen, autoLoeschen as autoLoeschenRein, autoSetzen, autoSpur, autoWiederherstellen, autosWarnungen, historieJahrBekannt, historieJahrEintragen, historieWarnungen, kmEintragen, kmLoeschen as kmLoeschenRein, kmPruefen, kmSpur, kmWiederherstellen, leereAutos, leereHistorie, neueAutoId, regelLoeschen as regelLoeschenRein, regelSetzen, regelSpur, regelWiederherstellen, satzLoeschen as satzLoeschenRein, satzSetzen, satzSpur, satzVerwendet, satzVerwendetText, satzWiederherstellen } from '../domain/autos.js';
@@ -11,6 +11,7 @@ import { TEXT_POLIZZE_WEG, TEXT_RECHNUNG_WEG, TEXT_VERSICHERUNG_GESPERRT, TEXT_V
 import { rechnungFinden } from '../domain/versicherung-rechnung.js';
 import { TEXT_ZIELE_GESPERRT, TEXT_ZIELE_NICHT_GELADEN, freiVerschieben as zielFreiVerschieben, leereZiele, neueZielId, startMonat, verschiebungLoeschen as verschiebungLoeschenRein, verschiebungWiederherstellen as verschiebungWiederherstellenRein, zielAusblenden as zielAusblendenRein, zielBeenden as zielBeendenRein, zielLoeschen as zielLoeschenRein, zielSchluss, zielSetzen, zielSpur, zielWiederherstellen as zielWiederherstellenRein, zieleWarnungen } from '../domain/sparziele.js';
 import { FACHLICH, TEXT_AUTOS_NEUER, TEXT_FEHLER, createKern, eintragVorhanden, gleichOder, historieGleichOder, istAuthFehler, ladeFelder, mitFrist } from './store/kern.js';
+import { createEinkaufKontoSlice } from './store/einkauf-konto.js';
 import { createKalenderSlice } from './store/kalender.js';
 
 const MIN_ABSTAND_MS = 60_000; // höchstens einmal pro Minute neu laden
@@ -178,12 +179,10 @@ function zielVorhanden(daten, id) {
  */
 export function createStore(adapter, { jetzt = () => new Date(), neueId = zufaelligeId, fixId = neueFixId, zielId = neueZielId, autoId = neueAutoId, autosFristMs = 20_000, versicherungId = () => neueVersicherungId(), versicherungFristMs = 20_000 } = {}) {
   const kern = createKern({ adapter, jetzt, neueId });
-  const { wartend, melden, unlesbarMerken, gelesenMerken, ausfuehren, aendere, teilAendern, ergebnisVon, teilErgebnis, mitRueckgaengig, fachlich, fachlichAsync } = kern;
+  const { wartend, melden, unlesbarMerken, gelesenMerken, ausfuehren, teilAendern, teilErgebnis, mitRueckgaengig, fachlich, fachlichAsync } = kern;
   const store = {};
   kern.state = { geladen: false, settings: normalizeSettings(), tage: {}, urlaub: [], termine: [], einkauf: leereListe(), konto: leeresKonto(), schicht: leererSchichtplan(), fixkosten: leereFixkosten(), ziele: leererZieleZustand(), autos: leererAutosZustand(), versicherung: leererVersicherungZustand(), unlesbar: [], fehler: null, fortschritt: null, anmeldungNoetig: false, fenster: null };
   let letzteLadung = 0;
-  let einkaufGeprueft = null; // wann die Einkaufsliste zuletzt mit dem Kalender abgeglichen war (ms): Laden, Aktualisieren, eigenes Speichern
-  let einkaufHolen = null; // laufende Abfrage der Einkaufsliste: mehrfaches Anstoßen fragt nur einmal
   let schichtVorladenLaeuft = null; // laufendes Vorladen des Schichtplans: mehrfaches Anstoßen fragt nur einmal
   let schichtFrischLaeuft = null; // laufendes Frisch-Lesen vor dem Senden des Push-Plans (siehe schichtFrischLesen): höchstens eines
   let fixGelesen = false; // wurden die Fixkosten seit dem Start schon einmal aus dem Kalender gelesen? Erst dann wird geschrieben.
@@ -223,46 +222,6 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
   }
   /** Ist Ändern gerade verboten? → Meldung oder null (unlesbar, oder nicht (erfolgreich) gelesen). */
   const zieleGesperrt = () => (kern.state.ziele.unlesbar ? TEXT_ZIELE_GESPERRT : kern.state.ziele.status === 'geladen' || kern.state.ziele.status === 'gespeichert' ? null : TEXT_ZIELE_NICHT_GELADEN);
-  /**
-   * Ändert die Einkaufsliste: `fn(liste)` → neue Liste. Sofort sichtbar; bei Google wird `fn` auf die NEUESTE Fassung angewendet,
-   * damit zwei Telefone sich nicht überschreiben. Wirft sofort (ohne etwas zu ändern), wenn `fn` die Eingabe ablehnt.
-   */
-  async function einkaufAendern(fn) {
-    const neu = fn(kern.state.einkauf);
-    await aendere({ einkauf: neu }, async () => {
-      const gespeichert = await adapter.aendereEinkauf(fn);
-      const wiederLesbar = unlesbarMerken('einkauf', false); // nicht abgelehnt: die neueste Fassung war lesbar
-      if (gespeichert) {
-        einkaufGeprueft = jetzt().getTime(); // gespeichert wurde auf der neuesten Fassung: die Liste ist jetzt aktuell
-        kern.state = { ...kern.state, einkauf: gespeichert };
-      }
-      if (gespeichert || wiederLesbar) melden();
-    });
-  }
-
-  /**
-   * Ändert die Kontostände und Sonderbeträge: `fn(konto)` → neues Konto. Sofort sichtbar; bei Google wird `fn` auf die NEUESTE Fassung angewendet
-   * (zwei Telefone überschreiben sich nicht). Wirft sofort (ohne etwas zu ändern), wenn `fn` die Eingabe ablehnt. → wie `aendere`.
-   */
-  async function kontoAendern(fn) {
-    const neu = fn(kern.state.konto);
-    return aendere({ konto: neu }, async () => {
-      const gespeichert = await adapter.aendereKonto(fn);
-      const wiederLesbar = unlesbarMerken('konto', false); // nicht abgelehnt: die neueste Fassung war lesbar
-      if (gespeichert) kern.state = { ...kern.state, konto: gespeichert };
-      if (gespeichert || wiederLesbar) melden();
-    });
-  }
-
-  /** Kontostand ändern für „Rückgängig“; wirft nie: → wie `ergebnisVon`, eine Ablehnung schon am angezeigten Stand → { ok: false, fehler }. */
-  async function kontoZurueck(fn) {
-    try {
-      return ergebnisVon(await kontoAendern(fn));
-    } catch (e) {
-      return { ok: false, fehler: e?.message || TEXT_FEHLER };
-    }
-  }
-
   // Änderungen, die noch nicht gespeichert sind, je Teil – Schichtplan ('katalog' oder 'JJJJ-MM') und Fixkosten (Teil 0 … 3):
   // { basis: zuletzt bekannter Stand im Kalender, offen: [fn, …] in Tipp-Reihenfolge, kette: Promise der Speicherungen }.
   // Angezeigt wird immer `basis` mit allen offenen Änderungen darauf: so verschwindet kein Tipp, während ein früherer gespeichert wird.
@@ -1374,6 +1333,8 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
 
   const kalenderScheibe = createKalenderSlice(kern, { store });
   const { geladeneBereiche } = kalenderScheibe.intern;
+  const kontoScheibe = createEinkaufKontoSlice(kern);
+  const { kontoAendern } = kontoScheibe.intern;
   Object.assign(store, {
     getState: () => kern.state,
     subscribe: (fn) => kern.abonnieren(fn),
@@ -1399,7 +1360,7 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
         kern.state = { ...kern.state, ...ladeFelder(daten, kern.state), ziele: zieleNachLaden(daten, zStand), schicht: { ...kern.state.schicht, vorgeladen: null }, geladen: true, fehler: null, anmeldungNoetig: false, nurSnapshot: false, stand: null };
         geladeneBereiche.length = 0;
         letzteLadung = jetzt().getTime();
-        einkaufGeprueft = letzteLadung;
+        kontoScheibe.intern.einkaufGeprueft = letzteLadung;
         melden();
       } catch (fehler) {
         if (!istAuthFehler(fehler)) throw fehler;
@@ -1418,53 +1379,6 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       }
       return !kern.state.anmeldungNoetig;
     },
-
-    /**
-     * Holt nur die Einkaufsliste neu (das andere Telefon hat vielleicht etwas eingetragen): ein Ereignis statt aller Kalender.
-     * Eigene Änderungen gehen vor: solange etwas gespeichert wird oder auf die Anmeldung wartet, wird nicht gefragt, und eine Antwort,
-     * während der selbst etwas geändert wurde, wird verworfen (sie könnte älter sein). Neu gezeichnet wird nur, wenn sich die Liste wirklich geändert hat.
-     * Ergebnis: 'neu' (übernommen), 'gleich' (schon aktuell), 'warten' (eigene Änderung geht vor, später noch einmal),
-     * 'getrennt' (gerade nicht möglich: nicht geladen, nur gespeicherter Stand, Anmeldung nötig) oder 'fehler'.
-     */
-    async einkaufAktualisieren() {
-      if (einkaufHolen) return einkaufHolen;
-      einkaufHolen = (async () => {
-        if (!adapter.leseEinkauf || !kern.state.geladen || kern.state.nurSnapshot || kern.state.anmeldungNoetig) return 'getrennt';
-        if (kern.schreibend > 0 || wartend.length > 0) return 'warten';
-        const stand = kern.schreibStand;
-        const vorher = kern.state.einkauf;
-        let liste;
-        let gelesen;
-        try {
-          gelesen = await adapter.leseEinkauf();
-          liste = normalisiereListe(gelesen.liste);
-        } catch (fehler) {
-          if (!istAuthFehler(fehler)) return 'fehler';
-          kern.state = { ...kern.state, anmeldungNoetig: true };
-          melden();
-          return 'getrennt';
-        }
-        if (stand !== kern.schreibStand || kern.schreibend > 0 || wartend.length > 0) return 'warten';
-        if (kern.state.einkauf !== vorher) return 'gleich'; // inzwischen alles neu geladen: das ist mindestens so frisch
-        einkaufGeprueft = jetzt().getTime();
-        const andersLesbar = unlesbarMerken('einkauf', gelesen.unlesbar === true); // unlesbar geworden (oder wieder lesbar): der Hinweis ändert sich
-        if (JSON.stringify(liste) === JSON.stringify(kern.state.einkauf)) {
-          if (andersLesbar) melden();
-          return andersLesbar ? 'neu' : 'gleich';
-        }
-        kern.state = { ...kern.state, einkauf: liste };
-        melden();
-        return 'neu';
-      })();
-      try {
-        return await einkaufHolen;
-      } finally {
-        einkaufHolen = null;
-      }
-    },
-
-    /** Zeitpunkt (ms) des letzten Abgleichs der Einkaufsliste mit dem Kalender, oder null (noch keiner). */
-    einkaufGeprueftAm: () => einkaufGeprueft,
 
     /** Speichert nach erneuter Anmeldung alles, was gewartet hat (Schreibvorgänge sind wiederholbar). */
     async wiederholeAusstehende() {
@@ -1499,54 +1413,6 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
     },
 
     /**
-     * Kontostand von Papa oder Mama für einen Monat eintragen (oder als Tippfehler korrigieren). Ein NEUER Eintrag geht nur am letzten Tag des Monats
-     * (Wiener Datum zum Zeitpunkt des Tippens; `demo: true` hebt das auf). Monat und Datum sind festgehalten: eine wegen abgelaufener Anmeldung
-     * später gespeicherte Eingabe landet trotzdem im richtigen Monat. Wirft sofort (ohne etwas zu ändern), wenn die Eingabe nicht passt.
-     * → wie `ergebnisVon`.
-     */
-    async kontoSpeichern(eintrag, { demo = false } = {}) {
-      const heute = todayVienna(jetzt());
-      return ergebnisVon(await kontoAendern((konto) => setzeStand(konto, eintrag, { heute, demo })));
-    },
-
-    /**
-     * Nachtragen: den Stand vom LETZTEN Tag eines früheren Monats laut Kontoauszug eintragen (bis 24 Monate zurück, nicht der laufende Monat).
-     * Sonst wie `kontoSpeichern`; der Monat ist festgehalten.
-     */
-    async kontoNachtragen(eintrag) {
-      const heute = todayVienna(jetzt());
-      return ergebnisVon(await kontoAendern((konto) => setzeStand(konto, eintrag, { heute, nachtrag: true })));
-    },
-
-    /**
-     * Löscht den Kontostand einer Person für einen Monat (jederzeit; er lässt sich danach über „Nachtragen“ wieder eintragen). Wirft
-     * sofort bei einer ungültigen Eingabe. → wie `loescheTag`; `rueckgaengig()` setzt genau den gelöschten Betrag wieder (auch an einem
-     * gewöhnlichen Tag) – hat inzwischen jemand einen anderen Stand eingetragen, bleibt der (Meldung).
-     */
-    async kontoLoeschen(eintrag) {
-      let geloescht;
-      const r = ergebnisVon(
-        await kontoAendern((konto) => {
-          const neu = entferneStand(konto, eintrag);
-          geloescht = neu === konto ? undefined : konto.p[eintrag.person][eintrag.monat]; // auf der neuesten Fassung: das wirklich Gelöschte
-          return neu;
-        }),
-      );
-      const zurueck = () => kontoZurueck(fachlich((konto) => standWiederherstellen(konto, { person: eintrag.person, monat: eintrag.monat, cents: geloescht })));
-      return mitRueckgaengig(r, geloescht === undefined ? null : zurueck);
-    },
-
-    /**
-     * Sonderbetrag (Einnahme > 0, Ausgabe < 0) für einen Monat, jederzeit. Die Kennung macht eine wiederholte Speicherung unschädlich.
-     * Wirft sofort, wenn die Eingabe nicht passt. → wie `ergebnisVon`.
-     */
-    async extraHinzufuegen(eintrag) {
-      const heute = todayVienna(jetzt());
-      const id = neueId().slice(0, 16);
-      return ergebnisVon(await kontoAendern((konto) => fuegeExtraHinzu(konto, { ...eintrag, id }, { heute })));
-    },
-
-    /**
      * Nur Demo („Beispieldaten entfernen“): löscht alle Kontostände, Sonderbeträge, Sparziele (samt Verschiebungen), Fixkosten-Posten
      * (Teil für Teil), Autos samt Verlauf (erst die Verlauf-Teile, dann der Hauptteil) und die Versicherung (erst die Rechnungen je
      * Quartal, dann die Polizze); fremde Einträge einer neueren Version, unlesbare
@@ -1572,23 +1438,6 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       }
       if (adapter.aendereAutos) await autosLeeren();
       if (adapter.aendereVersicherung) await versicherungLeeren();
-    },
-
-    /** Löscht genau einen Sonderbetrag. → wie `loescheTag`; `rueckgaengig()` bringt denselben Sonderbetrag an seine Stelle zurück. */
-    async extraEntfernen(id) {
-      let spur = null;
-      const r = ergebnisVon(
-        await kontoAendern((konto) => {
-          const stelle = (konto.x ?? []).findIndex((e) => e.i === id);
-          spur = stelle < 0 ? null : { extra: konto.x[stelle], stelle };
-          return entferneExtra(konto, id);
-        }),
-      );
-      const zurueck = () => {
-        const heute = todayVienna(jetzt());
-        return kontoZurueck(fachlich((konto) => extraWiederherstellen(konto, spur.extra, spur.stelle, { heute })));
-      };
-      return mitRueckgaengig(r, spur ? zurueck : null);
     },
 
     /**
@@ -1718,26 +1567,6 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       const r = await zieleAendern((d) => (zielVorhanden(d, ziel), zielFreiVerschieben(d, { id, monat: heute.slice(0, 7), ziel, cents }, { konto, heute })));
       if (!r.ok) return r;
       return { ok: true, id, cents: kern.state.ziele.daten.m.find((v) => v.id === id)?.cents ?? cents };
-    },
-
-    /** Einkaufsliste: Artikel eintragen (Menge optional), abhaken, löschen, Gekaufte entfernen (mit Rückgängig). */
-    async einkaufHinzufuegen(text, menge = '') {
-      const id = neueId().slice(0, 9);
-      const jetztMs = jetzt().getTime();
-      await einkaufAendern((liste) => artikelHinzufuegen(liste, { text, menge }, { jetzt: jetztMs, id }));
-    },
-    async einkaufUmschalten(id) {
-      const jetztMs = jetzt().getTime();
-      await einkaufAendern((liste) => artikelUmschalten(liste, id, jetztMs));
-    },
-    async einkaufEntfernen(id) {
-      await einkaufAendern((liste) => artikelEntfernen(liste, id));
-    },
-    async einkaufErledigteEntfernen() {
-      const r = erledigteEntfernen(kern.state.einkauf);
-      if (r.entfernt.length === 0) return { anzahl: 0, rueckgaengig: async () => {} };
-      await einkaufAendern((liste) => erledigteEntfernen(liste).liste);
-      return { anzahl: r.entfernt.length, rueckgaengig: () => einkaufAendern((liste) => wiederherstellen(liste, r)) };
     },
 
     /**
@@ -2527,6 +2356,6 @@ export function createStore(adapter, { jetzt = () => new Date(), neueId = zufael
       melden();
       store.schichtVorladen(); // neue Beispieldaten: im Hintergrund wieder vorladen (wirft nicht)
     },
-  }, kalenderScheibe.methoden);
+  }, kalenderScheibe.methoden, kontoScheibe.methoden);
   return store;
 }
