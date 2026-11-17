@@ -2,17 +2,9 @@
 import { parseDate, addDays, pad2, todayVienna } from './domain/dates.js';
 import { fuelle, h } from './ui/dom.js';
 import { entferneFehlerToast, toast } from './ui/components.js';
-import { heuteScreen } from './ui/heute-screen.js';
-import { monatScreen } from './ui/monat-screen.js';
-import { neuScreen } from './ui/neu-screen.js';
-import { urlaubScreen } from './ui/urlaub-screen.js';
+import { SEITEN } from './ui/seiten.js';
+import { besuchsPlan } from './app/seiten-besuch.js';
 import { urlaubModel } from './app/views/urlaub-model.js';
-import { mehrScreen } from './ui/mehr-screen.js';
-import { einkaufScreen } from './ui/einkauf-screen.js';
-import { verlaufScreen } from './ui/verlauf-screen.js';
-import { kontoScreen } from './ui/konto-screen.js';
-import { appScreen } from './ui/app-screen.js';
-import { autosScreen } from './ui/autos-screen.js';
 import { oeffneTagesblatt } from './ui/tagesblatt.js';
 import { terminEntwurf } from './app/termin.js';
 import { verbindenKarte, verbindungsBanner, versionsBanner } from './ui/verbindung.js';
@@ -20,7 +12,6 @@ import { VERSION } from './app/version.js';
 import { istNeueVersionVerfuegbar } from './app/version-check.js';
 import { fortschrittLeiste } from './ui/fortschritt.js';
 import { createEinkaufAbgleich } from './app/einkauf-abgleich.js';
-import { schichtScreen } from './ui/schicht-screen.js';
 import { oeffneSchichtTag } from './ui/schicht-tag.js';
 import { oeffneSchichtarten } from './ui/schicht-arten.js';
 import { schichtFilterLesen, schichtFilterSpeichern } from './app/views/schicht-model.js';
@@ -32,21 +23,7 @@ import { createSchichtVorlader } from './app/schicht-vorladen.js';
 import { nurHintergrundGeaendert } from './app/hintergrund.js';
 import { einblenden, neuerBesuch, tabWechsel } from './ui/bewegung.js';
 
-const SEITEN = {
-  heute: heuteScreen,
-  monat: monatScreen,
-  neu: neuScreen,
-  schicht: schichtScreen, // „Schichtplan“: wer wann welchen Dienst hat
-  urlaub: urlaubScreen,
-  mehr: mehrScreen,
-  einkauf: einkaufScreen, // Registerkarte; auch erreichbar von „Heute“ (Karte) und „Neu“ (Kachel)
-  verlauf: verlaufScreen, // erreichbar von „Mehr“
-  konto: kontoScreen, // Registerkarte „Konto“ mit „Kontostand · Fixkosten · Sparziele“; auch erreichbar von „Mehr“, „Heute“ (am letzten Tag) und den Erinnerungen (#/konto/kontostand, #/konto/fixkosten); #/konto/sparziele öffnet die Sparziele direkt
-  app: appScreen, // „Konto & App“: erreichbar von „Mehr“
-  autos: autosScreen, // „Autos“ (#/autos) und die Seite eines Autos (#/autos/<id>): von „Mehr“, der Karte „🚗 Auto“ auf Heute und den Erinnerungen
-};
-
-const SEITEN_TITEL = { einkauf: 'Einkauf', schicht: 'Schichtplan', verlauf: 'Verlauf', konto: 'Kontostand', app: 'Konto & App', autos: 'Autos' }; // Fenstertitel, wo er von der Registerkarte abweicht oder es keine gibt
+const SEITE = new Map(SEITEN.map((s) => [s.name, s])); // die Seiten (src/ui/seiten.js) nach Namen
 
 // Drei links, dann „Neu“ als runder Hauptknopf, gleich danach „Schicht“, dann drei. Lange Namen passen bei acht Karten nicht in die
 // Leiste („Kontostand“ → „Konto“, „Schichtplan“ → „Schicht“); der Fenstertitel sagt es ganz.
@@ -78,14 +55,10 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
   fuelle(wurzel, banner, fortschritt, inhalt, leiste);
 
   let neueVersion = false;
-  let schichtAngefragt = null; // Monat, den der Schichtplan zuletzt geladen hat (null = beim nächsten Zeichnen neu laden)
+  const angefragt = new Map(); // Seite → Schlüssel des Besuchs, für den sie zuletzt gelesen hat (siehe app/seiten-besuch.js)
   let schichtRueckkehr = null; // Zeitpunkt (ms) des letzten Neu-Holens beim Zurückkehren in die App
   let letzteSeite = null; // zuletzt gezeichnete Seite (für `ui.seiteBetreten`)
   let zumAnfang = false; // nach dem Wechsel auf eine Seite der Autos oben beginnen
-  let fixAngefragt = false; // wurden die Fixkosten beim Öffnen ihrer Ansicht schon gelesen? (zurückgesetzt beim Verlassen)
-  let zieleAngefragt = false; // wurden die Sparziele beim Öffnen ihrer Ansicht schon gelesen? (zurückgesetzt beim Verlassen)
-  let versicherungAngefragt = false; // wurde die Versicherung beim Öffnen ihrer Ansicht schon frisch gelesen? (zurückgesetzt beim Verlassen)
-  let autosAngefragt = false; // wurden die Autos beim Öffnen ihrer Seite schon frisch gelesen? (zurückgesetzt beim Verlassen)
   const versionPruefen = async () => {
     if (neueVersion || !(await istNeueVersionVerfuegbar({ aktuell: VERSION }))) return;
     neueVersion = true;
@@ -113,7 +86,7 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
       await anmeldung;
       await store.wiederholeAusstehende();
       await store.laden();
-      schichtAngefragt = null; // ein offener Schichtplan lädt seine Monate jetzt neu
+      angefragt.delete('schicht'); // ein offener Schichtplan lädt seine Monate jetzt neu
       ui.verbindung = { laeuft: false, fehler: null };
       toast('Verbunden ✓');
     } catch (fehler) {
@@ -147,7 +120,7 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
     },
     seite: () => {
       const name = fenster.location.hash.replace(/^#\/?/, '').split('/')[0];
-      return name in SEITEN ? name : 'heute';
+      return SEITE.has(name) ? name : 'heute';
     },
     bannerAktualisieren() {
       fuelle(banner, verbindungsBanner({ state: store.getState(), auth, ausstehend: store.ausstehend(), verbinden, verbindung: ui.verbindung }), neueVersion ? versionsBanner({ neuLaden: () => fenster.location.reload() }) : null);
@@ -170,40 +143,25 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
         if (ui.seiteBetreten) neuerBesuch(); // Einblenden/Hochzählen dürfen auf der neuen Seite wieder spielen
         if (ui.seiteBetreten && seite === 'autos' && letzteSeite !== null) zumAnfang = true;
         letzteSeite = besuch;
-        fuelle(inhalt, SEITEN[seite]({ store, ui }));
+        const eintrag = SEITE.get(seite);
+        const teil = eintrag.teil?.(ui) ?? null;
+        fuelle(inhalt, eintrag.screen({ store, ui }));
         // Glas/Bento: die Karten kommen beim ersten Zeichnen dieses Bildschirms gestaffelt herein – nicht bei jedem Neuzeichnen
         // (Speichern, Vorladen im Hintergrund, anderes Telefon), sonst „ploppt“ alles ständig (siehe ui/bewegung.js)
-        einblenden(inhalt.firstElementChild, seite === 'konto' ? `konto-${ui.kontoAnsicht}` : besuch);
-        if (seite === 'monat') ui.monatLaden();
-        if (seite === 'urlaub') ui.urlaubLaden();
-        if (seite === 'verlauf') ui.verlaufLaden();
-        if (seite === 'schicht') ui.schichtLaden();
-        else schichtAngefragt = null; // beim nächsten Öffnen frisch laden
-        if (seite === 'konto' && ui.kontoAnsicht === 'fixkosten') ui.fixLaden();
-        else fixAngefragt = false; // beim nächsten Öffnen der Fixkosten frisch lesen
-        if (seite === 'konto' && ui.kontoAnsicht === 'sparziele') ui.zieleLaden();
-        else zieleAngefragt = false; // beim nächsten Öffnen der Sparziele frisch lesen
-        if (seite === 'konto' && ui.kontoAnsicht === 'versicherung') ui.versicherungLesen();
-        else versicherungAngefragt = false; // beim nächsten Öffnen der Versicherung frisch lesen (das andere Telefon könnte etwas eingereicht haben)
-        if (seite === 'autos') ui.autosLesen();
-        else autosAngefragt = false; // beim nächsten Öffnen frisch lesen (das andere Telefon könnte etwas eingetragen haben)
+        einblenden(inhalt.firstElementChild, teil ? `${seite}-${teil}` : besuch);
+        eintrag.nachladen?.(ui);
+        seitenBesuchen(seite, [teil, eintrag.schluessel?.(ui)].filter((x) => x != null).join('|'));
       }
       inhalt.scrollTop = zumAnfang ? 0 : alt;
       fenster.scrollTo(0, zumAnfang ? 0 : scrollY);
       zumAnfang = false;
       fuelle(leiste, TABS.map(([id, symbol, text]) => tab(id, symbol, text, seite)));
-      const kontoTitel = { fixkosten: 'Fixkosten', sparziele: 'Sparziele', versicherung: 'Versicherung' }[ui.kontoAnsicht];
-      const seitenTitel = seite === 'konto' && kontoTitel ? kontoTitel : (SEITEN_TITEL[seite] ?? TABS.find(([id]) => id === seite)?.[2]);
+      const { titel } = SEITE.get(seite);
+      const seitenTitel = (typeof titel === 'function' ? titel(ui) : titel) ?? TABS.find(([id]) => id === seite)?.[2]; // sonst der Text der Registerkarte
       document.title = `${ui.titel()} · ${seitenTitel}`;
       einkaufAbgleich.pruefen(); // Einkaufsliste offen (und Google verbunden): alle 30 Sekunden nachsehen, sonst nicht
       if (seite === 'schicht' && auth) schichtAbgleich.start(); // nur mit Google: in der Demo gibt es kein anderes Telefon
       else schichtAbgleich.stop();
-    },
-    /** Lädt Schichtarten und den angezeigten Monat samt Nachbarmonaten, einmal beim Öffnen der Seite und bei jedem Monatswechsel. */
-    schichtLaden() {
-      if (schichtAngefragt === ui.schicht.jm) return;
-      schichtAngefragt = ui.schicht.jm;
-      store.schichtLaden(ui.schicht.jm).catch(() => {}); // Lesefehler stehen im Status des Monats
     },
     /** Die Monate, die der Schichtplan gerade braucht: der angezeigte und seine Nachbarn. */
     schichtMonate: () => [monatVor(ui.schicht.jm, 1), ui.schicht.jm, monatVor(ui.schicht.jm, -1)],
@@ -215,32 +173,12 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
       ui.schicht.filter = schichtFilterSpeichern(filter);
       ui.rendern();
     },
-    /** Fixkosten beim Öffnen ihrer Ansicht einmal lesen; `nochmal` (Knopf „Nochmal versuchen“) liest erneut. Lesefehler stehen im Status (store.fixLaden). */
-    fixLaden({ nochmal = false } = {}) {
-      if (fixAngefragt && !nochmal) return;
-      fixAngefragt = true;
-      store.fixLaden().catch(() => {});
-    },
     /**
-     * Sparziele beim Öffnen ihrer Ansicht einmal frisch lesen (das andere Telefon könnte etwas geändert haben); Lesefehler stehen im
-     * Status (store.zieleLaden: alter Stand bleibt, gesperrt bis zum nächsten Lesen).
+     * Fixkosten lesen: beim Öffnen ihrer Ansicht (einmal je Besuch, siehe ui/seiten.js) und mit dem Knopf „Nochmal versuchen“
+     * (`{ nochmal: true }`; jeder Aufruf liest). Lesefehler stehen im Status (store.fixLaden).
      */
-    zieleLaden() {
-      if (zieleAngefragt) return;
-      zieleAngefragt = true;
-      store.zieleLaden?.().catch?.(() => {});
-    },
-    /** Autos beim Öffnen ihrer Seite einmal frisch lesen (Fehler stehen im Status, der letzte Stand bleibt sichtbar). */
-    autosLesen() {
-      if (autosAngefragt) return;
-      autosAngefragt = true;
-      Promise.resolve().then(() => store.autosLaden?.()).catch(() => {}); // erst nach dem laufenden Zeichnen
-    },
-    /** Versicherung beim Öffnen ihrer Ansicht einmal frisch lesen (Fehler stehen im Status, der letzte Stand bleibt sichtbar). */
-    versicherungLesen() {
-      if (versicherungAngefragt) return;
-      versicherungAngefragt = true;
-      Promise.resolve().then(() => store.versicherungLaden?.()).catch(() => {}); // erst nach dem laufenden Zeichnen
+    fixLaden() {
+      store.fixLaden().catch(() => {});
     },
     /** Ansicht des Konto-Tabs wechseln („kontostand“ | „fixkosten“ | „sparziele“ | „versicherung“) und auf diesem Telefon merken. */
     setzeKontoAnsicht(ansicht) {
@@ -331,6 +269,16 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
     },
   };
 
+  /** Führt den Besuchsplan aus: `seite` ist mit dem Schlüssel `schluessel` offen, jede andere Seite nicht (siehe app/seiten-besuch.js). */
+  function seitenBesuchen(seite, schluessel) {
+    const { betreten, vergessen } = besuchsPlan(SEITEN, new Map([[seite, schluessel]]), angefragt);
+    for (const name of vergessen) angefragt.delete(name); // beim nächsten Öffnen frisch lesen
+    for (const name of betreten) {
+      angefragt.set(name, schluessel);
+      SEITE.get(name).betreten?.({ store, ui });
+    }
+  }
+
   function tab(id, symbol, text, aktiv) {
     const hauptknopf = id === 'neu';
     return h(
@@ -358,30 +306,23 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
   // Schichtplan und Fixkosten im Hintergrund vorladen (Schichtarten, drei Monate ab heute, vier Teile der Fixkosten; für die Erinnerungen, siehe store.schichtVorladen):
   // beim Start und Verbinden, nach einem Monatswechsel und nach Fehlern still mit Wartezeit (siehe app/schicht-vorladen.js); nie aus dem
   // gespeicherten Stand allein. Ohne `await`: der Start wartet nicht darauf; Fehler stehen im Status der Monate.
-  const schichtVorlader = createSchichtVorlader({
-    bereit: () => (auth ? googleBereit() : store.getState().geladen),
-    vorladen: () => Promise.resolve().then(() => store.schichtVorladen()), // erst nach dem laufenden Zeichnen/Melden
-    vorgeladen: () => store.getState().schicht.vorgeladen,
-    monat: () => todayVienna(store.jetzt()).slice(0, 7),
-  });
-  // Autos mit eigenem Wiederholen (30 s, 2 min, 10 min …), unabhängig vom Push-Tor: scheitert ihr Lesen, wartet sonst nichts darauf
-  const autosVorlader = createSchichtVorlader({
-    bereit: () => (auth ? googleBereit() : store.getState().geladen),
-    vorladen: () => Promise.resolve().then(() => store.autosLaden()),
-    vorgeladen: () => (store.getState().autos.frisch ? todayVienna(store.jetzt()).slice(0, 7) : null),
-    monat: () => todayVienna(store.jetzt()).slice(0, 7),
-  });
-  // ebenso die Versicherung (Polizze und Rechnungen): eigenes Wiederholen, das Push-Tor wartet nie auf sie
-  const versicherungVorlader = createSchichtVorlader({
-    bereit: () => (auth ? googleBereit() : store.getState().geladen),
-    vorladen: () => Promise.resolve().then(() => store.versicherungLaden()),
-    vorgeladen: () => (store.getState().versicherung.frisch ? todayVienna(store.jetzt()).slice(0, 7) : null),
-    monat: () => todayVienna(store.jetzt()).slice(0, 7),
-  });
+  // Autos und Versicherung (Polizze und Rechnungen) mit eigenem Wiederholen (30 s, 2 min, 10 min …), unabhängig vom Push-Tor: scheitert
+  // ihr Lesen, wartet sonst nichts darauf.
+  const laufenderMonat = () => todayVienna(store.jetzt()).slice(0, 7);
+  const VORLADER = [
+    { vorladen: () => store.schichtVorladen(), vorgeladen: () => store.getState().schicht.vorgeladen },
+    { vorladen: () => store.autosLaden(), vorgeladen: () => (store.getState().autos.frisch ? laufenderMonat() : null) },
+    { vorladen: () => store.versicherungLaden(), vorgeladen: () => (store.getState().versicherung.frisch ? laufenderMonat() : null) },
+  ].map(({ vorladen, vorgeladen }) =>
+    createSchichtVorlader({
+      bereit: () => (auth ? googleBereit() : store.getState().geladen),
+      vorladen: () => Promise.resolve().then(vorladen), // erst nach dem laufenden Zeichnen/Melden
+      vorgeladen,
+      monat: laufenderMonat,
+    }),
+  );
   const schichtVorladenAnstossen = (optionen) => {
-    schichtVorlader.anstossen(optionen);
-    autosVorlader.anstossen(optionen);
-    versicherungVorlader.anstossen(optionen);
+    for (const vorlader of VORLADER) vorlader.anstossen(optionen);
   };
 
   const schichtAbgleich = createSchichtAbgleich({
@@ -459,7 +400,7 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
     }
     await store.wiederholeAusstehende();
     await store.laden();
-    schichtAngefragt = null; // ein offener Schichtplan lädt seine Monate jetzt neu
+    angefragt.delete('schicht'); // ein offener Schichtplan lädt seine Monate jetzt neu
     ui.rendern();
   }
 
