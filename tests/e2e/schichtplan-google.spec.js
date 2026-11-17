@@ -29,7 +29,7 @@ function oktoberBeiGoogle() {
 
 test('beim Start im Hintergrund: Schichtarten, laufender und zwei folgende Monate (fksch202610–12); die Seite liest den Vormonat dazu; Gelesenes ist zu sehen', async ({ page }) => {
   const google = await starteGoogleVerbunden(page, { ereignisse: [oktoberBeiGoogle()] });
-  await expect.poll(() => schichtGelesen(google).sort(), 'beim Start im Hintergrund').toEqual(['GET fksch202610', 'GET fksch202611', 'GET fksch202612', 'GET fkschichtarten']);
+  await expect.poll(() => schichtGelesen(google).sort(), 'beim Start im Hintergrund').toEqual(['GET fksch202610', 'GET fksch202611', 'GET fksch202612', 'GET fkschichtarten', 'GET fkschtausch']); // mit den Diensttauschen (1.5.0)
 
   await tab(page, 'Schicht');
   await expect(monatTitel(page)).toHaveText('Oktober 2026');
