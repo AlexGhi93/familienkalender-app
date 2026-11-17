@@ -20,7 +20,7 @@ export function kontostandInhalt({ store, ui, settings, speichern }) {
       'div',
       { class: 'feld' },
       h('span', {}, 'Erinnerung am letzten Tag um'),
-      zeitFeld({ wert: settings.kontoErinnerung, beschriftung: 'Erinnerung am letzten Tag des Monats', erstBeiFertig: true, beiAenderung: (w) => speichern({ kontoErinnerung: w }) }),
+      zeitFeld({ wert: settings.kontoErinnerung, beschriftung: 'Erinnerung am letzten Tag des Monats', erstBeiFertig: true, beiAenderung: (w) => speichern({ kontoErinnerung: w }), beiUngueltig: () => toast('Bitte eine gültige Uhrzeit eingeben, z. B. 18:00. Leer lassen = aus.') }),
       h('small', { class: 'leise' }, 'Die App erinnert euch am letzten Tag (und drei Stunden später noch einmal, falls jemand fehlt). Leer lassen = aus.'),
     ),
   ];

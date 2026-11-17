@@ -105,7 +105,7 @@ export function mehrScreen({ store, ui }) {
       'div',
       { class: 'feld' },
       h('span', {}, beschriftung),
-      datumEingabe({ wert: wert ?? '', heute: store.heute(), beschriftung, erstBeiFertig: true, beiAenderung: (w) => beiAenderung(w || null) }),
+      datumEingabe({ wert: wert ?? '', heute: store.heute(), beschriftung, erstBeiFertig: true, beiAenderung: (w) => beiAenderung(w || null), beiUngueltig: () => toast('Bitte ein gültiges Datum eingeben, z. B. 01.09.2027.') }),
       hinweis ? h('small', { class: 'leise' }, hinweis) : null,
     );
 
@@ -160,7 +160,7 @@ export function mehrScreen({ store, ui }) {
       'div',
       { class: 'feld' },
       h('span', {}, beschriftung),
-      zeitEingabe({ wert, beschriftung, erstBeiFertig: true, beiAenderung: (w) => (w ? beiAenderung(w) : toast('Bitte eine Uhrzeit eingeben, z. B. 07:30.')) }),
+      zeitEingabe({ wert, beschriftung, erstBeiFertig: true, beiAenderung: (w) => (w ? beiAenderung(w) : toast('Bitte eine Uhrzeit eingeben, z. B. 07:30.')), beiUngueltig: () => toast('Bitte eine Uhrzeit eingeben, z. B. 07:30.') }),
     );
 
   const kontoApp = {
@@ -215,7 +215,7 @@ export function mehrScreen({ store, ui }) {
           'div',
           { class: 'feld' },
           h('span', {}, 'Erinnerung am Vorabend um (nur Hinbringen)'),
-          zeitEingabe({ wert: settings.vorabend, beschriftung: 'Erinnerung am Vorabend', erstBeiFertig: true, beiAenderung: (w) => speichern({ vorabend: w }) }),
+          zeitEingabe({ wert: settings.vorabend, beschriftung: 'Erinnerung am Vorabend', erstBeiFertig: true, beiAenderung: (w) => speichern({ vorabend: w }), beiUngueltig: () => toast('Bitte eine gültige Uhrzeit eingeben, z. B. 19:00. Leer lassen = aus.') }),
           h('small', { class: 'leise' }, 'Am Abend davor, zum Einpacken, direkt aus der App. Leer lassen = aus.'),
         ),
       ],

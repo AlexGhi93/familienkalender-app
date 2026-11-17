@@ -303,3 +303,50 @@ test('Betreuung: getipptes Datum wird mit Enter gespeichert („Wechsel zum Kind
   await expect.poll(async () => (await gespeichert(page)).erfassungAb).toBe('2026-09-01');
   await expect(tafel(page, 'betreuung').getByRole('textbox', { name: 'Erfassung ab', exact: true })).toHaveValue('01.09.2026');
 });
+
+test('Unmögliches Datum löscht die gespeicherte Einstellung nicht', async ({ page }) => {
+  await starteDemo(page, { route: '#/mehr' });
+  await zeile(page, 'betreuung').click();
+  const ab = tafel(page, 'betreuung').getByRole('textbox', { name: 'Erfassung ab', exact: true });
+  await ab.fill('01.09.2026'); // erst einen echten Wert speichern
+  await ab.press('Enter');
+  await expect.poll(async () => (await gespeichert(page)).erfassungAb).toBe('2026-09-01');
+  const feld = tafel(page, 'betreuung').getByRole('textbox', { name: 'Erfassung ab', exact: true });
+  await feld.fill('31.02.2027');
+  await feld.press('Enter');
+  await expect(feld).toHaveAttribute('aria-invalid', 'true');
+  await erwarteToast(page, 'Bitte ein gültiges Datum eingeben');
+  expect((await gespeichert(page)).erfassungAb).toBe('2026-09-01');
+  await page.reload();
+  expect((await gespeichert(page)).erfassungAb).toBe('2026-09-01');
+  await zeile(page, 'betreuung').click();
+  await expect(tafel(page, 'betreuung').getByRole('textbox', { name: 'Erfassung ab', exact: true })).toHaveValue('01.09.2026');
+});
+
+test('Unmögliche Uhrzeit (25:99) bei „Hinbringen um“ und bei der Kontostand-Erinnerung schaltet nichts aus', async ({ page }) => {
+  await starteDemo(page, { route: '#/mehr' });
+  await zeile(page, 'zeiten').click();
+  const vorher = await gespeichert(page);
+  expect(vorher.bringzeit).toBe('07:30');
+  expect(vorher.vorabend).toBe('18:00');
+  const hin = tafel(page, 'zeiten').getByRole('textbox', { name: 'Hinbringen um', exact: true });
+  await hin.fill('25:99');
+  await hin.press('Enter');
+  await expect(hin).toHaveAttribute('aria-invalid', 'true');
+  const vorabend = tafel(page, 'zeiten').getByRole('textbox', { name: 'Erinnerung am Vorabend', exact: true });
+  await vorabend.fill('25:99');
+  await vorabend.press('Enter');
+  await expect(vorabend).toHaveAttribute('aria-invalid', 'true');
+  await zeile(page, 'kontostand').click();
+  const konto = tafel(page, 'kontostand').getByRole('textbox', { name: 'Erinnerung am letzten Tag des Monats', exact: true });
+  const kontoAlt = vorher.kontoErinnerung;
+  expect(kontoAlt).toBeTruthy();
+  await konto.fill('25:99');
+  await konto.press('Enter');
+  await expect(konto).toHaveAttribute('aria-invalid', 'true');
+  await page.reload();
+  const nachher = await gespeichert(page);
+  expect(nachher.bringzeit).toBe('07:30');
+  expect(nachher.vorabend).toBe('18:00');
+  expect(nachher.kontoErinnerung).toBe(kontoAlt);
+});

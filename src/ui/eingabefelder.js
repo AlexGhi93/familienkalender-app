@@ -10,7 +10,7 @@ import { datumAnzeige, datumAusEingabe, datumWaehrendTippen, zeitAusEingabe, zei
  * `umwandeln(text)` → Wert oder null; `waehrendTippen(text)` → Text; `anzeige(wert)` → Text im Feld;
  * `istVollstaendig(text)` → true, wenn schon beim Tippen übernommen werden darf.
  */
-function baue({ art, symbol, platzhalter, maxLaenge, beschriftung, wert, beiAenderung, erstBeiFertig, umwandeln, waehrendTippen, anzeige, istVollstaendig, pickerWert, hinweis }) {
+function baue({ art, symbol, platzhalter, maxLaenge, beschriftung, wert, beiAenderung, erstBeiFertig, umwandeln, waehrendTippen, anzeige, istVollstaendig, pickerWert, hinweis, beiUngueltig }) {
   let aktuell = wert ?? ''; // zuletzt gültig erkannter Wert (auch schon während des Tippens)
   let gemeldet = aktuell; // zuletzt an `beiAenderung` gemeldeter (bzw. von außen gesetzter) Wert
   const text = h('input', { type: 'text', inputmode: 'numeric', autocomplete: 'off', enterkeyhint: 'done', maxlength: String(maxLaenge), placeholder: platzhalter, 'aria-label': beschriftung });
@@ -55,7 +55,11 @@ function baue({ art, symbol, platzhalter, maxLaenge, beschriftung, wert, beiAend
     } else {
       markiere(true);
       zeigeHinweis('');
-      uebernehmen('', true);
+      if (beiUngueltig) {
+        // Unlesbar ist nicht leer: nichts als „leer“ melden (sonst würde eine Einstellung gelöscht / ein Datum zu „heute“).
+        aktuell = '';
+        beiUngueltig();
+      } else uebernehmen('', true);
     }
   }
 
@@ -101,8 +105,8 @@ function baue({ art, symbol, platzhalter, maxLaenge, beschriftung, wert, beiAend
   });
 }
 
-/** Uhrzeit: `wert` = 'HH:MM' oder ''. `beiAenderung('HH:MM' | '')`. Mit `erstBeiFertig` erst bei Enter/Verlassen/Auswahl (z. B. wenn jede Änderung gespeichert wird). */
-export function zeitFeld({ wert = '', beiAenderung, erstBeiFertig = false, beschriftung = 'Uhrzeit' }) {
+/** Uhrzeit: `wert` = 'HH:MM' oder ''. `beiAenderung('HH:MM' | '')`; `beiUngueltig()` (optional) für eine nicht lesbare Eingabe – ohne sie gilt wie bisher `beiAenderung('')`. Mit `erstBeiFertig` erst bei Enter/Verlassen/Auswahl (z. B. wenn jede Änderung gespeichert wird). */
+export function zeitFeld({ wert = '', beiAenderung, erstBeiFertig = false, beschriftung = 'Uhrzeit', beiUngueltig }) {
   return baue({
     art: 'time',
     symbol: '🕒',
@@ -111,6 +115,7 @@ export function zeitFeld({ wert = '', beiAenderung, erstBeiFertig = false, besch
     beschriftung,
     wert,
     beiAenderung,
+    beiUngueltig,
     erstBeiFertig,
     umwandeln: zeitAusEingabe,
     waehrendTippen: zeitWaehrendTippen,
@@ -121,8 +126,8 @@ export function zeitFeld({ wert = '', beiAenderung, erstBeiFertig = false, besch
   });
 }
 
-/** Datum: `wert` = 'JJJJ-MM-TT' oder ''. `beiAenderung('JJJJ-MM-TT' | '')`; `heute` für Eingaben ohne Jahr. */
-export function datumFeld({ wert = '', beiAenderung, heute, erstBeiFertig = false, beschriftung = 'Datum' }) {
+/** Datum: `wert` = 'JJJJ-MM-TT' oder ''. `beiAenderung('JJJJ-MM-TT' | '')`; `beiUngueltig()` wie bei `zeitFeld`; `heute` für Eingaben ohne Jahr. */
+export function datumFeld({ wert = '', beiAenderung, heute, erstBeiFertig = false, beschriftung = 'Datum', beiUngueltig }) {
   return baue({
     art: 'date',
     symbol: '📅',
@@ -131,6 +136,7 @@ export function datumFeld({ wert = '', beiAenderung, heute, erstBeiFertig = fals
     beschriftung,
     wert,
     beiAenderung,
+    beiUngueltig,
     erstBeiFertig,
     umwandeln: (t) => datumAusEingabe(t, { heute }),
     waehrendTippen: datumWaehrendTippen,

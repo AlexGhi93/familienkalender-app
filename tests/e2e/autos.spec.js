@@ -459,3 +459,22 @@ test.describe('Glas und Bento', () => {
     expect(await fuellung.evaluate((el) => el.style.transform)).toMatch(/^scaleX\(0\.70/);
   });
 });
+
+test('Unmögliches Datum beim Kilometerstand wird nicht unter heute gespeichert', async ({ page }) => {
+  await starteDemo(page, { route: `#/autos/${TESLA}` });
+  const km = abschnitt(page, 'Kilometerstand');
+  await expect(km.locator('.au-km-zahl')).toHaveText('ca. 18.872 km');
+  await km.getByRole('button', { name: 'Kilometerstand aktualisieren' }).click();
+  const b = blatt(page, 'Kilometerstand aktualisieren');
+  const datum = b.getByRole('textbox', { name: 'Datum', exact: true });
+  await datum.fill('31.02.2026');
+  await datum.press('Enter');
+  await expect(datum).toHaveAttribute('aria-invalid', 'true');
+  await b.getByRole('textbox', { name: 'Kilometerstand laut Tacho' }).fill('19.500');
+  await b.getByRole('button', { name: 'Speichern' }).click();
+  await erwarteToast(page, 'Bitte ein gültiges Datum eingeben.');
+  await expect(b).toBeVisible(); // das Formular bleibt offen
+  await page.reload();
+  await expect(abschnitt(page, 'Kilometerstand').locator('.au-km-zahl')).toHaveText('ca. 18.872 km'); // kein neuer Eintrag
+  await expect(abschnitt(page, 'Kilometerstand')).not.toContainText('19.500');
+});

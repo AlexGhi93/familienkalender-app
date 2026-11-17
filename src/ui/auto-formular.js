@@ -101,7 +101,7 @@ export function oeffneArbeitFormular({ store }, autoId, optionen = {}) {
         ),
       );
     }
-    const datumKnoten = (beschriftung, wert, setze) =>
+    const datumKnoten = (beschriftung, wert, setze, ungueltig) =>
       gruppe(
         beschriftung,
         datumFeld({
@@ -112,6 +112,7 @@ export function oeffneArbeitFormular({ store }, autoId, optionen = {}) {
             setze(w);
             kmHinweisZeigen();
           },
+          beiUngueltig: ungueltig,
         }),
       );
     if (e.typ === 'vignette') {
@@ -136,11 +137,14 @@ export function oeffneArbeitFormular({ store }, autoId, optionen = {}) {
         datumKnoten('Gekauft am', e.details.gekauftAm ?? e.datum, (w) => {
           e.details.gekauftAm = w;
           e.datum = w || heute;
+        }, () => {
+          e.details.gekauftAm = null;
+          e.datum = null;
         }),
         h('p', { class: 'fk-box au-box' }, `ℹ️ ${TEXT_VIGNETTE_ONLINE}`),
       );
     } else {
-      felder.push(datumKnoten('Datum', e.datum, (w) => (e.datum = w)));
+      felder.push(datumKnoten('Datum', e.datum, (w) => (e.datum = w), () => (e.datum = null)));
       const pflicht = e.typ === 'reifenwechsel' || e.typ === 'rotation';
       felder.push(
         feld(
@@ -236,6 +240,10 @@ export function oeffneArbeitFormular({ store }, autoId, optionen = {}) {
 
     const speichern = async () => {
       if (speichert) return;
+      if (e.datum === null) {
+        toast('Bitte ein gültiges Datum eingeben.', { art: 'fehler' });
+        return;
+      }
       const { arbeit, fehler } = entwurfZuArbeit(e);
       if (fehler) {
         toast(fehler, { art: 'fehler' });
@@ -318,6 +326,10 @@ export function oeffneKmFormular({ store }, autoId) {
     zeigen();
     const speichern = async () => {
       if (speichert) return;
+      if (e.datum === null) {
+        toast('Bitte ein gültiges Datum eingeben.', { art: 'fehler' });
+        return;
+      }
       const km = kmAusText(e.km);
       if (km === undefined || Number.isNaN(km)) {
         toast('Bitte den Kilometerstand vom Tacho als ganze Zahl eingeben, z. B. 18.900.', { art: 'fehler' });
@@ -336,7 +348,7 @@ export function oeffneKmFormular({ store }, autoId) {
       h(
         'fieldset',
         { class: 'fk-felder au-felder', disabled: aus },
-        gruppe('Datum', datumFeld({ wert: e.datum, heute, beschriftung: 'Datum', beiAenderung: (w) => ((e.datum = w || heute), zeigen()) })),
+        gruppe('Datum', datumFeld({ wert: e.datum, heute, beschriftung: 'Datum', beiAenderung: (w) => ((e.datum = w || heute), zeigen()), beiUngueltig: () => (e.datum = null) })),
         feld(
           'Kilometerstand laut Tacho',
           h('input', {
