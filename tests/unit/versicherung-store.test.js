@@ -532,6 +532,25 @@ describe('Mehrere Polizzen (1.5.0, C2)', () => {
     assert.deepEqual(t.neu(), ['PATCH fkvr20264']);
   });
 
+  test('erste Rechnung auf v:1 bei abgelaufener Anmeldung: wartet; nach dem Anmelden über vorTeilSchreiben erst der Hauptteil (v:2), dann der Teil', async () => {
+    let auth = false;
+    const nein = (f) => async (...x) => (auth ? Promise.reject(authFehler()) : f(...x)); // abgelaufen: Lesen und Schreiben scheitern
+    const t = await google({ vorhanden: { fkversicherung: v1(2026) }, ids: ['neu00001'], stoeren: (e) => ({ ...e, einfuegen: nein(e.einfuegen), aendere: nein(e.aendere), holen: nein(e.holen) }) });
+    await t.store.versicherungLaden();
+    t.merken();
+    auth = true;
+    const w = await t.store.rechnungSpeichern(rechnung({ id: undefined }));
+    assert.equal(w.wartet, true);
+    assert.deepEqual(t.neu(), [], 'noch nichts geschrieben');
+    assert.equal(JSON.parse(t.text('fkversicherung')).v, 1);
+    auth = false;
+    await t.store.wiederholeAusstehende();
+    assert.deepEqual(t.neu().map((x) => x.split(' ')[1]), ['fkversicherung', 'fkvr20264'], 'Hauptteil zuerst, dann der Teil');
+    const roh = JSON.parse(t.text('fkversicherung'));
+    assert.deepEqual([roh.v, roh.l, roh.h, roh.j], [2, JSON.parse(haupt(2026)).l, P.id, 2026], 'Polizze und erstes Jahr unverändert');
+    assert.deepEqual(imText(t.text('fkvr20264')).map((x) => [x.i, x.p]), [['neu00001', P.id]]);
+  });
+
   test('v:1 erst nach meinem Lesen (der angezeigte Stand weiß nichts davon): vor dem Teil wird frisch gelesen und der Hauptteil zuerst v:2', async () => {
     const t = await google({ vorhanden: { fkversicherung: haupt(2026) }, ids: ['neu00001'] });
     await t.store.versicherungLaden();

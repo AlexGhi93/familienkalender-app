@@ -44,13 +44,37 @@ test('monatWischen: links = vor, rechts = zurück, senkrecht nichts, gesperrt ni
   assert.deepEqual(log, ['vor', 'zurueck']);
 });
 
-test('monatWischen: zwei Finger lösen nichts aus', () => {
+test('monatWischen: zwei Finger lösen nichts aus (von Anfang an oder als zweiter Finger mitten im Wischen)', () => {
+  const zwei = (x1, x2) => ({ touches: [{ clientX: x1, clientY: 100 }, { clientX: x2, clientY: 100 }] });
   const f = flaeche();
   const log = [];
-  monatWischen(f, { zurueck: () => log.push('z'), vor: () => log.push('v') });
-  f.senden('touchstart', { touches: [{ clientX: 100, clientY: 100 }, { clientX: 200, clientY: 100 }] });
+  // feste Uhr bei 0: die Klicksperre der Gegenprobe (gemeinsam für alle Flächen) ist vorbei, bevor der nächste Test beginnt
+  monatWischen(f, { zurueck: () => log.push('z'), vor: () => log.push('v'), jetzt: () => 0 });
+  // zwei Finger von Anfang an, weit gezogen (Zoomen)
+  f.senden('touchstart', zwei(100, 200));
+  f.senden('touchmove', zwei(0, 100));
   f.senden('touchend', { touches: [] });
   assert.deepEqual(log, []);
+  // ein Finger zieht schon weit genug, dann kommt ein zweiter dazu (nur touchmove meldet ihn) und der erste zieht weiter
+  f.senden('touchstart', finger(200, 100));
+  f.senden('touchmove', finger(120, 100));
+  f.senden('touchmove', zwei(100, 250));
+  f.senden('touchmove', finger(40, 100));
+  f.senden('touchend', { touches: [] });
+  assert.deepEqual(log, []);
+  // ebenso, wenn der zweite Finger mit eigenem touchstart aufsetzt
+  f.senden('touchstart', finger(200, 100));
+  f.senden('touchmove', finger(120, 100));
+  f.senden('touchstart', zwei(120, 250));
+  f.senden('touchmove', finger(40, 100));
+  f.senden('touchend', { touches: [] });
+  assert.deepEqual(log, []);
+  // Gegenprobe: derselbe Weg mit einem Finger wechselt den Monat
+  f.senden('touchstart', finger(200, 100));
+  f.senden('touchmove', finger(120, 100));
+  f.senden('touchmove', finger(40, 100));
+  f.senden('touchend', { touches: [] });
+  assert.deepEqual(log, ['v']);
 });
 
 test('monatWischen: Klick nach dem Wischen wird einmal geschluckt, nur 400 ms lang', () => {

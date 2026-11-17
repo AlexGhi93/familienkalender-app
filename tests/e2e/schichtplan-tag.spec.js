@@ -329,6 +329,40 @@ test.describe('Tagesblatt (ein Tag)', () => {
     await expect.poll(async () => (await demo(page)).zt).toBeUndefined();
   });
 
+  test('abgelehnte Uhrzeiten (Monat zu voll): die Eingabe bleibt stehen, die Meldung kommt, nichts gespeichert', async ({ page }) => {
+    await starteDemo(page, { route: '#/schicht' });
+    await expect(zelle(page, '2026-10-08')).toBeVisible();
+    // 08.10. Papa Schulung; der Monat steht knapp unter der Grenze von 6000 Zeichen (Füllung als fremdes Feld, zählt mit)
+    await page.evaluate(async () => {
+      const { monatText } = await import('/src/domain/schicht.js');
+      const daten = JSON.parse(localStorage.getItem('fk.demo.v1'));
+      const s = daten.schicht.katalog.arten.papa.find((a) => a.kuerzel === 'S').k;
+      const monat = daten.schicht.monate['2026-10'];
+      monat.t.papa = monat.t.papa.slice(0, 7) + s + monat.t.papa.slice(8);
+      monat.fremd = { w: '' };
+      monat.fremd.w = 'x'.repeat(6000 - 20 - monatText(monat).length);
+      localStorage.setItem('fk.demo.v1', JSON.stringify(daten));
+    });
+    await page.reload();
+    await zelle(page, '2026-10-08').click();
+    await expect(kopfText(page, 'papa')).toHaveText('Schulung');
+    const von = karte(page, 'papa').getByRole('textbox', { name: 'Von', exact: true });
+    const bis = karte(page, 'papa').getByRole('textbox', { name: 'Bis', exact: true });
+    await von.fill('08:00');
+    await bis.fill('16:00');
+    await bis.press('Enter');
+    await erwarteToast(page, 'Zu viele Notizen in diesem Monat. Bitte einige kürzen oder löschen.');
+    await expect(von).toHaveValue('08:00');
+    await expect(bis).toHaveValue('16:00');
+    await expect(kopfText(page, 'papa')).toHaveText('Schulung');
+    expect((await demo(page)).zt).toBeUndefined();
+    // korrigieren geht weiter vom Entwurf aus: beide leeren → nichts zu speichern, keine weitere Meldung
+    await von.fill('');
+    await von.press('Enter');
+    await expect(bis).toHaveValue('16:00');
+    await expect(karte(page, 'papa').getByText('Bitte beide Uhrzeiten eingeben.')).toBeVisible();
+  });
+
   test('auf 375 px ragt im Tagesblatt nichts seitwärts hinaus', async ({ page }) => {
     await starteDemo(page, { route: '#/schicht' });
     await zelle(page, '2026-10-21').click();
