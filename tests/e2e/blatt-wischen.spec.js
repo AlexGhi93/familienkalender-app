@@ -8,11 +8,17 @@ const tafel = (page) => page.locator('.blatt').last(); // das oberste Blatt
 const verschiebung = (page) => tafel(page).evaluate((el) => new DOMMatrixReadOnly(getComputedStyle(el).transform).m42);
 const warte = (ms) => new Promise((r) => setTimeout(r, ms)); // nur für die Geschwindigkeit eines Zugs (echte Zeit zwischen den Ereignissen)
 
+/** Touch über CDP gibt es nur in Chromium: in WebKit (iPhone) wird ein solcher Test übersprungen, die übrigen laufen dort mit. */
+function nurMitCdp(page) {
+  test.skip(page.context().browser()?.browserType().name() !== 'chromium', 'Touch über das DevTools-Protokoll gibt es nur in Chromium.');
+}
+
 /**
  * Ein Finger auf dem Bildschirm (Touch über CDP, wie auf dem Telefon) bei `ort` ({ x, y } oder ein Locator, dann dessen Mitte).
  * `ziehe(dy, { dx, schritte, pause })` bewegt ihn in Schritten (mit `pause` ms dazwischen), `halte(ms)` hält ihn still, `loslassen()` hebt ihn ab.
  */
 async function finger(page, ort) {
+  nurMitCdp(page);
   const cdp = await page.context().newCDPSession(page);
   let x;
   let y;
@@ -52,6 +58,7 @@ async function finger(page, ort) {
  * Browser (CDP setzt keine eigene Zeit, die Geschwindigkeit ist echte Zeit – so bleibt der Wurf auch bei voller Maschine schnell).
  */
 async function wurf(page, ort, dy, schritte = 3) {
+  nurMitCdp(page);
   const cdp = await page.context().newCDPSession(page);
   const box = await ort.boundingBox();
   const x = Math.round(box.x + box.width / 2);
@@ -271,6 +278,8 @@ test.describe('mit Bewegung', () => {
 });
 
 test.describe('kein Neuladen durch Herunterziehen', () => {
+  // overscroll-behavior liefert Playwright-WebKit nicht als berechneten Stil (undefined); Safari hat in der PWA ohnehin kein Neuladen durch Ziehen
+  test.skip(({ browserName }) => browserName === 'webkit', 'overscroll-behavior ist in Playwright-WebKit nicht lesbar.');
   const ueberzug = (page) =>
     page.evaluate(() => [getComputedStyle(document.documentElement).overscrollBehaviorY, getComputedStyle(document.body).overscrollBehaviorY]);
 
@@ -568,6 +577,8 @@ test.describe('Zurück, Escape und Seitenwechsel (B6, B7)', () => {
   });
 
   test('neu geladen über einem offenen Blatt: die App verlässt dessen Eintrag, ein Zurück führt zur vorigen Seite', async ({ page }) => {
+    // Playwright-WebKit: Neuladen bzw. Zurück nach dem history.go beim Laden melden keine fertige Navigation (Zeitüberschreitung im Werkzeug)
+    test.skip(page.context().browser()?.browserType().name() === 'webkit', 'Neuladen/Zurück mit history.go beim Laden: in Playwright-WebKit nicht messbar.');
     await starteDemo(page, { route: '#/heute' });
     await tab(page, 'Monat');
     await tagMitRueckfrage(page); // Tiefe 2
