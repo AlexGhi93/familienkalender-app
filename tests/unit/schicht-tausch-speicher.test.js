@@ -202,3 +202,90 @@ test('Demo: Tausch speichern und rückgängig machen wie bei Google', async () =
   assert.deepEqual([(await adapter.leseSchichtMonat('2026-12')).monat, (await adapter.leseSchichtMonat('2027-01')).monat].map((m, i) => normalisiereMonat(m, i ? '2027-01' : '2026-12').monat), [mA, mB]);
   assert.deepEqual((await adapter.leseDiensttausch()).daten.eintraege, []);
 });
+
+// ---------- Fix-Runde 1 ----------
+
+test('Abgleich (schichtAktualisieren) bringt die Diensttausche des anderen Telefons; unveränderte behalten ihre Identität, die Sperre geht wieder weg', async () => {
+  const g = await aufbau();
+  const anderes = await googleStore({ jetzt: JETZT, api: g, optionen: { neueId: kennungen('fremd001', 'fremd002') } });
+  await g.store.schichtLaden('2026-12');
+  const jms = ['2026-12', '2027-01'];
+  assert.equal((await anderes.store.diensttauschSpeichern(ENTWURF)).ok, true);
+  assert.equal(await g.store.schichtAktualisieren(jms), true);
+  assert.equal(sichtbar(g, '2026-12-30').zustand, 'ganz');
+  const vorher = g.store.getState().schicht.tausch;
+  assert.equal(await g.store.schichtAktualisieren(jms), true);
+  assert.equal(g.store.getState().schicht.tausch, vorher, 'unverändert: dasselbe Objekt (Push-Plan)');
+
+  // das andere Telefon nimmt X zurück und tauscht A mit einem anderen Tag (Y): das alte X darf nicht mehr erscheinen
+  assert.equal((await anderes.store.diensttauschRueckgaengig('fremd001')).ok, true);
+  assert.equal((await anderes.store.diensttauschSpeichern({ ...ENTWURF, b: '2027-01-05', kb: N })).ok, true);
+  assert.equal(await g.store.schichtAktualisieren(jms), true);
+  assert.equal(sichtbar(g, '2027-01-04'), null);
+  assert.equal(sichtbar(g, '2027-01-05').eintrag.id, 'fremd002');
+  assert.deepEqual(eintraege(g).map((e) => e.id), ['fremd002']);
+
+  // unlesbar → gesperrt; wieder lesbar → beim nächsten Abgleich frei (ohne neues Laden der Seite)
+  const gut = g.text('fkschtausch');
+  await g.api.ereignisse.schreibe('kan', { id: 'fkschtausch', description: '{"v":2,"l":[{"neu":1}]}' });
+  assert.equal(await g.store.schichtAktualisieren(jms), true);
+  assert.ok(g.store.getState().unlesbar.includes('schichttausch'));
+  await g.api.ereignisse.schreibe('kan', { id: 'fkschtausch', description: gut });
+  assert.equal(await g.store.schichtAktualisieren(jms), true);
+  assert.ok(!g.store.getState().unlesbar.includes('schichttausch'));
+  assert.equal(sichtbar(g, '2027-01-05').zustand, 'ganz');
+});
+
+test('eigener offener Tausch (Verknüpfung da, Monate nicht) → derselbe Tausch wird fortgesetzt, ein anderer bleibt abgelehnt', async () => {
+  let kaputt = true;
+  const { g, r } = await scheitert((e) => ({ ...e, aendere: async (k, id, f, o) => (kaputt && id === 'fksch202612' ? HTTP500() : e.aendere(k, id, f, o)) }));
+  assert.equal(r.id, 'tausch01');
+  assert.equal(tauschZustand(eintraege(g)[0], monate(g)('2026-12'), monate(g)('2027-01')), 'offen');
+  kaputt = false;
+  g.merken();
+  assert.deepEqual(await g.store.diensttauschSpeichern({ ...ENTWURF, b: '2027-01-05', kb: N }), { ok: false, fehler: 'Dieser Tag ist schon getauscht – bitte zuerst den Tausch rückgängig machen.' });
+  const weiter = await g.store.diensttauschSpeichern(ENTWURF);
+  assert.deepEqual(weiter, { ok: true, id: 'tausch01' });
+  assert.deepEqual(schreibIds(g), ['fksch202612', 'fksch202701']); // nur die fehlenden Monate, keine zweite Verknüpfung
+  assert.deepEqual(eintraege(g).map((e) => e.id), ['tausch01']);
+  assert.equal(sichtbar(g, '2026-12-30').zustand, 'ganz');
+});
+
+const authFehler = () => Object.assign(new Error('Anmeldung abgelaufen'), { name: 'AuthAbgelaufen' });
+/** Store, bei dem das Schreiben von `ziel` (über `methode`: 'einfuegen' oder 'aendere') auf die Anmeldung wartet, bis `g.anmelden()`. */
+async function abgelaufenBei(methode, ziel, ids) {
+  let abgelaufen = true;
+  const g = await aufbau({ ids, stoeren: (e) => ({ ...e, [methode]: async (...x) => (abgelaufen && (x[1]?.id ?? x[1]) === ziel ? Promise.reject(authFehler()) : e[methode](...x)) }) });
+  g.anmelden = () => (abgelaufen = false);
+  return g;
+}
+
+for (const [methode, ziel, vorher] of [
+  ['einfuegen', 'fkschtausch', []],
+  ['aendere', 'fksch202612', ['fkschtausch']],
+]) {
+  test(`Anmeldung abgelaufen beim Schreiben von ${ziel} → wartet; nach dem Anmelden der Rest in der Reihenfolge Verknüpfung, A, B`, async () => {
+    const g = await abgelaufenBei(methode, ziel);
+    const r = await g.store.diensttauschSpeichern(ENTWURF);
+    assert.deepEqual([r.ok, r.wartet, r.id], [false, true, 'tausch01']);
+    assert.deepEqual(schreibIds(g), vorher); // nie ein Monat ohne Verknüpfung
+    g.anmelden();
+    await g.store.wiederholeAusstehende();
+    assert.deepEqual(schreibIds(g), ['fkschtausch', 'fksch202612', 'fksch202701']);
+    assert.equal(sichtbar(g, '2026-12-30').zustand, 'ganz');
+    assert.equal(g.store.ausstehend(), 0);
+  });
+}
+
+test('Anmeldung abgelaufen, die wartende Verknüpfung wird beim Nachholen abgelehnt → kein Monat', async () => {
+  // das andere Telefon hat A inzwischen getauscht
+  const h = await abgelaufenBei('einfuegen', 'fkschtausch', ['tausch03']);
+  const anderes = await googleStore({ jetzt: JETZT, api: h, optionen: { neueId: kennungen('fremd003') } });
+  assert.equal((await h.store.diensttauschSpeichern(ENTWURF)).wartet, true);
+  h.anmelden();
+  assert.equal((await anderes.store.diensttauschSpeichern({ ...ENTWURF, b: '2027-01-05', kb: N })).ok, true);
+  h.merken();
+  await h.store.wiederholeAusstehende();
+  assert.ok(!h.neu().some((x) => x.includes('fksch2026') || x.includes('fksch2027')), 'kein Monat ohne eigene Verknüpfung');
+  assert.deepEqual(JSON.parse(h.text('fkschtausch')).l.map((e) => e.i), ['fremd003']);
+});

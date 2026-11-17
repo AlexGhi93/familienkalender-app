@@ -308,6 +308,23 @@ export function createSchichtSlice(kern, { store, fixLesen, autosHolen, versHole
     return { ok: true };
   }
 
+  /**
+   * Wartet ein Schritt des Tauschs `r.id` auf die Anmeldung, wird dahinter (in `wartend`, also nach ihm) das Abschließen eingereiht: nach
+   * dem Anmelden folgen so die fehlenden Monate in der Reihenfolge A, B – und nur, wenn die Verknüpfung dann wirklich im Kalender steht
+   * (wird sie beim Nachholen abgelehnt, gibt es den Tausch nicht und das Abschließen schreibt nichts). → `r`.
+   */
+  function nachAnmeldungAbschliessen(r) {
+    if (r.wartet && r.id) {
+      wartend.push({
+        schreibe: async () => {
+          await methoden.diensttauschAbschliessen(r.id); // wirft nicht; Fehler meldet das Schreiben selbst
+        },
+        optionen: {},
+      });
+    }
+    return r;
+  }
+
   const methoden = {
     /**
      * Schichtplan beim Öffnen seiner Seite: die Schichtarten (falls noch nicht gelesen) und der Monat `jm` mit seinem Vor- und
@@ -385,7 +402,7 @@ export function createSchichtSlice(kern, { store, fixLesen, autosHolen, versHole
     },
 
     /**
-     * Holt Schichtarten und die Monate `jms` neu (das andere Telefon hat vielleicht etwas eingetragen; alle 30 Sekunden und beim
+     * Holt Schichtarten, die Diensttausche und die Monate `jms` neu (das andere Telefon hat vielleicht etwas eingetragen; alle 30 Sekunden und beim
      * Zurückkehren). Eigene Änderungen gehen vor: solange etwas gespeichert wird oder wartet, wird nicht gefragt, und eine Antwort,
      * während der selbst etwas geändert wurde, wird verworfen. Neu gezeichnet wird nur bei einer echten Änderung.
      * Ergebnis: true, wenn der Stand jetzt aktuell ist; false, wenn es gerade nicht ging oder die Antwort verworfen wurde.
@@ -396,7 +413,7 @@ export function createSchichtSlice(kern, { store, fixLesen, autosHolen, versHole
       const stand = kern.schreibStand;
       let gelesen;
       try {
-        gelesen = await Promise.all([adapter.leseSchichtarten(), ...jms.map((jm) => adapter.leseSchichtMonat(jm))]);
+        gelesen = await Promise.all([adapter.leseSchichtarten(), adapter.leseDiensttausch ? adapter.leseDiensttausch() : null, ...jms.map((jm) => adapter.leseSchichtMonat(jm))]);
       } catch (fehler) {
         if (istAuthFehler(fehler)) {
           kern.state = { ...kern.state, anmeldungNoetig: true };
@@ -405,10 +422,15 @@ export function createSchichtSlice(kern, { store, fixLesen, autosHolen, versHole
         return false;
       }
       if (stand !== kern.schreibStand || kern.schreibend > 0 || wartend.length > 0 || schichtSchreibtNoch()) return false;
-      const [katalog, ...monate] = gelesen;
+      const [katalog, tausch, ...monate] = gelesen;
       const s = kern.state.schicht;
       const neu = { ...s, katalog: normalisiereKatalog(katalog?.katalog ?? null).katalog, monate: { ...s.monate }, status: { ...s.status } };
       let geaendert = unlesbarMerken('schichtarten', katalog?.unlesbar === true);
+      if (adapter.leseDiensttausch) {
+        // die Diensttausche des anderen Telefons (⇄) gleich mit; unlesbar → leer gezeigt und gesperrt, wieder lesbar → frei
+        neu.tausch = gleichOder(s.tausch, tausch?.daten ?? leererTausch());
+        geaendert = unlesbarMerken('schichttausch', tausch?.unlesbar === true) || geaendert;
+      }
       jms.forEach((jm, i) => {
         neu.monate[jm] = normalisiereMonat(monate[i]?.monat ?? null, jm).monat;
         neu.status[jm] = 'geladen';
@@ -491,7 +513,8 @@ export function createSchichtSlice(kern, { store, fixLesen, autosHolen, versHole
      * Verknüpfung und die Monate von A und B frisch, prüft (`tauschPruefen`, auch auf der neuesten Fassung der Verknüpfung) und schreibt
      * dann Verknüpfung, Monat A, Monat B (siehe oben). → { ok, id?, fehler?, gemeldet?, wartet? }; `id` = der Tausch, sobald die
      * Verknüpfung geschrieben ist oder wartet (scheitert danach ein Monat, ist er „offen“ oder „halb“: abschließen oder rückgängig
-     * machen). Wirft nicht.
+     * machen). Steht derselbe Tausch (Person, beide Tage, Dienst) schon „offen“ da, wird er fortgesetzt (nur die Monate). Wartet ein
+     * Schritt auf die Anmeldung, folgen danach die fehlenden Monate von selbst (`nachAnmeldungAbschliessen`). Wirft nicht.
      */
     async diensttauschSpeichern(entwurf) {
       const { a, b } = entwurf ?? {};
@@ -500,6 +523,11 @@ export function createSchichtSlice(kern, { store, fixLesen, autosHolen, versHole
       if (fehlt) return { ok: false, fehler: fehlt };
       const { katalog, tausch: daten } = kern.state.schicht;
       const { heute } = tauschOptionen();
+      // derselbe Tausch steht schon „offen“ da (Verknüpfung geschrieben, Monate nicht): fortsetzen statt mit unsichtbarem Grund ablehnen
+      const gleich = daten.eintraege.find((x) => x.person === entwurf.person && x.a === a && x.b === b && x.kb === entwurf.kb && tauschZustandJetzt(x) === 'offen');
+      if (gleich && !tauschPruefen(entwurf, { daten: { ...daten, eintraege: daten.eintraege.filter((x) => x !== gleich) }, monate: tauschMonat, katalog, heute })) {
+        return nachAnmeldungAbschliessen({ ...(await seitenSchreiben(gleich, ['a', 'b'], tauschAnwenden)), id: gleich.id });
+      }
       const meldung = tauschPruefen(entwurf, { daten, monate: tauschMonat, katalog, heute });
       if (meldung) return { ok: false, fehler: meldung };
       const id = neueKennung(kern.neueId, new Set([...daten.eintraege.map((x) => x.id), ...(daten.fremd?.l ?? []).map((w) => w?.i)]));
@@ -515,8 +543,8 @@ export function createSchichtSlice(kern, { store, fixLesen, autosHolen, versHole
           return tauschHinzufuegen(d, e, tauschOptionen());
         }),
       );
-      if (!verknuepft.ok) return verknuepft.wartet ? { ...verknuepft, id } : verknuepft; // ohne Verknüpfung kein Monat
-      return { ...(await seitenSchreiben(e, ['a', 'b'], tauschAnwenden)), id };
+      if (!verknuepft.ok) return verknuepft.wartet ? nachAnmeldungAbschliessen({ ...verknuepft, id }) : verknuepft; // ohne Verknüpfung kein Monat
+      return nachAnmeldungAbschliessen({ ...(await seitenSchreiben(e, ['a', 'b'], tauschAnwenden)), id });
     },
 
     /**
