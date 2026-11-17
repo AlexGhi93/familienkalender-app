@@ -1,4 +1,4 @@
-import { createBlattVerlauf } from '../app/blatt-verlauf.js';
+import { createBlattVerlauf, nachDemLaden } from '../app/blatt-verlauf.js';
 import { blattZiehenAnbinden } from './blatt-ziehen.js';
 import { blattSchliessenMs } from './bewegung.js';
 import { fuelle, h, svg } from './dom.js';
@@ -75,9 +75,13 @@ function verlaufDerBlaetter() {
   return blattVerlauf;
 }
 
-/** Einmal beim Laden der App: steht sie auf einem Blatt-Eintrag (PWA über einem Blatt neu geladen), zurück zur Seite darunter. */
+/**
+ * Einmal beim Laden der App: steht sie auf einem Blatt-Eintrag (PWA über einem Blatt neu geladen), zurück zur Seite darunter.
+ * Erst nach `load`: in WebKit (Safari, iPhone) bricht ein history.go() vor dem Ende des Ladens das Laden ab – `load` und `pageshow` kommen nie.
+ */
 export function blattVerlaufStarten() {
-  verlaufDerBlaetter().beimStart();
+  const bv = verlaufDerBlaetter();
+  nachDemLaden({ dokument: document, fenster: globalThis }, () => bv.beimStart());
 }
 
 /**

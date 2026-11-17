@@ -7,10 +7,17 @@
 // mit anderer Adresse ist diese Navigation; sie wird nach dem Rücksprung über `gehe(adresse)` wiederholt.
 // Kommt der Rücksprung nicht an (Browser verschluckt ihn), stellt ein Wächter nach WAECHTER_MS den Takt wieder her.
 // Ohne offenes Blatt wird jeder Blatt-Eintrag übersprungen, auch einer aus einem früheren Laden; die Sitzung trennt nur bei offenen
-// Blättern eigene von fremden Einträgen. Startet die App auf einem Blatt-Eintrag (PWA neu geladen), geht `beimStart` einmal zurück.
+// Blättern eigene von fremden Einträgen. Startet die App auf einem Blatt-Eintrag (PWA neu geladen), geht `beimStart` einmal zurück –
+// erst nach `load` (`nachDemLaden`): in WebKit bricht ein go() davor das Laden ab (kein `load`/`pageshow`, Parser bleibt stehen).
 
 /** So lange darf der eigene Rücksprung dauern, bis der Wächter ihn aufgibt. */
 export const WAECHTER_MS = 800;
+
+/** Führt `fn` aus, sobald das Dokument fertig geladen ist (`load`), oder gleich, wenn es das schon ist. */
+export function nachDemLaden({ dokument, fenster }, fn) {
+  if (dokument.readyState === 'complete') fn();
+  else fenster.addEventListener('load', fn, { once: true });
+}
 
 /** Tiefe des Blatts, zu dem ein Verlaufszustand gehört; 0 für Seiten, fremde Sitzungen (früheres Laden) und alles Unbekannte. */
 export function tiefeAus(state, sitzung) {

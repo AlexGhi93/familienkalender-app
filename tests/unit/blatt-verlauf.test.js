@@ -2,7 +2,7 @@
 // Navigation aus einem Blatt schließt es. Mit einer Attrappe von `history` (Einträge + Stelle; `go` läuft später und meldet popstate).
 import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
-import { blattAbgleich, createBlattVerlauf, tiefeAus } from '../../src/app/blatt-verlauf.js';
+import { blattAbgleich, createBlattVerlauf, nachDemLaden, tiefeAus } from '../../src/app/blatt-verlauf.js';
 
 /** Attrappe von `history`: `go` wie im Browser erst später (eigener Schritt), danach popstate an `beiPopstate`. */
 function attrappe({ laenge = 1 } = {}) {
@@ -378,4 +378,25 @@ test('Wächter: hängt der Verlauf über den offenen Blättern, wird der Eintrag
     assert.equal(verlauf.state, null); // Eintrag umgeschrieben: Tiefe 0 wie keine offenen Blätter
     zurueckSchliesst(blatt('b'));
   });
+});
+
+// WebKit (Safari/iPhone): ein history.go() vor dem `load` bricht das Laden des Dokuments ab – `load` und `pageshow` kommen nie,
+// ein noch laufender Parser bleibt stehen. Der Rücksprung beim Start wartet deshalb auf `load`.
+test('nachDemLaden: vor dem Laden erst beim Ereignis „load“ (einmal), danach sofort', () => {
+  const hoerer = [];
+  const fenster = { addEventListener: (art, fn, opt) => hoerer.push({ art, fn, opt }) };
+  const dokument = { readyState: 'interactive' };
+  const fn = mock.fn();
+  nachDemLaden({ dokument, fenster }, fn);
+  assert.equal(fn.mock.callCount(), 0);
+  assert.equal(hoerer.length, 1);
+  assert.equal(hoerer[0].art, 'load');
+  assert.deepEqual(hoerer[0].opt, { once: true });
+  hoerer[0].fn();
+  assert.equal(fn.mock.callCount(), 1);
+  // schon geladen: gleich, ohne Hörer
+  const fertig = mock.fn();
+  nachDemLaden({ dokument: { readyState: 'complete' }, fenster }, fertig);
+  assert.equal(fertig.mock.callCount(), 1);
+  assert.equal(hoerer.length, 1);
 });
