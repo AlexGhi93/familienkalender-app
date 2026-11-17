@@ -9,6 +9,7 @@ import { stempelt } from './schicht-bewegung.js';
 import { gemaltJetzt, mitZeiten, musterKlassen, pinselLeiste, pinselTippen, pinselUmschalten } from './schicht-pinsel.js';
 import { gesperrtHinweis } from './formular.js';
 import { UNLESBAR_TEXT } from '../domain/unlesbar.js';
+import { monatWischen } from './wischen.js';
 
 const PERSON = { papa: { name: 'Papa', emoji: '👨' }, mama: { name: 'Mama', emoji: '👩' } };
 const FILTER = [
@@ -87,6 +88,9 @@ export function schichtScreen({ store, ui }) {
   const personZeile = (p, inhalt) => h('div', { class: 'sp-person-zeile', 'data-person': p }, h('b', {}, `${PERSON[p].emoji} ${PERSON[p].name}`), inhalt);
   const gemalt = gemaltJetzt(); // Haken für Glas/Bento: der eben gemalte Streifen stempelt
   const { unlesbar } = store.getState(); // unlesbare Schichtarten bzw. der angezeigte Monat: leer gezeigt, nicht änderbar
+  const raster = m.geladen ? h('div', { class: `sp-raster ${m.personen.length === 1 ? 'eine-person' : ''}`.trim() }, m.zellen.map((z) => zelle(z, m, { store, ui }, gemalt))) : null;
+  // Wischen wechselt den Monat wie die Pfeile; mit offenem Pinsel nicht (dort malt man)
+  if (raster) monatWischen(raster, { zurueck: () => ui.setzeSchichtMonat(m.vorher), vor: () => ui.setzeSchichtMonat(m.nachher), gesperrt: () => Boolean(ui.schicht.pinsel) });
 
   return h(
     'section',
@@ -115,7 +119,7 @@ export function schichtScreen({ store, ui }) {
     m.geladen
       ? [
           h('div', { class: 'wochentage', 'aria-hidden': 'true' }, m.wochentage.map((t) => h('span', {}, t))),
-          h('div', { class: `sp-raster ${m.personen.length === 1 ? 'eine-person' : ''}`.trim() }, m.zellen.map((z) => zelle(z, m, { store, ui }, gemalt))),
+          raster,
           h('article', { class: 'karte sp-zaehlung' }, m.personen.map((p) => personZeile(p, h('span', {}, m.zaehlung[p])))),
         ]
       : h('article', { class: 'karte hinweis sp-nicht-geladen' }, h('p', {}, m.laedt ? 'Schichtplan wird geladen …' : 'Noch nicht geladen – bitte verbinden.')),

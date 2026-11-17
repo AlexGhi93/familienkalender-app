@@ -1,6 +1,6 @@
 // Schichtplan (Demo): Registerkarte „Schicht“, Monatsraster mit zwei Streifen je Tag (oben Papa, unten Mama), Monatswechsel,
 // Filter (gemerkt auf diesem Telefon), Zählung und Legende; auf 375 px ragt nichts hinaus.
-import { test, expect, starteDemo, starteGoogleAusSnapshot, starteGoogleVerbunden, tab, erwarteToast, fehlerToastsZaehlen, NETZFEHLER } from './hilfen.js';
+import { test, expect, starteDemo, starteGoogleAusSnapshot, starteGoogleVerbunden, tab, erwarteToast, fehlerToastsZaehlen, NETZFEHLER, wischeWaagrecht } from './hilfen.js';
 import { standardKatalog } from '../../src/domain/schicht.js';
 import { streifen, zelle } from './schichtplan-hilfen.js';
 
@@ -55,6 +55,26 @@ test('‹ und › wechseln den Monat (auch übers Jahr)', async ({ page }) => {
   for (let i = 0; i < 4; i += 1) await page.getByRole('button', { name: 'Vorheriger Monat' }).click();
   await expect(monatTitel(page)).toHaveText('September 2026');
   await expect(page.locator('.sp-zelle .sp-streifen.papa:not(.leer)').first()).toBeVisible();
+});
+
+test('Wischen wechselt den Monat; mit offenem Pinsel nicht', async ({ page }) => {
+  await starteDemo(page, { route: '#/schicht' });
+  await expect(monatTitel(page)).toHaveText('Oktober 2026');
+  const ok = await wischeWaagrecht(page, page.locator('.sp-raster'), -120);
+  test.skip(!ok, 'Dieser Browser kann keine Touch-Ereignisse erzeugen.');
+  await expect(monatTitel(page)).toHaveText('November 2026');
+  await wischeWaagrecht(page, page.locator('.sp-raster'), 120);
+  await expect(monatTitel(page)).toHaveText('Oktober 2026');
+  await wischeWaagrecht(page, page.locator('.sp-raster'), 120);
+  await expect(monatTitel(page)).toHaveText('September 2026');
+  // Pinsel offen: Wischen wechselt den Monat nicht (man malt), die Pfeile gehen weiterhin
+  await page.getByRole('button', { name: '✏️ Eintragen' }).click();
+  await expect(page.getByRole('button', { name: '✏️ Eintragen' })).toHaveAttribute('aria-pressed', 'true');
+  await wischeWaagrecht(page, page.locator('.sp-raster'), -120);
+  await wischeWaagrecht(page, page.locator('.sp-raster'), 120);
+  await expect(monatTitel(page)).toHaveText('September 2026');
+  await page.getByRole('button', { name: 'Nächster Monat' }).click();
+  await expect(monatTitel(page)).toHaveText('Oktober 2026');
 });
 
 test('Ersatzdienst E: in Legende, Pinsel und Raster gelb und gestreift wie Urlaub, aber mit eigenem Kürzel', async ({ page }) => {
