@@ -175,6 +175,8 @@ export function tauschPruefen(entwurf, { daten, monate, katalog, heute }) {
   const tage = new Set([a, b]);
   const belegt = (daten?.eintraege ?? []).some((e) => e.person === person && (tage.has(e.a) || tage.has(e.b)) && istAktiv(e, monate, heute));
   if (belegt) return 'Dieser Tag ist schon getauscht – bitte zuerst den Tausch rückgängig machen.';
+  // stünde dieselbe Schicht schon in B, wäre B sofort „angewendet“: der Tausch hieße „halb“ statt „offen“ und hielte beide Tage fest
+  if (schichtAm(monate(jmVon(b)), person, tagVon(b)) === kb) return 'Am übernommenen Tag steht schon dieser Dienst.';
   if (zeichen(sauber(entwurf.mitWem ?? '')) > MAX_MIT_WEM) return `„Mit wem“ darf höchstens ${MAX_MIT_WEM} Zeichen haben.`;
   return null;
 }
@@ -186,9 +188,13 @@ export function tauschErsetzt(entwurf, monatB, katalog) {
   return `Ersetzt am ${kurzDatum(entwurf.b)}: ${artFuer(katalog, entwurf.person, k)?.name ?? k}`;
 }
 
-/** Der Eintrag zu einem geprüften Entwurf; merkt sich, was vorher in A (`ka`, `za`) und B (`vb`, `zb`) stand. */
+/**
+ * Der Eintrag zu einem geprüften Entwurf; merkt sich, was vorher in A (`ka`, `za`) und B (`vb`, `zb`) stand. Wirft „Falscher Monat für den
+ * Diensttausch.“, wenn Monat A oder B fehlt oder nicht der Monat seines Tages ist (ein fehlender Monat B ergäbe sonst still `vb: null`).
+ */
 export function tauschEintrag(entwurf, { id, monatA, monatB, heute }) {
   const { person, a, b, kb } = entwurf;
+  if (monatA?.jm !== jmVon(a) || monatB?.jm !== jmVon(b)) throw new Error('Falscher Monat für den Diensttausch.');
   const ka = schichtAm(monatA, person, tagVon(a));
   if (ka === null) throw new Error('Am abgegebenen Tag ist kein Dienst eingetragen.');
   const e = { id, person, a, b, ka, kb, vb: schichtAm(monatB, person, tagVon(b)) };

@@ -201,6 +201,24 @@ test('tauschPruefen: alle Meldungen', () => {
   assert.equal(tauschPruefen({ ...entwurf, mitWem: ' ' + 'x'.repeat(24) + ' ' }, opt), null);
 });
 
+test('tauschPruefen: am übernommenen Tag steht schon derselbe Dienst → abgelehnt (sonst „halb“ statt „offen“)', () => {
+  const opt = { daten: { v: 1, eintraege: [] }, monate: monateAus(mA, mB), katalog, heute };
+  assert.equal(tauschPruefen({ ...entwurf, kb: S }, opt), 'Am übernommenen Tag steht schon dieser Dienst.');
+  assert.equal(tauschPruefen({ ...entwurf, kb: N }, opt), null);
+  // nach „schon getauscht“ geprüft: ein belegter Tag meldet weiterhin das
+  const aktiv = { ...opt, daten: { v: 1, eintraege: [e] }, monate: monateAus(tauschAnwenden(mA, e, 'a'), tauschAnwenden(mB, e, 'b')) };
+  assert.equal(tauschPruefen({ person: 'papa', a: '2027-01-04', b: '2026-12-31', kb: F }, aktiv), GETAUSCHT);
+});
+
+test('tauschEintrag wirft bei fehlendem Monat A oder B und bei einem Monat, der nicht der des Tages ist', () => {
+  const FALSCH = { message: 'Falscher Monat für den Diensttausch.' };
+  assert.throws(() => tauschEintrag(entwurf, { id: 'x1', monatA: null, monatB: mB, heute }), FALSCH);
+  assert.throws(() => tauschEintrag(entwurf, { id: 'x1', monatA: mA, monatB: undefined, heute }), FALSCH);
+  assert.throws(() => tauschEintrag(entwurf, { id: 'x1', monatA: mB, monatB: mB, heute }), FALSCH);
+  assert.throws(() => tauschEintrag(entwurf, { id: 'x1', monatA: mA, monatB: leererMonat('2026-12'), heute }), FALSCH);
+  assert.equal(tauschEintrag(entwurf, { id: 'x1', monatA: mA, monatB: leererMonat('2027-01'), heute }).vb, null);
+});
+
 test('ein Tag in einem aktiven Tausch bietet keinen zweiten an; ein gebrochener blockiert nicht', () => {
   const aFertig = setzeSchicht(tauschAnwenden(mA, e, 'a'), { person: 'papa', tag: 31, k: N });
   const bFertig = tauschAnwenden(mB, e, 'b');
@@ -212,13 +230,13 @@ test('ein Tag in einem aktiven Tausch bietet keinen zweiten an; ein gebrochener 
   assert.equal(tauschPruefen({ person: 'papa', a: '2027-01-04', b: '2026-12-31', kb: N }, { ...ganz, monate: monateAus(aFertig, mB) }), GETAUSCHT);
   // offen: höchstens einen Tag alt blockiert, älter nicht
   const offen = { ...ganz, monate: monateAus(setzeSchicht(mA, { person: 'papa', tag: 31, k: N }), mB) };
-  assert.equal(tauschPruefen({ person: 'papa', a: '2026-12-30', b: '2026-12-31', kb: N }, { ...offen, heute: '2026-12-02' }), GETAUSCHT);
-  assert.equal(tauschPruefen({ person: 'papa', a: '2026-12-30', b: '2026-12-31', kb: N }, { ...offen, heute: '2026-12-03' }), null);
+  assert.equal(tauschPruefen({ person: 'papa', a: '2026-12-30', b: '2026-12-31', kb: F }, { ...offen, heute: '2026-12-02' }), GETAUSCHT);
+  assert.equal(tauschPruefen({ person: 'papa', a: '2026-12-30', b: '2026-12-31', kb: F }, { ...offen, heute: '2026-12-03' }), null);
   // Partnermonat unbekannt: zählt als aktiv
   assert.equal(tauschPruefen({ person: 'papa', a: '2026-12-31', b: '2026-12-30', kb: N }, { ...ganz, monate: monateAus(aFertig) }), GETAUSCHT);
   // gebrochen (A übermalt): blockiert nicht
   const gebrochen = setzeSchicht(aFertig, { person: 'papa', tag: 30, k: S });
-  assert.equal(tauschPruefen({ person: 'papa', a: '2026-12-30', b: '2026-12-31', kb: N }, { ...ganz, monate: monateAus(gebrochen, bFertig) }), null);
+  assert.equal(tauschPruefen({ person: 'papa', a: '2026-12-30', b: '2026-12-31', kb: F }, { ...ganz, monate: monateAus(gebrochen, bFertig) }), null);
   // andere Person: blockiert nicht
   const mama = setzeSchicht(aFertig, { person: 'mama', tag: 30, k: sk('mama', 'T') });
   assert.equal(tauschPruefen({ person: 'mama', a: '2026-12-30', b: '2027-01-04', kb: sk('mama', 'N') }, { ...ganz, monate: monateAus(mama, bFertig) }), null);
