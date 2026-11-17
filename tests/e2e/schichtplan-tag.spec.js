@@ -382,6 +382,17 @@ test.describe('Tagesblatt (ein Tag)', () => {
   const tauschKnopf = (page, person) => knopf(page, person, '⇄ Diensttausch');
   const formular = (page) => page.getByRole('dialog', { name: 'Diensttausch', exact: true });
 
+  /** „Tausch rückgängig“ im offenen Tagesblatt (Papa) und bestätigen: danach kein ⇄ mehr im Blatt, „⇄ Diensttausch“ wieder da. */
+  async function tauschZuruecknehmen(page) {
+    await karte(page, 'papa').getByRole('button', { name: 'Tausch rückgängig' }).click();
+    const rueck = page.getByRole('dialog', { name: 'Diensttausch rückgängig machen?' });
+    await expect(rueck).toContainText('Beide Tage kommen genau so zurück, wie sie vor dem Tausch waren');
+    await rueck.getByRole('button', { name: 'Rückgängig machen' }).click();
+    await expect(rueck).toHaveCount(0);
+    await expect(karte(page, 'papa').locator('.sp-tag-tausch')).toHaveCount(0);
+    await expect(tauschKnopf(page, 'papa')).toBeVisible();
+  }
+
   /** Papa: 30.12.2026 Frühdienst und 04.01.2027 Schulung mit dem Pinsel eintragen (die Demo hat diese Monate leer); endet im Dezember. */
   async function dienstePinseln(page) {
     await starteDemo(page, { route: '#/schicht' });
@@ -427,13 +438,7 @@ test.describe('Tagesblatt (ein Tag)', () => {
     // Rückgängig aus dem Tag B: der Text nennt die Rückkehr beider Tage, danach ist alles wie vorher (auch die Schulung in B)
     await zelle(page, '2027-01-04').click();
     await expect(karte(page, 'papa').locator('.sp-tag-tausch')).toContainText('⇄ getauscht mit Kollege / gegen 30.12.');
-    await karte(page, 'papa').getByRole('button', { name: 'Tausch rückgängig' }).click();
-    const rueck = page.getByRole('dialog', { name: 'Diensttausch rückgängig machen?' });
-    await expect(rueck).toContainText('Beide Tage kommen genau so zurück, wie sie vor dem Tausch waren');
-    await rueck.getByRole('button', { name: 'Rückgängig machen' }).click();
-    await expect(rueck).toHaveCount(0);
-    await expect(karte(page, 'papa').locator('.sp-tag-tausch')).toHaveCount(0);
-    await expect(tauschKnopf(page, 'papa')).toBeVisible();
+    await tauschZuruecknehmen(page);
     await blattAm(page, 'Montag, 4. Januar').getByRole('button', { name: 'Schließen' }).click();
     await expect(zelle(page, '2027-01-04').locator('.sp-tausch')).toHaveCount(0);
     await expect(streifen(page, '2027-01-04', 'papa')).toHaveText('S');
@@ -442,6 +447,36 @@ test.describe('Tagesblatt (ein Tag)', () => {
     await expect(streifen(page, '2026-12-30', 'papa')).toHaveText('F');
     await expect(zelle(page, '2026-12-30').locator('.sp-tausch')).toHaveCount(0);
     await expect(zaehlung(page, 'papa')).toHaveText('1 Dienst · 1× F');
+  });
+
+  test('Diensttausch drei Monate auseinander: nach dem Neustart ⇄ an beiden Tagen, Rückgängig geht', async ({ page }) => {
+    await dienstePinseln(page); // 30.12. Frühdienst; B = 10.03.2027 ist leer
+    await zelle(page, '2026-12-30').click();
+    await tauschKnopf(page, 'papa').click();
+    const f = formular(page);
+    await f.getByRole('textbox', { name: 'Übernommener Tag', exact: true }).fill('10.03.2027');
+    await f.getByRole('button', { name: 'Speichern' }).click();
+    await expect(f).toHaveCount(0);
+    await expect(karte(page, 'papa').locator('.sp-tag-tausch')).toContainText('⇄ getauscht / gegen 10.03.');
+    // Kaltstart: geladen werden nur Monate rund um den gezeigten; den März liest erst der Tausch nach
+    await page.reload();
+    await expect(monatsSeite(page)).toHaveText('Oktober 2026');
+    await vor(page);
+    await vor(page);
+    await expect(monatsSeite(page)).toHaveText('Dezember 2026');
+    await expect(zelle(page, '2026-12-30').locator('.sp-tausch')).toHaveText('⇄');
+    await zelle(page, '2026-12-30').click();
+    await expect(karte(page, 'papa').locator('.sp-tag-tausch')).toContainText('⇄ getauscht / gegen 10.03.');
+    await tauschZuruecknehmen(page);
+    await blattAm(page, 'Mittwoch, 30. Dezember').getByRole('button', { name: 'Schließen' }).click();
+    await expect(streifen(page, '2026-12-30', 'papa')).toHaveText('F');
+    await expect(zelle(page, '2026-12-30').locator('.sp-tausch')).toHaveCount(0);
+    await vor(page);
+    await vor(page);
+    await vor(page);
+    await expect(monatsSeite(page)).toHaveText('März 2027');
+    await expect(streifen(page, '2027-03-10', 'papa')).toHaveClass(/leer/);
+    await expect(zelle(page, '2027-03-10').locator('.sp-tausch')).toHaveCount(0);
   });
 
   test('Ein schon getauschter Tag bietet keinen zweiten Tausch an', async ({ page }) => {

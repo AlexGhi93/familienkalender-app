@@ -133,6 +133,21 @@ export function tauschZustand(e, monatA, monatB) {
   return 'gebrochen';
 }
 
+/**
+ * Die Partnermonate zu den Monaten `jms`: Monate ('JJJJ-MM') der Tage A oder B aller Tausche, deren anderer Tag in `jms` liegt, die selbst
+ * aber nicht in `jms` stehen (ohne Doppelte, sortiert). Ohne beide Monate ist ein Tausch 'unbekannt' und zeigt weder ⇄ noch „Rückgängig“.
+ */
+export function tauschPartnerMonate(daten, jms) {
+  const da = new Set(jms);
+  const partner = new Set();
+  for (const e of daten?.eintraege ?? []) {
+    const [ma, mb] = [jmVon(e.a), jmVon(e.b)];
+    if (da.has(ma) && !da.has(mb)) partner.add(mb);
+    if (da.has(mb) && !da.has(ma)) partner.add(ma);
+  }
+  return [...partner].sort();
+}
+
 /** Zustand eines Eintrags über den Monats-Nachschlag `monate(jm) → Monat | null`. */
 const zustandUeber = (e, monate) => tauschZustand(e, monate(jmVon(e.a)), monate(jmVon(e.b)));
 

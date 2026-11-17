@@ -1,7 +1,7 @@
 import { todayVienna } from '../../domain/dates.js';
 import { monatVor } from '../../domain/konto.js';
 import { artAendern, artArchivieren, artHinzufuegen, artVerschieben, katalogErgaenzen, leererMonat, normalisiereKatalog, normalisiereMonat, schaltePinsel, schichtAm, setzeNotiz, setzeSchicht, setzeTagZeiten, standardKatalog, tageImMonat, vorladeMonate, zusatzEntfernen, zusatzHinzufuegen, zusatzWiederherstellen } from '../../domain/schicht.js';
-import { leererTausch, tauschAnwenden, tauschAusText, tauschEintrag, tauschEntfernen, tauschHinzufuegen, tauschPruefen, tauschText, tauschZuruecknehmen, tauschZustand } from '../../domain/schicht-tausch.js';
+import { leererTausch, tauschAnwenden, tauschAusText, tauschEintrag, tauschEntfernen, tauschHinzufuegen, tauschPartnerMonate, tauschPruefen, tauschText, tauschZuruecknehmen, tauschZustand } from '../../domain/schicht-tausch.js';
 import { UNLESBAR_TEXT } from '../../domain/unlesbar.js';
 import { eintragVorhanden, neueKennung } from './geteilt.js';
 import { TEXT_FEHLER, gleichOder, istAuthFehler } from './kern.js';
@@ -116,14 +116,15 @@ export function createSchichtSlice(kern, { store, fixLesen, autosHolen, versHole
    * Antwort könnte älter sein). Ergebnis: { katalogGelesen, monateGelesen } – ob die Schichtarten bzw. alle Monate gelesen werden konnten.
    * Unlesbare Schichtarten oder Monate (Standardarten bzw. leer gezeigt) werden in `state.unlesbar` vermerkt, lesbare wieder herausgenommen.
    * Gleichzeitig die Diensttausche (`schicht.tausch`; unlesbar → leer gezeigt, 'schichttausch' in `state.unlesbar`, nie überschrieben);
-   * `tauschGelesen` im Ergebnis = sie konnten gelesen werden.
+   * `tauschGelesen` im Ergebnis = sie konnten gelesen werden. Danach auch die noch fehlenden Partnermonate der Tausche, die einen Monat aus
+   * `jms` berühren (siehe `partnerNachlesen`; nicht im Ergebnis). `nurMonate` = nur die Monate, ohne Schichtarten und Diensttausche.
    */
-  async function schichtLesen(jms, { katalogNeu = false } = {}) {
-    const mitKatalog = katalogNeu || kern.state.schicht.katalog === null;
+  async function schichtLesen(jms, { katalogNeu = false, nurMonate = false } = {}) {
+    const mitKatalog = !nurMonate && (katalogNeu || kern.state.schicht.katalog === null);
     const stand = kern.schreibStand;
     kern.state = { ...kern.state, schicht: { ...kern.state.schicht, status: { ...kern.state.schicht.status, ...Object.fromEntries(jms.map((m) => [m, 'laedt'])) } } };
     melden();
-    const mitTausch = Boolean(adapter.leseDiensttausch);
+    const mitTausch = !nurMonate && Boolean(adapter.leseDiensttausch);
     const [katalog, tausch, ...monate] = await Promise.allSettled([mitKatalog ? adapter.leseSchichtarten() : null, mitTausch ? adapter.leseDiensttausch() : null, ...jms.map((m) => adapter.leseSchichtMonat(m))]);
     const eigene = stand !== kern.schreibStand || kern.schreibend > 0 || wartend.length > 0 || schichtSchreibtNoch();
     const s = kern.state.schicht;
@@ -157,7 +158,18 @@ export function createSchichtSlice(kern, { store, fixLesen, autosHolen, versHole
     const monateGleich = Object.keys(neueMonate).length === Object.keys(s.monate).length && Object.keys(neueMonate).every((m) => neueMonate[m] === s.monate[m]);
     kern.state = { ...kern.state, schicht: { ...s, katalog: kat, monate: monateGleich ? s.monate : neueMonate, status, ...(tz ? { tausch: tz } : {}) }, ...(auth ? { anmeldungNoetig: true } : {}) };
     melden();
+    if (!nurMonate) await partnerNachlesen(jms);
     return { katalogGelesen, monateGelesen: jms.every((m) => status[m] === 'geladen'), tauschGelesen };
+  }
+
+  /**
+   * Ein Tausch braucht BEIDE Monate (sonst 'unbekannt': kein ⇄, kein „Rückgängig“). Liest die Partnermonate der Tausche, die einen Monat aus
+   * `jms` berühren, sofern sie weder geladen sind noch gerade laden – nur Monate, die ein Tausch nennt, jeder einmal. Wirft nicht.
+   */
+  async function partnerNachlesen(jms) {
+    const s = kern.state.schicht;
+    const fehlen = tauschPartnerMonate(s.tausch, jms).filter((m) => !s.monate[m] && s.status[m] !== 'laedt');
+    if (fehlen.length > 0) await schichtLesen(fehlen, { nurMonate: true });
   }
 
   /**
@@ -443,6 +455,7 @@ export function createSchichtSlice(kern, { store, fixLesen, autosHolen, versHole
         geaendert = true;
       }
       if (geaendert) melden();
+      await partnerNachlesen(jms); // ein neuer Tausch des anderen Telefons kann einen Monat nennen, der noch nicht geladen ist
       return true;
     },
 

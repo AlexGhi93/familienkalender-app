@@ -310,3 +310,60 @@ test('Anmeldung abgelaufen, die wartende Verknüpfung wird beim Nachholen abgele
   assert.ok(!h.neu().some((x) => x.includes('fksch2026') || x.includes('fksch2027')), 'kein Monat ohne eigene Verknüpfung');
   assert.deepEqual(JSON.parse(h.text('fkschtausch')).l.map((e) => e.i), ['fremd003']);
 });
+
+// ---------- Partnermonat eines weit entfernten Tauschs (Final-Review 1.5.0, I-1) ----------
+// A = 05.12. Frühdienst, B = 10.02. Schulung: zwischen ihnen liegt ein ganzer Monat, `schichtLaden` liest nie beide zusammen.
+const mWeitA = setzeSchicht(leererMonat('2026-12'), { person: 'papa', tag: 5, k: F });
+const mWeitB = setzeSchicht(leererMonat('2027-02'), { person: 'papa', tag: 10, k: S });
+const WEIT = { person: 'papa', a: '2026-12-05', b: '2027-02-10', kb: F };
+
+/** Telefon 1 mit A und B im Kalender; `zweites()` = ein frisch gestartetes Telefon auf demselben Kalender (hat noch nichts gelesen). */
+async function aufbauWeit() {
+  const g = await googleStore({ jetzt: JETZT, optionen: { neueId: kennungen('weit01') } });
+  await g.adapter.aendereSchichtarten(() => katalog);
+  await g.adapter.aendereSchichtMonat('2026-12', () => mWeitA);
+  await g.adapter.aendereSchichtMonat('2027-02', () => mWeitB);
+  return { g, zweites: () => googleStore({ jetzt: JETZT, api: g }) };
+}
+const gelesen = (g, id, ab) => g.log.slice(ab).filter((x) => x === `GET ${id}`).length;
+
+test('Tausch Dez → Feb: Laden des Dezembers liest auch den Februar (einmal), ⇄ und Rückgängig am 05.12. nach einem Kaltstart', async () => {
+  const { g, zweites } = await aufbauWeit();
+  assert.equal((await g.store.diensttauschSpeichern(WEIT)).ok, true);
+  const h = await zweites();
+  const ab = h.log.length;
+  await h.store.schichtLaden('2026-12'); // November bis Jänner; der Februar nur wegen des Tauschs
+  assert.ok(h.store.getState().schicht.monate['2027-02'], 'Partnermonat Februar gelesen');
+  assert.equal(gelesen(h, 'fksch202702', ab), 1);
+  assert.equal(gelesen(h, 'fksch202703', ab), 0); // nur Monate, die ein Tausch nennt
+  assert.equal(sichtbar(h, '2026-12-05')?.zustand, 'ganz');
+  assert.equal(sichtbar(h, '2026-12-05')?.rolle, 'a');
+  const zurueck = await h.store.diensttauschRueckgaengig('weit01');
+  assert.equal(zurueck.ok, true);
+  assert.deepEqual(imKalender(h, '2026-12'), mWeitA);
+  assert.deepEqual(imKalender(h, '2027-02'), mWeitB);
+  assert.deepEqual(eintraege(h), []);
+});
+
+test('Tausch Dez → Feb: Laden des Februars liest auch den Dezember; schon geladene Partnermonate werden nicht noch einmal gelesen', async () => {
+  const { g, zweites } = await aufbauWeit();
+  assert.equal((await g.store.diensttauschSpeichern(WEIT)).ok, true);
+  const h = await zweites();
+  await h.store.schichtLaden('2027-02'); // Jänner bis März; der Dezember nur wegen des Tauschs
+  assert.equal(sichtbar(h, '2027-02-10')?.zustand, 'ganz');
+  const ab = h.log.length;
+  await h.store.schichtLaden('2027-03'); // Februar bis April: der Dezember ist schon da
+  assert.equal(gelesen(h, 'fksch202612', ab), 0);
+});
+
+test('Tausch Dez → Feb vom anderen Telefon: der 30-s-Abgleich liest den fehlenden Partnermonat mit, ⇄ am 05.12.', async () => {
+  const { g, zweites } = await aufbauWeit();
+  const h = await zweites();
+  await h.store.schichtLaden('2026-12');
+  assert.equal(h.store.getState().schicht.monate['2027-02'], undefined); // noch kein Tausch: kein Grund, den Februar zu lesen
+  assert.equal((await g.store.diensttauschSpeichern(WEIT)).ok, true);
+  const ab = h.log.length;
+  assert.equal(await h.store.schichtAktualisieren(['2026-11', '2026-12', '2027-01']), true);
+  assert.equal(gelesen(h, 'fksch202702', ab), 1);
+  assert.equal(sichtbar(h, '2026-12-05')?.zustand, 'ganz');
+});

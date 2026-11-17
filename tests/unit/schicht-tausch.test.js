@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   MAX_MIT_WEM, MAX_TAUSCH_ZEICHEN, TAUSCH_BEHALTEN_MONATE, TAUSCH_OFFEN_TAGE, TEXT_TAUSCH_VOLL, leererTausch, tauschAm, tauschAnwenden,
-  tauschAusText, tauschEintrag, tauschEntfernen, tauschErsetzt, tauschHinzufuegen, tauschPruefen, tauschText, tauschZuruecknehmen, tauschZustand,
+  tauschAusText, tauschEintrag, tauschEntfernen, tauschErsetzt, tauschHinzufuegen, tauschPartnerMonate, tauschPruefen, tauschText, tauschZuruecknehmen, tauschZustand,
 } from '../../src/domain/schicht-tausch.js';
 import {
   leererMonat, monatZaehlung, schichtAm, setzeNotiz, setzeSchicht, setzeTagZeiten, standardKatalog, tagZeitenAm, zusatzHinzufuegen,
@@ -282,4 +282,12 @@ test('Zusätze und Notizen bleiben unberührt; monatZaehlung zählt B, nicht A',
   assert.equal(monatZaehlung(mitA, katalog, 'papa').dienste, 1);
   assert.equal(monatZaehlung(aFertig, katalog, 'papa').dienste, 0);
   assert.deepEqual(monatZaehlung(bFertig, katalog, 'papa').jeArt, [{ k: F, kuerzel: 'F', anzahl: 1 }]);
+});
+
+test('tauschPartnerMonate: nur die fehlenden Monate von Tauschen, die einen der Monate berühren, ohne Doppelte', () => {
+  const e = (a, b) => ({ person: 'papa', a, b });
+  const daten = { v: 1, eintraege: [e('2026-12-05', '2027-02-10'), e('2026-12-20', '2027-02-01'), e('2027-03-01', '2026-11-30'), e('2026-12-01', '2026-12-02'), e('2027-05-01', '2027-06-01')] };
+  assert.deepEqual(tauschPartnerMonate(daten, ['2026-11', '2026-12', '2027-01']), ['2027-02', '2027-03']);
+  assert.deepEqual(tauschPartnerMonate(daten, ['2027-01', '2027-02', '2027-03']), ['2026-11', '2026-12']);
+  assert.deepEqual(tauschPartnerMonate(null, ['2026-12']), []);
 });
