@@ -458,12 +458,12 @@ test.describe('Versicherung im Konto-Tab (Demo)', () => {
     await expect(chips(page).nth(1)).toHaveAttribute('title', voll);
   });
 
-  test('Polizze mit Rechnungen lässt sich nur beenden; beendete wieder aktivieren; ohne Rechnungen löschen', async ({ page }) => {
+  test('Polizze ohne Rechnungen lässt sich löschen (kein Beenden)', async ({ page }) => {
     await oeffne(page);
     await zweiteAnlegen(page);
     // ohne Rechnungen: Löschen (kein Beenden)
     await page.getByRole('button', { name: 'Polizze bearbeiten' }).click();
-    let b = blatt(page, 'Polizze bearbeiten');
+    const b = blatt(page, 'Polizze bearbeiten');
     await expect(b.getByRole('button', { name: 'Beenden', exact: true })).toHaveCount(0);
     await b.getByRole('button', { name: 'Löschen', exact: true }).click();
     await blatt(page, 'Versicherung löschen?').getByRole('button', { name: 'Löschen', exact: true }).click();
@@ -471,10 +471,16 @@ test.describe('Versicherung im Konto-Tab (Demo)', () => {
     await expect(page.locator('.vs-umschalter')).toHaveCount(0);
     await expect(page.locator('.vs-polizze')).toContainText('MedPLUS Privatarzt Basic');
     await expect(page.locator('.vs-beendete')).toHaveCount(0);
-    // neu anlegen, Rechnung einreichen → nur noch Beenden
+  });
+
+  // Eigener Test: zwei volle Abläufe in einem Test sprengen in WebKit unter Last die 30 s (die Meldung „beendet ✓“ verdeckt den
+  // Knopf nur kurz; der Klick wartet korrekt, der Test war aber schon abgelaufen).
+  test('Polizze mit Rechnungen lässt sich nur beenden; beendete wieder aktivieren', async ({ page }) => {
+    await oeffne(page);
     await zweiteAnlegen(page);
+    // Rechnung einreichen → nur noch Beenden
     await page.getByRole('button', { name: '＋ Rechnung einreichen' }).click();
-    b = blatt(page, '＋ Rechnung einreichen');
+    let b = blatt(page, '＋ Rechnung einreichen');
     await b.getByRole('textbox', { name: 'Betrag in Euro' }).fill('50');
     await b.getByRole('button', { name: 'Einreichen' }).click();
     await erwarteToast(page, 'Eingereicht ✓');
