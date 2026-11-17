@@ -1479,6 +1479,11 @@
   line-height: 1.4;
 }
 
+:root[data-aussehen='glas'] .sp-offen-bilanz,
+:root[data-aussehen='bento'] .sp-offen-bilanz {
+  font-size: 0.9375rem;
+}
+
 :root[data-aussehen='bento'] .sp-offen-zeile {
   border-top-color: color-mix(in srgb, var(--ink-2) 25%, transparent);
 }

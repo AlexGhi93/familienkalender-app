@@ -257,6 +257,44 @@ test('Schicht: Blatt eines Tages mit Diensttausch', async ({ page }) => {
   await foto(page, 'schicht-tausch-tag', { ganz: false });
 });
 
+// 1.6.0: offener Diensttausch – Formular ohne Rückgabe, Karte „Offene Diensttausche“ (mit Bilanz), Blatt „Rückgabe eintragen“
+/** Tagesblatt 01.10. (Papa Nacht) → „⇄ Diensttausch“ (abgeben, ohne Rückgabe); `speichern` legt den offenen Tausch an und schließt das Tagesblatt. */
+async function offenerTauschFormular(page, speichern) {
+  await starteDemo(page, { route: '#/schicht' });
+  await page.locator('.sp-zelle[data-datum="2026-10-01"]').click();
+  await page.getByRole('dialog', { name: 'Donnerstag, 1. Oktober' }).waitFor();
+  await page.locator('.sp-tag-karte[data-person="papa"]').getByRole('button', { name: '⇄ Diensttausch', exact: true }).click();
+  const f = page.getByRole('dialog', { name: 'Diensttausch', exact: true });
+  await f.getByRole('textbox', { name: 'Mit wem (optional)' }).fill('Kollege');
+  if (!speichern) return f;
+  await f.getByRole('button', { name: 'Speichern' }).click();
+  await expect(f).toHaveCount(0);
+  await page.getByRole('dialog', { name: 'Donnerstag, 1. Oktober' }).getByRole('button', { name: 'Schließen' }).click();
+  await expect(page.locator('.sp-offen-zeile')).toHaveCount(1);
+  await page.evaluate(() => document.querySelectorAll('.toast').forEach((t) => t.remove()));
+  return f;
+}
+
+test('Schicht: Diensttausch ohne Rückgabe (Formular)', async ({ page }) => {
+  await offenerTauschFormular(page, false);
+  await foto(page, 'schicht-tausch-offen-form', { ganz: false });
+});
+
+test('Schicht: Karte „Offene Diensttausche“', async ({ page }) => {
+  await offenerTauschFormular(page, true);
+  await foto(page, 'schicht-offene-karte');
+});
+
+test('Schicht: Blatt „Rückgabe eintragen“', async ({ page }) => {
+  await offenerTauschFormular(page, true);
+  await page.locator('.sp-offen').getByRole('button', { name: 'Rückgabe eintragen' }).click();
+  const r = page.getByRole('dialog', { name: 'Rückgabe eintragen', exact: true });
+  await r.getByRole('textbox', { name: 'Rückgabetag', exact: true }).fill('27.10.2026');
+  await expect(r.getByRole('status')).toBeVisible();
+  await page.evaluate(() => document.activeElement?.blur()); // keine Textmarkierung im Feld (sonst flackert das Foto)
+  await foto(page, 'schicht-rueckgabe', { ganz: false });
+});
+
 test('Fixkosten: Formular', async ({ page }) => {
   await starteDemo(page, { route: '#/konto/fixkosten' });
   await page.getByRole('button', { name: '＋ Fixkosten eintragen' }).click();

@@ -504,9 +504,11 @@ test.describe('Tagesblatt (ein Tag)', () => {
     await expect(f.getByText('Abgegebener Tag')).toBeVisible();
     await expect(f.locator('.sp-tausch-tag')).toHaveText('Mittwoch, 30. Dezember');
     await expect(f.getByRole('combobox', { name: 'Person' })).toHaveValue('papa');
+    // ohne Übernommenen Tag ist der Dienst nicht gefragt: versteckt
+    await expect(f.getByRole('combobox', { name: 'Dienst am übernommenen Tag' })).toBeHidden();
+    await tag.fill('04.01.2027');
     // Urlaub wird nicht angeboten
     await expect(f.getByRole('combobox', { name: 'Dienst am übernommenen Tag' }).locator('option')).toHaveText(['F Frühdienst', 'M Mittagsdienst', 'NM Nachmittagsdienst', 'N Nacht', '2T 2Teiler', 'Ü Überstunde', 'S Schulung', 'E Ersatzdienst']);
-    await tag.fill('04.01.2027');
     await expect(f.getByRole('status')).toHaveText('Ersetzt am 04.01.: Schulung');
     await tag.fill('05.01.2027');
     await expect(f.getByRole('status')).toHaveText('Am 05.01. ist kein Dienst eingetragen – nichts wird ersetzt.');

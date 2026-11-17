@@ -390,6 +390,12 @@ describe('offener Diensttausch: 1 Monat vor der Frist um 09:00, an beide Telefon
     assert.equal(p[0].um, utc('2029-01-28T08:00:00Z'));
   });
 
+  test('Sommerzeit: Frist im Juli → Erinnerung im Juni um 07:00Z = 09:00 Wien', async () => {
+    const p = nurTausch(await plan([offen('t0000004', '2027-07-15')], new Date('2027-06-10T08:00:00+02:00')));
+    assert.equal(p.length, 1);
+    assert.equal(p[0].um, utc('2027-06-15T07:00:00Z'));
+  });
+
   test('Monatsende: Frist 31.03.2027 → Erinnerung 28.02.2027', async () => {
     const p = nurTausch(await plan([offen('t0000003', '2027-03-31')], new Date('2027-02-20T08:00:00+01:00')));
     assert.equal(p[0].um, utc('2027-02-28T08:00:00Z'));

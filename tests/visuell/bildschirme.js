@@ -38,6 +38,22 @@ async function diensttauschFormular(p) {
   return f;
 }
 
+/** Tagesblatt 01.10. (Papa Nacht) → „⇄ Diensttausch“ ohne Rückgabe, mit „Kollege“; `speichern` legt den offenen Tausch an (Karte „Offene Diensttausche“). */
+async function offenerTausch(p, speichern) {
+  await starteDemo(p, { route: '#/schicht' });
+  await p.locator('.sp-zelle[data-datum="2026-10-01"]').click();
+  await p.getByRole('dialog', { name: 'Donnerstag, 1. Oktober' }).waitFor();
+  await p.locator('.sp-tag-karte[data-person="papa"]').getByRole('button', { name: '⇄ Diensttausch', exact: true }).click();
+  const f = p.getByRole('dialog', { name: 'Diensttausch', exact: true });
+  await f.getByRole('textbox', { name: 'Mit wem (optional)' }).fill('Kollege');
+  if (!speichern) return;
+  await f.getByRole('button', { name: 'Speichern' }).click();
+  await f.waitFor({ state: 'detached' });
+  await p.getByRole('dialog', { name: 'Donnerstag, 1. Oktober' }).getByRole('button', { name: 'Schließen' }).click();
+  await p.locator('.sp-offen-zeile').waitFor();
+  await p.evaluate(() => document.querySelectorAll('.toast').forEach((t) => t.remove()));
+}
+
 /** Zweite Versicherung über „Polizze bearbeiten › ＋ Weitere Versicherung › Eigene Polizze“; danach ist die erste gewählt. */
 async function zweiVersicherungen(p) {
   await starteDemo(p, { route: '#/konto/versicherung' });
@@ -138,6 +154,29 @@ export const BILDSCHIRME = [
       await f.getByRole('button', { name: 'Speichern' }).click();
       await p.locator('.sp-tag-karte[data-person="papa"] .sp-tag-tausch').waitFor();
       await p.evaluate(() => document.querySelectorAll('.toast').forEach((t) => t.remove()));
+    },
+  },
+  {
+    name: 'schicht-tausch-offen-form',
+    titel: 'Schicht: Diensttausch ohne Rückgabe (Formular)',
+    blatt: true,
+    oeffne: (p) => offenerTausch(p, false),
+  },
+  {
+    name: 'schicht-offene-karte',
+    titel: 'Schicht: Karte „Offene Diensttausche“',
+    oeffne: (p) => offenerTausch(p, true),
+  },
+  {
+    name: 'schicht-rueckgabe',
+    titel: 'Schicht: Blatt „Rückgabe eintragen“',
+    blatt: true,
+    oeffne: async (p) => {
+      await offenerTausch(p, true);
+      await p.locator('.sp-offen').getByRole('button', { name: 'Rückgabe eintragen' }).click();
+      const r = p.getByRole('dialog', { name: 'Rückgabe eintragen', exact: true });
+      await r.getByRole('textbox', { name: 'Rückgabetag', exact: true }).fill('27.10.2026');
+      await r.getByRole('status').waitFor();
     },
   },
   {

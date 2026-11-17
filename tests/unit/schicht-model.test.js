@@ -731,7 +731,7 @@ describe('offener Diensttausch', () => {
     assert.equal(t({ ...ABGEGEBEN, mitWem: 'Kollege' }, '2026-10-05').text, '⇄ abgegeben an Kollege · Rückgabe offen');
     assert.equal(t(ABGEGEBEN, '2026-10-05').text, '⇄ abgegeben · Rückgabe offen');
     // offen, nicht angekommen: sichtbar zum Abschließen, ohne Rückgabeknopf; von Hand geändert: kein Absturz
-    assert.deepEqual(papa(zu([KOLLEGIN], { angewendet: false }), '2026-10-20').tausch, { zustand: 'offen', text: '⚠ Tausch unvollständig', id: 'offen01' });
+    assert.deepEqual(papa(zu([KOLLEGIN], { angewendet: false }), '2026-10-20').tausch, { zustand: 'offen', text: '⚠ Tausch unvollständig', id: 'offen01', offen: true });
     assert.equal(papa(mitEintraegen(zu([KOLLEGIN]), [{ ...KOLLEGIN, kb: F }]), '2026-10-20').tausch, null);
     // das Raster zeigt ⇄ am Tag
     const raster = schichtMonatModel(zu([KOLLEGIN]), JM, { heute: HEUTE, filter: 'beide' });

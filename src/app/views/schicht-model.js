@@ -96,7 +96,7 @@ function tauschFuerTag(q, person, datum) {
   for (const e of [...(q.daten?.eintraege ?? [])].reverse()) {
     if (e.person !== person || (e.a !== datum && e.b !== datum)) continue;
     const zustand = zustandVon(q, e);
-    if (zustand === 'offen') return { tausch: { zustand, text: '⚠ Tausch unvollständig', id: e.id }, aktiv: true };
+    if (zustand === 'offen') return { tausch: { zustand, text: '⚠ Tausch unvollständig', id: e.id, ...(tauschIstOffen(e) ? { offen: true } : {}) }, aktiv: true };
     if (zustand === 'unbekannt') aktiv = true;
   }
   return { tausch: null, aktiv };

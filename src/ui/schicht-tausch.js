@@ -35,7 +35,7 @@ export function oeffneDiensttausch({ store }, { person, datum }) {
   const heute = store.heute();
   const e = { person, richtung: '', kb: '', rueckgabe: '', rUngueltig: false, mitWem: '', speichert: false }; // der Entwurf überlebt das Neuzeichnen
   let ersetztZeile = null;
-  let dienstFeld = null;
+  let dienstGruppe = null;
   let abmelden = () => {};
   const model = () => tauschFormModel(store.getState(), { person: e.person, tag: datum, richtung: e.richtung, kb: e.kb, rueckgabe: e.rueckgabe, mitWem: e.mitWem }, heute);
 
@@ -49,7 +49,7 @@ export function oeffneDiensttausch({ store }, { person, datum }) {
     ersetztZeile.hidden = !text;
     ersetztZeile.classList.toggle('warnung', warnung);
     fuelle(ersetztZeile, text);
-    if (dienstFeld) dienstFeld.disabled = !m.brauchtDienst;
+    if (dienstGruppe) dienstGruppe.hidden = !m.brauchtDienst;
   }
 
   function rueckgabeWaehlen(wert, ungueltig = false) {
@@ -80,7 +80,9 @@ export function oeffneDiensttausch({ store }, { person, datum }) {
       const abgegeben = m.richtung === 'abgegeben';
       ersetztZeile = h('p', { class: 'sp-tag-erinnerung', role: 'status' });
       ersetztZeile.hidden = true;
-      dienstFeld = auswahl(abgegeben ? 'Dienst am übernommenen Tag' : 'Übernommener Dienst', m.dienste, m.kb, (w) => ((e.kb = w), zeileAktualisieren()));
+      const dienstFeld = auswahl(abgegeben ? 'Dienst am übernommenen Tag' : 'Übernommener Dienst', m.dienste, m.kb, (w) => ((e.kb = w), zeileAktualisieren()));
+      dienstGruppe = gruppe(abgegeben ? 'Dienst am übernommenen Tag' : 'Übernommener Dienst', dienstFeld);
+      dienstGruppe.hidden = !m.brauchtDienst;
       const inhalt = [
         h('p', { class: 'blatt-text' }, ERKLAERUNG[m.richtung]),
         gruppe('Person', auswahl('Person', PERSONEN, e.person, (w) => ((e.person = w), (e.kb = ''), neuZeichnen()))),
@@ -90,7 +92,7 @@ export function oeffneDiensttausch({ store }, { person, datum }) {
           abgegeben ? 'Übernommener Tag (optional)' : 'Rückgabe: Tag, an dem ihr einen Dienst abgebt (optional)',
           datumFeld({ wert: e.rueckgabe, heute, beschriftung: abgegeben ? 'Übernommener Tag' : 'Rückgabetag', beiAenderung: (w) => rueckgabeWaehlen(w), beiUngueltig: () => rueckgabeWaehlen('', true) }),
         ),
-        gruppe(abgegeben ? 'Dienst am übernommenen Tag' : 'Übernommener Dienst', dienstFeld),
+        dienstGruppe,
         feld(
           'Mit wem (optional)',
           textFeld({ wert: e.mitWem, beschriftung: 'Mit wem (optional)', platzhalter: 'z. B. Kollege', max: MAX_MIT_WEM, beiEingabe: (w) => (e.mitWem = w) }),
