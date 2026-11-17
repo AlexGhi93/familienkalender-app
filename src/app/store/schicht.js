@@ -185,7 +185,8 @@ export function createSchichtSlice(kern, { store, fixLesen, autosHolen, versHole
 
   /**
    * Schichtplan für die Sicherung: Katalog und alle vorhandenen Monate von Jänner 2026 bis zwölf Monate nach heute (fehlende übersprungen),
-   * dazu `tausch` (die Diensttausche), wenn es welche gibt und sie lesbar sind (das Format der Sicherung legt sicherung.js fest).
+   * dazu `tausch` (die Diensttausche), wenn es welche gibt und sie lesbar sind, sonst `tauschUnlesbar` = ihr Rohtext (das Format der
+   * Sicherung legt sicherung.js fest).
    */
   async function schichtFuerSicherung() {
     if (!adapter.leseSchichtMonat) {
@@ -205,7 +206,8 @@ export function createSchichtSlice(kern, { store, fixLesen, autosHolen, versHole
       });
     }
     const tausch = adapter.leseDiensttausch ? await adapter.leseDiensttausch() : null;
-    return { katalog: katalog ? normalisiereKatalog(katalog).katalog : null, monate, ...(tausch?.daten && !tausch.unlesbar ? { tausch: tausch.daten } : {}) };
+    const tauschTeil = tausch?.unlesbar ? { tauschUnlesbar: tausch.text ?? null } : tausch?.daten ? { tausch: tausch.daten } : {};
+    return { katalog: katalog ? normalisiereKatalog(katalog).katalog : null, monate, ...tauschTeil };
   }
 
   // ---------- Diensttausch ----------

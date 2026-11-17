@@ -9,9 +9,16 @@ import { terminAnzeige } from '../domain/termin-anzeige.js';
 
 export const SICHERUNG_VERSION = 1;
 
-/** Schichtplan: Katalog (null = noch keiner gespeichert) und Monate nach 'JJJJ-MM' sortiert. */
+/**
+ * Schichtplan: Katalog (null = noch keiner gespeichert) und Monate nach 'JJJJ-MM' sortiert, dazu `tausch` (die Diensttausche, nur wenn
+ * es welche gibt, `fremd` roh mit). Wie bei den anderen Bereichen fehlt nichts unbemerkt: eine unlesbare Verknüpfung
+ * (`schicht.tauschUnlesbar` aus store.sicherungsDaten) steht als `unlesbar` = [{ id: 'fkschtausch', text }] darin.
+ */
 function schichtSicherung(schicht) {
   const monate = schicht?.monate ?? {};
+  const t = schicht?.tausch;
+  const tausch = t && (t.eintraege?.length > 0 || t.fremd) ? { tausch: t } : {};
+  const unlesbar = schicht?.tauschUnlesbar !== undefined ? { unlesbar: [{ id: 'fkschtausch', text: schicht.tauschUnlesbar }] } : {};
   return {
     katalog: schicht?.katalog ?? null,
     monate: Object.fromEntries(
@@ -19,6 +26,8 @@ function schichtSicherung(schicht) {
         .sort()
         .map((jm) => [jm, monate[jm]]),
     ),
+    ...tausch,
+    ...unlesbar,
   };
 }
 
@@ -135,6 +144,8 @@ export function sicherungAnzahlText(s) {
   const schichtMonate = Object.keys(s.schicht?.monate ?? {}).length;
   const teile = [zahl(Object.keys(s.tage).length, 'Tag', 'Tage'), zahl(s.urlaub.length, 'Urlaub', 'Urlaube'), zahl(s.termine.length, 'Termin', 'Termine'), `${s.einkauf.e.length} Artikel auf der Einkaufsliste`, zahl(kontoEintraege, 'Kontostand', 'Kontostände')];
   if (schichtMonate > 0) teile.push(zahl(schichtMonate, 'Monat Schichtplan', 'Monate Schichtplan'));
+  const tausche = s.schicht?.tausch?.eintraege?.length ?? 0;
+  if (tausche > 0) teile.push(zahl(tausche, 'Diensttausch', 'Diensttausche'));
   const fixPosten = (s.fixkosten?.posten?.length ?? 0) + (s.fixkosten?.fremd?.length ?? 0);
   if (fixPosten > 0) teile.push(`${fixPosten} Fixkosten-Posten`);
   const unlesbar = s.fixkosten?.unlesbar?.length ?? 0;
@@ -151,5 +162,6 @@ export function sicherungAnzahlText(s) {
   if (polizzen > 0 || rechnungen > 0) teile.push(`Versicherung (${zahl(polizzen, 'Polizze', 'Polizzen')}, ${zahl(rechnungen, 'Rechnung', 'Rechnungen')})`);
   if (s.versicherung?.unlesbar?.some((u) => u.id === 'fkversicherung')) teile.push('Versicherung unlesbar (als Text gesichert)');
   else if (s.versicherung?.unlesbar?.length > 0) teile.push('Versicherung teilweise unlesbar (als Text gesichert)');
+  if (s.schicht?.unlesbar?.length > 0) teile.push('Diensttausche unlesbar (als Text gesichert)');
   return teile.join(' · ');
 }

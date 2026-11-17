@@ -77,7 +77,8 @@ function schichtAusSpeicher(roh) {
  */
 function tauschGelesen(roh) {
   if (roh == null) return { daten: null, unlesbar: false };
-  return typeof roh === 'string' ? tauschAusText(roh) : { ...tauschAusText('[]'), unlesbar: true }; // '[]' = kein Objekt → unlesbar
+  const gelesen = typeof roh === 'string' ? tauschAusText(roh) : { ...tauschAusText('[]'), unlesbar: true }; // '[]' = kein Objekt → unlesbar
+  return gelesen.unlesbar ? { ...gelesen, text: typeof roh === 'string' ? roh : JSON.stringify(roh) } : gelesen; // Rohtext für die Sicherung
 }
 
 /** Kann diese Version einen gespeicherten Teil lesen? (Sonst: beschädigt oder von einer neueren Version – wie bei Google nie überschreiben.) */

@@ -349,7 +349,9 @@ export function createGoogleAdapter({ api, kalender, jetzt = () => new Date(), a
      */
     async leseDiensttausch() {
       const e = await api.ereignisse.holen(kalender.anwesenheit, TAUSCH_ID);
-      return !e || e.status === 'cancelled' ? { daten: null, unlesbar: false } : tauschAusEreignis(e);
+      if (!e || e.status === 'cancelled') return { daten: null, unlesbar: false };
+      const gelesen = tauschAusEreignis(e);
+      return gelesen.unlesbar ? { ...gelesen, text: e.description ?? null } : gelesen; // Rohtext für die Sicherung
     },
 
     /**

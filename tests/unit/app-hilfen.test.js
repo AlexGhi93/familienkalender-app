@@ -83,6 +83,27 @@ describe('Sicherung', () => {
     assert.equal(umgekehrt.schicht.katalog, null);
     assert.deepEqual(sicherungErstellen({ state: zustand({ schicht: undefined }), appVersion: VERSION }).schicht, { katalog: null, monate: {} });
   });
+
+  test('Schichtplan: Diensttausche mit Zahl; eine unlesbare Verknüpfung als Rohtext (wie andere unlesbare Bereiche)', () => {
+    const e = { id: 'tausch01', person: 'papa', a: '2026-10-01', b: '2026-10-07', ka: 'N', kb: 'F', vb: 'Ü', mitWem: 'Kollege' };
+    const tausch = { v: 1, eintraege: [e] };
+    const mit = sicherungErstellen({ state: { ...state, schicht: { ...state.schicht, tausch } }, appVersion: VERSION });
+    assert.deepEqual(mit.schicht.tausch, tausch);
+    assert.equal(mit.schicht.unlesbar, undefined);
+    assert.ok(sicherungAnzahlText(mit).includes(' · 3 Monate Schichtplan · 1 Diensttausch · '));
+    const zwei = sicherungErstellen({ state: { ...state, schicht: { ...state.schicht, tausch: { v: 1, eintraege: [e, { ...e, id: 'tausch02' }] } } }, appVersion: VERSION });
+    assert.ok(sicherungAnzahlText(zwei).includes(' · 2 Diensttausche · '));
+    // leer oder nicht gelesen: kein Feld, keine Zahl
+    for (const t of [{ v: 1, eintraege: [] }, null, undefined]) {
+      const ohne = sicherungErstellen({ state: { ...state, schicht: { ...state.schicht, tausch: t } }, appVersion: VERSION });
+      assert.equal('tausch' in ohne.schicht, false);
+      assert.equal(sicherungAnzahlText(ohne), sicherungAnzahlText(s));
+    }
+    const ROH = '{"v":2,"l":[{"neu":1}]}';
+    const kaputt = sicherungErstellen({ state: { ...state, schicht: { ...state.schicht, tauschUnlesbar: ROH } }, appVersion: VERSION });
+    assert.deepEqual(kaputt.schicht.unlesbar, [{ id: 'fkschtausch', text: ROH }]);
+    assert.ok(sicherungAnzahlText(kaputt).endsWith(' · Diensttausche unlesbar (als Text gesichert)'));
+  });
 });
 
 describe('Listen bearbeiten', () => {

@@ -141,6 +141,27 @@ test('unlesbare Verknüpfung sperrt den Tausch, nichts wird geschrieben', async 
   assert.deepEqual([imKalender(g, '2026-12'), imKalender(g, '2027-01')], [mA, mB]);
 });
 
+test('Sicherung: eine unlesbare Verknüpfung geht als Rohtext mit (Google und Demo)', async () => {
+  const UNLESBAR = '{"v":2,"l":[{"neu":1}]}';
+  const g = await aufbau({ vorhanden: { fkschtausch: UNLESBAR } });
+  const { schicht } = await g.store.sicherungsDaten();
+  assert.equal(schicht.tausch, undefined);
+  assert.equal(schicht.tauschUnlesbar, UNLESBAR);
+  // Demo: ein unlesbarer Eintrag (kein Text) roh als JSON
+  const speicher = speicherAttrappe();
+  const adapter = createDemoAdapter({ speicher, jetzt: () => JETZT });
+  const store = createStore(adapter, { jetzt: () => JETZT });
+  await store.laden();
+  const daten = JSON.parse(speicher.getItem('fk.demo.v1'));
+  daten.schichttausch = UNLESBAR;
+  speicher.setItem('fk.demo.v1', JSON.stringify(daten));
+  const demo = createStore(createDemoAdapter({ speicher, jetzt: () => JETZT }), { jetzt: () => JETZT });
+  await demo.laden();
+  assert.equal((await demo.sicherungsDaten()).schicht.tauschUnlesbar, UNLESBAR);
+  // lesbar: kein Rohtext
+  assert.equal((await store.sicherungsDaten()).schicht.tauschUnlesbar, undefined);
+});
+
 test('anderes Telefon (1.4.1) malt über Tag A → nach dem Lesen gebrochen, kein ⇄, nichts wird repariert', async () => {
   const g = await aufbau();
   assert.equal((await g.store.diensttauschSpeichern(ENTWURF)).ok, true);
