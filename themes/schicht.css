@@ -1451,3 +1451,19 @@
     padding: 3px;
   }
 }
+
+/* Diensttausch: Zeile im Tagesblatt und Blatt „Diensttausch“ (die Grundregeln stehen in klassisch/schicht.css) */
+:root[data-aussehen='glas'] .sp-tag-tausch,
+:root[data-aussehen='bento'] .sp-tag-tausch {
+  gap: 10px;
+}
+
+:root[data-aussehen='glas'] .sp-tausch-form,
+:root[data-aussehen='bento'] .sp-tausch-form {
+  gap: 14px;
+}
+
+:root[data-aussehen='glas'] .sp-tausch-tag,
+:root[data-aussehen='bento'] .sp-tausch-tag {
+  font-size: 1rem;
+}

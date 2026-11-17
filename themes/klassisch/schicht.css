@@ -801,3 +801,32 @@
   font-size: 0.8rem;
 }
 
+
+/* ---------- Schichtplan: Diensttausch (Zeile im Tagesblatt, Blatt „Diensttausch“) ---------- */
+
+.sp-tag-tausch,
+.sp-tausch-form {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.sp-tausch-form {
+  align-items: stretch;
+  gap: 12px;
+}
+
+.sp-tag-tausch .sp-tag-erinnerung {
+  align-self: stretch;
+}
+
+.sp-tausch-tag {
+  margin: 0;
+  font-weight: 700;
+}
+
+.sp-tag-tausch .sp-tag-erinnerung,
+.sp-tausch-form .sp-tag-erinnerung {
+  font-size: 0.875rem; /* Text ≥ 13 px (die Hinweise unter den Formularen sind kleiner) */
+}

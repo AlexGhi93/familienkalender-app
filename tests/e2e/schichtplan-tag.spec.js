@@ -340,4 +340,138 @@ test.describe('Tagesblatt (ein Tag)', () => {
     expect(masse.scroll).toBeLessThanOrEqual(masse.breite);
     expect(masse.rechts).toBeLessThanOrEqual(375);
   });
+  // ---------- Diensttausch ----------
+  const monatsSeite = (page) => page.locator('.sp-monat h2');
+  const zaehlung = (page, person) => page.locator(`.sp-zaehlung .sp-person-zeile[data-person="${person}"] span`).last();
+  const vor = (page) => page.getByRole('button', { name: 'Nächster Monat' }).click();
+  const zurueck = (page) => page.getByRole('button', { name: 'Vorheriger Monat' }).click();
+  const tauschKnopf = (page, person) => knopf(page, person, '⇄ Diensttausch');
+  const formular = (page) => page.getByRole('dialog', { name: 'Diensttausch', exact: true });
+
+  /** Papa: 30.12.2026 Frühdienst und 04.01.2027 Schulung mit dem Pinsel eintragen (die Demo hat diese Monate leer); endet im Dezember. */
+  async function dienstePinseln(page) {
+    await starteDemo(page, { route: '#/schicht' });
+    await vor(page);
+    await vor(page);
+    await expect(monatsSeite(page)).toHaveText('Dezember 2026');
+    await page.getByRole('button', { name: '✏️ Eintragen' }).click();
+    const leiste = page.locator('.sp-pinsel');
+    await leiste.getByRole('button', { name: 'F Frühdienst', exact: true }).click();
+    await zelle(page, '2026-12-30').click();
+    await vor(page);
+    await expect(monatsSeite(page)).toHaveText('Januar 2027');
+    await leiste.getByRole('button', { name: 'S Schulung', exact: true }).click();
+    await zelle(page, '2027-01-04').click();
+    await leiste.getByRole('button', { name: 'Fertig' }).click();
+    await zurueck(page);
+    await expect(streifen(page, '2026-12-30', 'papa')).toHaveText('F');
+  }
+
+  test('Diensttausch über zwei Monate und zurück', async ({ page }) => {
+    await dienstePinseln(page);
+    await expect(zaehlung(page, 'papa')).toHaveText('1 Dienst · 1× F');
+    await zelle(page, '2026-12-30').click();
+    await tauschKnopf(page, 'papa').click();
+    const f = formular(page);
+    await expect(f).toBeVisible();
+    await f.getByRole('textbox', { name: 'Übernommener Tag', exact: true }).fill('04.01.2027');
+    await expect(f.getByRole('status')).toHaveText('Ersetzt am 04.01.: Schulung');
+    await f.getByRole('textbox', { name: 'Mit wem (optional)' }).fill('Kollege');
+    await f.getByRole('button', { name: 'Speichern' }).click();
+    await expect(f).toHaveCount(0);
+    // beide Tage zeigen ⇄ (Raster und Tagesblatt); der Dezember hat keinen Dienst mehr
+    await expect(karte(page, 'papa').locator('.sp-tag-tausch')).toContainText('⇄ getauscht mit Kollege / gegen 04.01.');
+    await expect(tauschKnopf(page, 'papa')).toHaveCount(0);
+    await blattAm(page, 'Mittwoch, 30. Dezember').getByRole('button', { name: 'Schließen' }).click();
+    await expect(zelle(page, '2026-12-30').locator('.sp-tausch')).toHaveText('⇄');
+    await expect(zaehlung(page, 'papa')).toHaveText('Noch nichts eingetragen');
+    await expect(streifen(page, '2026-12-30', 'papa')).toHaveClass(/leer/);
+    await vor(page);
+    await expect(zelle(page, '2027-01-04').locator('.sp-tausch')).toHaveText('⇄');
+    await expect(streifen(page, '2027-01-04', 'papa')).toHaveText('F');
+    await expect(zaehlung(page, 'papa')).toHaveText('1 Dienst · 1× F');
+    // Rückgängig aus dem Tag B: der Text nennt die Rückkehr beider Tage, danach ist alles wie vorher (auch die Schulung in B)
+    await zelle(page, '2027-01-04').click();
+    await expect(karte(page, 'papa').locator('.sp-tag-tausch')).toContainText('⇄ getauscht mit Kollege / gegen 30.12.');
+    await karte(page, 'papa').getByRole('button', { name: 'Tausch rückgängig' }).click();
+    const rueck = page.getByRole('dialog', { name: 'Diensttausch rückgängig machen?' });
+    await expect(rueck).toContainText('Beide Tage kommen genau so zurück, wie sie vor dem Tausch waren');
+    await rueck.getByRole('button', { name: 'Rückgängig machen' }).click();
+    await expect(rueck).toHaveCount(0);
+    await expect(karte(page, 'papa').locator('.sp-tag-tausch')).toHaveCount(0);
+    await expect(tauschKnopf(page, 'papa')).toBeVisible();
+    await blattAm(page, 'Montag, 4. Januar').getByRole('button', { name: 'Schließen' }).click();
+    await expect(zelle(page, '2027-01-04').locator('.sp-tausch')).toHaveCount(0);
+    await expect(streifen(page, '2027-01-04', 'papa')).toHaveText('S');
+    await expect(zaehlung(page, 'papa')).toHaveText('1 Dienst · 1× S');
+    await zurueck(page);
+    await expect(streifen(page, '2026-12-30', 'papa')).toHaveText('F');
+    await expect(zelle(page, '2026-12-30').locator('.sp-tausch')).toHaveCount(0);
+    await expect(zaehlung(page, 'papa')).toHaveText('1 Dienst · 1× F');
+  });
+
+  test('Ein schon getauschter Tag bietet keinen zweiten Tausch an', async ({ page }) => {
+    await dienstePinseln(page);
+    await zelle(page, '2026-12-30').click();
+    await tauschKnopf(page, 'papa').click();
+    await formular(page).getByRole('textbox', { name: 'Übernommener Tag', exact: true }).fill('04.01.2027');
+    await formular(page).getByRole('button', { name: 'Speichern' }).click();
+    await expect(formular(page)).toHaveCount(0);
+    await expect(karte(page, 'papa').locator('.sp-tag-tausch')).toContainText('⇄ getauscht');
+    await expect(tauschKnopf(page, 'papa')).toHaveCount(0); // Tag A (jetzt frei, getauscht)
+    await blattAm(page, 'Mittwoch, 30. Dezember').getByRole('button', { name: 'Schließen' }).click();
+    await vor(page);
+    await zelle(page, '2027-01-04').click();
+    await expect(tauschKnopf(page, 'papa')).toHaveCount(0); // Tag B
+    await expect(karte(page, 'papa').getByRole('button', { name: 'Tausch rückgängig' })).toBeVisible();
+  });
+
+  test('Formular nennt, was am übernommenen Tag ersetzt wird; ein leerer Tag und derselbe Dienst werden gemeldet', async ({ page }) => {
+    await dienstePinseln(page);
+    await zelle(page, '2026-12-30').click();
+    await tauschKnopf(page, 'papa').click();
+    const f = formular(page);
+    const tag = f.getByRole('textbox', { name: 'Übernommener Tag', exact: true });
+    await expect(f.getByText('Abgegebener Tag')).toBeVisible();
+    await expect(f.locator('.sp-tausch-tag')).toHaveText('Mittwoch, 30. Dezember');
+    await expect(f.getByRole('combobox', { name: 'Person' })).toHaveValue('papa');
+    // Urlaub wird nicht angeboten
+    await expect(f.getByRole('combobox', { name: 'Dienst am übernommenen Tag' }).locator('option')).toHaveText(['F Frühdienst', 'M Mittagsdienst', 'NM Nachmittagsdienst', 'N Nacht', '2T 2Teiler', 'Ü Überstunde', 'S Schulung', 'E Ersatzdienst']);
+    await tag.fill('04.01.2027');
+    await expect(f.getByRole('status')).toHaveText('Ersetzt am 04.01.: Schulung');
+    await tag.fill('05.01.2027');
+    await expect(f.getByRole('status')).toHaveText('Am 05.01. ist kein Dienst eingetragen – nichts wird ersetzt.');
+    await f.getByRole('combobox', { name: 'Dienst am übernommenen Tag' }).selectOption({ label: 'S Schulung' });
+    await tag.fill('04.01.2027');
+    await expect(f.getByRole('status')).toHaveText('Am übernommenen Tag steht schon dieser Dienst.');
+    // „Mit wem“: höchstens 24 Zeichen
+    const wer = f.getByRole('textbox', { name: 'Mit wem (optional)' });
+    await wer.fill('x'.repeat(40));
+    await expect(wer).toHaveValue('x'.repeat(24));
+    await f.getByRole('button', { name: 'Abbrechen' }).click();
+    await expect(f).toHaveCount(0);
+    await expect(zelle(page, '2026-12-30').locator('.sp-tausch')).toHaveCount(0); // nichts gespeichert
+  });
+  test('auf 360 px ragt das Formular „Diensttausch“ und die Tauschzeile nicht seitwärts hinaus', async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 740 });
+    await dienstePinseln(page);
+    await zelle(page, '2026-12-30').click();
+    await tauschKnopf(page, 'papa').click();
+    const f = formular(page);
+    await f.getByRole('textbox', { name: 'Übernommener Tag', exact: true }).fill('04.01.2027');
+    await f.getByRole('textbox', { name: 'Mit wem (optional)' }).fill('x'.repeat(24));
+    const passt = () =>
+      page.evaluate(() => {
+        const b = document.querySelector('.blatt');
+        return { scroll: b.scrollWidth, breite: b.clientWidth, rechts: Math.max(...[...b.querySelectorAll('button, input:not(.picker-unsichtbar), select')].map((e) => e.getBoundingClientRect().right)) };
+      });
+    let m = await passt();
+    expect(m.scroll).toBeLessThanOrEqual(m.breite);
+    expect(m.rechts).toBeLessThanOrEqual(360);
+    await f.getByRole('button', { name: 'Speichern' }).click();
+    await expect(karte(page, 'papa').locator('.sp-tag-tausch')).toContainText('⇄ getauscht mit xxxxxxxxxxxxxxxxxxxxxxxx / gegen 04.01.');
+    m = await passt();
+    expect(m.scroll).toBeLessThanOrEqual(m.breite);
+    expect(m.rechts).toBeLessThanOrEqual(360);
+  });
 });

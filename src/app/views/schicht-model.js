@@ -5,6 +5,7 @@ import { addDays, eachDay, pad2, weekday } from '../../domain/dates.js';
 import { feiertagName } from '../../domain/feiertage.js';
 import { monatVor } from '../../domain/konto.js';
 import { PALETTE, SCHICHT_PERSONEN, aktiveArten, artAendern, artFuer, artHinzufuegen, istNacht, monatZaehlung, schichtAm, standardKatalog, tageImMonat, tagZeitenAm, zeitenFuer } from '../../domain/schicht.js';
+import { tauschAm, tauschErsetzt, tauschPruefen, tauschZustand } from '../../domain/schicht-tausch.js';
 import { standardSpeicher } from '../speicher.js';
 import { WOCHENTAGE_KURZ, datumLang, monatTitel } from '../format-de.js';
 
@@ -59,6 +60,45 @@ function zusatzMarke(monat, katalog, personen, tag) {
   return { kuerzel: art?.kuerzel ?? '?', farbe: art?.farbe ?? 'grau', mehr: alle.length > 1, weitere: alle.length - 1 };
 }
 
+const kurzDatumTT = (datum) => `${datum.slice(8, 10)}.${datum.slice(5, 7)}.`;
+
+/** Die Diensttausche und der Monats-Nachschlag aus dem Zustand (nicht gelesen = keine Tausche). */
+function tauschQuelle(state) {
+  const monate = state.schicht?.monate ?? {};
+  return { daten: state.schicht?.tausch ?? null, monate: (jm) => monate[jm] ?? null };
+}
+
+/** Text eines sichtbaren Tauschs am Tag: „⇄ getauscht mit <wer> / gegen TT.MM.“ bzw. „⚠ Tausch unvollständig“. */
+const tauschText = (t) => {
+  if (t.zustand !== 'ganz') return '⚠ Tausch unvollständig';
+  const e = t.eintrag;
+  return `⇄ getauscht${e.mitWem ? ` mit ${e.mitWem}` : ''} / gegen ${kurzDatumTT(t.rolle === 'a' ? e.b : e.a)}`;
+};
+
+/**
+ * Tausch einer Person an einem Tag fürs Tagesblatt: { zustand: 'ganz'|'halb'|'offen', text, id } oder null. Ein „offener“ eigener Tausch
+ * (Verknüpfung geschrieben, Monate nicht) ist hier sichtbar, damit man ihn abschließen oder verwerfen kann (er blockiert den Tag).
+ * `aktiv` = der Tag hält einen Tausch fest (auch einen mit nicht geladenem Monat): dann gibt es keinen zweiten.
+ */
+function tauschFuerTag(q, person, datum) {
+  const sichtbar = tauschAm(q.daten, q.monate, person, datum);
+  if (sichtbar) return { tausch: { zustand: sichtbar.zustand, text: tauschText(sichtbar), id: sichtbar.eintrag.id }, aktiv: true };
+  let aktiv = false;
+  for (const e of [...(q.daten?.eintraege ?? [])].reverse()) {
+    if (e.person !== person || (e.a !== datum && e.b !== datum)) continue;
+    const zustand = tauschZustand(e, q.monate(e.a.slice(0, 7)), q.monate(e.b.slice(0, 7)));
+    if (zustand === 'offen') return { tausch: { zustand, text: '⚠ Tausch unvollständig', id: e.id }, aktiv: true };
+    if (zustand === 'unbekannt') aktiv = true;
+  }
+  return { tausch: null, aktiv };
+}
+
+/** Raster: `tausch` = ein ganzer Tausch an diesem Tag (⇄), `halb` = ein unvollständiger (⚠), je für die angezeigten Personen. */
+function tauschMarken(q, personen, datum) {
+  const z = personen.map((p) => tauschAm(q.daten, q.monate, p, datum)?.zustand);
+  return { tausch: z.includes('ganz'), halb: z.includes('halb') };
+}
+
 /** Eigene Uhrzeiten des Tages der angezeigten Personen: `zeiten` = mindestens eine, `zeitenText` = „von–bis“ je Person (nur wo es welche gibt). */
 function eigeneZeiten(monat, personen, tag) {
   const zeitenText = {};
@@ -106,6 +146,7 @@ export function schichtMonatModel(state, jm, { heute, filter = 'beide' } = {}) {
 
   const erster = `${jm}-01`;
   const letzter = `${jm}-${pad2(tage)}`;
+  const tq = tauschQuelle(state);
   const zellen = eachDay(addDays(erster, -weekday(erster)), addDays(letzter, 6 - weekday(letzter))).map((datum) => {
     const imMonat = datum >= erster && datum <= letzter;
     const tag = Number(datum.slice(8));
@@ -121,6 +162,7 @@ export function schichtMonatModel(state, jm, { heute, filter = 'beide' } = {}) {
       zusatz: daten ? zusatzMarke(monat, katalog, personen, tag) : null,
       notiz: daten ? personen.some((p) => Boolean(monat.n?.[p]?.[tag])) : false,
       ...(daten ? eigeneZeiten(monat, personen, tag) : { zeiten: false, zeitenText: {} }),
+      ...(daten ? tauschMarken(tq, personen, datum) : { tausch: false, halb: false }),
     };
   });
 
@@ -230,7 +272,7 @@ export function fehlendeErinnerungsTelefone(state, telefone) {
 const UNBEKANNT = { kuerzel: '?', name: 'Unbekannte Art', farbe: 'grau' };
 
 /** Eine Person im Tagesblatt: Kopf (Art mit Zeiten, Nacht), Knöpfe der aktiven Dienst-Arten, Notiz, Zusätze und Zusatz-Arten zum Hinzufügen (mit Hinweis auf die Erinnerung). */
-function tagPerson(katalog, monat, person, tag, katalogGelesen = true) {
+function tagPerson(katalog, monat, person, tag, katalogGelesen = true, tq = null) {
   const k = schichtAm(monat, person, tag);
   const art = k === null ? null : artFuer(katalog, person, k);
   const arten = aktiveArten(katalog, person, 'dienst').map((a) => ({ k: a.k, kuerzel: a.kuerzel, name: a.name, farbe: a.farbe, muster: musterVon(a), aktiv: a.k === k }));
@@ -262,7 +304,10 @@ function tagPerson(katalog, monat, person, tag, katalogGelesen = true) {
     bis: a.bis ?? '',
     erinnern: a.erinnern !== false,
   }));
-  return { person, ...personKopf(person), schicht, zeiten, zeitenMoeglich, arten, frei: k === null, nichtWaehlbar, notiz: monat?.n?.[person]?.[tag] ?? '', zusaetze, zusatzArten };
+  const { tausch, aktiv } = tq ? tauschFuerTag(tq.quelle, person, tq.datum) : { tausch: null, aktiv: false };
+  // „⇄ Diensttausch“ nur mit gelesenen Schichtarten und lesbaren Tauschen, an einem Dienst (nicht Urlaub), wenn der Tag nicht schon getauscht ist
+  const tauschMoeglich = Boolean(tq) && !tq.gesperrt && katalogGelesen && Boolean(art) && art.muster !== 'urlaub' && art.gruppe === 'dienst' && !aktiv;
+  return { person, ...personKopf(person), schicht, zeiten, zeitenMoeglich, arten, frei: k === null, nichtWaehlbar, notiz: monat?.n?.[person]?.[tag] ?? '', zusaetze, zusatzArten, tausch, tauschMoeglich };
 }
 
 /**
@@ -274,7 +319,8 @@ export function schichtTagModel(state, datum) {
   const tag = Number(datum.slice(8));
   const katalog = katalogVon(state);
   const monat = state.schicht?.monate?.[jm] ?? null;
-  return { titel: datumLang(datum), jm, tag, geladen: monat !== null, personen: SCHICHT_PERSONEN.map((p) => tagPerson(katalog, monat, p, tag, state.schicht?.katalog != null)) };
+  const tq = { quelle: tauschQuelle(state), datum, gesperrt: (state.unlesbar ?? []).includes('schichttausch') };
+  return { titel: datumLang(datum), jm, tag, geladen: monat !== null, personen: SCHICHT_PERSONEN.map((p) => tagPerson(katalog, monat, p, tag, state.schicht?.katalog != null, tq)) };
 }
 
 // ---------- Heute ----------
@@ -356,3 +402,34 @@ export function artEntwurfFehler(state, person, k, entwurf) {
     return fehler.message;
   }
 }
+
+// ---------- Diensttausch (Formular) ----------
+
+/**
+ * Formular „Diensttausch“: `entwurf` = { person, a, b, kb, mitWem } (`b` und `kb` dürfen leer sein). → `dienste` = [[k, „F Frühdienst“], …]
+ * (aktive Dienste der Person ohne Urlaub), `kb` = die gewählte Art (leer oder unpassend → die erste), `bGeladen` = der Monat von Tag B ist da,
+ * `ersetzt` = was am übernommenen Tag ersetzt wird (null = Tag B noch unklar), `fehler` = die Meldung, mit der Speichern abgelehnt würde
+ * (null = passt). `heute` nur für das Alter offener Tausche.
+ */
+export function tauschFormModel(state, entwurf, heute) {
+  const katalog = katalogVon(state);
+  const { person, a, b } = entwurf;
+  const dienste = aktiveArten(katalog, person, 'dienst').filter((x) => x.muster !== 'urlaub');
+  const kb = dienste.some((x) => x.k === entwurf.kb) ? entwurf.kb : (dienste[0]?.k ?? '');
+  const q = tauschQuelle(state);
+  const bFertig = /^\d{4}-\d{2}-\d{2}$/.test(b ?? '');
+  const bGeladen = bFertig && q.monate(b.slice(0, 7)) !== null;
+  let ersetzt = null;
+  let fehler = null;
+  if (!bFertig) fehler = 'Bitte den übernommenen Tag wählen.';
+  else if (!bGeladen) fehler = 'Der Monat des übernommenen Tags wird noch geladen.';
+  else {
+    const voll = { ...entwurf, kb };
+    fehler = tauschPruefen(voll, { ...q, katalog, heute });
+    ersetzt = tauschErsetzt(voll, q.monate(b.slice(0, 7)), katalog) ?? `Am ${kurzDatumTT(b)} ist kein Dienst eingetragen – nichts wird ersetzt.`;
+  }
+  return { person, a, b: bFertig ? b : '', kb, dienste: dienste.map((x) => [x.k, `${x.kuerzel} ${x.name}`]), bGeladen, ersetzt, fehler };
+}
+
+/** Text der Rückfrage „Tausch rückgängig“: beide Tage kommen genau so zurück, wie sie waren (Dienst und eigene Uhrzeiten je Tag). */
+export const TAUSCH_RUECKGAENGIG_TEXT = 'Beide Tage kommen genau so zurück, wie sie vor dem Tausch waren – mit ihrem Dienst und den Uhrzeiten, die an dem Tag eingetragen waren.';

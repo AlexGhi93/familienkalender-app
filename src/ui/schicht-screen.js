@@ -31,6 +31,8 @@ function beschriftung(z, personen) {
   const kopf = `${datumLang(z.datum)}${z.feiertag ? `, ${z.feiertag}` : ''}`;
   const teile = personen.map((p) => `${PERSON[p].name} ${z.streifen[p]?.name ?? 'frei'}${z.zeitenText?.[p] ? ` ${z.zeitenText[p]}` : ''}`);
   if (z.zusatz) teile.push(`Zusatz ${z.zusatz.kuerzel}${z.zusatz.weitere > 0 ? ` und ${z.zusatz.weitere} weitere` : ''}`);
+  if (z.tausch) teile.push('Diensttausch');
+  if (z.halb) teile.push('Tausch unvollständig');
   if (z.notiz) teile.push('mit Notiz');
   return `${kopf}: ${teile.join(', ')}`;
 }
@@ -56,13 +58,15 @@ function zelle(z, m, { store, ui }, gemalt) {
       { class: 'sp-zkopf', 'aria-hidden': 'true' },
       h('span', { class: 'nr' }, z.tag),
       z.feiertag ? h('span', { class: 'sp-feiertag', title: z.feiertag }, FEIERTAG_EMOJI) : null,
-      z.zusatz || z.notiz || z.zeiten
+      z.zusatz || z.notiz || z.zeiten || z.tausch || z.halb
         ? h(
             'span',
             { class: 'sp-marken' }, // bleiben beisammen rechts; ist der Tag sehr voll, rutschen sie gemeinsam in eine zweite Zeile
             z.zusatz ? h('span', { class: `sp-zusatz sf-${z.zusatz.farbe}` }, z.zusatz.kuerzel) : null,
             z.zusatz?.weitere > 0 ? h('span', { class: 'sp-mehr' }, `+${z.zusatz.weitere}`) : null,
             z.zeiten ? h('span', { class: 'sp-uhr' }, '🕘') : null, // eigene Uhrzeiten an diesem Tag (die Zeiten selbst stehen im Tagesblatt)
+            z.tausch ? h('span', { class: 'sp-notiz sp-tausch' }, '⇄') : null, // ein ganzer Diensttausch (Näheres im Tagesblatt)
+            z.halb ? h('span', { class: 'sp-notiz sp-tausch halb' }, '⚠') : null, // ein unvollständiger
             z.notiz ? h('span', { class: 'sp-notiz' }, '✎') : null,
           )
         : null,
@@ -98,6 +102,7 @@ export function schichtScreen({ store, ui }) {
       ),
     ),
     unlesbar.includes('schichtarten') ? gesperrtHinweis(UNLESBAR_TEXT.schichtarten) : null,
+    unlesbar.includes('schichttausch') ? gesperrtHinweis(UNLESBAR_TEXT.schichttausch) : null,
     unlesbar.includes(`schicht:${ui.schicht.jm}`) ? gesperrtHinweis(UNLESBAR_TEXT.schicht) : null,
     h('div', { class: 'monat-kopf sp-monat' }, rund('‹', 'Vorheriger Monat', m.vorher), h('h2', {}, m.titel), rund('›', 'Nächster Monat', m.nachher)),
     h(

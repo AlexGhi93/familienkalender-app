@@ -6,9 +6,11 @@
 // Knopf „＋ <Name>“ (z. B. „＋ Dienstbesprechung“), der gleich Von/Bis öffnet, darunter der Hinweis auf die Erinnerung – oder eine
 // Warnung, wenn laut Geräte-Register (ui.push) kein Telefon der Person gehört bzw. dieses Telefon das nicht sehen kann.
 import { fuelle, h } from './dom.js';
-import { blatt, toast } from './components.js';
+import { bestaetigen, blatt, toast } from './components.js';
+import { erledigt, sicher } from './formular.js';
+import { oeffneDiensttausch } from './schicht-tausch.js';
 import { zeitFeld } from './eingabefelder.js';
-import { erinnerungHinweis, schichtTagModel } from '../app/views/schicht-model.js';
+import { TAUSCH_RUECKGAENGIG_TEXT, erinnerungHinweis, schichtTagModel } from '../app/views/schicht-model.js';
 import { MAX_NOTIZ } from '../domain/schicht.js';
 import { mitZeiten, musterKlassen } from './schicht-pinsel.js';
 import { geloeschtMelden, sicherLoeschen } from './fortschritt.js';
@@ -326,6 +328,41 @@ export function oeffneSchichtTag({ store, ui = null }, datum) {
     ];
   }
 
+  /** „⇄ getauscht mit … / gegen TT.MM.“ bzw. „⚠ Tausch unvollständig“ mit „Tausch abschließen“ (nur bei unvollständigem) und „Tausch rückgängig“. */
+  function tauschZeile(p) {
+    if (!p.tausch) return null;
+    const unvollstaendig = p.tausch.zustand !== 'ganz';
+    const { id } = p.tausch;
+    const knopf = (text, beiKlick) => h('button', { class: 'knopf klein', type: 'button', onClick: beiKlick }, text);
+    return h(
+      'div',
+      { class: 'sp-tag-tausch' },
+      h('p', { class: `sp-tag-erinnerung${unvollstaendig ? ' warnung' : ''}`, role: unvollstaendig ? 'note' : null }, p.tausch.text),
+      unvollstaendig
+        ? knopf('Tausch abschließen', async (ev) => {
+            const k = ev.currentTarget; // nach dem `await` ist currentTarget schon null
+            k.disabled = true;
+            if (!erledigt(await sicher(store.diensttauschAbschliessen(id)), 'Diensttausch abgeschlossen ✓')) k.disabled = false;
+          })
+        : null,
+      knopf('Tausch rückgängig', () =>
+        bestaetigen({
+          titel: 'Diensttausch rückgängig machen?',
+          text: TAUSCH_RUECKGAENGIG_TEXT,
+          ja: 'Rückgängig machen',
+          beiJa: async () => {
+            erledigt(await sicher(store.diensttauschRueckgaengig(id)), 'Diensttausch rückgängig gemacht ✓');
+          },
+        }),
+      ),
+    );
+  }
+
+  function tauschKnopf(p) {
+    if (!p.tauschMoeglich) return null;
+    return h('button', { class: 'knopf klein sp-tag-plus', type: 'button', onClick: () => oeffneDiensttausch({ store, ui }, { person: p.person, datum }) }, '⇄ Diensttausch');
+  }
+
   function kopfZeile(p) {
     const klein = h('small', {}, mitZeiten(p.schicht.nacht ? `${p.schicht.text} ☾` : p.schicht.text));
     kopfFelder[p.person] = klein;
@@ -337,11 +374,13 @@ export function oeffneSchichtTag({ store, ui = null }, datum) {
       'article',
       { class: 'karte sp-tag-karte', 'data-person': p.person },
       kopfZeile(p),
+      tauschZeile(p),
       artenReihe(p),
       zeitenBereich(p),
       notizFeld(p),
       zusatzListe(p),
       zusatzBereich(p),
+      tauschKnopf(p),
     );
   }
 

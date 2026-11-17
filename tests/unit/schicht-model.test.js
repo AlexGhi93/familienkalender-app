@@ -1,7 +1,7 @@
 // Ansicht des Schichtplans ohne DOM: Monatsraster mit zwei Streifen je Tag, Filter, Zählung, Legende, gemerkter Filter.
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { SCHICHT_FILTER_SCHLUESSEL, schichtHeuteZeilen, artEntwurf, artEntwurfFehler, erinnerungHinweis, fehlendeErinnerungsTelefone, pinselAktion, pinselModel, pinselStart, rasterFilter, schichtFilterLesen, schichtFilterSpeichern, schichtArtenModel, schichtMonatModel, schichtTagModel } from '../../src/app/views/schicht-model.js';
+import { SCHICHT_FILTER_SCHLUESSEL, schichtHeuteZeilen, artEntwurf, artEntwurfFehler, erinnerungHinweis, fehlendeErinnerungsTelefone, pinselAktion, pinselModel, pinselStart, rasterFilter, schichtFilterLesen, schichtFilterSpeichern, schichtArtenModel, schichtMonatModel, schichtTagModel, tauschFormModel } from '../../src/app/views/schicht-model.js';
 import { artAendern, artArchivieren, artHinzufuegen, artVerschieben, leererMonat, setzeNotiz, setzeSchicht, setzeTagZeiten, standardKatalog, zusatzHinzufuegen } from '../../src/domain/schicht.js';
 import { speicherAttrappe, zustand } from './hilfen.js';
 
@@ -542,5 +542,72 @@ describe('Uhrzeiten je Tag (Tagesblatt, Raster, Heute)', () => {
     assert.deepEqual([z[0].person, z[0].emoji, z[0].name], ['papa', '👨', 'Papa']);
     assert.deepEqual(schichtHeuteZeilen(stand(m), '2026-10-15'), []);
     assert.deepEqual(schichtHeuteZeilen(zustand(), HEUTE), []);
+  });
+});
+
+describe('Diensttausch im Tagesblatt und im Raster', () => {
+  const F = k('papa', 'F');
+  const S = k('papa', 'S');
+  const U = k('papa', 'U');
+  const EINTRAG = { id: 'tausch01', person: 'papa', a: '2026-10-05', b: '2026-10-12', ka: F, kb: F, vb: S, mitWem: 'Kollege', am: HEUTE };
+  /** A (5.) Frühdienst, B (12.) Schulung; `ganz` = A frei und B Frühdienst, `halb` = nur A frei, `offen` = nichts geschrieben, `gebrochen` = A anders. */
+  const mitTausch = (zustandsName, eintrag = EINTRAG, unlesbar = []) => {
+    let m = leererMonat(JM);
+    m = setzeSchicht(m, { person: 'papa', tag: 5, k: F });
+    m = setzeSchicht(m, { person: 'papa', tag: 12, k: S });
+    if (zustandsName === 'ganz') m = setzeSchicht(setzeSchicht(m, { person: 'papa', tag: 5, k: null }), { person: 'papa', tag: 12, k: F });
+    if (zustandsName === 'halb') m = setzeSchicht(m, { person: 'papa', tag: 5, k: null });
+    if (zustandsName === 'gebrochen') m = setzeSchicht(m, { person: 'papa', tag: 5, k: U });
+    return { ...zustand({ schicht: { katalog, monate: { [JM]: m }, status: { [JM]: 'geladen' }, tausch: { v: 1, eintraege: [eintrag] } } }), unlesbar };
+  };
+  const papa = (state, datum) => schichtTagModel(state, datum).personen.find((p) => p.person === 'papa');
+
+  test('Tagesblatt: ⇄ mit Text nur bei ganzem Tausch, Warnung bei halbem, nichts bei gebrochenem', () => {
+    const ganz = mitTausch('ganz');
+    assert.deepEqual(papa(ganz, '2026-10-05').tausch, { zustand: 'ganz', text: '⇄ getauscht mit Kollege / gegen 12.10.', id: 'tausch01' });
+    assert.deepEqual(papa(ganz, '2026-10-12').tausch, { zustand: 'ganz', text: '⇄ getauscht mit Kollege / gegen 05.10.', id: 'tausch01' });
+    assert.equal(papa(mitTausch('ganz', { ...EINTRAG, mitWem: undefined }), '2026-10-05').tausch.text, '⇄ getauscht / gegen 12.10.');
+    assert.deepEqual(papa(mitTausch('halb'), '2026-10-12').tausch, { zustand: 'halb', text: '⚠ Tausch unvollständig', id: 'tausch01' });
+    assert.equal(papa(mitTausch('offen'), '2026-10-05').tausch.zustand, 'offen'); // eigener offener Eintrag: abschließen oder verwerfen
+    assert.equal(papa(mitTausch('gebrochen'), '2026-10-05').tausch, null);
+    assert.equal(papa(mitTausch('gebrochen'), '2026-10-12').tausch, null);
+    assert.equal(schichtTagModel(ganz, '2026-10-05').personen.find((x) => x.person === 'mama').tausch, null);
+  });
+
+  test('Tagesblatt: „⇄ Diensttausch“ nur an einem Dienst ohne Tausch, nicht bei Urlaub, Frei oder gesperrter Verknüpfung', () => {
+    assert.equal(papa(mitTausch('ganz'), '2026-10-12').tauschMoeglich, false); // schon getauscht
+    assert.equal(papa(mitTausch('ganz'), '2026-10-05').tauschMoeglich, false); // Tag A ist jetzt frei
+    assert.equal(papa(mitTausch('halb'), '2026-10-12').tauschMoeglich, false);
+    assert.equal(papa(mitTausch('gebrochen'), '2026-10-12').tauschMoeglich, true); // gebrochen hält den Tag nicht fest
+    assert.equal(papa(stateMit(), '2026-10-05').tauschMoeglich, false); // Urlaub
+    assert.equal(papa(stateMit(), '2026-10-01').tauschMoeglich, true); // F
+    assert.equal(papa(stateMit(), '2026-10-20').tauschMoeglich, false); // frei
+    assert.equal(papa(mitTausch('ganz', EINTRAG, ['schichttausch']), '2026-10-12').tauschMoeglich, false);
+    assert.equal(papa(mitTausch('offen', EINTRAG, ['schichttausch']), '2026-10-12').tauschMoeglich, false);
+  });
+
+  test('Raster: ⇄ auf beiden Tagen (ganz), ⚠ bei halbem, nichts sonst', () => {
+    const tag = (state, nr) => zelleAm(schichtMonatModel(state, JM, { heute: HEUTE }), nr);
+    for (const nr of [5, 12]) assert.deepEqual([tag(mitTausch('ganz'), nr).tausch, tag(mitTausch('ganz'), nr).halb], [true, false]);
+    for (const nr of [5, 12]) assert.deepEqual([tag(mitTausch('halb'), nr).tausch, tag(mitTausch('halb'), nr).halb], [false, true]);
+    for (const z of ['offen', 'gebrochen']) assert.deepEqual([tag(mitTausch(z), 5).tausch, tag(mitTausch(z), 5).halb], [false, false]);
+    assert.deepEqual([tag(mitTausch('ganz'), 6).tausch, tag(stateMit(), 5).tausch], [false, false]);
+    const nurMama = schichtMonatModel(mitTausch('ganz'), JM, { heute: HEUTE, filter: 'mama' });
+    assert.equal(zelleAm(nurMama, 5).tausch, false);
+  });
+
+  test('Formular: Dienste ohne Urlaub, „Ersetzt am TT.MM.: …“, Meldung der Prüfung', () => {
+    const state = mitTausch('offen', { ...EINTRAG, a: '2026-10-06', b: '2026-10-13' });
+    const m = (b, kb = F) => tauschFormModel(state, { person: 'papa', a: '2026-10-05', b, kb, mitWem: '' }, HEUTE);
+    assert.deepEqual(m('2026-10-12').dienste.map(([, t]) => t.split(' ')[0]), ['F', 'M', 'NM', 'N', '2T', 'Ü', 'S', 'E']); // ohne U
+    assert.equal(m('2026-10-12').ersetzt, 'Ersetzt am 12.10.: Schulung');
+    assert.equal(m('2026-10-12').fehler, null);
+    assert.equal(m('2026-10-20').ersetzt, 'Am 20.10. ist kein Dienst eingetragen – nichts wird ersetzt.');
+    assert.equal(m('2026-10-12', S).kb, S);
+    assert.equal(m('2026-10-12', 'zzz').kb, F); // unpassend → der erste
+    assert.equal(m('').fehler, 'Bitte den übernommenen Tag wählen.');
+    assert.equal(m('2026-11-03').bGeladen, false); // Monat noch nicht da
+    assert.equal(m('2026-11-03').ersetzt, null);
+    assert.equal(m('2026-10-05').fehler, 'Bitte zwei verschiedene Tage wählen.');
   });
 });
