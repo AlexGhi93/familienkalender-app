@@ -104,3 +104,9 @@ export function planUrlaubChecks({ status, today }) {
     .filter((d) => d > today)
     .map((date) => ({ date, title: buildUrlaubCheckTitle({ offen: status.offen, stand: today }) }));
 }
+
+/** Meldung, wenn ein Urlaub geändert werden soll, den das andere Telefon inzwischen gelöscht hat. */
+export const TEXT_URLAUB_WEG = 'Dieser Urlaub wurde inzwischen auf dem anderen Telefon gelöscht.';
+
+/** Fehler „UrlaubWeg“: der Adapter wirft ihn bei aendereUrlaub, wenn das Ereignis fehlt (404) oder gelöscht ist – nichts wird geschrieben. */
+export const urlaubWegFehler = () => Object.assign(new Error(TEXT_URLAUB_WEG), { name: 'UrlaubWeg' });

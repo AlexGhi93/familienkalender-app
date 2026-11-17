@@ -31,8 +31,8 @@ describe('Hülle', () => {
     const m = unlesbarFehler('schicht:2026-11');
     assert.deepEqual([m.name, m.bereich, m.message], ['Unlesbar', 'schicht:2026-11', UNLESBAR_TEXT.schicht]);
     assert.ok(Object.isFrozen(UNLESBAR_TEXT));
-    assert.deepEqual(Object.keys(UNLESBAR_TEXT).sort(), ['einkauf', 'geraete', 'konto', 'schicht', 'schichtarten', 'settings']);
-    for (const b of ['konto', 'einkauf', 'settings', 'schichtarten', 'schicht']) {
+    assert.deepEqual(Object.keys(UNLESBAR_TEXT).sort(), ['einkauf', 'geraete', 'konto', 'schicht', 'schichtarten', 'schichttausch', 'settings']);
+    for (const b of ['konto', 'einkauf', 'settings', 'schichtarten', 'schicht', 'schichttausch']) {
       assert.match(UNLESBAR_TEXT[b], /unlesbar \(beschädigt oder von einer neueren App-Version\)\. Damit nichts verloren geht, .+ – bitte die App auf beiden Telefonen aktualisieren\.$/, b);
     }
     assert.match(UNLESBAR_TEXT.geraete, /neueren App-Version\. Damit nichts verloren geht, .+ – bitte die App auf diesem Telefon aktualisieren\.$/);

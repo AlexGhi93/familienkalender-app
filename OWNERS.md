@@ -13,15 +13,15 @@ Files not listed belong to the integrator (Nicht aufgeführte Dateien gehören d
 - `.github/workflows/tests.yml`, `.gitignore`, `manifest.webmanifest`, `fonts/*`, `icons/*`
 - `tests/README.md`, `tests/duplikate-basis.json`, `tests/{duplikate,server}.mjs`, `tests/visuell/*`
 - `tests/unit/hilfen.js`
-- `tests/unit/{store,store-scheiben,hintergrund,mapping,speicher,app-hilfen,loeschen-rueckgaengig,seiten-besuch,sw,ebenen,agenten-doku,fehler-wache}.test.js`
+- `tests/unit/{store,store-scheiben,hintergrund,mapping,speicher,app-hilfen,loeschen-rueckgaengig,seiten-besuch,sw,ebenen,agenten-doku,fehler-wache,adapter-1-5}.test.js`
 - `tests/e2e/{app,tabs,google}.spec.js`, `tests/e2e/hilfen.js`
 
 ## Base (shared helpers and look)
 - `src/ui/{dom,components,eingabefelder,einstellungs-feld,fortschritt,bewegung,blatt-ziehen,darstellung,verbindung}.js`
 - `src/ui/{formular,wischen,zwischenablage,mitnehmen-feld}.js`, `src/theme-init.js`
-- `src/domain/{gemeinsam,unlesbar,aussehen,darstellung}.js`, `src/app/{einmal,speicher}.js`, `src/app/views/gemeinsam.js`
+- `src/domain/{gemeinsam,unlesbar,aussehen,darstellung}.js`, `src/app/{einmal,speicher,blatt-verlauf}.js`, `src/app/views/gemeinsam.js`
 - `themes/klassisch/bewegung.css`
-- `tests/unit/{bewegung,blatt-ziehen,darstellung,aussehen,design-tokens,datenschutz,gemeinsam,einmal,unlesbar,unlesbar-speicher}.test.js`
+- `tests/unit/{bewegung,blatt-ziehen,darstellung,aussehen,design-tokens,datenschutz,gemeinsam,einmal,unlesbar,unlesbar-speicher,blatt-verlauf,wischen}.test.js`
 - `tests/unit/css-hilfen.js`, `tests/e2e/{bewegung,blatt-wischen,aussehen,aussehen-fokus,aussehen-formulare,schriften}.spec.js`
 
 ## Calendar core
@@ -30,7 +30,7 @@ Files not listed belong to the integrator (Nicht aufgeführte Dateien gehören d
 - `src/app/views/{heute,monat,tag,neu,sachen,urlaub,dienst}-model.js`
 - `src/ui/{heute,monat,neu,urlaub}-screen.js`, `src/ui/{tagesblatt,termin-formular,sachen-formular,sachen-aktionen,pyjamas-wechsel,bringen-holen,nachricht-blatt}.js`
 - `themes/{monat,formulare}.css`, `themes/klassisch/{monat,formulare,heute}.css`
-- `tests/unit/{dates,titles,classify,types,domain-regeln,dienst,termin,serie,nachrichten,views-tage}.test.js`
+- `tests/unit/{dates,titles,classify,types,domain-regeln,dienst,termin,serie,nachrichten,views-tage,urlaub-aendern}.test.js`
 - `tests/e2e/{heute,aussehen-heute,monat,neu,bringen-holen,essensgeld,nachrichten,urlaub}.spec.js`
 
 ## Shopping list
@@ -62,7 +62,7 @@ Files not listed belong to the integrator (Nicht aufgeführte Dateien gehören d
 - `tests/unit/autos*.test.js`, `tests/e2e/{autos,autos-hilfen}.*`
 
 ## Shift plan
-- `src/domain/schicht.js`, `src/app/{schicht-abgleich,schicht-vorladen}.js`, `src/app/store/schicht.js`, `src/app/views/schicht-model.js`, `src/ui/schicht-*.js`
+- `src/domain/schicht*.js`, `src/app/{schicht-abgleich,schicht-vorladen}.js`, `src/app/store/schicht.js`, `src/app/views/schicht-model.js`, `src/ui/schicht-*.js`
 - `themes/schicht.css`, `themes/klassisch/schicht.css`
 - `tests/unit/schicht*.test.js`, `tests/e2e/schichtplan*.js`
 

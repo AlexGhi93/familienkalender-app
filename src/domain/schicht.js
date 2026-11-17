@@ -434,9 +434,10 @@ const MONAT_EIGENE = new Set(['v', 't', 'n', 'z', 'jm', 'fremd']);
  * Felder der ersten Ebene, die diese Version nicht kennt (eine neuere schreibt z. B. Angaben je Tag in ein eigenes Feld): roh und
  * unverändert, damit monatText sie wieder mitschreibt; null, wenn es keine gibt. `roh` ist der gelesene Text ODER ein Monat aus dem
  * Speicher – dort liegen sie schon im Behälter `fremd` (er wird übernommen, nicht verschachtelt). Die eigenen Namen kommen nie hinein.
+ * `eigene` = die reservierten Namen (Standard: die des Monats; der Diensttausch in schicht-tausch.js hat eigene).
  */
-function fremdeFelder(roh) {
-  const paare = [...Object.entries(istObjekt(roh.fremd) ? roh.fremd : {}), ...Object.entries(roh)].filter(([name]) => !MONAT_EIGENE.has(name));
+export function fremdeFelder(roh, eigene = MONAT_EIGENE) {
+  const paare = [...Object.entries(istObjekt(roh.fremd) ? roh.fremd : {}), ...Object.entries(roh)].filter(([name]) => !eigene.has(name));
   return paare.length > 0 ? Object.fromEntries(paare) : null; // fromEntries: auch ein Feld „__proto__“ bleibt ein gewöhnliches Feld
 }
 

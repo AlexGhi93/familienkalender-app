@@ -3,6 +3,9 @@ import { normalizeSettings } from '../domain/settings.js';
 import { einkaufText, leereListe, normalisiereListe } from '../domain/einkauf.js';
 import { kontoText, leeresKonto, normalisiereKonto } from '../domain/konto.js';
 import { katalogText, leererMonat, monatText, normalisiereKatalog, normalisiereMonat, standardKatalog } from '../domain/schicht.js';
+import { leererTausch, tauschAusText, tauschText } from '../domain/schicht-tausch.js';
+import { urlaubWegFehler } from '../domain/urlaub.js';
+import { unlesbarFehler } from '../domain/unlesbar.js';
 import { FIX_SHARDS, leererShard, normalisiereShard, shardText, teilGesperrtFehler } from '../domain/fixkosten.js';
 import { zieleGesperrtFehler, zieleLesen, zieleText, zieleWarnungen } from '../domain/sparziele.js';
 import { autosGesperrtFehler, autosLesen, autosText, historieGesperrtFehler, historieLesen, historieText, leereHistorie } from '../domain/autos.js';
@@ -68,6 +71,15 @@ function schichtAusSpeicher(roh) {
   return { katalog, monate };
 }
 
+/**
+ * Diensttausche aus dem Speicher lesen, genau wie beim Google-Adapter (gespeichert ist der Kalendertext): { daten | null, unlesbar, … }.
+ * Nichts (alter Speicher) → null; etwas anderes als Text (beschädigt) gilt als unlesbar und wird wie bei Google nie überschrieben.
+ */
+function tauschGelesen(roh) {
+  if (roh == null) return { daten: null, unlesbar: false };
+  return typeof roh === 'string' ? tauschAusText(roh) : { ...tauschAusText('[]'), unlesbar: true }; // '[]' = kein Objekt → unlesbar
+}
+
 /** Kann diese Version einen gespeicherten Teil lesen? (Sonst: beschädigt oder von einer neueren Version – wie bei Google nie überschreiben.) */
 const fixTeilLesbar = (t) => t !== null && typeof t === 'object' && !Array.isArray(t) && t.v === 1 && Array.isArray(t.posten);
 
@@ -113,8 +125,11 @@ export function createDemoAdapter({ speicher = standardSpeicher(), jetzt = () =>
     sichern();
   }
 
+  /** Die Diensttausche werden wie bei Google nicht mitgeladen (leseDiensttausch). */
+  const ohneTausch = ({ schichttausch: _nichtGeladen, ...rest }) => rest;
+
   /** Was laden() und zuruecksetzen() liefern: eine Kopie, Sparziele, Autos und Versicherung gelesen wie beim Google-Adapter. */
-  const nachAussen = () => ({ ...structuredClone(daten), ziele: zieleGelesen(daten.ziele), autos: autosGelesen(daten.autos, autosBisJahr(jetzt())), versicherung: versicherungGelesen(daten.versicherung, versicherungBis(jetzt())) });
+  const nachAussen = () => ({ ...structuredClone(ohneTausch(daten)), ziele: zieleGelesen(daten.ziele), autos: autosGelesen(daten.autos, autosBisJahr(jetzt())), versicherung: versicherungGelesen(daten.versicherung, versicherungBis(jetzt())) });
 
   return {
     istDemo: true, // der Store erlaubt „Beispieldaten entfernen“ nur mit einem Adapter, der das von sich sagt
@@ -161,6 +176,13 @@ export function createDemoAdapter({ speicher = standardSpeicher(), jetzt = () =>
     },
     async loescheUrlaub(id) {
       daten.urlaub = daten.urlaub.filter((u) => u.id !== id);
+      sichern();
+    },
+    /** Urlaub ändern (wie beim Google-Adapter): derselbe Eintrag mit neuem Beginn und Ende; gibt es ihn nicht mehr → „UrlaubWeg“. */
+    async aendereUrlaub({ id, start, end }) {
+      const alt = daten.urlaub.find((u) => u.id === id);
+      if (!alt) throw urlaubWegFehler();
+      daten.urlaub = daten.urlaub.map((u) => (u.id === id ? { ...u, start, end } : u));
       sichern();
     },
     async speichereTermin(termin) {
@@ -219,6 +241,20 @@ export function createDemoAdapter({ speicher = standardSpeicher(), jetzt = () =>
       if (!neu) return null;
       monatText({ ...neu, jm }); // wirft, wenn er nicht in den Kalender passen würde
       daten.schicht.monate[jm] = structuredClone({ ...neu, jm });
+      sichern();
+      return structuredClone(neu);
+    },
+    /** Diensttausche lesen (wie beim Google-Adapter): { daten | null, unlesbar, warnungen }. */
+    async leseDiensttausch() {
+      return tauschGelesen(daten?.schichttausch);
+    },
+    /** Diensttausche ändern (wie beim Google-Adapter): unlesbar → „Unlesbar“, nichts geschrieben; zu viele → TEXT_TAUSCH_VOLL; `fremd` bleibt. */
+    async aendereDiensttausch(aenderung) {
+      const alt = tauschGelesen(daten.schichttausch);
+      if (alt.unlesbar) throw unlesbarFehler('schichttausch');
+      const neu = aenderung(structuredClone(alt.daten ?? leererTausch()));
+      if (!neu) return null;
+      daten.schichttausch = tauschText(neu); // wirft, wenn es nicht in den Kalender passen würde
       sichern();
       return structuredClone(neu);
     },

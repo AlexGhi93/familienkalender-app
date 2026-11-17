@@ -325,3 +325,28 @@ export async function wischeZumLoeschen(page, zeile) {
   await huelle.locator('.au-wisch-loeschen').click();
   return true;
 }
+
+/**
+ * Waagrecht wischen über `ziel` (Touch wie bei wischeZumLoeschen): Start in der Mitte, `dx` Pixel nach rechts (negativ = links),
+ * `dy` senkrecht dazu; endet mit touchend (ein danach erwarteter Klick muss der Test selbst auslösen). `false`, wenn der Browser
+ * kein `Touch` kennt (WebKit) – der Test macht dann `test.skip`.
+ */
+export async function wischeWaagrecht(page, ziel, dx, { dy = 0 } = {}) {
+  return ziel.evaluate((el, { dx, dy }) => {
+    let punkt;
+    try {
+      punkt = (x, y) => new Touch({ identifier: 1, target: el, clientX: x, clientY: y });
+      punkt(0, 0);
+    } catch {
+      return false;
+    }
+    const r = el.getBoundingClientRect();
+    const x = r.left + r.width / 2;
+    const y = r.top + r.height / 2;
+    el.dispatchEvent(new TouchEvent('touchstart', { touches: [punkt(x, y)], changedTouches: [punkt(x, y)], bubbles: true, cancelable: true }));
+    el.dispatchEvent(new TouchEvent('touchmove', { touches: [punkt(x + dx / 2, y + dy / 2)], changedTouches: [punkt(x + dx / 2, y + dy / 2)], bubbles: true, cancelable: true }));
+    el.dispatchEvent(new TouchEvent('touchmove', { touches: [punkt(x + dx, y + dy)], changedTouches: [punkt(x + dx, y + dy)], bubbles: true, cancelable: true }));
+    el.dispatchEvent(new TouchEvent('touchend', { touches: [], changedTouches: [punkt(x + dx, y + dy)], bubbles: true, cancelable: true }));
+    return true;
+  }, { dx, dy });
+}

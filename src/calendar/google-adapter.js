@@ -1,11 +1,12 @@
 // Adapter für Google Kalender: gleiche Schnittstelle wie der Demo-Adapter (laden, setzeTag, loescheTag, speichereUrlaub,
 // loescheUrlaub, speichereTermin, loescheTermin, speichereSettings) plus ladeBereich und status.
 import { addDays, todayVienna } from '../domain/dates.js';
-import { kindergartenjahr } from '../domain/urlaub.js';
+import { kindergartenjahr, urlaubWegFehler } from '../domain/urlaub.js';
 import { normalizeSettings } from '../domain/settings.js';
 import { beendeTestErinnerung, pruefeErinnerungen, repariereErinnerungen, starteTestErinnerung } from './erinnerungen.js';
-import { AUTOS_ID, autosAusTexten, autosBisJahr, autosTeile, autosZuEreignis, historieAusEreignis, historieId, historieZuEreignis, istHistorieId, EINKAUF_ID, EINSTELLUNGEN_ID, FIX_IDS, GERAETE_ID, KONTO_ID, SCHICHTARTEN_ID, ZIELE_ID, einkaufAusEreignis, einkaufZuEreignis, kontoAusEreignis, kontoZuEreignis, einstellungenAusEreignis, einstellungenZuEreignis, fixShardAusEreignis, fixShardId, fixShardZuEreignis, geraeteAusEreignis, geraeteZuEreignis, schichtartenAusEreignis, schichtartenZuEreignis, schichtMonatAusEreignis, schichtMonatId, schichtMonatZuEreignis, tagZuEreignis, terminZuEreignis, urlaubCheckZuEreignis, urlaubZuEreignis, zieleAusEreignis, zieleZuEreignis, VERSICHERUNG_ID, istVersicherungTeilId, versicherungAusTexten, versicherungBis, versicherungTeilAusEreignis, versicherungTeile, versicherungTeilId, versicherungTeilZuEreignis, versicherungZuEreignis } from './mapping.js';
+import { AUTOS_ID, autosAusTexten, autosBisJahr, autosTeile, autosZuEreignis, historieAusEreignis, historieId, historieZuEreignis, istHistorieId, EINKAUF_ID, EINSTELLUNGEN_ID, FIX_IDS, GERAETE_ID, KONTO_ID, SCHICHTARTEN_ID, ZIELE_ID, einkaufAusEreignis, einkaufZuEreignis, kontoAusEreignis, kontoZuEreignis, einstellungenAusEreignis, einstellungenZuEreignis, fixShardAusEreignis, fixShardId, fixShardZuEreignis, geraeteAusEreignis, geraeteZuEreignis, schichtartenAusEreignis, schichtartenZuEreignis, schichtMonatAusEreignis, schichtMonatId, schichtMonatZuEreignis, TAUSCH_ID, tauschAusEreignis, tauschZuEreignis, tagZuEreignis, terminZuEreignis, urlaubCheckZuEreignis, urlaubZuEreignis, zieleAusEreignis, zieleZuEreignis, VERSICHERUNG_ID, istVersicherungTeilId, versicherungAusTexten, versicherungBis, versicherungTeilAusEreignis, versicherungTeile, versicherungTeilId, versicherungTeilZuEreignis, versicherungZuEreignis } from './mapping.js';
 import { leererMonat, standardKatalog } from '../domain/schicht.js';
+import { leererTausch } from '../domain/schicht-tausch.js';
 import { leererShard, teilGesperrtFehler } from '../domain/fixkosten.js';
 import { leereZiele, zieleGesperrtFehler } from '../domain/sparziele.js';
 import { istUrlaubCheckId } from '../domain/ids.js';
@@ -193,6 +194,23 @@ export function createGoogleAdapter({ api, kalender, jetzt = () => new Date(), a
       await api.ereignisse.loeschen(kalender.abwesenheit, id);
     },
 
+    /**
+     * Ändert Beginn und Ende eines vorhandenen Urlaubs (dasselbe Ereignis, PATCH mit If-Match, bei 412 neu gelesen). Fehlt es (404) oder
+     * ist es inzwischen gelöscht („cancelled“), wird nichts geschrieben – sonst käme ein gelöschter Urlaub zurück: Fehler „UrlaubWeg“.
+     */
+    async aendereUrlaub({ id, start, end }) {
+      const { body } = urlaubZuEreignis({ id, start, end }, settings);
+      try {
+        await api.ereignisse.aendere(kalender.abwesenheit, id, (aktuell) => {
+          if (!aktuell || aktuell.status === 'cancelled') throw urlaubWegFehler();
+          return { start: body.start, end: body.end };
+        });
+      } catch (fehler) {
+        if (fehler?.name === 'ApiFehler' && fehler.status === 404) throw urlaubWegFehler();
+        throw fehler;
+      }
+    },
+
     async speichereTermin(termin) {
       const r = terminZuEreignis(termin, settings);
       await api.ereignisse.schreibe(kalender[r.kalender], r.body);
@@ -324,6 +342,22 @@ export function createGoogleAdapter({ api, kalender, jetzt = () => new Date(), a
      */
     aendereSchichtMonat: (jm, aenderung) =>
       aendereVersteckt({ id: schichtMonatId(jm), lesen: lesbarOderFehler((e) => schichtMonatAusEreignis(e, jm), 'monat', `schicht:${jm}`), bauen: (monat) => schichtMonatZuEreignis({ ...monat, jm }), fehler: 'Der Schichtplan konnte nicht gespeichert werden. Bitte noch einmal versuchen.', leer: () => leererMonat(jm) }, aenderung),
+
+    /**
+     * Diensttausche (verstecktes Ereignis „fkschtausch“): { daten, warnungen, unlesbar }, oder { daten: null, unlesbar: false }, wenn es
+     * noch keine gibt. `unlesbar` = leer gezeigt, der Text wird nie überschrieben. Nicht beim Start geladen.
+     */
+    async leseDiensttausch() {
+      const e = await api.ereignisse.holen(kalender.anwesenheit, TAUSCH_ID);
+      return !e || e.status === 'cancelled' ? { daten: null, unlesbar: false } : tauschAusEreignis(e);
+    },
+
+    /**
+     * Ändert die Diensttausche: `aenderung(daten)` → neue Daten, angewendet auf die NEUESTE Fassung (fehlt sie: keine); gibt die
+     * gespeicherten zurück. Unlesbar → nichts geschrieben (Fehler „Unlesbar“, `bereich` = 'schichttausch'); `fremd` bleibt erhalten.
+     */
+    aendereDiensttausch: (aenderung) =>
+      aendereVersteckt({ id: TAUSCH_ID, lesen: lesbarOderFehler(tauschAusEreignis, 'daten', 'schichttausch'), bauen: tauschZuEreignis, fehler: 'Die Diensttausche konnten nicht gespeichert werden. Bitte noch einmal versuchen.', leer: leererTausch }, aenderung),
 
     /**
      * Fixkosten (4 versteckte Ereignisse „fkfest0“ … „fkfest3“, gleichzeitig gelesen): { shards: [Teil | null ×4], warnungen, unlesbar }.

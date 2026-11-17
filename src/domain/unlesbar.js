@@ -1,4 +1,4 @@
-// Unlesbarer Text in den älteren versteckten Kalenderereignissen (Kontostand, Einkaufsliste, Schichtarten, Schichtmonate, Einstellungen,
+// Unlesbarer Text in den älteren versteckten Kalenderereignissen (Kontostand, Einkaufsliste, Schichtarten, Schichtmonate, Diensttausch, Einstellungen,
 // Geräte-Register): kaputtes JSON oder eine neuere App-Version. So ein Text wird leer GEZEIGT, aber nie überschrieben – der Adapter wirft
 // beim Ändern `unlesbarFehler(bereich)`, statt zu schreiben (wie Fixkosten, Sparziele, Autos und Versicherung mit ihren „…Gesperrt“-Fehlern).
 // Es zählt nur die Hülle; einzelne ungültige Einträge in einer gültigen Hülle werden wie bisher nachsichtig verworfen.
@@ -33,11 +33,12 @@ export const UNLESBAR_TEXT = Object.freeze({
   settings: `Die Einstellungen sind ${GRUND} lassen sie sich hier nicht ändern ${BEIDE}`,
   schichtarten: `Die Schichtarten sind ${GRUND} lassen sie sich hier nicht ändern ${BEIDE}`,
   schicht: `Dieser Monat des Schichtplans ist ${GRUND} lässt er sich hier nicht ändern ${BEIDE}`,
+  schichttausch: `Die Diensttausche sind ${GRUND} lassen sie sich hier nicht ändern ${BEIDE}`,
   geraete: 'Das Geräte-Register stammt von einer neueren App-Version. Damit nichts verloren geht, lässt es sich hier nicht ändern – bitte die App auf diesem Telefon aktualisieren.',
 });
 
 /**
  * Fehler „Unlesbar“ (Name 'Unlesbar'): ein Adapter wirft ihn, statt unlesbaren Text zu überschreiben. `bereich` = 'konto' | 'einkauf' |
- * 'settings' | 'schichtarten' | 'geraete' | 'schicht:JJJJ-MM'; die Meldung ist die des Bereichs.
+ * 'settings' | 'schichtarten' | 'schichttausch' | 'geraete' | 'schicht:JJJJ-MM'; die Meldung ist die des Bereichs.
  */
 export const unlesbarFehler = (bereich) => Object.assign(new Error(UNLESBAR_TEXT[bereich.split(':')[0]]), { name: 'Unlesbar', bereich });

@@ -11,6 +11,7 @@ import { normalisiereRegister, registerText } from '../push/geraete.js';
 import { einkaufText, pruefeListe } from '../domain/einkauf.js';
 import { kontoText, pruefeKonto } from '../domain/konto.js';
 import { katalogAusText, katalogText, monatAusText, monatText } from '../domain/schicht.js';
+import { tauschAusText, tauschText } from '../domain/schicht-tausch.js';
 import { FIX_SHARDS, shardLesen, shardText } from '../domain/fixkosten.js';
 import { zieleLesen, zieleText, zieleWarnungen } from '../domain/sparziele.js';
 import { autosLesen, autosText, autosWarnungen, historieLesen, historieText, historieWarnungen, leereHistorie } from '../domain/autos.js';
@@ -28,6 +29,7 @@ export const GERAETE_ID = 'fkgeraete'; // Register der Telefone für Push-Erinne
 export const EINKAUF_ID = 'fkeinkauf'; // gemeinsame Einkaufsliste (siehe domain/einkauf.js)
 export const KONTO_ID = 'fkkonto'; // monatliche Kontostände von Papa und Mama (siehe domain/konto.js)
 export const SCHICHTARTEN_ID = 'fkschichtarten'; // Schichtarten von Papa und Mama (siehe domain/schicht.js)
+export const TAUSCH_ID = 'fkschtausch'; // Diensttausche (siehe domain/schicht-tausch.js); „fksch…“: auch für 1.4.x unsichtbar (istSchichtId)
 export const ZIELE_ID = 'fksparen'; // Sparziele und Verschiebungen aus „Frei“ (siehe domain/sparziele.js); nicht „fkziele“: z liegt außerhalb von 0-9 und a-v
 export const AUTOS_ID = 'fkautos'; // Autos, Regeln, Reifensätze und Jahres-Index (siehe domain/autos.js); der Verlauf liegt in „fkah<auto><JJJJ>“
 export const VERSICHERUNG_ID = 'fkversicherung'; // Polizze und erstes Jahr (siehe domain/versicherung.js); die Rechnungen liegen je Quartal in „fkvr<JJJJ><Q>“
@@ -232,7 +234,7 @@ export function schichtMonatId(jm) {
   return `fksch${jm.replace('-', '')}`;
 }
 
-/** Schichtarten und alle Schichtmonate beginnen mit „fksch“ und sind für die übrige App unsichtbar. */
+/** Schichtarten, alle Schichtmonate und die Diensttausche beginnen mit „fksch“ und sind für die übrige App unsichtbar. */
 export const istSchichtId = (id) => typeof id === 'string' && id.startsWith('fksch');
 
 /** Verstecktes Ereignis für Schichtplan und Fixkosten (JSON in `description`, wie der Kontostand am 2000-01-01 in „Anwesenheit“, ohne Erinnerung). */
@@ -271,6 +273,16 @@ export function schichtMonatZuEreignis(monat) {
 /** Liest den Monat `jm`: { monat, warnungen, unlesbar }; fehlender Text ergibt den leeren Monat, unlesbarer den leeren Monat mit Warnung (nie überschrieben). */
 export function schichtMonatAusEreignis(event, jm) {
   return monatAusText(event?.description, jm);
+}
+
+/** Diensttausche als verstecktes Ereignis „fkschtausch“; zu viele werden vor dem Schreiben abgelehnt (TEXT_TAUSCH_VOLL). */
+export function tauschZuEreignis(daten) {
+  return schichtEreignis(TAUSCH_ID, '🗓️ fk Diensttausch (nicht löschen)', tauschText(daten), 'schichttausch');
+}
+
+/** Liest die Diensttausche: { daten, unlesbar, warnungen }; fehlender Text ergibt keine, unlesbarer keine mit Warnung (nie überschrieben). */
+export function tauschAusEreignis(event) {
+  return tauschAusText(event?.description);
 }
 
 /**
