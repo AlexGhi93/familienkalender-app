@@ -615,6 +615,20 @@ describe('Fix-Runde 1: abgelaufene Anmeldung, Nachholen', () => {
     assert.deepEqual(autos(t.store).historie, {}, 'angezeigt wie gespeichert: nichts');
   });
 
+  test('I1: beim Nachholen ist der Hauptteil inzwischen unlesbar → genaue Meldung, Text bleibt, ab jetzt gesperrt (wie Versicherung)', async () => {
+    const { daten, id } = fiat();
+    const t = await mitStoerung({ fkautos: autosText(daten) }, ['arb00001']);
+    t.setze(() => authFehler);
+    assert.equal((await t.store.arbeitSpeichern(oel(id))).wartet, true);
+    t.setze(() => null);
+    await t.api.ereignisse.schreibe('kan', { id: 'fkautos', description: '{"v":9}' });
+    await t.store.wiederholeAusstehende();
+    assert.equal(t.text('fkautos'), '{"v":9}');
+    assert.equal(t.roh('kan', historieId(id, 2026)), null);
+    assert.equal(autos(t.store).unlesbar.main, true);
+    assert.equal(t.store.getState().fehler, TEXT_AUTOS_GESPERRT);
+  });
+
   test('I1: … und klappt der Index beim Nachholen, stehen Index und Teil sichtbar im Kalender', async () => {
     const { daten, id } = fiat();
     const t = await mitStoerung({ fkautos: autosText(daten) }, ['arb00001']);

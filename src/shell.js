@@ -408,12 +408,12 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
     ui.rendern();
   }
 
-  // Rückkehr in die App: am nächsten Tag neu zeichnen, damit „heute“ stimmt (sonst nicht: Getipptes und offene Felder bleiben, wie sie
-  // sind), und – mit gültiger Anmeldung – höchstens einmal pro Minute neu laden.
+  // Rückkehr in die App: am nächsten Tag und auf „Heute“ (Zeittexte „in 3 Std“, Gruß; ohne Eingabefelder) neu zeichnen, auf den übrigen
+  // Seiten nicht (Getipptes und offene Felder bleiben, wie sie sind), und – mit gültiger Anmeldung – höchstens einmal pro Minute neu laden.
   document.addEventListener('visibilitychange', () => {
     einkaufAbgleich.pruefen(); // im Hintergrund ruht der Zeitgeber der Einkaufsliste
     if (document.visibilityState !== 'visible') return;
-    if (store.heute() !== gezeichnetAm) ui.rendern();
+    if (store.heute() !== gezeichnetAm || ui.seite() === 'heute') ui.rendern();
     else ui.bannerAktualisieren(); // nur Hinweisleiste und Verbindung (z. B. „läuft bald ab“): ihr Zeitgeber ruhte im Hintergrund
     // eine im Speicher gehaltene App lädt nicht neu: den Push-Plan hier anstoßen (gebündelt wie jeder Anstoß); ob wirklich gesendet
     // wird, entscheidet push/client.js (unverändert und jünger als 6 Stunden: nichts)

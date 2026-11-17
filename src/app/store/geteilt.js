@@ -259,6 +259,10 @@ export function createGeteilt(kern, beschreibung) {
             if (e?.name === gesperrt.teil) {
               FACHLICH.add(e);
               teilSperren(t);
+            } else if (e?.name === gesperrt.haupt) {
+              // das Eintragen des Jahres im Hauptteil (vorTeilSchreiben) fand ihn unlesbar: wie beim Ändern des Hauptteils
+              FACHLICH.add(e);
+              hauptSperren();
             }
             throw e;
           }

@@ -1,6 +1,6 @@
 // „Heute“ in der Demo: Abschnitte, „Demnächst“ als kompakte Zeilen, Schnell-Eintrag des Tages, offene Tage, Wochenende,
 // Kontostand am Monatsende.
-import { test, expect, starteDemo, erwarteToast } from './hilfen.js';
+import { test, expect, starteDemo, erwarteToast, zurueckInDieApp } from './hilfen.js';
 import { seedDemo } from '../../src/app/seed.js';
 
 const abschnitt = (page, titel) => page.locator('section.abschnitt').filter({ has: page.getByRole('heading', { name: titel, exact: true }) });
@@ -139,4 +139,20 @@ test('„🚗 Auto“: nur wenn bei einem Auto etwas bald fällig ist; jede Zeil
   expect(box.height).toBeGreaterThanOrEqual(44);
   await zeilen.nth(0).click();
   await expect(page).toHaveURL(new RegExp(`#/autos/${id('Tesla Model 3')}$`));
+});
+
+test('Rückkehr am selben Tag: Heute zeichnet neu – die Zeittexte („in 3 Std“, „gleich“, „läuft gerade“) bleiben nicht stehen', async ({ page }) => {
+  // Finanzamt am Mo 19.10. um 14:00; geöffnet um 08:00 → „in 6 Std“
+  await starteDemo(page, { zeit: '2026-10-19T08:00:00+02:00', speicher: { 'fk.demo.v1': seedDemo('2026-10-14') } });
+  const marke = page.locator('.termin-heute').filter({ hasText: 'Finanzamt' }).locator('.th-marke');
+  await expect(marke).toHaveText('in 6 Std');
+  await page.clock.setFixedTime(new Date('2026-10-19T11:00:00+02:00')); // drei Stunden später, derselbe Tag
+  await zurueckInDieApp(page);
+  await expect(marke).toHaveText('in 3 Std');
+  await page.clock.setFixedTime(new Date('2026-10-19T13:55:00+02:00'));
+  await zurueckInDieApp(page);
+  await expect(marke).toHaveText('gleich · in 5 Min');
+  await page.clock.setFixedTime(new Date('2026-10-19T14:10:00+02:00'));
+  await zurueckInDieApp(page);
+  await expect(marke).toHaveText('läuft gerade');
 });
