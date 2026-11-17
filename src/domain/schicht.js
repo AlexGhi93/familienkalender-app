@@ -1,9 +1,12 @@
 // Schichtplan: wer wann welche Schicht hat (Papa und Mama), von Hand eingetragen – nichts wird automatisch erzeugt.
 // Rein, ohne DOM und ohne Netz. Die Daten liegen als kleines JSON in versteckten Kalenderereignissen:
 //   „fkschichtarten“  – der Katalog: { v: 1, arten: { papa: Art[], mama: Art[] }, ergaenzt?: ['E'] } (ergaenzt: siehe katalogErgaenzen)
-//   „fksch<JJJJMM>“   – ein Monat:   { v: 1, t: { papa: '…', mama: '…' }, n?: { person: { tag: Notiz } }, z?: { person: { tag: Zusatz[] } } }
+//   „fksch<JJJJMM>“   – ein Monat:   { v: 1, t: { papa: '…', mama: '…' }, n?: { person: { tag: Notiz } }, z?: { person: { tag: Zusatz[] } },
+//                                      zt?: { person: { tag: [k, von, bis] } } }
+//                       zt (seit 1.5.0) = eigene Uhrzeiten eines Tages; sie gelten nur, solange an dem Tag noch der Dienst k steht
+//                       (1.4.1 kennt zt nicht, behält es aber in `fremd` und kann den Dienst darunter ändern → veraltet, wird ignoriert).
 //                       Weitere Felder der ersten Ebene (von einer neueren Version) werden nicht verstanden, aber unverändert
-//                       mitgeschrieben (im Speicher: `fremd`); die Namen v, t, n, z, jm und fremd sind dafür reserviert.
+//                       mitgeschrieben (im Speicher: `fremd`); die Namen v, t, n, z, zt, jm und fremd sind dafür reserviert.
 // Jede Änderung ist eine reine Funktion (alt → neu), die auf die NEUESTE Fassung angewendet wird; das Argument wird nie verändert,
 // und wo es geht ist sie wiederholbar (zweimal angewendet = einmal angewendet).
 //
@@ -12,8 +15,9 @@
 // erinnern: nur bei Zusätzen und dort immer vorhanden (fehlt es in einem alten Katalog → true); bei Diensten gibt es das Feld nicht.
 // k = interne Kennung (ein Zeichen aus SCHLUESSEL_ZEICHEN), je Person eindeutig und NIE wiederverwendet (auch nicht nach dem Archivieren):
 // Kürzel, Name und Farbe lassen sich jederzeit ändern, alte Tage bleiben trotzdem richtig.
-// Monat im Speicher: { v: 1, jm: 'JJJJ-MM', t, n, z, fremd? } – t, n, z immer vollständig; t[person] hat ein Zeichen je Tag (Zeichen i = Tag i+1,
-// LEER = nichts); fremd = { Name: roher Wert } der unbekannten Felder, nur wenn es welche gibt.
+// Monat im Speicher: { v: 1, jm: 'JJJJ-MM', t, n, z, zt?, fremd? } – t, n, z immer vollständig; t[person] hat ein Zeichen je Tag (Zeichen i = Tag i+1,
+// LEER = nichts); zt wie im Text, nur gültige und nicht veraltete Einträge und nur, wenn es welche gibt; fremd = { Name: roher Wert }
+// der unbekannten Felder, nur wenn es welche gibt.
 
 import { istObjekt, sauberText, zeichen } from './gemeinsam.js';
 import { huelleLesen } from './unlesbar.js';
@@ -427,8 +431,31 @@ function leseZusaetze(roh, person, tage, warnungen) {
   return aus;
 }
 
+/**
+ * Uhrzeiten je Tag einer Person nachsichtig lesen (nach dem Muster von leseZusaetze): nur [k, von, bis] mit gültigem Schlüssel und
+ * gültigen Zeiten (sonst Warnung); ein Eintrag, dessen Dienst nicht mehr am Tag steht (`zeile`), ist veraltet und fällt still weg.
+ */
+function leseTagZeiten(roh, person, tage, zeile, warnungen) {
+  if (roh === undefined) return {};
+  if (!istObjekt(roh)) {
+    warnungen.push(`Uhrzeiten (${person}) waren unlesbar.`);
+    return {};
+  }
+  const aus = {};
+  for (const [schluessel, x] of Object.entries(roh)) {
+    const tag = tagAusSchluessel(schluessel, tage);
+    const gut = Array.isArray(x) && x.length === 3 && istSchluessel(x[0]) && [x[1], x[2]].every((u) => typeof u === 'string' && UHRZEIT.test(u));
+    if (tag === null || !gut) {
+      warnungen.push(`Ungültige Uhrzeiten (${person}, ${schluessel}) entfernt.`);
+      continue;
+    }
+    if (zeile[tag - 1] === x[0]) aus[tag] = [x[0], x[1], x[2]];
+  }
+  return aus;
+}
+
 /** Namen der ersten Ebene eines Monats, die diese Version selbst führt – alle anderen sind „fremd“ (siehe fremdeFelder). */
-const MONAT_EIGENE = new Set(['v', 't', 'n', 'z', 'jm', 'fremd']);
+const MONAT_EIGENE = new Set(['v', 't', 'n', 'z', 'zt', 'jm', 'fremd']);
 
 /**
  * Felder der ersten Ebene, die diese Version nicht kennt (eine neuere schreibt z. B. Angaben je Tag in ein eigenes Feld): roh und
@@ -457,12 +484,18 @@ export function normalisiereMonat(roh, jm) {
   const z = istObjekt(roh.z) ? roh.z : {};
   if (roh.n !== undefined && !istObjekt(roh.n)) warnungen.push('Notizen waren unlesbar.');
   if (roh.z !== undefined && !istObjekt(roh.z)) warnungen.push('Zusätze waren unlesbar.');
+  const zt = istObjekt(roh.zt) ? roh.zt : {};
+  if (roh.zt !== undefined && !istObjekt(roh.zt)) warnungen.push('Uhrzeiten waren unlesbar.');
   const monat = { v: 1, jm, t: {}, n: {}, z: {} };
+  const tagZeiten = {};
   for (const person of SCHICHT_PERSONEN) {
     monat.t[person] = leseZeile(roh.t[person], person, tage, warnungen);
     monat.n[person] = leseNotizen(n[person], person, tage, warnungen);
     monat.z[person] = leseZusaetze(z[person], person, tage, warnungen);
+    tagZeiten[person] = leseTagZeiten(zt[person], person, tage, monat.t[person], warnungen);
   }
+  const mitZeiten = ohneLeere(tagZeiten);
+  if (mitZeiten) monat.zt = mitZeiten; // nur, wenn es welche gibt (wie fremd)
   const fremd = fremdeFelder(roh);
   if (fremd) monat.fremd = fremd;
   return { monat, warnungen };
@@ -486,6 +519,7 @@ export function monatText(m) {
   const z = ohneLeere(monat.z);
   if (n) aus.n = n;
   if (z) aus.z = z;
+  if (monat.zt) aus.zt = monat.zt;
   const text = JSON.stringify({ ...aus, ...monat.fremd });
   if (text.length > MAX_SCHICHT_ZEICHEN) throw new Error(ZU_GROSS_MONAT);
   return text;
@@ -520,7 +554,7 @@ export function schichtAm(monat, person, tag) {
   return z && z !== LEER ? z : null;
 }
 
-/** Setzt die Schicht eines Tages (`k: null` = frei); Notiz und Zusätze bleiben. Wiederholbar. */
+/** Setzt die Schicht eines Tages (`k: null` = frei); Notiz und Zusätze bleiben, eigene Uhrzeiten des Tages fallen weg. Wiederholbar. */
 export function setzeSchicht(monat, { person, tag, k }) {
   pruefePerson(person);
   pruefeTag(monat, tag);
@@ -528,7 +562,60 @@ export function setzeSchicht(monat, { person, tag, k }) {
   const wert = k ?? LEER;
   const zeile = monat.t[person];
   if (zeile[tag - 1] === wert) return monat;
-  return { ...monat, t: { ...monat.t, [person]: zeile.slice(0, tag - 1) + wert + zeile.slice(tag) } };
+  const neu = { ...monat, t: { ...monat.t, [person]: zeile.slice(0, tag - 1) + wert + zeile.slice(tag) } };
+  return mitTagZeiten(neu, person, tag, undefined);
+}
+
+/** Eigene Uhrzeiten eines Tages { von, bis } oder null (nur, solange an dem Tag noch ihr Dienst steht). */
+export function tagZeitenAm(monat, person, tag) {
+  const x = monat?.zt?.[person]?.[tag];
+  if (!Array.isArray(x) || x[0] !== schichtAm(monat, person, tag)) return null;
+  return { von: x[1], bis: x[2] };
+}
+
+/** Neuer Monat, in dem `zt` für Person und Tag `wert` hat (undefined = entfernt); leere Personen und ein leeres zt fallen weg. */
+function mitTagZeiten(monat, person, tag, wert) {
+  const alt = monat.zt ?? {};
+  if (wert === undefined && alt[person]?.[tag] === undefined) return monat;
+  const { [tag]: _alt, ...rest } = alt[person] ?? {};
+  const tage = wert === undefined ? rest : { ...rest, [tag]: wert };
+  const { [person]: _person, ...andere } = alt;
+  const zt = Object.keys(tage).length > 0 ? { ...andere, [person]: tage } : andere;
+  const { zt: _zt, ...ohne } = monat;
+  return Object.keys(zt).length > 0 ? { ...ohne, zt } : ohne;
+}
+
+/**
+ * Setzt eigene Uhrzeiten für den Dienst eines Tages (statt der Zeiten seiner Art). Beide leer → gelöscht; gleich den Zeiten der Art →
+ * gelöscht (nichts doppelt). Braucht einen Dienst am Tag, aber keinen Urlaub; gespeichert mit dem Schlüssel des Dienstes. Wiederholbar.
+ */
+export function setzeTagZeiten(monat, { person, tag, von, bis }, katalog) {
+  pruefePerson(person);
+  pruefeTag(monat, tag);
+  if (von === '' && bis === '') return mitTagZeiten(monat, person, tag, undefined);
+  const k = schichtAm(monat, person, tag);
+  if (k === null) throw new Error('Bitte zuerst einen Dienst eintragen.');
+  const art = artFuer(katalog, person, k);
+  if (art?.muster === 'urlaub') throw new Error('Urlaub hat keine Uhrzeiten.');
+  if (typeof von !== 'string' || !UHRZEIT.test(von) || typeof bis !== 'string' || !UHRZEIT.test(bis)) throw new Error('Bitte eine Uhrzeit wie 07:30 eingeben.');
+  if (art?.von === von && art?.bis === bis) return mitTagZeiten(monat, person, tag, undefined);
+  const alt = tagZeitenAm(monat, person, tag);
+  if (alt?.von === von && alt?.bis === bis) return monat;
+  return passt(mitTagZeiten(monat, person, tag, [k, von, bis]));
+}
+
+/**
+ * Die Zeiten des Dienstes an einem Tag: die eigenen des Tages vor denen der Art (`eigene`); `nacht` wie istNacht mit diesen Zeiten.
+ * Kein Dienst → null; ein Dienst ohne Zeiten → von und bis undefined. Eine Art, die der Katalog nicht kennt, hat keine Zeiten.
+ */
+export function zeitenFuer(monat, katalog, person, tag) {
+  const k = schichtAm(monat, person, tag);
+  if (k === null) return null;
+  const art = artFuer(katalog, person, k) ?? {};
+  const eigene = tagZeitenAm(monat, person, tag);
+  const von = eigene ? eigene.von : art.von;
+  const bis = eigene ? eigene.bis : art.bis;
+  return { von, bis, nacht: istNacht({ ...art, von, bis }), eigene: eigene !== null };
 }
 
 /** Pinsel: derselbe Schlüssel schon eingetragen → Tag frei, sonst wird er (ersetzend) eingetragen. */

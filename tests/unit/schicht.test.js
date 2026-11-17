@@ -30,12 +30,15 @@ import {
   schichtAm,
   setzeNotiz,
   setzeSchicht,
+  setzeTagZeiten,
   standardKatalog,
+  tagZeitenAm,
   tageImMonat,
   vorladeMonate,
   zusatzEntfernen,
   zusatzHinzufuegen,
   zusatzWiederherstellen,
+  zeitenFuer,
 } from '../../src/domain/schicht.js';
 
 const kopie = (x) => structuredClone(x);
@@ -765,5 +768,164 @@ describe('Monat: unbekannte Felder (fremd) und unlesbarer Text', () => {
     const knapp = { ...leererMonat('2026-11'), fremd: { o: 'x'.repeat(MAX_SCHICHT_ZEICHEN - leerLaenge - ',"o":""'.length) } };
     assert.equal(monatText(knapp).length, MAX_SCHICHT_ZEICHEN);
     assert.throws(() => setzeNotiz(knapp, { person: 'papa', tag: 1, text: 'x' }), { message: 'Zu viele Notizen in diesem Monat. Bitte einige kürzen oder löschen.' });
+  });
+});
+
+describe('Monat: Uhrzeiten je Tag (zt)', () => {
+  const katalog = standardKatalog();
+  const schl = (person, k) => katalog.arten[person].find((a) => a.kuerzel === k).k;
+  const S = schl('papa', 'S'); // Schulung, ohne Zeiten
+  const F = schl('papa', 'F'); // Frühdienst, ohne Zeiten
+  const U = schl('papa', 'U'); // Urlaub
+  const T = schl('mama', 'T'); // Tagdienst 07:00–17:45
+  const LEER30 = LEER.repeat(30);
+  const mitDienst = (person, tag, k, m = leererMonat('2026-11')) => setzeSchicht(m, { person, tag, k });
+  const ZU_GROSS = { message: 'Zu viele Notizen in diesem Monat. Bitte einige kürzen oder löschen.' };
+
+  test('Tageszeiten: setzen, lesen, als zt im Text, v und t unverändert', () => {
+    const m = setzeTagZeiten(setzeSchicht(leererMonat('2026-11'), { person: 'papa', tag: 5, k: S }), { person: 'papa', tag: 5, von: '08:00', bis: '16:00' }, katalog);
+    assert.deepEqual(tagZeitenAm(m, 'papa', 5), { von: '08:00', bis: '16:00' });
+    const roh = JSON.parse(monatText(m));
+    assert.equal(roh.v, 1);
+    assert.equal(roh.t.papa.length, 30);
+    assert.deepEqual(roh.zt, { papa: { 5: [S, '08:00', '16:00'] } });
+    // zurückgelesen gleich, wiederholbar, das Argument bleibt unverändert
+    const r = monatAusText(monatText(m), '2026-11');
+    assert.deepEqual(r.warnungen, []);
+    assert.deepEqual(tagZeitenAm(r.monat, 'papa', 5), { von: '08:00', bis: '16:00' });
+    assert.equal(monatText(r.monat), monatText(m));
+    const vorher = kopie(m);
+    assert.equal(setzeTagZeiten(m, { person: 'papa', tag: 5, von: '08:00', bis: '16:00' }, katalog), m);
+    const anders = setzeTagZeiten(m, { person: 'papa', tag: 5, von: '09:00', bis: '16:00' }, katalog);
+    assert.deepEqual(tagZeitenAm(anders, 'papa', 5), { von: '09:00', bis: '16:00' });
+    assert.deepEqual(m, vorher);
+    assert.equal(tagZeitenAm(m, 'papa', 6), null);
+    assert.equal(tagZeitenAm(m, 'mama', 5), null);
+  });
+
+  test('ohne Dienst oder bei Urlaub keine Tageszeiten', () => {
+    assert.throws(() => setzeTagZeiten(leererMonat('2026-11'), { person: 'papa', tag: 5, von: '08:00', bis: '16:00' }, katalog), /zuerst einen Dienst/);
+    assert.throws(() => setzeTagZeiten(mitDienst('papa', 5, U), { person: 'papa', tag: 5, von: '08:00', bis: '16:00' }, katalog), /Urlaub hat keine Uhrzeiten/);
+    // ungültige Uhrzeiten (auch nur eine der beiden)
+    for (const [von, bis] of [['8:00', '16:00'], ['08:00', ''], ['', '16:00'], ['24:00', '06:00'], [undefined, '16:00']]) {
+      assert.throws(() => setzeTagZeiten(mitDienst('papa', 5, S), { person: 'papa', tag: 5, von, bis }, katalog), { message: 'Bitte eine Uhrzeit wie 07:30 eingeben.' });
+    }
+    assert.throws(() => setzeTagZeiten(mitDienst('papa', 5, S), { person: 'papa', tag: 31, von: '08:00', bis: '16:00' }, katalog), /Ungültiger Tag/);
+    assert.throws(() => setzeTagZeiten(mitDienst('papa', 5, S), { person: 'oma', tag: 5, von: '08:00', bis: '16:00' }, katalog), /Ungültige Person/);
+  });
+
+  test('gleich den Zeiten der Art → kein Eintrag; beide leer → gelöscht', () => {
+    const t = mitDienst('mama', 3, T);
+    assert.equal(setzeTagZeiten(t, { person: 'mama', tag: 3, von: '07:00', bis: '17:45' }, katalog), t);
+    const anders = setzeTagZeiten(t, { person: 'mama', tag: 3, von: '07:30', bis: '17:45' }, katalog);
+    assert.deepEqual(JSON.parse(monatText(anders)).zt, { mama: { 3: [T, '07:30', '17:45'] } });
+    // zurück auf die Zeiten der Art: der Eintrag fällt weg
+    const zurueck = setzeTagZeiten(anders, { person: 'mama', tag: 3, von: '07:00', bis: '17:45' }, katalog);
+    assert.equal(tagZeitenAm(zurueck, 'mama', 3), null);
+    assert.equal(JSON.parse(monatText(zurueck)).zt, undefined);
+    assert.equal('zt' in zurueck, false);
+    // beide leer: gelöscht; schon leer → derselbe Monat
+    const geloescht = setzeTagZeiten(anders, { person: 'mama', tag: 3, von: '', bis: '' }, katalog);
+    assert.equal(tagZeitenAm(geloescht, 'mama', 3), null);
+    assert.equal(JSON.parse(monatText(geloescht)).zt, undefined);
+    assert.equal('zt' in geloescht, false);
+    assert.equal(monatText(geloescht), monatText(t));
+    assert.equal(setzeTagZeiten(t, { person: 'mama', tag: 3, von: '', bis: '' }, katalog), t);
+    // löschen geht auch ohne Dienst (es gibt nichts zu löschen)
+    const leer = leererMonat('2026-11');
+    assert.equal(setzeTagZeiten(leer, { person: 'papa', tag: 1, von: '', bis: '' }, katalog), leer);
+  });
+
+  test('Dienstwechsel und Löschen des Dienstes löschen die Tageszeiten', () => {
+    const m = setzeTagZeiten(mitDienst('papa', 5, S), { person: 'papa', tag: 5, von: '08:00', bis: '16:00' }, katalog);
+    const mitMama = setzeTagZeiten(mitDienst('mama', 5, T, m), { person: 'mama', tag: 5, von: '06:00', bis: '14:00' }, katalog);
+    const gewechselt = setzeSchicht(mitMama, { person: 'papa', tag: 5, k: F });
+    assert.equal(tagZeitenAm(gewechselt, 'papa', 5), null);
+    assert.deepEqual(JSON.parse(monatText(gewechselt)).zt, { mama: { 5: [T, '06:00', '14:00'] } }); // die andere Person bleibt
+    for (const weg of [setzeSchicht(m, { person: 'papa', tag: 5, k: F }), setzeSchicht(m, { person: 'papa', tag: 5, k: null }), schaltePinsel(m, { person: 'papa', tag: 5, k: S })]) {
+      assert.equal(tagZeitenAm(weg, 'papa', 5), null);
+      assert.equal(JSON.parse(monatText(weg)).zt, undefined);
+      assert.equal('zt' in weg, false);
+    }
+    // derselbe Dienst noch einmal: nichts ändert sich, die Zeiten bleiben
+    assert.equal(setzeSchicht(m, { person: 'papa', tag: 5, k: S }), m);
+    // ein anderer Tag berührt sie nicht
+    assert.deepEqual(tagZeitenAm(setzeSchicht(m, { person: 'papa', tag: 6, k: F }), 'papa', 5), { von: '08:00', bis: '16:00' });
+  });
+
+  test('veralteter Eintrag (anderer Dienst, z. B. von 1.4.1 gemalt) zählt nicht und fällt beim nächsten Schreiben weg (Review Focus 4)', () => {
+    const r = monatAusText(JSON.stringify({ v: 1, t: { papa: 'F' + '.'.repeat(29), mama: '.'.repeat(30) }, zt: { papa: { 1: [S, '08:00', '16:00'] } } }), '2026-11');
+    assert.equal(r.unlesbar, false);
+    assert.equal(tagZeitenAm(r.monat, 'papa', 1), null);
+    assert.equal(JSON.parse(monatText(r.monat)).zt, undefined);
+    // ein Tag ohne Dienst ebenso; ein passender Eintrag daneben bleibt
+    const r2 = monatAusText(JSON.stringify({ v: 1, t: { papa: S + '.'.repeat(29), mama: LEER30 }, zt: { papa: { 1: [S, '08:00', '16:00'], 2: [S, '09:00', '10:00'] } } }), '2026-11');
+    assert.deepEqual(r2.monat.zt, { papa: { 1: [S, '08:00', '16:00'] } });
+    assert.equal(zeitenFuer(r2.monat, katalog, 'papa', 2), null);
+  });
+
+  test('ein Monat von 1.4.1 ohne zt liest sich wie bisher und kommt Zeichen für Zeichen gleich heraus', () => {
+    const text = JSON.stringify({ v: 1, t: { papa: S + LEER.repeat(29), mama: LEER30 }, n: { papa: { 1: 'Kurs' } }, z: { mama: { 2: [{ k: 'F', von: '18:00', bis: '19:30' }] } }, o: { x: 1 } });
+    const r = monatAusText(text, '2026-11');
+    assert.equal('zt' in r.monat, false);
+    assert.deepEqual(r.monat.fremd, { o: { x: 1 } });
+    assert.equal(monatText(r.monat), text);
+    // zt ist reserviert: es landet nie in fremd, auch nicht aus einem Behälter im Speicher
+    const mitZt = monatAusText(JSON.stringify({ v: 1, t: { papa: S + LEER.repeat(29), mama: LEER30 }, o: 1, zt: { papa: { 1: [S, '08:00', '16:00'] } } }), '2026-11').monat;
+    assert.deepEqual(mitZt.fremd, { o: 1 });
+    assert.deepEqual(normalisiereMonat({ ...leererMonat('2026-11'), fremd: { zt: { papa: {} }, o: 1 } }, '2026-11').monat, { ...leererMonat('2026-11'), fremd: { o: 1 } });
+    // normalisiereMonat ist mit zt wiederholbar
+    assert.deepEqual(normalisiereMonat(mitZt, '2026-11').monat, mitZt);
+  });
+
+  test('zeitenFuer: Tageszeiten vor den Zeiten der Art; Nacht aus den Tageszeiten (22:00–06:00)', () => {
+    const nacht = setzeTagZeiten(mitDienst('papa', 5, S), { person: 'papa', tag: 5, von: '22:00', bis: '06:00' }, katalog);
+    assert.deepEqual(zeitenFuer(nacht, katalog, 'papa', 5), { von: '22:00', bis: '06:00', nacht: true, eigene: true });
+    // ohne Tageszeiten: die der Art
+    const t = mitDienst('mama', 3, T);
+    assert.deepEqual(zeitenFuer(t, katalog, 'mama', 3), { von: '07:00', bis: '17:45', nacht: false, eigene: false });
+    const tag = setzeTagZeiten(t, { person: 'mama', tag: 3, von: '08:00', bis: '12:00' }, katalog);
+    assert.deepEqual(zeitenFuer(tag, katalog, 'mama', 3), { von: '08:00', bis: '12:00', nacht: false, eigene: true });
+    // eine als Nacht angehakte Art bleibt Nacht, auch mit eigenen Zeiten am Tag
+    const N = schl('papa', 'N');
+    const n = setzeTagZeiten(mitDienst('papa', 7, N), { person: 'papa', tag: 7, von: '10:00', bis: '12:00' }, katalog);
+    assert.deepEqual(zeitenFuer(n, katalog, 'papa', 7), { von: '10:00', bis: '12:00', nacht: true, eigene: true });
+    // ohne Dienst: null; Dienst ohne Zeiten: keine Zeiten
+    assert.equal(zeitenFuer(t, katalog, 'mama', 4), null);
+    assert.deepEqual(zeitenFuer(mitDienst('papa', 1, F), katalog, 'papa', 1), { von: undefined, bis: undefined, nacht: false, eigene: false });
+  });
+
+  test('zt zählt zu den 6000 Zeichen', () => {
+    let m = mitDienst('papa', 5, S);
+    m = { ...m, fremd: { o: 'x'.repeat(MAX_SCHICHT_ZEICHEN - monatText(m).length - ',"o":""'.length) } };
+    assert.equal(monatText(m).length, MAX_SCHICHT_ZEICHEN);
+    assert.throws(() => setzeTagZeiten(m, { person: 'papa', tag: 5, von: '08:00', bis: '16:00' }, katalog), ZU_GROSS);
+    // sehr volle Notizen + zt → abgelehnt
+    let voll = mitDienst('papa', 5, S);
+    for (let tag = 1; tag <= 30; tag += 1) {
+      for (const person of SCHICHT_PERSONEN) voll = setzeNotiz(voll, { person, tag, text: 'ä'.repeat(MAX_NOTIZ) });
+    }
+    voll = { ...voll, fremd: { o: 'x'.repeat(MAX_SCHICHT_ZEICHEN - monatText(voll).length - ',"o":""'.length - 10) } };
+    assert.throws(() => setzeTagZeiten(voll, { person: 'papa', tag: 5, von: '08:00', bis: '16:00' }, katalog), ZU_GROSS);
+  });
+
+  test('ungültige zt-Einträge werden nachsichtig verworfen (mit Warnung), die Hülle bleibt lesbar', () => {
+    const t = { papa: S + S + S + S + S + LEER.repeat(25), mama: T + LEER.repeat(29) };
+    const zt = {
+      papa: { 1: [S, '8:00', '16:00'], 2: [S, '08:00'], 3: 'x', 0: [S, '08:00', '16:00'], 31: [S, '08:00', '16:00'], '04': [S, '08:00', '16:00'], 5: [S, '08:00', '16:00'] },
+      mama: [1, 2],
+    };
+    const r = monatAusText(JSON.stringify({ v: 1, t, zt }), '2026-11');
+    assert.equal(r.unlesbar, false);
+    assert.deepEqual(r.monat.zt, { papa: { 5: [S, '08:00', '16:00'] } });
+    assert.equal(r.warnungen.length, 7, r.warnungen.join(' | '));
+    // zt ist kein Objekt: eine Warnung, kein zt, alles andere bleibt
+    for (const kaputt of ['x', [1], 5, null]) {
+      const k = monatAusText(JSON.stringify({ v: 1, t, zt: kaputt }), '2026-11');
+      assert.equal(k.unlesbar, false);
+      assert.equal('zt' in k.monat, false);
+      assert.equal(k.monat.t.papa, t.papa);
+      assert.equal(k.warnungen.length, 1);
+    }
   });
 });
