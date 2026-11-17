@@ -703,6 +703,16 @@ describe('offener Diensttausch', () => {
     assert.deepEqual([unb.hinweis, unb.kannRueckgabe, unb.kannAbschliessen, unb.kannVerwerfen], [null, true, false, false]);
   });
 
+  test('Bilanz „Papa: +2 / −1“ als erste Zeile des Personenblocks (alle offenen, auch überfällige)', () => {
+    const noch = { ...KOLLEGIN, id: 'offen03', b: '2026-10-21' };
+    const state = zu([KOLLEGIN, noch, ABGEGEBEN, GESCHLOSSEN]);
+    assert.equal(offeneTauscheModel(state, { filter: 'beide', heute: HEUTE }).personen[0].bilanz, 'Papa: +2 / −1');
+    assert.equal(offeneTauscheModel(state, { filter: 'beide', heute: '2028-01-01' }).personen[0].bilanz, 'Papa: +2 / −1');
+    const mamaE = { ...KOLLEGIN, id: 'offen09', person: 'mama', kb: k('mama', 'T'), mitWem: undefined };
+    const beide = offeneTauscheModel(zu([KOLLEGIN, mamaE]), { filter: 'beide', heute: HEUTE });
+    assert.deepEqual(beide.personen.map((p) => p.bilanz), ['Papa: +1 / −0', 'Mama: +1 / −0']);
+  });
+
   test('Liste folgt dem Filter; ohne offene → null', () => {
     const state = zu([KOLLEGIN, GESCHLOSSEN]);
     assert.equal(offeneTauscheModel(state, { filter: 'mama', heute: HEUTE }), null);

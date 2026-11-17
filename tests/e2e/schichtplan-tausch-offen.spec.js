@@ -67,6 +67,7 @@ test.describe('Offener Diensttausch', () => {
     await expect(offene(page)).toBeVisible();
     await expect(offene(page).getByRole('heading', { name: 'Offene Diensttausche' })).toBeVisible();
     await expect(offene(page).locator('.sp-offen-zeile')).toHaveCount(1);
+    await expect(offene(page).locator('.sp-offen-bilanz').first()).toHaveText('Papa: +1 / −0');
     await expect(offene(page).locator('.sp-offen-text')).toHaveText(`Nachmittagsdienst übernommen am ${kurz(frei)} (von Kollegin) – Rückgabe offen bis ${deutsch(frei).replace(/\.2026$/, '.2027')}`);
     await expect(page.locator('.sp-zaehlung').locator('xpath=following-sibling::*[1]')).toHaveClass(/sp-offen/);
     // der Personenfilter gilt auch für die Karte
@@ -136,6 +137,7 @@ test.describe('Offener Diensttausch', () => {
     await tagBlatt(page, /\d+\. Oktober/).getByRole('button', { name: 'Schließen' }).click();
     await expect(streifen(page, dienst, 'papa')).toHaveClass(/leer/);
     await expect(offene(page).locator('.sp-offen-text')).toContainText(/abgegeben am \d\d\.10\. – noch eine Schicht übernehmen bis \d\d\.10\.2027$/);
+    await expect(offene(page).locator('.sp-offen-bilanz').first()).toHaveText('Papa: +0 / −1');
     await expect(offene(page)).not.toContainText('schuldet'); // kein „du schuldest“ (R4)
     await offene(page).getByRole('button', { name: 'Rückgabe eintragen' }).click();
     const r = rueckgabe(page);

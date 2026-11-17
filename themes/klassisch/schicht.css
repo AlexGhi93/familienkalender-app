@@ -847,6 +847,13 @@
   gap: 8px;
 }
 
+/* Bilanz „Papa: +2 / −1“: erste Zeile des Personenblocks */
+.sp-offen-bilanz {
+  margin: 0;
+  font-size: 0.875rem; /* Text ≥ 13 px */
+  font-weight: 700;
+}
+
 .sp-offen-zeile {
   display: flex;
   flex-direction: column;

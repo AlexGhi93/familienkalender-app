@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {
   TAUSCH_FRIST_MONATE, TAUSCH_RICHTUNGEN, TEXT_TAUSCH_WEG, leererTausch, tauschAm, tauschAnwenden, tauschAusText, tauschEntfernen, tauschErsetzen,
   tauschFrist, tauschHinzufuegen, tauschIstOffen, tauschOffenEintrag, tauschOffenPruefen, tauschOffenTag, tauschPartnerMonate, tauschPruefen,
-  tauschRueckgabeEintrag, tauschRueckgabePruefen, tauschSeiten, tauschText, tauschZuruecknehmen, tauschZustand,
+  tauschBilanz, tauschErinnerungen, tauschRueckgabeEintrag, tauschRueckgabePruefen, tauschSeiten, tauschText, tauschZuruecknehmen, tauschZustand,
 } from '../../src/domain/schicht-tausch.js';
 import { leererMonat, schichtAm, setzeSchicht, setzeTagZeiten, standardKatalog, tagZeitenAm } from '../../src/domain/schicht.js';
 
@@ -291,4 +291,27 @@ test('tauschPartnerMonate ignoriert offene Einträge', () => {
   const daten = { v: 1, eintraege: [ab, ueb, { ...ab, id: 'ab000002', a: '2026-05-01' }, zu] };
   assert.deepEqual(tauschPartnerMonate(daten, ['2026-02']), ['2026-04']);
   assert.deepEqual(tauschPartnerMonate(daten, ['2026-05']), []);
+});
+
+test('tauschBilanz zählt nur offene, je Person (übernommen = plus, abgegeben = minus)', () => {
+  const mama = { ...ueb, id: 'mama0001', person: 'mama' };
+  const ueb2 = { ...ueb, id: 'offen003', b: '2026-03-03' };
+  const daten = { v: 1, eintraege: [ab, ueb, ueb2, alt150, mama] };
+  assert.deepEqual(tauschBilanz(daten), { papa: { plus: 2, minus: 1 }, mama: { plus: 1, minus: 0 } });
+  assert.deepEqual(tauschBilanz({ v: 1, eintraege: [alt150] }), { papa: { plus: 0, minus: 0 }, mama: { plus: 0, minus: 0 } });
+  assert.deepEqual(tauschBilanz(null), { papa: { plus: 0, minus: 0 }, mama: { plus: 0, minus: 0 } });
+  // überfällige zählen mit (R11)
+  assert.deepEqual(tauschBilanz({ v: 1, eintraege: [{ ...ab, frist: '2020-01-01' }] }).papa, { plus: 0, minus: 1 });
+});
+
+test('tauschErinnerungen: Tag einen Monat vor der Frist, Text genau, nur offene', () => {
+  const e = { ...ab, id: 'erin0001', frist: '2027-02-06' };
+  const r = tauschErinnerungen({ v: 1, eintraege: [e, alt150] });
+  assert.equal(r.length, 1);
+  assert.equal(r[0].schluessel, 'tausch-erin0001');
+  assert.equal(r[0].tag, '2027-01-06');
+  assert.equal(r[0].text, 'Offener Diensttausch – Rückgabe bis 06.02.2027.');
+  // Monatsende: Frist 31.03. → Erinnerung am 28.02.
+  assert.equal(tauschErinnerungen({ v: 1, eintraege: [{ ...e, frist: '2027-03-31' }] })[0].tag, '2027-02-28');
+  assert.deepEqual(tauschErinnerungen(null), []);
 });

@@ -5,7 +5,7 @@ import { addDays, eachDay, pad2, weekday } from '../../domain/dates.js';
 import { feiertagName } from '../../domain/feiertage.js';
 import { monatVor } from '../../domain/konto.js';
 import { PALETTE, SCHICHT_PERSONEN, aktiveArten, artAendern, artFuer, artHinzufuegen, istNacht, monatZaehlung, schichtAm, standardKatalog, tageImMonat, tagZeitenAm, zeitenFuer } from '../../domain/schicht.js';
-import { tauschAm, tauschErsetzt, tauschIstOffen, tauschOffenPruefen, tauschOffenTag, tauschPruefen, tauschRueckgabePruefen, tauschZustand } from '../../domain/schicht-tausch.js';
+import { tauschAm, tauschBilanz, tauschErsetzt, tauschIstOffen, tauschOffenPruefen, tauschOffenTag, tauschPruefen, tauschRueckgabePruefen, tauschZustand } from '../../domain/schicht-tausch.js';
 import { standardSpeicher } from '../speicher.js';
 import { WOCHENTAGE_KURZ, datumLang, monatTitel } from '../format-de.js';
 
@@ -516,10 +516,11 @@ export function offeneTauscheModel(state, { filter = 'beide', heute } = {}) {
   const q = tauschQuelle(state);
   const katalog = katalogVon(state);
   const alle = (q.daten?.eintraege ?? []).filter(tauschIstOffen);
+  const bilanz = tauschBilanz(q.daten);
   const personen = personenFuer(filter)
     .map((person) => {
       const eigene = alle.filter((e) => e.person === person).sort((x, y) => (x.frist < y.frist ? -1 : x.frist > y.frist ? 1 : 0));
-      return { person, kopf: `${PERSONEN_TAG[person].emoji} ${PERSONEN_TAG[person].name}`, zeilen: eigene.map((e) => offeneZeile(q, katalog, e, heute)) };
+      return { person, kopf: `${PERSONEN_TAG[person].emoji} ${PERSONEN_TAG[person].name}`, bilanz: `${PERSONEN_TAG[person].name}: +${bilanz[person].plus} / −${bilanz[person].minus}`, zeilen: eigene.map((e) => offeneZeile(q, katalog, e, heute)) };
     })
     .filter((p) => p.zeilen.length > 0);
   return personen.length > 0 ? { personen } : null;

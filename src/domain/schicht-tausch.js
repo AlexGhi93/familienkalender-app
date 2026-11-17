@@ -18,6 +18,7 @@
 import { addDays, plusMonate } from './dates.js';
 import { istObjekt, sauber, zeichen } from './gemeinsam.js';
 import { SCHICHT_PERSONEN, SCHLUESSEL_ZEICHEN, artFuer, fremdeFelder, schichtAm, setzeSchicht, setzeTagZeiten, tagZeitenAm } from './schicht.js';
+import { datumAnzeige } from './eingabe.js';
 import { huelleLesen } from './unlesbar.js';
 
 export const MAX_TAUSCH_ZEICHEN = 6000; // wie die Schichtmonate: Google kürzt Beschreibungen still bei 8192 Zeichen
@@ -157,6 +158,20 @@ export const tauschOffenTag = (e) => (e.richtung === 'abgegeben' ? e.a : e.b);
 
 /** Bis wann die Rückgabe eines offenen Tauschs ansteht: derselbe Tag TAUSCH_FRIST_MONATE später (29.02. → 28.02.). */
 export const tauschFrist = (tag) => plusMonate(tag, TAUSCH_FRIST_MONATE);
+
+/** Bilanz der offenen Tausche je Person: `plus` = offen übernommen (Rückgabe steht aus), `minus` = offen abgegeben. Überfällige und gestörte zählen mit. */
+export function tauschBilanz(daten) {
+  const bilanz = Object.fromEntries(SCHICHT_PERSONEN.map((p) => [p, { plus: 0, minus: 0 }]));
+  for (const e of daten?.eintraege ?? []) {
+    if (!tauschIstOffen(e) || !bilanz[e.person]) continue;
+    bilanz[e.person][e.richtung === 'uebernommen' ? 'plus' : 'minus'] += 1;
+  }
+  return bilanz;
+}
+
+/** Push-Erinnerungen an offene Tausche: eine je Eintrag, einen Monat vor der Frist (31.03. → 28.02.); Text ohne Namen und Dienst. */
+export const tauschErinnerungen = (daten) =>
+  (daten?.eintraege ?? []).filter(tauschIstOffen).map((e) => ({ schluessel: `tausch-${e.id}`, tag: plusMonate(e.frist, -1), text: `Offener Diensttausch – Rückgabe bis ${datumAnzeige(e.frist)}.` }));
 
 /**
  * Zustand eines Tauschs nach den Monaten der Tage A und B (null = nicht geladen → 'unbekannt'). A angewendet = frei, A ursprünglich = `ka`;

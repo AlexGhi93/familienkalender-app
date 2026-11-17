@@ -11,6 +11,7 @@ import { datumAnzeige } from '../domain/eingabe.js';
 import { terminAnzeige } from '../domain/termin-anzeige.js';
 import { urlaubChecksWunsch } from '../domain/urlaub-check.js';
 import { autosUebersichten, erinnerungText, erinnerungsTage } from '../domain/autos-faellig.js';
+import { tauschErinnerungen } from '../domain/schicht-tausch.js';
 import { VERSICHERUNG_ZIEL, versicherungTermine } from '../domain/versicherung-rechnung.js';
 import { bytesZuB64u } from './base64url.js';
 
@@ -18,7 +19,7 @@ const TYPEN = ['arzt', 'familie', 'kita_sache', 'urlaub_check'];
 const STUNDE = 3600_000;
 // Sekunden, die der Push-Server von Google/Apple die Nachricht für ein Telefon ohne Netz aufhebt: kommt es rechtzeitig wieder ins Netz, wird sie noch zugestellt
 // („1 Stunde vorher“ nur bis kurz vor dem Termin, danach wäre sie sinnlos).
-const TTL = { tag: 21600, stunde: 3300, vortag: 21600, abend: 14400, konto: 10800, konto2: 5400, frist: 21600, auto30: 21600, auto7: 21600, auto0: 21600, autoUeber: 21600, saison: 21600, radmuttern: 21600, versOffen: 21600, versJahr: 21600 };
+const TTL = { tag: 21600, stunde: 3300, vortag: 21600, abend: 14400, konto: 10800, konto2: 5400, frist: 21600, auto30: 21600, auto7: 21600, auto0: 21600, autoUeber: 21600, saison: 21600, radmuttern: 21600, versOffen: 21600, versJahr: 21600, tausch: 21600 };
 // Monatlich kündbare Verträge bekommen keine Erinnerung (sonst jeden Monat eine): Regel `monatlichKuendbar` in domain/fixkosten.js.
 
 async function kennung(terminId, art) {
@@ -231,6 +232,29 @@ async function versicherungErinnerungen(state, von, bis) {
 }
 
 /**
+ * Offene Diensttausche (Rückgabe steht aus): einen Monat vor der Frist um 09:00 (Wien), an BEIDE Telefone (ohne `nur`), öffnet den Schichtplan.
+ * Der Text nennt weder Namen noch Dienst. Kennung = Tausch: bleibt bei Neuberechnung gleich und fällt weg, sobald der Tausch geschlossen oder
+ * rückgängig gemacht ist. Ohne gelesene Tausche (`schicht.tausch` fehlt) keine. Liegt der Zeitpunkt schon in der Vergangenheit, kommt nichts nach.
+ * Nichts hier darf den übrigen Plan verhindern.
+ */
+async function diensttauschErinnerungen(state, von, bis) {
+  const plan = [];
+  try {
+    for (const t of tauschErinnerungen(state.schicht?.tausch)) {
+      try {
+        const um = wienZuInstant(t.tag, '09:00');
+        if (um > von && um <= bis) plan.push({ id: await kennung(t.schluessel, 'tausch'), um, art: 'tausch', titel: '⇄ Diensttausch', text: t.text, ttl: TTL.tausch, ziel: '#/schicht' });
+      } catch {
+        // diese eine Erinnerung lässt sich nicht planen: die anderen trotzdem
+      }
+    }
+  } catch {
+    // unbrauchbare Diensttausche im Zustand: ohne ihre Erinnerungen weiter
+  }
+  return plan;
+}
+
+/**
  * Wovon der Plan abhängt, oder null = noch nicht senden: erst nach dem frischen Laden (nie aus dem gespeicherten Stand) und erst, wenn der
  * Schichtplan für den laufenden Monat (Wien, `jetzt`) vorgeladen ist; sonst fehlten im Plan Erinnerungen an Zusätze (oder, nach dem
  * Monatswechsel bei offener App, die des neuen dritten Monats), und der Push-Dienst würde sie löschen. Gilt für jeden Weg, auf dem der
@@ -247,7 +271,7 @@ export function planQuellen(state, jetzt = new Date()) {
   if (state.schicht?.vorgeladen !== monat) return null;
   const autos = state.autos?.frisch === true ? (state.autos.bestaetigt ?? state.autos) : null;
   const vers = state.versicherung?.frisch === true ? (state.versicherung.bestaetigt ?? state.versicherung) : null;
-  return [state.termine, state.settings, state.urlaub, state.konto, state.schicht.katalog, state.schicht.monate, state.fixkosten?.shards ?? null, autos !== null, autos?.daten ?? null, autos?.historie ?? null, vers !== null, vers?.daten ?? null, vers?.teile ?? null, vers ? (state.versicherung.geschrieben ?? null) : null, monat];
+  return [state.termine, state.settings, state.urlaub, state.konto, state.schicht.katalog, state.schicht.monate, state.schicht.tausch ?? null, state.fixkosten?.shards ?? null, autos !== null, autos?.daten ?? null, autos?.historie ?? null, vers !== null, vers?.daten ?? null, vers?.teile ?? null, vers ? (state.versicherung.geschrieben ?? null) : null, monat];
 }
 
 /** Hat sich seit dem letzten Senden (`vorher`, null = noch nie) etwas geändert, wovon der Plan abhängt? */
@@ -266,7 +290,7 @@ function nurFuer(t, settings) {
 }
 
 /**
- * Plan der nächsten `tage` Tage: [{ id, um (ms), art: 'tag'|'stunde'|'vortag'|'abend'|'konto'|'konto2'|'frist'|'auto30'|'auto7'|'auto0'|'autoUeber'|'saison'|'radmuttern'|'versOffen'|'versJahr', titel, text, ttl, ziel?, nur? }], sortiert nach Zeitpunkt.
+ * Plan der nächsten `tage` Tage: [{ id, um (ms), art: 'tag'|'stunde'|'vortag'|'abend'|'konto'|'konto2'|'frist'|'auto30'|'auto7'|'auto0'|'autoUeber'|'saison'|'radmuttern'|'versOffen'|'versJahr'|'tausch', titel, text, ttl, ziel?, nur? }], sortiert nach Zeitpunkt.
  * Die `id` hängt nur an Termin und Art (nicht am Zeitpunkt), damit zwei Telefone denselben Plan ohne Doppelungen schicken.
  * `nur` ('papa' | 'mama'): nur an die Telefone dieser Person (und an Telefone ohne Angabe, siehe meldungen.js).
  */
@@ -306,5 +330,6 @@ export async function planeErinnerungen(state, { jetzt = new Date(), tage = 60 }
   plan.push(...(await fristErinnerungen(state, von, bis)));
   plan.push(...(await autoErinnerungen(state, von, bis)));
   plan.push(...(await versicherungErinnerungen(state, von, bis)));
+  plan.push(...(await diensttauschErinnerungen(state, von, bis)));
   return plan.sort((a, b) => a.um - b.um || a.id.localeCompare(b.id));
 }

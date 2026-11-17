@@ -364,3 +364,69 @@ describe('Wann der Plan gesendet wird', () => {
     assert.equal(quellenGeaendert(planQuellen(vorgeladen(s, '2026-11'), nov), q), true);
   });
 });
+
+describe('offener Diensttausch: 1 Monat vor der Frist um 09:00, an beide Telefone', () => {
+  const offen = (id, frist, extra = {}) => ({ id, person: 'papa', richtung: 'uebernommen', frist, b: '2026-02-06', kb: 'x', vb: null, mitWem: 'Kollegin Müller', am: '2026-10-01', ...extra });
+  const mitTausch = (eintraege) => zustand({ settings: ohneKonto, schicht: { katalog: standardKatalog(), monate: {}, status: {}, tausch: { v: 1, eintraege } } });
+  const plan = (eintraege, jetzt = JETZT) => planeErinnerungen(mitTausch(eintraege), { jetzt, tage: 120 });
+  const nurTausch = (p) => p.filter((x) => x.art === 'tausch');
+
+  test('09:00 Wien an beide Telefone, ohne Namen und Dienst', async () => {
+    const p = nurTausch(await plan([offen('t0000001', '2027-02-06')], new Date('2026-12-20T08:00:00+01:00')));
+    assert.equal(p.length, 1);
+    assert.equal(p[0].um, utc('2027-01-06T08:00:00Z'));
+    assert.equal(p[0].titel, '⇄ Diensttausch');
+    assert.equal(p[0].text, 'Offener Diensttausch – Rückgabe bis 06.02.2027.');
+    assert.equal(p[0].ttl, 21600);
+    assert.equal(p[0].ziel, '#/schicht');
+    assert.equal('nur' in p[0], false);
+    assert.ok(/^[A-Za-z0-9_-]{22}$/.test(p[0].id));
+    assert.ok(!p[0].text.includes('Müller') && !p[0].titel.includes('Müller'));
+  });
+
+  test('Frist 29.02.2028 + 1 Jahr → Erinnerung 28.01.2029 09:00 Wien', async () => {
+    const e = offen('t0000002', '2029-02-28');
+    const p = nurTausch(await plan([e], new Date('2029-01-20T08:00:00+01:00')));
+    assert.equal(p[0].um, utc('2029-01-28T08:00:00Z'));
+  });
+
+  test('Monatsende: Frist 31.03.2027 → Erinnerung 28.02.2027', async () => {
+    const p = nurTausch(await plan([offen('t0000003', '2027-03-31')], new Date('2027-02-20T08:00:00+01:00')));
+    assert.equal(p[0].um, utc('2027-02-28T08:00:00Z'));
+    assert.equal(p[0].text, 'Offener Diensttausch – Rückgabe bis 31.03.2027.');
+  });
+
+  test('Kennung gleich bei Neuberechnung, ein anderer Tausch → andere', async () => {
+    const j = new Date('2026-12-20T08:00:00+01:00');
+    const a1 = nurTausch(await plan([offen('t0000001', '2027-02-06')], j));
+    const a2 = nurTausch(await plan([offen('t0000001', '2027-02-06')], new Date('2026-12-21T08:00:00+01:00')));
+    const b = nurTausch(await plan([offen('t0000009', '2027-02-06')], j));
+    assert.equal(a1[0].id, a2[0].id);
+    assert.notEqual(a1[0].id, b[0].id);
+  });
+
+  test('geschlossen oder rückgängig → keine Erinnerung mehr', async () => {
+    const j = new Date('2026-12-20T08:00:00+01:00');
+    const zu = { id: 't0000001', person: 'papa', a: '2026-02-06', b: '2026-03-01', ka: 'x', kb: 'x', vb: null, am: '2026-10-01' };
+    assert.deepEqual(nurTausch(await plan([zu], j)), []);
+    assert.deepEqual(nurTausch(await plan([], j)), []);
+  });
+
+  test('Erinnerung schon vorbei → keine (kein Nachholen)', async () => {
+    const p = await plan([offen('t0000004', '2027-02-06')], new Date('2027-01-10T08:00:00+01:00'));
+    assert.deepEqual(nurTausch(p), []);
+  });
+
+  test('ohne gelesene Tausche im Zustand: keine Erinnerung, kein Fehler', async () => {
+    assert.deepEqual(nurTausch(await planeErinnerungen(zustand({ settings: ohneKonto }), { jetzt: JETZT })), []);
+  });
+
+  test('planQuellen ändert sich mit schicht.tausch', () => {
+    const s = { ...mitTausch([]), geladen: true, nurSnapshot: false };
+    const v = (x) => ({ ...x, schicht: { ...x.schicht, vorgeladen: '2026-10' } });
+    const q1 = planQuellen(v(s), JETZT);
+    const q2 = planQuellen(v({ ...s, schicht: { ...s.schicht, tausch: { v: 1, eintraege: [offen('t0000001', '2027-02-06')] } } }), JETZT);
+    assert.equal(quellenGeaendert(q2, q1), true);
+    assert.equal(quellenGeaendert(planQuellen(v(s), JETZT), q1), false);
+  });
+});

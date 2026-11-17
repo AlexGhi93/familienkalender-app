@@ -148,6 +148,6 @@ export function offeneTauscheKarte({ store, ui }) {
     'article',
     { class: 'karte sp-offen' },
     h('h3', { class: 'sp-offen-titel' }, 'Offene Diensttausche'),
-    m.personen.map((p) => h('div', { class: 'sp-offen-person', 'data-person': p.person }, h('b', {}, p.kopf), p.zeilen.map((z) => zeile({ store }, z)))),
+    m.personen.map((p) => h('div', { class: 'sp-offen-person', 'data-person': p.person }, h('b', {}, p.kopf), h('p', { class: 'sp-offen-bilanz' }, p.bilanz), p.zeilen.map((z) => zeile({ store }, z)))),
   );
 }
