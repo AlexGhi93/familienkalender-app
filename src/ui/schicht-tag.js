@@ -346,7 +346,7 @@ export function oeffneSchichtTag({ store, ui = null }, datum) {
             if (!erledigt(await sicher(store.diensttauschAbschliessen(id)), 'Diensttausch abgeschlossen ✓')) k.disabled = false;
           })
         : null,
-      p.tausch.offen ? knopf('Rückgabe eintragen', () => oeffneRueckgabe({ store }, { id })) : null,
+      p.tausch.offen && !unvollstaendig ? knopf('Rückgabe eintragen', () => oeffneRueckgabe({ store }, { id })) : null,
       knopf('Tausch rückgängig', () => rueckgaengigFragen({ store }, { id, offen: p.tausch.offen === true })),
     );
   }

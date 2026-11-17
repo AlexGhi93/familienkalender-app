@@ -217,3 +217,16 @@ test('Demo: offen speichern, Rückgabe, rückgängig wie bei Google', async () =
   assert.deepEqual([await imDemo('2026-12'), await imDemo('2027-01')], [DEZEMBER, JAENNER]);
   assert.deepEqual((await adapter.leseDiensttausch()).daten.eintraege, []);
 });
+
+test('Abschließen eines offenen Tauschs, dessen Tag inzwischen zu einem anderen aktiven Tausch gehört → klare Meldung, nichts geschrieben', async () => {
+  let kaputt = true;
+  const g = await telefon({ stoeren: kaputtBei('fksch202612', () => kaputt) });
+  const r = await g.store.diensttauschOffenSpeichern(ABGEGEBEN);
+  assert.deepEqual([r.ok, r.id], [false, 'offen001']); // Verknüpfung steht, der Monat nicht: Zustand „offen“
+  // ein Telefon mit 1.5.0 hat den Tag inzwischen in einen anderen Tausch gezogen
+  await g.adapter.aendereDiensttausch((d) => ({ ...d, eintraege: [...d.eintraege, { id: 'fremd001', person: 'papa', a: '2026-12-30', ka: F, b: '2027-01-04', kb: N, vb: S, am: '2026-12-01' }] }));
+  kaputt = false;
+  g.merken();
+  assert.deepEqual(await g.store.diensttauschAbschliessen('offen001'), { ok: false, fehler: 'Dieser Tag gehört inzwischen zu einem anderen Diensttausch – bitte diesen Tausch rückgängig machen.' });
+  assert.deepEqual(geschrieben(g), []);
+});

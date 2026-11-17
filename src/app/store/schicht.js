@@ -1,7 +1,7 @@
 import { todayVienna } from '../../domain/dates.js';
 import { monatVor } from '../../domain/konto.js';
 import { artAendern, artArchivieren, artHinzufuegen, artVerschieben, katalogErgaenzen, leererMonat, normalisiereKatalog, normalisiereMonat, schaltePinsel, schichtAm, setzeNotiz, setzeSchicht, setzeTagZeiten, standardKatalog, tageImMonat, vorladeMonate, zusatzEntfernen, zusatzHinzufuegen, zusatzWiederherstellen } from '../../domain/schicht.js';
-import { TEXT_TAUSCH_WEG, leererTausch, tauschAnwenden, tauschAusText, tauschEintrag, tauschEntfernen, tauschErsetzen, tauschHinzufuegen, tauschIstOffen, tauschOffenEintrag, tauschOffenPruefen, tauschOffenTag, tauschPartnerMonate, tauschPruefen, tauschRueckgabeEintrag, tauschRueckgabePruefen, tauschSeiten, tauschText, tauschZuruecknehmen, tauschZustand } from '../../domain/schicht-tausch.js';
+import { TEXT_TAUSCH_WEG, tagBelegt, leererTausch, tauschAnwenden, tauschAusText, tauschEintrag, tauschEntfernen, tauschErsetzen, tauschHinzufuegen, tauschIstOffen, tauschOffenEintrag, tauschOffenPruefen, tauschOffenTag, tauschPartnerMonate, tauschPruefen, tauschRueckgabeEintrag, tauschRueckgabePruefen, tauschSeiten, tauschText, tauschZuruecknehmen, tauschZustand } from '../../domain/schicht-tausch.js';
 import { UNLESBAR_TEXT } from '../../domain/unlesbar.js';
 import { eintragVorhanden, neueKennung } from './geteilt.js';
 import { TEXT_FEHLER, gleichOder, istAuthFehler } from './kern.js';
@@ -11,6 +11,7 @@ const SCHICHT_SICHERUNG_VORAUS = 12; // … bis zwölf Monate nach dem laufenden
 const SCHICHT_SICHERUNG_PARALLEL = 6; // so viele Monate werden gleichzeitig gefragt
 const TEXT_TAUSCH_NICHT_GELESEN = 'Der Schichtplan konnte gerade nicht gelesen werden. Bitte noch einmal versuchen.';
 const TEXT_TAUSCH_GEBROCHEN = 'Dieser Tausch wurde inzwischen von Hand geändert – bitte die beiden Tage selbst richtigstellen.';
+const TEXT_TAG_ANDERER_TAUSCH = 'Dieser Tag gehört inzwischen zu einem anderen Diensttausch – bitte diesen Tausch rückgängig machen.';
 const TEXT_TAGE = 'Bitte zwei Tage wählen.';
 const TEXT_TAG = 'Bitte einen Tag wählen.';
 const TEXT_ERST_ABSCHLIESSEN = 'Bitte zuerst den Tausch abschließen.';
@@ -674,6 +675,10 @@ export function createSchichtSlice(kern, { store, fixLesen, autosHolen, versHole
       const zustand = tauschZustandJetzt(e);
       if (zustand === 'ganz') return { ok: true };
       if (zustand !== 'halb' && zustand !== 'offen') return { ok: false, fehler: TEXT_TAUSCH_GEBROCHEN };
+      // ein offener Tausch, dessen Tag inzwischen zu einem anderen aktiven Tausch gehört (z. B. von einem Telefon mit 1.5.0 weggetauscht): nichts schreiben
+      if (tauschIstOffen(e) && tagBelegt(kern.state.schicht.tausch, { person: e.person, tage: [tauschOffenTag(e)], monate: tauschMonat, heute: tauschOptionen().heute, ohne: e.id })) {
+        return { ok: false, fehler: TEXT_TAG_ANDERER_TAUSCH };
+      }
       return seitenSchreiben(e, tauschSeiten(e).filter((s) => seiteOffen(e, s, tauschAnwenden)), tauschAnwenden);
     },
 

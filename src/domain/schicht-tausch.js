@@ -257,7 +257,7 @@ function istAktiv(e, monate, heute) {
 }
 
 /** Liegt einer der Tage in einem aktiven Tausch der Person (ohne den Eintrag mit der id `ohne`)? */
-function tagBelegt(daten, { person, tage, monate, heute, ohne }) {
+export function tagBelegt(daten, { person, tage, monate, heute, ohne }) {
   const da = new Set(tage);
   return (daten?.eintraege ?? []).some((e) => e.id !== ohne && e.person === person && (da.has(e.a) || da.has(e.b)) && istAktiv(e, monate, heute));
 }
