@@ -1,5 +1,5 @@
 // Menü-Karte für „Mehr“: Zeilen mit eigenem, kurz animiertem Symbol. Eine Zeile klappt ihre Einstellungen darunter auf
-// (immer nur eine offen) oder führt auf eine andere Seite (›). Die Animationen stehen in theme.css (`anim-…`).
+// (immer nur eine offen) oder führt auf eine andere Seite (›). Die Animationen stehen in themes/klassisch/mehr.css (`anim-…`).
 import { bewegungAn } from './bewegung.js';
 import { h } from './dom.js';
 import { farbe } from './components.js';
@@ -73,7 +73,7 @@ export function menue({ eintraege, startIndex = null }) {
       },
       h('span', { class: 'menue-kachel', 'aria-hidden': 'true' }, symbol),
       h('span', { class: 'menue-text' }, h('b', {}, e.titel), e.text ? h('small', {}, e.text) : null, e.status ?? null),
-      h('span', { class: 'menue-pfeil', 'aria-hidden': 'true' }, '›'), // aufklappbare Zeilen drehen ihn (theme.css)
+      h('span', { class: 'menue-pfeil', 'aria-hidden': 'true' }, '›'), // aufklappbare Zeilen drehen ihn (themes/klassisch/mehr.css)
     );
 
     const eintrag = h(

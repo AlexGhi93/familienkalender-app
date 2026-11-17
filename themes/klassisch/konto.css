@@ -1,0 +1,1247 @@
+/* ---------- Verlauf ---------- */
+
+.verlauf-suche {
+  min-height: 48px;
+  padding: 8px 12px;
+  border-radius: var(--r-feld);
+  border: var(--feld-rand);
+  background: var(--feld-bg);
+  color: var(--ink);
+  font-size: 1rem;
+}
+
+.verlauf-filter,
+.verlauf-liste {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.verlauf-zeile {
+  width: 100%;
+  min-height: 56px;
+  text-align: left;
+  color: inherit;
+}
+
+.verlauf-zeile .pfeil {
+  color: var(--ink-2);
+  font-size: 1.4rem;
+}
+
+/* Heute › „🚗 Auto“: Zeilen wie „Demnächst“, aber als Links (#/autos/<id>) – ohne Unterstreichung, Text in der Schriftfarbe */
+.auto-heute a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.auto-heute a.knopf {
+  display: inline-flex;
+  align-items: center;
+}
+
+.verlauf-aeltere {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0 16px;
+}
+
+
+/* ---------- Kontostand ---------- */
+
+.konto-person {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 8px;
+}
+
+.konto-person.fertig {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+}
+
+.konto-betrag {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.konto-eingabe {
+  flex: 1 1 160px;
+  min-width: 0;
+  min-height: 48px;
+  padding: 8px 12px;
+  border-radius: var(--r-feld);
+  border: var(--feld-rand);
+  background: var(--feld-bg);
+  color: var(--ink);
+  font-size: 1.1rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.konto-zeile {
+  width: 100%;
+  text-align: left;
+  color: inherit;
+  gap: 8px;
+}
+
+.konto-monat-titel {
+  font-family: var(--font-titel);
+  font-size: 1rem;
+}
+
+.konto-reihe {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+
+.konto-reihe.zusammen {
+  padding-top: 6px;
+  border-top: var(--rand) dashed var(--linie);
+  font-weight: 800;
+}
+
+.konto-name {
+  flex: 1 1 6em;
+  white-space: nowrap;
+}
+
+.konto-stand {
+  font-family: var(--font-zahl);
+  flex: 0 0 auto;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.konto-hinweis {
+  flex-basis: 100%;
+  color: var(--ink-2);
+  font-weight: 600;
+}
+
+.konto-delta {
+  font-family: var(--font-zahl);
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 2px 10px;
+  border-radius: var(--r-chip);
+  border: var(--rand) solid var(--linie);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.konto-delta.plus {
+  border-color: var(--kita);
+  background: color-mix(in srgb, var(--kita) 18%, var(--karte));
+}
+
+.konto-delta.minus {
+  border-color: var(--krank);
+  background: color-mix(in srgb, var(--krank) 18%, var(--karte));
+}
+
+.konto-summe .konto-reihe {
+  display: flex;
+  justify-content: space-between;
+}
+
+.konto-diagramm {
+  width: 100%;
+  height: auto;
+}
+
+.konto-null {
+  stroke: var(--ink-2);
+  stroke-width: 1;
+  opacity: 0.6;
+}
+
+.konto-balken.plus {
+  fill: var(--kita);
+}
+
+.konto-balken.minus {
+  fill: var(--krank);
+}
+
+.konto-balken.null {
+  fill: var(--grau);
+}
+
+.konto-monat {
+  fill: var(--ink-2);
+  font-size: 10px;
+}
+
+
+/* ---------- Kontostand: Sonderbeträge und „ohne Extra“ ---------- */
+
+.konto-hinweis.extra {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.konto-extra {
+  fill: none;
+  stroke: var(--ink-2);
+  stroke-width: 1.5;
+  stroke-dasharray: 3 2;
+}
+
+.konto-summe .extra-trenner {
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: var(--rand) dashed var(--linie);
+}
+
+.extra-formular select.konto-eingabe {
+  flex: none;
+  width: 100%;
+}
+
+.extra-formular input.konto-eingabe {
+  flex: none;
+  width: 100%;
+}
+
+.extra-gruppe {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 8px;
+}
+
+.extra-zeile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 4px 6px 10px;
+  border-radius: var(--r-zeile);
+  border: var(--rand) solid var(--linie);
+  background: var(--karte-2);
+}
+
+.extra-zeile .karte-text b {
+  overflow-wrap: anywhere;
+}
+
+.extra-zeile .konto-delta {
+  margin-left: 0;
+}
+
+
+/* ---------- Kontostand: Demo zum Ausprobieren ---------- */
+
+.konto-demo {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.konto-demo select.konto-eingabe {
+  flex: none;
+  width: 100%;
+}
+
+
+/* ---------- Kontostand: Diagramme, Kacheln, Zeitraum ---------- */
+
+.konto-bereich {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.konto-kacheln {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+/* die erste Kachel (Ersparnis im Zeitraum) ist die große Zahl der Seite */
+.konto-kachel:first-child {
+  grid-column: 1 / -1;
+}
+
+.konto-kachel:first-child .konto-kachel-wert {
+  font-size: 1.9rem;
+}
+
+.konto-kachel {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 10px 8px;
+  border-radius: var(--r-zeile);
+  border: var(--rand) solid var(--linie);
+  background: var(--karte-2);
+  box-shadow: var(--schatten-karte);
+}
+
+.konto-kachel-titel {
+  font-family: var(--font-titel);
+  color: var(--ink-2);
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.konto-kachel-wert {
+  font-size: 1.15rem;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.konto-kachel small {
+  color: var(--ink-2);
+  font-size: 0.72rem;
+  line-height: 1.25;
+}
+
+figure.diagramm {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 12px 10px 10px;
+  border-radius: var(--r-karte);
+  border: var(--karte-rand);
+  background: var(--karte);
+  box-shadow: var(--schatten-karte);
+  outline-offset: var(--fokus-abstand);
+}
+
+.diagramm .konto-diagramm {
+  width: 100%;
+  height: auto;
+  touch-action: pan-y;
+  user-select: none;
+}
+
+.diag-gitter {
+  stroke: var(--linie);
+  stroke-width: 1;
+}
+
+.diag-achse {
+  fill: var(--ink-2);
+  font-size: 10px;
+}
+
+.diag-achse.jahr {
+  font-weight: 700;
+}
+
+.diag-linie {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.diag-linie.luecke {
+  stroke-dasharray: 4 4;
+  opacity: 0.7;
+}
+
+.diag-reihe.papa .diag-linie {
+  stroke: var(--serie-papa);
+}
+
+.diag-reihe.mama .diag-linie {
+  stroke: var(--serie-mama);
+}
+
+.diag-reihe.zusammen .diag-linie {
+  stroke-width: 3;
+}
+
+.diag-punkt {
+  fill: var(--ink);
+  stroke: var(--karte);
+  stroke-width: 2;
+}
+
+.diag-reihe.papa .diag-punkt,
+.diag-punkt.hervor.papa {
+  fill: var(--serie-papa);
+}
+
+.diag-reihe.mama .diag-punkt,
+.diag-punkt.hervor.mama {
+  fill: var(--serie-mama);
+}
+
+.diag-fadenkreuz {
+  stroke: var(--ink-2);
+  stroke-width: 1;
+  opacity: 0.6;
+}
+
+.diag-treffer {
+  cursor: crosshair;
+}
+
+.diag-balken-hervor {
+  fill: none;
+  stroke: var(--ink-2);
+  stroke-width: 1.5;
+}
+
+.diag-wert {
+  fill: var(--ink);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.diag-schnitt {
+  stroke: var(--ink-2);
+  stroke-width: 1;
+  stroke-dasharray: 5 4;
+}
+
+.diag-schnitt-text {
+  fill: var(--ink-2);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.diag-legende {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 0.85rem;
+}
+
+.diag-legende-eintrag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.diag-schluessel {
+  display: inline-block;
+  width: 16px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--ink);
+}
+
+.diag-schluessel.papa {
+  background: var(--serie-papa);
+}
+
+.diag-schluessel.mama {
+  background: var(--serie-mama);
+}
+
+.diag-schluessel.zusammen {
+  height: 4px;
+}
+
+.diag-schluessel.plus {
+  height: 10px;
+  width: 10px;
+  background: var(--kita);
+}
+
+.diag-schluessel.minus {
+  height: 10px;
+  width: 10px;
+  background: var(--krank);
+}
+
+.diag-schluessel.extra {
+  height: 10px;
+  width: 10px;
+  background: none;
+  border: 1.5px dashed var(--ink-2);
+}
+
+.diag-tip {
+  position: absolute;
+  top: -6px;
+  z-index: 5;
+  max-width: calc(100% - 8px);
+  padding: 8px 10px;
+  border-radius: var(--r-zeile);
+  background: var(--tooltip-bg);
+  color: var(--tooltip-ink);
+  box-shadow: var(--schatten-karte);
+  font-size: 0.85rem;
+  pointer-events: none;
+}
+
+.diag-tip[hidden] {
+  display: none;
+}
+
+.diag-tip-titel {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.diag-tip-zeile {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.diag-tip-zeile small {
+  opacity: 0.8;
+}
+
+.diag-tip .diag-schluessel {
+  box-shadow: 0 0 0 1.5px var(--bg);
+}
+
+.diag-tip-delta {
+  font-weight: 700;
+}
+
+.diag-tabelle {
+  font-size: 0.85rem;
+}
+
+.diag-tabelle summary {
+  cursor: pointer;
+  color: var(--akzent);
+  font-weight: 700;
+}
+
+.diag-tabelle table {
+  width: 100%;
+  margin-top: 6px;
+  border-collapse: collapse;
+}
+
+.diag-tabelle th,
+.diag-tabelle td {
+  padding: 4px 6px;
+  border-top: 1px solid var(--linie);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.diag-tabelle td:not(:first-child) {
+  font-family: var(--font-zahl); /* nur die Zahlen, nicht Kopf und Monatsname */
+}
+
+.diag-tabelle th:first-child,
+.diag-tabelle td:first-child {
+  text-align: left;
+}
+
+.diag-tabelle small {
+  color: var(--ink-2);
+}
+
+.diag-schluessel.schnitt {
+  width: 16px;
+  height: 0;
+  border-top: 2px dashed var(--ink-2);
+  background: none;
+  border-radius: 0;
+}
+
+/* ---------- Verbindung: Fehler des letzten Versuchs bleibt sichtbar ---------- */
+
+.banner-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 180px;
+}
+
+.banner-text p {
+  min-width: 0;
+}
+
+.banner-fehler {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.karte .banner-fehler {
+  padding: 8px 10px;
+  border-radius: var(--r-zeile);
+  border: 1.5px dashed var(--gefahr);
+}
+
+.verbindung-block {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ---------- Konto: Umschalter „Kontostand · Fixkosten · Sparziele · Versicherung“ ----------
+   Vier gleich breite Knöpfe (Glas/Bento rechnen die Stelle des Tropfens/Blobs daraus, themes/konto.css). Damit „Versicherung“ auch auf
+   einem 375 px breiten Telefon in eine Zeile passt, wächst die Schrift mit der Breite des Umschalters (100cqw): ≈ 1/26 der Breite eines
+   Knopfs pro Zeichenhöhe, nie unter 13 px (kleine Etiketten), nie über die bisherige Größe. */
+
+.konto-segment {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: var(--r-chip);
+  background: color-mix(in srgb, var(--akzent) 14%, var(--karte));
+  container-type: inline-size;
+}
+
+.konto-segment-knopf {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-chip);
+  background: transparent;
+  color: var(--ink-2);
+  font-weight: 800;
+  font-size: clamp(0.8125rem, calc((100cqw - 12px) / 26), 0.9rem);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.konto-segment-knopf.aktiv {
+  background: var(--akzent);
+  color: var(--akzent-ink);
+}
+
+/* Kurzform (Abschluss-Review I1): passt der volle Name nicht in seinen Knopf – das hängt an der Schrift des Telefons –, setzt
+   fixkosten-screen.js (kurzformenPruefen, gemessen) die Klasse `kurz`, und statt des Namens steht seine Kurzform (data-kurz: „Stand“,
+   „Kosten“, „Ziele“, „Versich.“). Der volle Name bleibt Text, aria-label und title. */
+.konto-segment-knopf[data-kurz]::after {
+  content: attr(data-kurz);
+  display: none;
+}
+
+.konto-segment-knopf.kurz > .konto-segment-lang {
+  display: none;
+}
+
+.konto-segment-knopf.kurz::after {
+  display: inline;
+}
+
+/* Der Untertitel steht hier unter dem Umschalter, nicht direkt unter der Überschrift */
+.konto-segment + .datum {
+  margin-top: 0;
+}
+
+/* ---------- Fixkosten ---------- */
+
+.fk-kopf {
+  gap: 2px;
+}
+
+.fk-klein {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--ink-2);
+}
+
+.fk-gross {
+  font-family: var(--font-zahl);
+  font-size: 2rem;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.fk-kopf-zeile {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 8px;
+  font-size: 0.9rem;
+}
+
+.fk-kopf-zeile b {
+  font-family: var(--font-zahl);
+  font-size: 1rem;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.fk-filter .chip {
+  gap: 4px;
+}
+
+.fk-chip-betrag {
+  font-family: var(--font-zahl);
+  font-variant-numeric: tabular-nums;
+}
+
+.fk-karte {
+  gap: 6px;
+}
+
+.fk-karte-titel {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.fk-karte-titel small {
+  font-family: var(--font-zahl);
+  color: var(--ink-2);
+  font-weight: 800;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.fk-liste {
+  display: flex;
+  flex-direction: column;
+}
+
+.fk-pos {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  padding: 8px 0;
+  border: 0;
+  border-top: 1px solid var(--linie);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+}
+
+.fk-pos:first-child {
+  border-top: 0;
+}
+
+.fk-tag {
+  font-family: var(--font-zahl);
+  flex: none;
+  width: 34px;
+  text-align: center;
+  font-weight: 900;
+  color: var(--akzent);
+  font-variant-numeric: tabular-nums;
+}
+
+.fk-n {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.fk-n b {
+  overflow-wrap: anywhere;
+}
+
+.fk-n small {
+  color: var(--ink-2);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.fk-b {
+  font-family: var(--font-zahl);
+  flex: none;
+  text-align: right;
+  font-weight: 800;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.fk-b small {
+  display: block;
+  color: var(--ink-2);
+  font-weight: 600;
+  font-size: 0.75rem;
+}
+
+/* Person: Kürzel als Text auf getönter Fläche in der Farbe der Person (nie nur Farbe) */
+.fk-person {
+  --c: var(--ink-2);
+  display: inline-block;
+  max-width: 9ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  padding: 0 5px;
+  border-radius: 6px;
+  border: 1px solid var(--c);
+  background: color-mix(in srgb, var(--c) 22%, var(--karte));
+  color: var(--ink);
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+}
+
+.fk-person-papa {
+  --c: var(--serie-papa);
+}
+
+.fk-person-mama {
+  --c: var(--serie-mama);
+}
+
+.fk-person-kind {
+  --c: var(--sf-gruen);
+}
+
+.fk-abzeichen {
+  display: inline-block;
+  margin-top: 2px;
+  padding: 1px 7px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--familie) 80%, transparent);
+  background: color-mix(in srgb, var(--familie) 22%, var(--karte));
+  color: var(--ink);
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.fk-abzeichen.warn {
+  border-color: var(--gefahr);
+  background: color-mix(in srgb, var(--gefahr) 16%, var(--karte));
+}
+
+.fk-neu {
+  min-height: 48px;
+}
+
+.fk-monate {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fk-balken {
+  display: flex;
+  height: 16px;
+  margin-top: 4px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--linie) 60%, transparent);
+}
+
+.fk-balken-fix {
+  background: var(--akzent);
+}
+
+.fk-balken-spar {
+  background: var(--sf-gruen);
+}
+
+.fk-legende {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  margin-top: 4px;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.fk-legende span::before {
+  content: '■ ';
+}
+
+.fk-leg-fix::before {
+  color: var(--akzent);
+}
+
+.fk-leg-spar::before {
+  color: var(--sf-gruen);
+}
+
+.fk-leg-spar.minus::before {
+  color: var(--gefahr);
+}
+
+.fk-hinweis {
+  font-size: 0.8rem;
+}
+
+.fk-meldung {
+  gap: 6px;
+  border-color: color-mix(in srgb, var(--familie) 70%, transparent);
+  background: color-mix(in srgb, var(--familie) 12%, var(--karte));
+}
+
+.fk-meldung.warn {
+  border-color: var(--gefahr);
+  background: color-mix(in srgb, var(--gefahr) 10%, var(--karte));
+}
+
+.fk-meldung p {
+  font-size: 0.9rem;
+}
+
+.fk-fremd,
+.fk-veraltet {
+  font-size: 0.85rem;
+}
+
+/* Formular */
+
+.fk-felder {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  margin: 0 0 14px;
+  padding: 0;
+  border: 0;
+}
+
+.fk-felder:disabled {
+  opacity: 0.6;
+}
+
+.fk-paar {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.fk-auswahl {
+  width: 100%;
+  min-height: 46px;
+  padding: 8px 10px;
+  border-radius: var(--r-zeile);
+  border: var(--rand) solid var(--linie);
+  background: var(--karte-2);
+  color: var(--ink);
+  font: inherit;
+}
+
+.fk-felder .feld input[type='text'] {
+  width: 100%;
+  color: var(--ink);
+}
+
+.fk-vorlagen {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.fk-vorlage {
+  min-height: 44px;
+  padding: 4px 11px;
+  border-radius: var(--r-chip);
+  border: 1.5px solid transparent;
+  background: color-mix(in srgb, var(--akzent) 14%, var(--karte));
+  color: var(--ink);
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+.fk-vorlage.aktiv {
+  border-color: var(--akzent);
+  background: color-mix(in srgb, var(--akzent) 34%, var(--karte));
+}
+
+.fk-haken {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  font-weight: 800;
+}
+
+.fk-haken input {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  accent-color: var(--akzent);
+}
+
+.fk-box {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 6px 12px 12px;
+  border-radius: var(--r-zeile);
+  background: color-mix(in srgb, var(--akzent) 8%, var(--karte));
+  border: var(--rand) solid var(--linie);
+}
+
+.fk-vorschau {
+  font-size: 0.9rem;
+}
+
+.fk-tipp {
+  font-size: 0.82rem;
+}
+
+/* ---------- Sparziele ---------- */
+
+.sz-stand {
+  margin-top: 6px;
+}
+
+.sz-ziel,
+.sz-frei {
+  gap: 6px;
+}
+
+.sz-ziel-kopf {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.sz-ziel-titel {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 2px 10px;
+  overflow-wrap: anywhere;
+}
+
+.sz-ziel-titel small {
+  color: var(--ink-2);
+  font-weight: 800;
+  font-size: 0.8rem;
+}
+
+.sz-aendern {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  margin: -8px -6px -6px 0;
+  border: 0;
+  border-radius: var(--r-chip);
+  background: color-mix(in srgb, var(--akzent) 12%, var(--karte));
+  color: var(--ink);
+  font-size: 1.1rem;
+}
+
+.sz-aendern:disabled {
+  opacity: 0.45;
+}
+
+.sz-balken {
+  height: 12px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--akzent) 14%, var(--karte));
+}
+
+.sz-balken span {
+  display: block;
+  height: 100%;
+  min-width: 0;
+  border-radius: 6px;
+}
+
+.sz-raster {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 10px;
+  font-size: 0.88rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.sz-raster b {
+  font-family: var(--font-zahl);
+  text-align: right;
+}
+
+.sz-status {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 2px 9px;
+  border-radius: 8px;
+  border: 1px solid var(--c, var(--linie));
+  background: color-mix(in srgb, var(--c, var(--linie)) 18%, var(--karte));
+  color: var(--ink);
+  font-size: 0.8rem;
+  font-weight: 900;
+}
+
+.sz-status.ok {
+  --c: var(--kita);
+}
+
+.sz-status.warn {
+  --c: var(--gefahr);
+}
+
+.sz-status.neu {
+  --c: var(--akzent);
+}
+
+.sz-status.fertig {
+  --c: var(--familie);
+}
+
+.sz-frei {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--akzent) 55%, transparent);
+  background: color-mix(in srgb, var(--akzent) 7%, var(--karte));
+}
+
+.sz-frei-betrag {
+  font-family: var(--font-zahl);
+  font-size: 1.3rem;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+
+.sz-monat {
+  gap: 0;
+  padding: 12px 14px;
+  font-size: 0.88rem;
+}
+
+.sz-monat-titel {
+  font-family: var(--font-titel);
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 6px;
+  font-size: 0.98rem;
+}
+
+.sz-delta {
+  font-family: var(--font-zahl);
+  white-space: nowrap;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+
+.sz-delta.plus {
+  color: color-mix(in srgb, var(--kita) 72%, var(--ink)); /* dunkler (hell) bzw. heller (dunkel): Text ≥ 4,5:1 */
+}
+
+.sz-delta.minus {
+  color: var(--gefahr);
+}
+
+.sz-delta.leer {
+  color: var(--ink-2);
+  font-weight: 700;
+}
+
+.sz-zeile {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  padding: 4px 0;
+  border-top: 1px solid var(--linie);
+}
+
+.sz-zeile span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.sz-zeile b {
+  font-family: var(--font-zahl);
+  flex: none;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.sz-abschluss,
+.sz-verschoben {
+  color: var(--ink-2);
+}
+
+/* Verschiebung aus „Frei“ mit „Rückgängig“: der Knopf rechts unter der Zeile */
+.sz-zeile.sz-verschoben {
+  flex-wrap: wrap;
+}
+
+.sz-zeile-aktion {
+  flex: 1 0 100%;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.sz-hinweis {
+  margin-top: 4px;
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.sz-abgeschlossen {
+  gap: 8px;
+}
+
+.sz-fertig {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--linie);
+}
+
+.sz-fertig.aus .fk-n b {
+  color: var(--ink-2);
+}
+
+.sz-box {
+  padding: 10px 12px;
+}
+
+.sz-vorschau {
+  font-size: 0.92rem;
+}
+
+.sz-vorschau-fehler {
+  color: var(--gefahr);
+  font-weight: 700;
+}
+
+.sz-datum {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 8px 10px;
+}
+
+.sz-wahlen {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 10px 0 14px;
+}
+
+.sz-wahl {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-height: 56px;
+  text-align: left;
+  color: var(--ink);
+}
+
+.sz-wahl small {
+  color: var(--ink-2);
+  font-weight: 600;
+}
+

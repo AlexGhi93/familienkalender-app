@@ -1,10 +1,10 @@
-// Schichtplan-Farben: jede Palettenfarbe hat Fläche und Schrift (--sf-<id>, --sf-<id>-ink) im hellen und in beiden dunklen Blöcken von theme.css.
+// Schichtplan-Farben: jede Palettenfarbe hat Fläche und Schrift (--sf-<id>, --sf-<id>-ink) im hellen und in beiden dunklen Blöcken von themes/klassisch/*.css.
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { klassischCss } from './css-hilfen.js';
 import { PALETTE } from '../../src/domain/schicht.js';
 
-const css = readFileSync(new URL('../../theme.css', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+const css = klassischCss();
 
 /** Inhalt des ersten Blocks nach `kopf` bis zur nächsten schließenden Klammer (die Theme-Blöcke sind nicht verschachtelt). */
 function block(kopf) {

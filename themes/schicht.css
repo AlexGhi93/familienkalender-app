@@ -1,8 +1,8 @@
 /* Glas & Licht und Bento bunt: schicht (nur unter :root[data-aussehen="glas"] bzw. [data-aussehen="bento"]; Klassisch unberührt). */
 /* Schichtplan in „Glas & Licht“ und „Bento bunt“ (1.2.0, Aufgabe 6): Monatsraster je Person, Legende und Zählung, Monatswechsel,
    Filter, Pinsel-Leiste, Tagesblatt (Dienst, Zusätze mit Uhrzeit, Erinnern-Hinweis, ✕) und das Blatt „Schichtarten“ samt Formular.
-   Vorlagen: .superpowers/design-2026/a-glas und b-bento (Schicht). Die Schichtfarben (--sf-*, theme.css) und ihre Bedeutung bleiben
-   unverändert; hier ändert sich nur die Form der Marken. Gestreift (Urlaub, Ersatzdienst E) kommt weiter aus theme.css: keine Regel
+   Vorlagen: .superpowers/design-2026/a-glas und b-bento (Schicht). Die Schichtfarben (--sf-*, themes/klassisch/basis.css) und ihre Bedeutung bleiben
+   unverändert; hier ändert sich nur die Form der Marken. Gestreift (Urlaub, Ersatzdienst E) kommt weiter aus themes/klassisch/schicht.css: keine Regel
    hier setzt `background` auf eine Fläche mit .sf-…-Klasse.
    Aufbau: 1. Glas  2. Bento  3. schmale Telefone (≤ 359 px: Maße wie Klassisch, damit „DB +2 ✎“ im Feld bleibt)  4. Bewegung.
    Pinsel: in Glas die dritte und letzte Fläche mit echtem Glas (backdrop-filter, ohne Unterstützung deckend). Die Leiste schwebt in

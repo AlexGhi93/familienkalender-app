@@ -3,7 +3,7 @@
 // Alles ist aus bei „Bewegung: Reduziert“ (data-bewegung="reduziert", gilt in ALLEN Aussehen) oder prefers-reduced-motion.
 // Keine Animation hält eine Aktion auf: gezeichnet wird immer sofort, die Bewegung läuft danach nur über transform/opacity auf dem
 // echten DOM (keine View Transitions: die fangen Tipps ab und verzögern das Zeichnen); Neuzeichnen im Hintergrund spielt nichts erneut ab.
-// Die Klassen und Keyframes stehen in theme.css (Abschnitt „Bewegung“); Glas und Bento würzen sie in themes/glas.css bzw. bento.css.
+// Die Klassen und Keyframes stehen in themes/klassisch/bewegung.css (Abschnitt „Bewegung“); Glas und Bento würzen sie in themes/glas.css bzw. bento.css.
 
 /** Aussehen, in denen die Effekte laufen. */
 const MIT_EFFEKTEN = new Set(['glas', 'bento']);

@@ -1,0 +1,895 @@
+/* Familienkalender: freundliches, helles Kinder-Thema für die Eltern. Farben als Variablen, Tönungen per color-mix.
+
+   DESIGN-TOKENS (1.2.0) – alles, was ein Aussehen ändern darf. Die Werte hier sind Klassisch (= Stand 1.1.2, Pixel für Pixel,
+   geprüft mit npm run test:visuell). Glas und Bento überschreiben sie in themes/glas.css bzw. themes/bento.css unter
+   :root[data-aussehen="…"] (je Hell und Dunkel) und ergänzen dort, wo nötig, eigene Regeln.
+   Wichtig: abgeleitete Tokens (--karte-2, --feld-bg, --karte-rand, --feld-rand, --chip-grund, --tint-grund, --tabs-bg,
+   --tabs-rand, --blatt-bg, --pinsel-bg, --toast-bg, --toast-ink, --tooltip-bg, --tooltip-ink, --fab-bg, --fab-ink, --fab-schatten,
+   --font-titel, --font-zahl, --font-feld) werden am :root berechnet. Wer --karte, --bg, --ink, --akzent oder --font-text
+   nur in einem Teilbaum (z. B. im Blatt) ändert, muss die abgeleiteten Tokens dort ebenfalls setzen.
+
+   Flächen      --bg            Hintergrund der Seite (auch Schriftfarbe auf --ink: nie ein Verlauf)
+                --seite-bild    Bild/Verlauf über --bg auf body (Klassisch, Glas, Bento: none; die Aurora in Glas malt body::before)
+                --karte         Karten
+                --karte-2       Flächen in und neben Karten: Zeilen, Knöpfe, runde Knöpfe (Klassisch = --karte)
+                --feld-bg       Eingabefelder (Klassisch = --karte-2)
+                --linie         Rahmenfarbe
+                --rand          Rahmenbreite von Zeilen und Knöpfen
+                --karte-rand    ganzer Rahmen der Karten und Diagramme (Breite, Stil, Farbe)
+                --feld-rand     ganzer Rahmen der Eingabefelder
+                --chip-grund    Grund, in den Chips ihre Farbe mischen;  --chip-anteil / --chip-aktiv-anteil: Anteil der Farbe
+                --tint-grund    Grund getönter Karten und Zeilen (.tint);  --tint-anteil: Anteil der Farbe
+   Text         --ink           Schrift
+                --ink-2         leise Schrift (Untertitel, Hinweise)
+   Akzent       --akzent        Akzentfarbe (aktive Knöpfe, Fokus, „Neu“)
+                --akzent-ink    Schrift auf --akzent
+                --fokus-ring    Umriss bei Tastaturfokus;  --fokus-abstand: Abstand des Umrisses
+   Radien       --r-karte       Karten, Kacheln, Diagramme
+                --r-knopf       Knöpfe
+                --r-zeile       Zeilen und Kästen in Listen und Karten
+                --r-feld        Eingabefelder
+                --r-chip        Chips, Marken, Umschalter, Meldung (Pille)
+                --r-blatt       obere Ecken des Blatts (Dialog von unten)
+                --r-pinsel      obere Ecken der Pinsel-Leiste
+                --r-zelle       Tage im Monatsraster
+   Schatten     --schatten-karte      Karten und Kacheln (Dunkel: eigener Wert)
+                --schatten-schwebend  Blatt
+                --schatten-leiste     Pinsel-Leiste des Schichtplans
+                --schatten-knopf      Knöpfe (.knopf; Klassisch: none)
+   Schrift      --font-text     Grundschrift (body)
+                --font-titel    Titel (Seiten, Blatt, Abschnitte, Karten, Monate, Kacheln, Menü)
+                --font-zahl     Beträge, Uhrzeiten und Tabellenzahlen (mit tabular-nums). Braucht gleich breite Ziffern:
+                                FK Onest (tnum) oder FK Nunito (Ziffern schon gleich breit) – nie FK Fredoka (proportional, kein tnum)
+                --font-feld     Auswahllisten (select). Wirkt nur in Glas/Bento (:root[data-aussehen] select); in Klassisch
+                                behält select die Schrift des Browsers wie bisher
+                --gewicht-titel Gewicht der Titel
+                --titel-gross   Seitentitel (h1.gruss)
+                --titel-seite   Monatstitel (Monat)
+                --titel-schicht Seitentitel im Schichtplan (neben „Eintragen“)
+                --titel-blatt   Titel im Blatt
+                --titel-karte   Titel in Karten (h3)
+                --titel-abschnitt Abschnittstitel (Großbuchstaben)
+   Tableiste    --tabs-hoehe    Höhe (ohne sicheren Bereich unten)
+                --tabs-bg       Fläche
+                --tabs-blur     backdrop-filter der Leiste
+                --tabs-rahmen   ganzer Rahmen (schwebend; Klassisch: none)
+                --tabs-rand     Rand oben (steht nach --tabs-rahmen)
+                --tabs-radius   Ecken (schwebend: rund)
+                --tabs-abstand  schwebend: Abstand zu Rand und Boden (0px = angedockt, Klassisch)
+                --tabs-schatten Schatten (schwebend)
+                --tab-aktiv     Schrift der aktiven Karte;  --tab-aktiv-bg: ihre Fläche (Klassisch: transparent)
+                --fab-bg        runder Knopf „Neu“;  --fab-ink: sein Zeichen;  --fab-schatten: sein Schatten
+   Blatt        --blatt-bg      Fläche
+                --blatt-blur    backdrop-filter des Blatts (Klassisch: none)
+                --blatt-schleier Abdunkeln dahinter
+   Pinsel       --pinsel-bg     Fläche der Pinsel-Leiste;  --pinsel-blur: ihr backdrop-filter (Klassisch: none)
+   Meldung      --toast-bg      Fläche der Meldung unten;  --toast-ink: ihre Schrift
+                --tooltip-bg    Fläche des Diagramm-Tooltips;  --tooltip-ink: seine Schrift
+   Bewegung     --dauer-kurz    kurze Übergänge (Schleier, Meldung)
+                --dauer-mittel  Blatt auf/zu
+                --kurve-feder   Kurve des Blatts (mit Feder)
+                --kurve-sanft   sanfte Kurve (Schleier, Meldung)
+                --dauer-tab     Einblenden von #inhalt nach einem Tabwechsel (:root.bw-tabwechsel; ≤ 260 ms)
+                --dauer-einblenden  eine Karte beim ersten Zeichnen eines Bildschirms (.bw-einblenden)
+                --staffel       Abstand zwischen zwei Karten beim Einblenden (höchstens 8 gestaffelt)
+                --dauer-fortschritt Füllen eines Balkens (.bw-fortschritt)
+                Klassen und Keyframes der Bewegung (Effekte nur Glas/Bento) und „Bewegung: Reduziert“ (alle Aussehen):
+                Abschnitt „Bewegung“ am Ende dieser Datei.
+   Die Schriften der Aussehen (FK Onest, FK Fredoka, FK Nunito) sind weiter unten nur deklariert; Klassisch nutzt sie nicht. */
+
+:root {
+  --bg: #fff7ec;
+  --karte: #ffffff;
+  --ink: #2d2a3e;
+  --ink-2: #6b6680;
+  --linie: #eadfcb;
+  --akzent: #7a5ce0;
+  --akzent-ink: #ffffff;
+  --gefahr: #c93c3c; /* ≥ 4.5:1 als Text auf --karte und --bg und unter weißer Schrift */
+  --gefahr-ink: #ffffff; /* Schrift auf --gefahr (Löschen-Knopf, Fehler-Meldung) */
+
+  --kita: #2f9e5b;
+  --kita-ohne: #8fd0a2;
+  --abwesend: #f5a04a;
+  --urlaub: #28b5c4;
+  --krank: #ef6b6b;
+  --arzt: #8b6cd6;
+  --familie: #f4c842;
+  --grau: #a7a2b2;
+  --serie-papa: #2a78d6; /* Diagramm-Farben: blau/orange, mit dem Farbprüfer für Hell und Dunkel validiert */
+  --serie-mama: #eb6834;
+  /* Schichtplan: Fläche --sf-<id> und Kürzel-Schrift --sf-<id>-ink je Palettenfarbe (src/domain/schicht.js), Kontrast ≥ 4,5:1 */
+  --sf-gruen: #16a34a;
+  --sf-gruen-ink: #03210e;
+  --sf-orange: #f59e0b;
+  --sf-orange-ink: #2b1700;
+  --sf-hellblau: #7dd3fc;
+  --sf-hellblau-ink: #0c2a44;
+  --sf-dunkelblau: #1e3a8a;
+  --sf-dunkelblau-ink: #ffffff;
+  --sf-rosa: #ec4899;
+  --sf-rosa-ink: #2d0418;
+  --sf-rot: #dc2626;
+  --sf-rot-ink: #ffffff;
+  --sf-violett: #7c3aed;
+  --sf-violett-ink: #ffffff;
+  --sf-tuerkis: #28b5c4;
+  --sf-tuerkis-ink: #06343a;
+  --sf-gelb: #eab308;
+  --sf-gelb-ink: #2a1f00;
+  --sf-dunkellila: #4c1d95;
+  --sf-dunkellila-ink: #ffffff;
+  --sf-schiefer: #64748b;
+  --sf-schiefer-ink: #ffffff;
+  --sf-braun: #92400e;
+  --sf-braun-ink: #ffffff;
+  --sf-oliv: #4d7c0f;
+  --sf-oliv-ink: #ffffff;
+  --sf-cyan: #0891b2;
+  --sf-cyan-ink: #00171f;
+  --sf-magenta: #c026d3;
+  --sf-magenta-ink: #ffffff;
+  --sf-grau: #a8a29e;
+  --sf-grau-ink: #1c1917;
+
+  /* Design-Tokens (Liste und Zweck: Kopf dieser Datei); die Werte sind Klassisch */
+  --karte-2: var(--karte);
+  --rand: 1.5px;
+  --karte-rand: var(--rand) solid var(--linie);
+  --feld-rand: var(--rand) solid var(--linie);
+  --feld-bg: var(--karte-2);
+  --chip-grund: var(--karte);
+  --chip-anteil: 12%;
+  --chip-aktiv-anteil: 38%;
+  --tint-grund: var(--karte);
+  --tint-anteil: 16%;
+  --seite-bild: none;
+  --r-karte: 20px;
+  --r-knopf: 14px;
+  --r-zeile: 14px;
+  --r-feld: 14px;
+  --r-chip: 999px;
+  --r-blatt: 26px;
+  --r-zelle: 12px;
+  --r-pinsel: 22px;
+  --schatten-karte: 0 1px 0 rgba(45, 42, 62, 0.04), 0 8px 22px rgba(45, 42, 62, 0.07);
+  --schatten-schwebend: 0 -10px 40px rgba(20, 16, 36, 0.25);
+  --schatten-leiste: 0 -10px 24px rgba(20, 16, 36, 0.14);
+  --schatten-knopf: none;
+  --fokus-ring: 3px solid var(--akzent);
+  --fokus-abstand: 2px;
+  --font-text: ui-rounded, 'SF Pro Rounded', 'Nunito', 'Segoe UI Variable Text', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-titel: var(--font-text);
+  --font-zahl: var(--font-text);
+  --font-feld: var(--font-text);
+  --gewicht-titel: 800;
+  --titel-gross: 1.9rem;
+  --titel-seite: 1.5rem;
+  --titel-blatt: 1.2rem;
+  --titel-karte: 1.05rem;
+  --titel-abschnitt: 0.8rem;
+  --titel-schicht: 1.55rem;
+  --tabs-hoehe: 68px;
+  --tabs-bg: color-mix(in srgb, var(--karte) 92%, transparent);
+  --tabs-blur: blur(14px);
+  --tabs-rand: var(--rand) solid var(--linie);
+  --tabs-radius: 0;
+  --tabs-abstand: 0px;
+  --tabs-schatten: none;
+  --tabs-rahmen: none;
+  --tab-aktiv: var(--akzent);
+  --tab-aktiv-bg: transparent;
+  --fab-bg: var(--akzent);
+  --fab-ink: var(--akzent-ink);
+  --fab-schatten: 0 6px 16px color-mix(in srgb, var(--akzent) 45%, transparent);
+  --pinsel-bg: var(--karte);
+  --pinsel-blur: none;
+  --toast-bg: var(--ink);
+  --toast-ink: var(--bg);
+  --tooltip-bg: var(--ink);
+  --tooltip-ink: var(--bg);
+  --blatt-bg: var(--bg);
+  --blatt-blur: none;
+  --blatt-schleier: rgba(20, 16, 36, 0.45);
+  --dauer-kurz: 0.18s;
+  --dauer-mittel: 0.22s;
+  --kurve-feder: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --kurve-sanft: ease;
+  --dauer-tab: 0.22s;
+  --dauer-einblenden: 0.5s;
+  --staffel: 45ms;
+  --dauer-fortschritt: 0.7s;
+  color-scheme: light;
+}
+
+/* Dunkel steht zweimal – immer beide Blöcke ändern. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: #1f1b2e;
+    --karte: #2a2540;
+    --ink: #f3eefb;
+    --ink-2: #b3adc9;
+    --linie: #3a3456;
+    --akzent: #a68cff;
+    --akzent-ink: #1f1b2e;
+    --gefahr: #ff7b7b;
+    --gefahr-ink: #1f1b2e; /* helles Rot braucht dunkle Schrift (Weiß hätte nur 2,5:1) */
+    --schatten-karte: 0 1px 0 rgba(0, 0, 0, 0.2), 0 8px 22px rgba(0, 0, 0, 0.3);
+    --serie-papa: #3987e5;
+    --serie-mama: #d95926;
+    /* Schichtplan dunkel: dunkle Töne aufgehellt (≥ 2:1 auf --karte), Kürzel weiter ≥ 4,5:1; in beiden dunklen Blöcken gleich */
+    --sf-gruen: #22c55e;
+    --sf-gruen-ink: #03210e;
+    --sf-orange: #fb923c;
+    --sf-orange-ink: #2b1100;
+    --sf-hellblau: #7dd3fc;
+    --sf-hellblau-ink: #0c2a44;
+    --sf-dunkelblau: #2f6ae8;
+    --sf-dunkelblau-ink: #ffffff;
+    --sf-rosa: #f472b6;
+    --sf-rosa-ink: #3b0a24;
+    --sf-rot: #dc2626;
+    --sf-rot-ink: #ffffff;
+    --sf-violett: #a78bfa;
+    --sf-violett-ink: #1e0a4a;
+    --sf-tuerkis: #28b5c4;
+    --sf-tuerkis-ink: #06343a;
+    --sf-gelb: #facc15;
+    --sf-gelb-ink: #2a1f00;
+    --sf-dunkellila: #7e3fd0;
+    --sf-dunkellila-ink: #ffffff;
+    --sf-schiefer: #64748b;
+    --sf-schiefer-ink: #ffffff;
+    --sf-braun: #9a5a2c;
+    --sf-braun-ink: #ffffff;
+    --sf-oliv: #65a30d;
+    --sf-oliv-ink: #132302;
+    --sf-cyan: #0891b2;
+    --sf-cyan-ink: #00171f;
+    --sf-magenta: #c026d3;
+    --sf-magenta-ink: #ffffff;
+    --sf-grau: #a8a29e;
+    --sf-grau-ink: #1c1917;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme='dark'] {
+  --bg: #1f1b2e;
+  --karte: #2a2540;
+  --ink: #f3eefb;
+  --ink-2: #b3adc9;
+  --linie: #3a3456;
+  --akzent: #a68cff;
+  --akzent-ink: #1f1b2e;
+  --gefahr: #ff7b7b;
+  --gefahr-ink: #1f1b2e; /* helles Rot braucht dunkle Schrift (Weiß hätte nur 2,5:1) */
+  --schatten-karte: 0 1px 0 rgba(0, 0, 0, 0.2), 0 8px 22px rgba(0, 0, 0, 0.3);
+  --serie-papa: #3987e5;
+  --serie-mama: #d95926;
+  /* Schichtplan dunkel: dunkle Töne aufgehellt (≥ 2:1 auf --karte), Kürzel weiter ≥ 4,5:1; in beiden dunklen Blöcken gleich */
+  --sf-gruen: #22c55e;
+  --sf-gruen-ink: #03210e;
+  --sf-orange: #fb923c;
+  --sf-orange-ink: #2b1100;
+  --sf-hellblau: #7dd3fc;
+  --sf-hellblau-ink: #0c2a44;
+  --sf-dunkelblau: #2f6ae8;
+  --sf-dunkelblau-ink: #ffffff;
+  --sf-rosa: #f472b6;
+  --sf-rosa-ink: #3b0a24;
+  --sf-rot: #dc2626;
+  --sf-rot-ink: #ffffff;
+  --sf-violett: #a78bfa;
+  --sf-violett-ink: #1e0a4a;
+  --sf-tuerkis: #28b5c4;
+  --sf-tuerkis-ink: #06343a;
+  --sf-gelb: #facc15;
+  --sf-gelb-ink: #2a1f00;
+  --sf-dunkellila: #7e3fd0;
+  --sf-dunkellila-ink: #ffffff;
+  --sf-schiefer: #64748b;
+  --sf-schiefer-ink: #ffffff;
+  --sf-braun: #9a5a2c;
+  --sf-braun-ink: #ffffff;
+  --sf-oliv: #65a30d;
+  --sf-oliv-ink: #132302;
+  --sf-cyan: #0891b2;
+  --sf-cyan-ink: #00171f;
+  --sf-magenta: #c026d3;
+  --sf-magenta-ink: #ffffff;
+  --sf-grau: #a8a29e;
+  --sf-grau-ink: #1c1917;
+  color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+
+/* Schriften der Aussehen (lokal, OFL, siehe fonts/LIZENZ.md): Glas = Onest, Bento = Fredoka (Titel) und Nunito (Text).
+   Nur deklariert: Klassisch nennt sie in keiner Schriftliste und lädt sie deshalb nie. Das Präfix „FK“ ist Absicht – „Nunito“
+   steht schon in --font-text (als installierte Systemschrift); hieße diese Datei so, nähme Klassisch sie auf Telefonen ohne
+   ui-rounded. unicode-range = genau die Zeichen, die jede Datei hat (Latein mit Ä Ö Ü ß, €, Satzzeichen der App; Fredoka ohne
+   Pfeile und ≈ ≠ ≤ ≥, Nunito ohne Pfeile), damit der Browser eine Schrift nie für ein Zeichen lädt, das sie nicht hat. Die
+   Namen in den Dateien (z. B. „Fredoka Light“) stammen aus der variablen Vorlage und spielen keine Rolle. */
+@font-face {
+  font-family: 'FK Onest';
+  src: url('../../fonts/onest.woff2') format('woff2');
+  font-weight: 400 900;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0020-007E, U+00A0-00A3, U+00A5, U+00A7-00AB, U+00AE-00B4, U+00B6-00FF, U+0131, U+0152-0153, U+2013-2014, U+2018-201A, U+201C-201E, U+2022, U+2026, U+2039-203A, U+20AC, U+2190-2193, U+2212, U+2248, U+2260, U+2264-2265;
+}
+
+@font-face {
+  font-family: 'FK Fredoka';
+  src: url('../../fonts/fredoka.woff2') format('woff2');
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0020-007E, U+00A0-00AC, U+00AE-00FF, U+0131, U+0152-0153, U+2013-2014, U+2018-201A, U+201C-201E, U+2022, U+2026, U+2039-203A, U+20AC, U+2212;
+}
+
+@font-face {
+  font-family: 'FK Nunito';
+  src: url('../../fonts/nunito.woff2') format('woff2');
+  font-weight: 400 900;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0020-007E, U+00A0-00FF, U+0131, U+0152-0153, U+2013-2014, U+2018-201A, U+201C-201E, U+2022, U+2026, U+2039-203A, U+20AC, U+2212, U+2248, U+2260, U+2264-2265;
+}
+
+
+[hidden] {
+  display: none !important;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  background: var(--bg);
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  background-image: var(--seite-bild);
+  color: var(--ink);
+  font-family: var(--font-text);
+  font-size: 16px;
+  line-height: 1.4;
+  -webkit-text-size-adjust: 100%;
+}
+
+#app {
+  max-width: 520px;
+  margin: 0 auto;
+  min-height: 100dvh;
+}
+
+#inhalt {
+  outline: none;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+button,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+/* Auswahllisten erben die Schrift in Klassisch nicht (Browser-Schrift, wie bisher); Glas und Bento geben ihnen --font-feld. */
+:root[data-aussehen] select {
+  font-family: var(--font-feld);
+}
+
+:focus-visible {
+  outline: var(--fokus-ring);
+  outline-offset: var(--fokus-abstand);
+}
+
+/* ---------- Grundgerüst ---------- */
+
+.screen {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: calc(env(safe-area-inset-top, 0px) + 18px) 16px calc(var(--tabs-hoehe) + var(--tabs-abstand) + env(safe-area-inset-bottom, 0px) + 36px);
+}
+
+.kopf {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.marke {
+  font-weight: 800;
+  letter-spacing: 0.2px;
+}
+
+.pille {
+  background: color-mix(in srgb, var(--kita) 18%, var(--karte));
+  border: 1.5px solid color-mix(in srgb, var(--kita) 45%, transparent);
+  border-radius: var(--r-chip);
+  padding: 3px 12px;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.gruss {
+  font-family: var(--font-titel);
+  font-size: var(--titel-gross);
+  font-weight: var(--gewicht-titel);
+  line-height: 1.15;
+}
+
+.datum {
+  color: var(--ink-2);
+  margin-top: -8px;
+}
+
+.abschnitt {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.abschnitt > h2,
+.abschnitt-titel {
+  font-family: var(--font-titel);
+  font-size: var(--titel-abschnitt);
+  font-weight: var(--gewicht-titel);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+.abschnitt-titel {
+  margin-top: 6px;
+}
+
+.leise {
+  color: var(--ink-2);
+  font-size: 0.92rem;
+}
+
+/* ---------- Karten ---------- */
+
+.karte {
+  background: var(--karte);
+  border: var(--karte-rand);
+  border-radius: var(--r-karte);
+  padding: 14px;
+  box-shadow: var(--schatten-karte);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.karte h3 {
+  font-family: var(--font-titel);
+  font-size: var(--titel-karte);
+}
+
+.tint {
+  --c: var(--grau);
+  background: color-mix(in srgb, var(--c) var(--tint-anteil), var(--tint-grund));
+  border-color: color-mix(in srgb, var(--c) 45%, transparent);
+}
+
+.hinweis {
+  border-style: dashed;
+}
+
+.karte-zeile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.karte-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.karte-text small,
+.zeile-text small {
+  color: var(--ink-2);
+}
+
+.emoji {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.emoji.gross {
+  font-size: 2.1rem;
+}
+
+.chips,
+.chip-reihe {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  border: 1.5px solid color-mix(in srgb, var(--c, var(--ink-2)) 40%, transparent);
+  background: color-mix(in srgb, var(--c, var(--ink-2)) var(--chip-anteil), var(--chip-grund));
+  border-radius: var(--r-chip);
+  padding: 6px 12px;
+  font-size: 0.9rem;
+  min-height: 34px;
+}
+
+button.chip {
+  min-height: 44px;
+}
+
+.chip.aktiv {
+  border: 2px solid var(--c, var(--akzent));
+  background: color-mix(in srgb, var(--c, var(--akzent)) var(--chip-aktiv-anteil), var(--chip-grund));
+  font-weight: 800;
+}
+
+/* Konto & App → Darstellung: Zwischentitel und die kleine Vorschau jedes Aussehens (drei Farbtupfen im Chip) */
+.darstellung-titel {
+  font-family: var(--font-titel);
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.aussehen-vorschau {
+  display: inline-flex;
+  gap: 3px;
+  margin-right: 8px;
+}
+
+.aussehen-pille {
+  width: 10px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--pille);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.14);
+}
+
+.aussehen-vorschau.klassisch .aussehen-pille:nth-child(1) { --pille: #7a5ce0; }
+.aussehen-vorschau.klassisch .aussehen-pille:nth-child(2) { --pille: #2f9e5b; }
+.aussehen-vorschau.klassisch .aussehen-pille:nth-child(3) { --pille: #f4c842; }
+.aussehen-vorschau.glas .aussehen-pille:nth-child(1) { --pille: #ffb08a; }
+.aussehen-vorschau.glas .aussehen-pille:nth-child(2) { --pille: #ff9cc2; }
+.aussehen-vorschau.glas .aussehen-pille:nth-child(3) { --pille: #8c6dff; }
+.aussehen-vorschau.bento .aussehen-pille:nth-child(1) { --pille: #2b66f0; }
+.aussehen-vorschau.bento .aussehen-pille:nth-child(2) { --pille: #f2602f; }
+.aussehen-vorschau.bento .aussehen-pille:nth-child(3) { --pille: #f5b400; }
+
+/* ---------- Knöpfe ---------- */
+
+.knopf {
+  border: var(--rand) solid var(--linie);
+  background: var(--karte-2);
+  border-radius: var(--r-knopf);
+  padding: 10px 14px;
+  font-weight: 700;
+  box-shadow: var(--schatten-knopf);
+}
+
+.knopf:active {
+  transform: scale(0.97);
+}
+
+.knopf.klein {
+  min-height: 44px;
+  padding: 8px 16px;
+}
+
+.knopf.primaer {
+  background: var(--akzent);
+  border-color: var(--akzent);
+  color: var(--akzent-ink);
+}
+
+.knopf.gefahr {
+  background: var(--gefahr);
+  border-color: var(--gefahr);
+  color: var(--gefahr-ink);
+}
+
+.knopfzeile {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.knopfzeile.rechts {
+  justify-content: flex-end;
+}
+
+/* „Löschen“ in Formularen: eine eigene Zeile links, abgesetzt von Speichern und Co. */
+.knopfzeile.loeschen-zeile {
+  justify-content: flex-start;
+  margin-top: 14px;
+}
+
+.aktionen {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.kachel-knopf {
+  --c: var(--grau);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 12px 8px;
+  min-height: 84px;
+  background: color-mix(in srgb, var(--c) 20%, var(--karte));
+  border: 2px solid color-mix(in srgb, var(--c) 55%, transparent);
+  border-radius: 18px;
+}
+
+.kachel-knopf .e {
+  font-size: 1.6rem;
+  line-height: 1.1;
+}
+
+.kachel-knopf small {
+  color: var(--ink-2);
+  font-weight: 600;
+}
+
+.zurueck {
+  align-self: flex-start;
+  border: 0;
+  background: none;
+  color: var(--akzent);
+  font-weight: 800;
+  padding: 8px 4px;
+  min-height: 44px;
+}
+
+/* ---------- Blatt (Dialog von unten) ---------- */
+
+.blatt-huelle {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+}
+
+/* Ein Blatt, das gerade hinausgleitet, nimmt keine Tipps mehr an (kein zweites Auslösen beim Doppeltipp) */
+.blatt-huelle.zu {
+  pointer-events: none;
+}
+
+.blatt-hintergrund {
+  position: absolute;
+  inset: 0;
+  touch-action: none; /* Ziehen auf dem Hintergrund bewegt nicht die Seite darunter */
+  background: var(--blatt-schleier);
+  opacity: 0;
+  transition: opacity var(--dauer-kurz) var(--kurve-sanft);
+}
+
+.blatt {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: min(100%, 520px);
+  max-height: 88dvh;
+  overflow-y: auto;
+  background: var(--blatt-bg);
+  -webkit-backdrop-filter: var(--blatt-blur);
+  backdrop-filter: var(--blatt-blur);
+  border-radius: var(--r-blatt) var(--r-blatt) 0 0;
+  padding: 8px 16px calc(env(safe-area-inset-bottom, 0px) + 22px);
+  transform: translate(-50%, 100%);
+  transition: transform var(--dauer-mittel) var(--kurve-feder);
+  box-shadow: var(--schatten-schwebend);
+  overscroll-behavior: contain; /* Scrollen im Blatt reicht nie an die Seite weiter */
+}
+
+/* Solange ein Blatt offen ist (auch mehrere), lädt Herunterziehen die Seite nicht neu; Wischen schließt das Blatt (blatt-ziehen.js).
+   Der Selektor ist bewusst spezifischer als die Regel der Einkaufsliste (html:has(.screen.einkauf)). */
+html:has(.blatt-huelle > .blatt[role='dialog']),
+html:has(.blatt-huelle > .blatt[role='dialog']) body {
+  overscroll-behavior-y: none;
+}
+
+.blatt-huelle.auf .blatt-hintergrund {
+  opacity: var(--blatt-deckkraft, 1);
+}
+
+/* --blatt-zug: Weg nach unten beim Wischen (blatt-ziehen.js), sonst 0 */
+.blatt-huelle.auf .blatt {
+  transform: translate(-50%, var(--blatt-zug, 0px));
+}
+
+/* Beim Ziehen folgt das Blatt dem Finger ohne Verzögerung */
+.blatt-huelle.zieht .blatt,
+.blatt-huelle.zieht .blatt-hintergrund {
+  transition: none;
+}
+
+.blatt-huelle.zu .blatt-hintergrund {
+  opacity: 0;
+}
+
+.blatt-huelle.zu .blatt {
+  transform: translate(-50%, 100%);
+}
+
+.blatt-griff {
+  touch-action: none;
+  width: 44px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--linie);
+  margin: 4px auto 8px;
+}
+
+.blatt-kopf {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.blatt-kopf h2 {
+  font-family: var(--font-titel);
+  font-size: var(--titel-blatt);
+  font-weight: var(--gewicht-titel);
+}
+
+.blatt-zu {
+  flex: none; /* nie schmaler als 44 px, auch neben einem langen Titel („MedPLUS Privatarzt Basic anlegen“; Glas/Bento ebenso) */
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: var(--rand) solid var(--linie);
+  background: var(--karte-2);
+}
+
+.blatt-inhalt {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.blatt-inhalt h3 {
+  font-family: var(--font-titel);
+  font-size: 0.85rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+/* ---------- Toast ---------- */
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--tabs-hoehe) + var(--tabs-abstand) + env(safe-area-inset-bottom, 0px) + 26px);
+  transform: translate(-50%, 12px);
+  width: max-content; /* sonst bricht der Text bei left: 50% in eine schmale Blase um */
+  max-width: min(92vw, 420px);
+  padding: 12px 18px;
+  border-radius: var(--r-chip);
+  background: var(--toast-bg);
+  color: var(--toast-ink);
+  font-weight: 700;
+  opacity: 0;
+  transition: opacity var(--dauer-kurz) var(--kurve-sanft), transform var(--dauer-kurz) var(--kurve-sanft);
+  z-index: 60;
+  text-align: center;
+}
+
+.toast.auf {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+/* ---------- Tableiste ---------- */
+
+.tabs {
+  position: fixed;
+  left: 50%;
+  bottom: var(--tabs-abstand);
+  transform: translateX(-50%);
+  width: calc(min(100%, 520px) - 2 * var(--tabs-abstand));
+  height: calc(var(--tabs-hoehe) + env(safe-area-inset-bottom, 0px));
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  display: grid;
+  grid-template-columns: repeat(3, 1fr) 52px repeat(4, 1fr); /* „Neu“ als runder Hauptknopf an vierter Stelle, sieben gleich breite Karten */
+  align-items: center;
+  background: var(--tabs-bg);
+  -webkit-backdrop-filter: var(--tabs-blur);
+  backdrop-filter: var(--tabs-blur);
+  border: var(--tabs-rahmen);
+  border-top: var(--tabs-rand);
+  border-radius: var(--tabs-radius);
+  box-shadow: var(--tabs-schatten);
+  z-index: 40;
+}
+
+.tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  color: var(--ink-2);
+  text-decoration: none;
+  font-size: 0.66rem; /* acht Karten: „Einkauf“ und „Schicht“ passen auf 375 px ganz hinein */
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  padding: 6px 0;
+}
+
+.tab-symbol {
+  font-size: 1.35rem;
+  line-height: 1.1;
+}
+
+@media (max-width: 359px) {
+  .tab {
+    font-size: 0.58rem; /* kleiner, aber nie abgeschnitten */
+  }
+}
+
+.tab.aktiv {
+  color: var(--tab-aktiv);
+  background: var(--tab-aktiv-bg);
+}
+
+.tab.aktiv .tab-symbol {
+  transform: translateY(-1px) scale(1.1);
+}
+
+.tab.fab .tab-symbol {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  margin-top: -20px;
+  border-radius: 50%;
+  background: var(--fab-bg);
+  color: var(--fab-ink);
+  font-size: 1.9rem;
+  box-shadow: var(--fab-schatten);
+}
+
+.tab.fab .tab-text {
+  margin-top: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+  }
+}
+

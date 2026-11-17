@@ -69,7 +69,7 @@
 }
 
 /* Wochentage + Raster = eine Glaskarte: oben die Kopfzeile (heller Teil mit Lichtkante), unten das Raster (Verlauf und Schatten).
-   Die Kopfzeile schließt die Lücke der Seite mit einem negativen Rand: -14px = .screen { gap: 14px } in theme.css (Abschnitt
+   Die Kopfzeile schließt die Lücke der Seite mit einem negativen Rand: -14px = .screen { gap: 14px } in themes/klassisch/basis.css (Abschnitt
    „Seite“; ändert sich die Lücke dort, muss sie hier mit – der e2e-Test in monat.spec.js prüft die Naht). Die Karte steht in der
    Flucht der Seite (wie Kopf, Legende, Statistik); 4px Innenabstand + 4px Lücke halten die Zellen ≥ 44px bei 375px. Spalten mit
    minmax(0, 1fr): bei großer Systemschrift läuft das Raster nicht waagerecht über. */
@@ -626,7 +626,7 @@
 /* ---------- 6. Bewegung (nur ohne „Reduziert“ und ohne prefers-reduced-motion) ---------- */
 
 @media (prefers-reduced-motion: no-preference) {
-  /* Einblenden der Seite (theme.css .bw-einblenden): Kopfzeile und Raster der Glaskarte kommen zusammen und skalieren zur
+  /* Einblenden der Seite (themes/klassisch/bewegung.css .bw-einblenden): Kopfzeile und Raster der Glaskarte kommen zusammen und skalieren zur
      gemeinsamen Kante hin, damit die Karte unterwegs nicht auseinanderfällt */
   :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .monat-seite.bw-einblenden > .wochentage {
     transform-origin: 50% 100%;

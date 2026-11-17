@@ -165,7 +165,7 @@ test('Willkommen', async ({ page }) => {
   await foto(page, 'willkommen');
 });
 
-test('Datenschutz (eigene Seite, nutzt theme.css)', async ({ page }, info) => {
+test('Datenschutz (eigene Seite, nutzt themes/klassisch/*.css)', async ({ page }, info) => {
   // Die Seite hat kein Skript und setzt nie data-theme: im Projekt „dunkel-gewaehlt“ wäre das Foto dasselbe wie in „hell“.
   test.skip(info.project.name === 'dunkel-gewaehlt', 'ohne Skript keine gewählte Darstellung');
   await page.goto('/datenschutz.html');

@@ -15,7 +15,7 @@ const prozentText = (p) => `${String(p).replace('.', ',')} %`;
 /** Namen der Symbole (für Vorlesen und Auswahl), in der Reihenfolge von ZIEL_EMOJIS; 👧 bekommt den Namen des Kindes. */
 export const SYMBOL_NAMEN = Object.freeze(['Auto', 'Urlaub', 'Wohnen', 'Geschenk', 'Kind', 'Schmuck', 'Möbel', 'Ziel', 'Rumänien', 'Reise', 'Technik', 'Weihnachten']);
 
-/** Farben der Balken (der Reihe nach je Ziel), als CSS-Variablen aus theme.css. */
+/** Farben der Balken (der Reihe nach je Ziel), als CSS-Variablen aus themes/klassisch/konto.css. */
 const BALKEN_FARBEN = ['var(--serie-papa)', 'var(--urlaub)', 'var(--kita)', 'var(--abwesend)', 'var(--arzt)', 'var(--serie-mama)'];
 
 /** Die Symbole zur Auswahl: [{ emoji, name }]. */

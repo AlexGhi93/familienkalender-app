@@ -1,0 +1,271 @@
+/* ---------- Urlaub ---------- */
+
+.ring {
+  flex: none;
+}
+
+.ring-bahn {
+  stroke: color-mix(in srgb, var(--urlaub) 18%, var(--karte));
+}
+
+.ring-geplant {
+  stroke: color-mix(in srgb, var(--urlaub) 50%, var(--karte));
+}
+
+.ring-genommen {
+  stroke: var(--urlaub);
+}
+
+.ring-zahl {
+  fill: var(--ink);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.gross-ring {
+  flex-direction: row;
+  align-items: center;
+  gap: 16px;
+}
+
+.ring-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ring-text small {
+  color: var(--ink-2);
+}
+
+.countdown {
+  text-align: center;
+  font-weight: 800;
+  padding: 12px;
+  border-radius: var(--r-karte);
+  background: color-mix(in srgb, var(--urlaub) 16%, var(--karte));
+  border: 1.5px solid color-mix(in srgb, var(--urlaub) 45%, transparent);
+}
+
+/* ---------- Monat ---------- */
+
+.monat-kopf {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.monat-kopf h1 {
+  font-family: var(--font-titel);
+  font-size: var(--titel-seite);
+  font-weight: var(--gewicht-titel);
+}
+
+.rund {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: var(--rand) solid var(--linie);
+  background: var(--karte-2);
+  font-size: 1.4rem;
+  line-height: 1;
+}
+
+.wochentage,
+.raster {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 5px;
+}
+
+.wochentage span {
+  text-align: center;
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--ink-2);
+}
+
+.zelle {
+  --c: transparent;
+  position: relative;
+  aspect-ratio: 1 / 1.12;
+  border: var(--rand) solid var(--linie);
+  border-radius: var(--r-zelle);
+  background: var(--karte);
+  padding: 3px 0 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+.zelle.getoent {
+  background: color-mix(in srgb, var(--c) 30%, var(--karte));
+  border-color: color-mix(in srgb, var(--c) 60%, transparent);
+}
+
+.zelle.ausserhalb {
+  opacity: 0.38;
+}
+
+.zelle.we .nr {
+  color: var(--ink-2);
+}
+
+.zelle.heute {
+  outline: 3px solid var(--akzent);
+  outline-offset: -1px;
+}
+
+.zelle .nr {
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.zelle i {
+  font-style: normal;
+  font-size: 1.15rem;
+  line-height: 1.1;
+}
+
+.zelle .punkt {
+  position: absolute;
+  right: 2px;
+  bottom: 1px;
+  font-size: 0.7rem;
+  line-height: 1;
+}
+
+.legende {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font-size: 0.8rem;
+  color: var(--ink-2);
+}
+
+.legende span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legende span::before {
+  content: '';
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+  background: var(--c);
+}
+
+.statistik p + p {
+  margin-top: 2px;
+}
+
+/* ---------- Neu ---------- */
+
+.kacheln {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.kachel {
+  --c: var(--grau);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 16px;
+  min-height: 112px;
+  text-align: left;
+  border-radius: var(--r-karte);
+  border: 2px solid color-mix(in srgb, var(--c) 50%, transparent);
+  box-shadow: var(--schatten-karte);
+}
+
+.kachel b {
+  font-family: var(--font-titel);
+  line-height: 1.2;
+}
+
+.feld {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.feld > span {
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: var(--ink-2);
+}
+
+.feld input {
+  min-height: 46px;
+  padding: 8px 12px;
+  border-radius: var(--r-feld);
+  border: var(--feld-rand);
+  background: var(--feld-bg);
+}
+
+.formular .info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.95rem;
+}
+
+/* ---------- Konflikt: mehrere Einträge am selben Tag ---------- */
+
+.zelle.konflikt {
+  border: 2px dashed var(--gefahr);
+}
+
+.zelle .konflikt-marke {
+  position: absolute;
+  top: -6px;
+  right: -4px;
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+.konflikt-hinweis {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: var(--r-zeile);
+  border: 2px solid var(--gefahr);
+  background: color-mix(in srgb, var(--gefahr) 12%, var(--karte));
+}
+
+.konflikt-hinweis p {
+  font-size: 0.95rem;
+}
+
+
+/* ---------- Urlaub: Kindergartenjahr wählen ---------- */
+
+.jahr-wahl {
+  gap: 10px;
+}
+
+.jahr-titel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-align: center;
+}
+
+.jahr-titel b {
+  font-size: 1.1rem;
+}
+
+.jahr-titel small {
+  color: var(--ink-2);
+}
+
+

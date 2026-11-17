@@ -3,6 +3,7 @@
 // aus dem Zwischenspeicher. Läuft nur im Projekt „telefon-chromium“ (Klassisch); die anderen Projekte starten schon mit einem Aussehen.
 import { test, expect, starteDemo, NETZFEHLER } from './hilfen.js';
 
+const KLASSISCH_DATEIEN = ['basis', 'monat', 'formulare', 'heute', 'konto', 'mehr', 'schicht', 'autos', 'versicherung', 'bewegung'];
 const karte = (page) => page.locator('article.karte').filter({ has: page.getByRole('heading', { name: 'Darstellung', exact: true }) });
 const gruppe = (page, name) => karte(page).getByRole('group', { name, exact: true });
 const html = (page) => page.locator('html');
@@ -165,6 +166,15 @@ test.describe('offline', () => {
     await expect(page.locator('nav.tabs')).toBeVisible();
     // der Service Worker legt im Hintergrund ab: warten, bis glas.css wirklich im Zwischenspeicher liegt
     await expect.poll(() => page.evaluate(() => caches.match('/themes/glas.css').then(Boolean))).toBe(true);
+    // auch alle zehn Klassisch-Dateien (themes/klassisch/*.css) liegen im Zwischenspeicher
+    for (const n of KLASSISCH_DATEIEN) {
+      await expect.poll(() => page.evaluate((d) => caches.match(d).then(Boolean), `/themes/klassisch/${n}.css`), n).toBe(true);
+    }
+    const leiste = () => page.evaluate(() => {
+      const s = getComputedStyle(document.querySelector('nav.tabs'));
+      return { position: s.position, backgroundColor: s.backgroundColor };
+    });
+    const leisteOnline = await leiste();
 
     await context.setOffline(true);
     // Gegenprobe: was nie im Zwischenspeicher lag, kommt offline nicht (sonst würde der Test auch ohne Zwischenspeicher bestehen)
@@ -176,6 +186,7 @@ test.describe('offline', () => {
     expect(antwort.ok()).toBe(true);
     expect(antwort.fromServiceWorker()).toBe(true);
     await expect(page.locator('nav.tabs')).toBeVisible();
+    expect(await leiste()).toEqual(leisteOnline); // die Tableiste (themes/klassisch/basis.css) sieht offline aus wie online
     await expect(html(page)).toHaveAttribute('data-aussehen', 'glas');
     await expect(gruppe(page, 'Aussehen').locator('.chip.aktiv')).toHaveText('Glas & Licht');
     // auch die Schrift kommt offline (Review Focus 4)

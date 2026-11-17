@@ -1,7 +1,7 @@
 // Visuelle Regression für Klassisch (npm run test:visuell): Bildschirmfotos jeder Seite in Hell, Dunkel (System) und Dunkel (gewählt),
 // verglichen mit der Basis in tests/visuell/__basis__/ (git-ignoriert, nur auf diesem Rechner). Die Basis entsteht nie auf dem geprüften
 // Stand, sondern in einem git worktree von 097adc4 (vor den Design-Tokens; Ablauf im Kopf von tests/visuell/klassisch.spec.js;
-// node_modules dort als Verknüpfung auf die des Repos). Danach muss jede Änderung an theme.css, die Klassisch nicht ändern
+// node_modules dort als Verknüpfung auf die des Repos). Danach muss jede Änderung an themes/klassisch/*.css, die Klassisch nicht ändern
 // soll, hier 0 Unterschiede zeigen. Die Fotos hängen von den Schriften und der Kantenglättung des Rechners ab – deshalb keine Basis im Repo.
 import { defineConfig, devices } from '@playwright/test';
 

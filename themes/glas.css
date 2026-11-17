@@ -1,5 +1,5 @@
 /* Aussehen „Glas & Licht“ (1.2.0): alle Regeln stehen unter :root[data-aussehen="glas"] und wirken in Klassisch nicht.
-   Wird immer geladen (index.html, nach theme.css). Werte aus der Demo .superpowers/design-2026/a-glas (vom Nutzer gewählt).
+   Wird immer geladen (index.html, nach themes/klassisch/*.css). Werte aus der Demo .superpowers/design-2026/a-glas (vom Nutzer gewählt).
    Aufbau: 1. Tokens Hell, Dunkel (System, mit Wache) und Dunkel (gewählt)  2. Licht je Tab (Aurora)  3. Grundbausteine der ganzen App
    (Seite, Tableiste mit Glastropfen, Blatt, Karten, Knöpfe, Chips, Umschalter, Felder, Meldung, Rückfrage, Fokus)  4. Heute
    5. Bewegung. Echtes Glas (backdrop-filter) NUR auf Tableiste und Blatt (die Pinsel-Leiste folgt in Aufgabe 6); Karten sind
@@ -87,7 +87,7 @@
   --tabs-radius: 33px;
   --tabs-abstand: 10px;
   --tabs-innen: 5px; /* Innenabstand der Leiste (nur Glas) */
-  --fab-spalte: 52px; /* Spalte des runden „Neu“ in der Leiste (wie theme.css); unter 370 px schmaler, siehe unten */
+  --fab-spalte: 52px; /* Spalte des runden „Neu“ in der Leiste (wie themes/klassisch/basis.css); unter 370 px schmaler, siehe unten */
   --tabs-schatten: inset 0 1px 0 var(--glas-kante), var(--schatten-hoch);
   --tab-aktiv: var(--akzent);
   --tab-aktiv-bg: transparent;
@@ -444,7 +444,7 @@
 
 :root[data-aussehen='glas'] .konto-segment-knopf {
   font-weight: 650;
-  font-size: clamp(0.8125rem, calc((100cqw - 12px) / 26), 0.94rem); /* vier Knöpfe: siehe .konto-segment-knopf in theme.css */
+  font-size: clamp(0.8125rem, calc((100cqw - 12px) / 26), 0.94rem); /* vier Knöpfe: siehe .konto-segment-knopf in themes/klassisch/konto.css */
   letter-spacing: -0.015em; /* Onest läuft etwas breiter: „Versicherung“ bleibt bei 13 px in einer Zeile */
 }
 
@@ -462,7 +462,7 @@
 }
 
 /* Tableiste: schwebende Glas-Pille über dem sicheren Bereich. Der Glastropfen (::before) gleitet zur aktiven Karte; seine Stelle kommt
-   aus der aktiven Karte (nach href; Spalten wie in theme.css: drei Karten, 52 px „Neu“, vier Karten). Die Leiste bleibt beim
+   aus der aktiven Karte (nach href; Spalten wie in themes/klassisch/basis.css: drei Karten, 52 px „Neu“, vier Karten). Die Leiste bleibt beim
    Neuzeichnen bestehen (nur ihre Karten werden ersetzt), deshalb gleitet der Tropfen wirklich von Karte zu Karte.
    Ohne aktive Karte („Neu“, Verlauf, Konto & App …) gibt es ihn gar nicht (content: none): er verschwindet sofort, ohne Weg zum
    Rand; kommt man zurück, entsteht er neu – und ein neu entstehendes Pseudo-Element hat keinen Übergang: er steht gleich an seiner

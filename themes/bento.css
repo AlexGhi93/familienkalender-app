@@ -1,5 +1,5 @@
 /* Aussehen „Bento bunt“ (1.2.0): alle Regeln stehen unter :root[data-aussehen="bento"] und wirken in Klassisch nicht.
-   Wird immer geladen (index.html, nach theme.css). Werte aus der Demo .superpowers/design-2026/b-bento (vom Nutzer gewählt).
+   Wird immer geladen (index.html, nach themes/klassisch/*.css). Werte aus der Demo .superpowers/design-2026/b-bento (vom Nutzer gewählt).
    Aufbau: 1. Tokens Hell, Dunkel (System, mit Wache) und Dunkel (gewählt)  2. Grundbausteine der ganzen App (Seite, Tableiste mit
    Blob, Blatt, Kacheln, Knöpfe, Chips, Umschalter, Felder, Meldung, Rückfrage, Fokus)  3. Heute  4. Bewegung.
    „Bonbon-Kante“ statt grauer Schatten: jede Kachel hat unten eine 3-px-Innenkante (--lippe) in der Tönung ihrer Fläche; schwebende
@@ -87,7 +87,7 @@
   --tabs-rahmen: 0 solid transparent;
   --tabs-radius: 28px;
   --tabs-abstand: 8px;
-  --fab-spalte: 52px; /* Spalte des runden „Neu“ in der Leiste (wie theme.css); unter 370 px schmaler, siehe unten */
+  --fab-spalte: 52px; /* Spalte des runden „Neu“ in der Leiste (wie themes/klassisch/basis.css); unter 370 px schmaler, siehe unten */
   --tabs-schatten: 0 -1px 0 var(--linie), 0 14px 34px rgb(20 10 60 / 0.16);
   --tab-aktiv: var(--ink);
   --tab-aktiv-bg: transparent;
@@ -326,7 +326,7 @@
 
 /* aktiv: gleiche Randbreite und Schrift (nichts springt beim Umschalten); der kräftige Ring kommt als innerer Schatten dazu */
 :root[data-aussehen='bento'] .chip.aktiv {
-  border-width: 1.5px; /* wie der ungewählte Chip (theme.css: aktiv 2 px) – sonst würde er beim Wählen breiter */
+  border-width: 1.5px; /* wie der ungewählte Chip (themes/klassisch/basis.css: aktiv 2 px) – sonst würde er beim Wählen breiter */
   border-color: var(--c, var(--akzent));
   box-shadow: inset 0 0 0 1px var(--c, var(--akzent));
   font-weight: 800;
@@ -345,7 +345,7 @@
 }
 
 :root[data-aussehen='bento'] .konto-segment-knopf {
-  font-size: clamp(0.8125rem, calc((100cqw - 12px) / 26), 0.94rem); /* vier Knöpfe: siehe .konto-segment-knopf in theme.css */
+  font-size: clamp(0.8125rem, calc((100cqw - 12px) / 26), 0.94rem); /* vier Knöpfe: siehe .konto-segment-knopf in themes/klassisch/konto.css */
 }
 
 /* die Wahl selbst (Blob als ::before) zeichnet themes/konto.css */
@@ -363,7 +363,7 @@
 
 /* Tableiste: weiße schwebende Leiste; der Blob (::before) springt zur aktiven Karte, dehnt sich unterwegs und trägt die Farbe des
    Bereichs (Heute lila, Monat mint, Einkauf koralle, Schicht blau, Urlaub meer, Konto gelb, Mehr grau). Stelle nach href, Spalten
-   wie in theme.css. Ohne aktive Karte („Neu“, Verlauf, Konto & App …) gibt es ihn nicht (content: none): er verschwindet sofort, ohne
+   wie in themes/klassisch/basis.css. Ohne aktive Karte („Neu“, Verlauf, Konto & App …) gibt es ihn nicht (content: none): er verschwindet sofort, ohne
    Weg zum Rand, und entsteht bei der Rückkehr neu an seiner Karte – ein neues Pseudo-Element hat keinen Übergang, fegt also nicht herein. */
 :root[data-aussehen='bento'] .tabs {
   bottom: calc(var(--tabs-abstand) + env(safe-area-inset-bottom, 0px));

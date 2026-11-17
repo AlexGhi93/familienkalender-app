@@ -1,0 +1,220 @@
+/* ---------- Heute: Termine von heute, groß und unübersehbar ---------- */
+
+.abschnitt:has(.termin-heute) > h2 {
+  color: var(--akzent);
+  font-size: 0.95rem;
+}
+
+.termin-heute {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 2.5px solid var(--c);
+  background: color-mix(in srgb, var(--c) 14%, var(--karte));
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--c) 18%, transparent), var(--schatten-karte);
+}
+
+.termin-heute.naechster {
+  border-width: 3px;
+  background: color-mix(in srgb, var(--c) 22%, var(--karte));
+}
+
+.termin-heute.morgen {
+  border-width: 2px;
+  box-shadow: var(--schatten-karte);
+}
+
+.termin-heute.vorbei {
+  opacity: 0.55;
+  border-style: dashed;
+  box-shadow: var(--schatten-karte);
+}
+
+.th-kopf {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.th-zeit {
+  font-family: var(--font-zahl);
+  min-width: 4.4ch;
+  font-size: 2.1rem;
+  font-weight: 900;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.th-zeit.ganztags {
+  min-width: 0;
+  font-size: 1.1rem;
+}
+
+.th-text {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.th-text b {
+  font-size: 1.15rem;
+  line-height: 1.2;
+}
+
+.th-marke {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: var(--r-chip);
+  border: 1.5px solid var(--c);
+  background: color-mix(in srgb, var(--c) 20%, var(--karte));
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+.th-marke.gleich,
+.th-marke.laeuft {
+  background: color-mix(in srgb, var(--c) 55%, var(--karte));
+}
+
+.puls {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--c);
+  animation: puls 1.4s ease-in-out infinite;
+}
+
+@keyframes puls {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.5);
+    opacity: 0.5;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .puls {
+    animation: none;
+  }
+}
+
+
+/* ---------- Einkaufsliste ---------- */
+
+:root {
+  --einkauf: #e08a3c;
+}
+
+.ek-eingabe {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 92px 48px;
+  gap: 8px;
+}
+
+.ek-eingabe input {
+  min-width: 0;
+  min-height: 48px;
+  padding: 8px 12px;
+  border-radius: var(--r-feld);
+  border: var(--feld-rand);
+  background: var(--feld-bg);
+  color: var(--ink);
+  font-size: 1rem;
+}
+
+.ek-eingabe .ek-plus {
+  min-height: 48px;
+  padding: 0;
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.ek-oft {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ek-oft > small {
+  color: var(--ink-2);
+  font-weight: 800;
+}
+
+.ek-liste {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ek-zeile {
+  display: flex;
+  align-items: stretch;
+  border-radius: var(--r-zeile);
+  border: var(--rand) solid var(--linie);
+  background: var(--karte-2);
+}
+
+.ek-haupt {
+  flex: 1;
+  min-width: 0;
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+}
+
+.ek-haken {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 2.5px solid var(--einkauf);
+  font-size: 0.95rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.ek-zeile.gekauft {
+  background: color-mix(in srgb, var(--karte) 60%, transparent);
+}
+
+.ek-zeile.gekauft .ek-haken {
+  background: var(--einkauf);
+  color: #fff;
+}
+
+.ek-zeile.gekauft .ek-name {
+  text-decoration: line-through;
+  color: var(--ink-2);
+  font-weight: 600;
+}
+
+.ek-weg {
+  flex: none;
+  width: 48px;
+  border: 0;
+  background: none;
+  color: var(--ink-2);
+  font-size: 1.1rem;
+}
+
+

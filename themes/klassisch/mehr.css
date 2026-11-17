@@ -1,0 +1,728 @@
+/* ---------- Menü in „Mehr“ (src/ui/menue.js) ---------- */
+
+.menue {
+  padding: 6px;
+  gap: 0;
+}
+
+.menue-eintrag {
+  --c: var(--grau);
+  border-top: 1px solid var(--linie);
+  scroll-margin-top: 12px;
+}
+
+.menue-eintrag:first-child,
+.menue-eintrag.offen,
+.menue-eintrag.offen + .menue-eintrag {
+  border-top-color: transparent;
+}
+
+.menue-eintrag.offen {
+  background: color-mix(in srgb, var(--c) 9%, var(--karte));
+  border-radius: var(--r-zeile);
+}
+
+.menue-zeile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 62px;
+  padding: 8px;
+  border: 0;
+  border-radius: var(--r-zeile);
+  background: none;
+  text-align: left;
+}
+
+.menue-kachel {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--c) 22%, var(--karte));
+  border: 1.5px solid color-mix(in srgb, var(--c) 50%, transparent);
+  overflow: hidden;
+  transition: transform 0.12s ease;
+}
+
+.menue-zeile:active .menue-kachel {
+  transform: scale(0.92);
+}
+
+.menue-symbol {
+  display: inline-block;
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.menue-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.menue-text b {
+  font-family: var(--font-titel);
+  font-size: 1.02rem;
+}
+
+.menue-text small {
+  color: var(--ink-2);
+  font-size: 0.85rem;
+}
+
+.menue-text .menue-status {
+  font-weight: 700;
+}
+
+.menue-text .menue-status.warnung {
+  color: var(--gefahr);
+}
+
+.menue-pfeil {
+  flex: none;
+  width: 20px;
+  text-align: center;
+  color: var(--ink-2);
+  font-size: 1.5rem;
+  line-height: 1;
+  transition: transform 0.2s ease;
+}
+
+.menue-eintrag.klappt .menue-pfeil {
+  transform: rotate(90deg);
+}
+
+.menue-eintrag.offen .menue-pfeil {
+  transform: rotate(-90deg);
+}
+
+.menue-inhalt {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 2px 10px 14px;
+}
+
+.menue-inhalt.aufgehend {
+  animation: menue-auf 0.22s ease-out both;
+}
+
+@keyframes menue-auf {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Jedes Symbol hat seine eigene kurze Bewegung; sie spielt beim Betreten von „Mehr“ (nacheinander) und beim Antippen. */
+.menue-symbol.spielt {
+  animation-duration: 0.9s;
+  animation-timing-function: ease-in-out;
+  animation-delay: var(--verzoegerung, 0ms);
+  animation-fill-mode: both;
+}
+
+/* 👤 Konto & App: nickt freundlich */
+.anim-nicken {
+  transform-origin: 50% 100%;
+}
+.anim-nicken.spielt {
+  animation-name: m-nicken;
+}
+@keyframes m-nicken {
+  0%,
+  100% {
+    transform: none;
+  }
+  25% {
+    transform: translateY(-4px) rotate(-10deg);
+  }
+  50% {
+    transform: rotate(8deg);
+  }
+  75% {
+    transform: translateY(-2px) rotate(-4deg);
+  }
+}
+
+/* 📅 Betreuung: das Kalenderblatt wird umgeschlagen */
+.anim-blatt {
+  transform-origin: 50% 0%;
+}
+.anim-blatt.spielt {
+  animation-name: m-blatt;
+}
+@keyframes m-blatt {
+  0%,
+  100% {
+    transform: perspective(160px) rotateX(0deg);
+  }
+  35% {
+    transform: perspective(160px) rotateX(-80deg);
+  }
+  60% {
+    transform: perspective(160px) rotateX(18deg);
+  }
+  80% {
+    transform: perspective(160px) rotateX(-6deg);
+  }
+}
+
+/* 👶 Familie: schaukelt hin und her */
+.anim-wiegen {
+  transform-origin: 50% 90%;
+}
+.anim-wiegen.spielt {
+  animation-name: m-wiegen;
+}
+@keyframes m-wiegen {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  20% {
+    transform: rotate(-16deg);
+  }
+  40% {
+    transform: rotate(14deg);
+  }
+  60% {
+    transform: rotate(-9deg);
+  }
+  80% {
+    transform: rotate(5deg);
+  }
+}
+
+/* ⏰ Zeiten für Sachen: klingelt wie ein Wecker */
+.anim-klingeln.spielt {
+  animation-name: m-klingeln;
+}
+@keyframes m-klingeln {
+  0%,
+  80%,
+  100% {
+    transform: rotate(0deg) scale(1);
+  }
+  8% {
+    transform: rotate(-18deg) scale(1.12);
+  }
+  16% {
+    transform: rotate(16deg) scale(1.12);
+  }
+  24% {
+    transform: rotate(-16deg) scale(1.12);
+  }
+  32% {
+    transform: rotate(14deg) scale(1.12);
+  }
+  40% {
+    transform: rotate(-12deg) scale(1.1);
+  }
+  48% {
+    transform: rotate(10deg) scale(1.08);
+  }
+  56% {
+    transform: rotate(-6deg) scale(1.04);
+  }
+  64% {
+    transform: rotate(3deg) scale(1.02);
+  }
+}
+
+/* ✈️ Urlaub: fliegt oben rechts hinaus und kommt unten links wieder herein */
+.anim-fliegen.spielt {
+  animation-name: m-fliegen;
+  animation-duration: 1.2s;
+}
+@keyframes m-fliegen {
+  0%,
+  100% {
+    transform: translate(0, 0);
+    opacity: 1;
+  }
+  40% {
+    transform: translate(30px, -30px);
+    opacity: 0;
+  }
+  41% {
+    transform: translate(-30px, 30px);
+    opacity: 0;
+  }
+  80% {
+    transform: translate(2px, -2px);
+    opacity: 1;
+  }
+}
+
+/* 🩺 Mitnehmen beim Arzt: schlägt wie ein Herz (zweimal) */
+.anim-herz.spielt {
+  animation-name: m-herz;
+}
+@keyframes m-herz {
+  0%,
+  55%,
+  100% {
+    transform: scale(1);
+  }
+  12% {
+    transform: scale(1.28);
+  }
+  24% {
+    transform: scale(1);
+  }
+  36% {
+    transform: scale(1.2);
+  }
+}
+
+/* 🎒 Eigene Sachen: hüpft zweimal */
+.anim-huepfen {
+  transform-origin: 50% 100%;
+}
+.anim-huepfen.spielt {
+  animation-name: m-huepfen;
+}
+@keyframes m-huepfen {
+  0%,
+  100% {
+    transform: translateY(0) scale(1, 1);
+  }
+  15% {
+    transform: translateY(0) scale(1.12, 0.88);
+  }
+  35% {
+    transform: translateY(-12px) scale(0.94, 1.06);
+  }
+  55% {
+    transform: translateY(0) scale(1.08, 0.92);
+  }
+  70% {
+    transform: translateY(-5px) scale(1, 1);
+  }
+  85% {
+    transform: translateY(0) scale(1.03, 0.97);
+  }
+}
+
+/* 💶 Kontostand: dreht sich wie eine Münze */
+.anim-muenze.spielt {
+  animation-name: m-muenze;
+}
+@keyframes m-muenze {
+  from {
+    transform: perspective(160px) rotateY(0deg);
+  }
+  to {
+    transform: perspective(160px) rotateY(360deg);
+  }
+}
+
+/* 📜 Verlauf: rollt sich zusammen und wieder auf */
+.anim-rolle {
+  transform-origin: 50% 0%;
+}
+.anim-rolle.spielt {
+  animation-name: m-rolle;
+}
+@keyframes m-rolle {
+  0%,
+  100% {
+    transform: scale(1, 1);
+  }
+  30% {
+    transform: scale(1, 0.25);
+  }
+  65% {
+    transform: scale(1, 1.12);
+  }
+  82% {
+    transform: scale(1, 0.96);
+  }
+}
+
+/* 🚗 Autos: hupt – springt kurz hoch, wird groß und federt nach */
+.anim-hupen {
+  transform-origin: 50% 85%;
+}
+.anim-hupen.spielt {
+  animation-name: m-hupen;
+}
+@keyframes m-hupen {
+  0%,
+  100% {
+    transform: none;
+  }
+  18% {
+    transform: translateY(-4px) scale(1.16, 0.9);
+  }
+  34% {
+    transform: translateY(0) scale(0.92, 1.1);
+  }
+  52% {
+    transform: translateY(-2px) scale(1.1, 0.95);
+  }
+  70% {
+    transform: scale(0.98, 1.02);
+  }
+}
+
+/* „2 fällig“ an der Zeile „Autos“ (bei 0 versteckt) */
+.menue-marke[hidden] {
+  display: none;
+}
+
+.menue-marke {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  margin-top: 4px;
+  padding: 1px 10px;
+  border-radius: var(--r-chip);
+  border: 1px solid color-mix(in srgb, var(--abwesend) 70%, transparent);
+  background: color-mix(in srgb, var(--abwesend) 26%, var(--karte));
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .menue-symbol.spielt,
+  .menue-inhalt.aufgehend {
+    animation: none;
+  }
+}
+
+/* ---------- Einkauf: aktuell halten (Herunterziehen, „Aktualisiert um …“) ---------- */
+
+/* Solange die Einkaufsliste offen ist, gehört das Herunterziehen ganz oben ihr (kein Neuladen der Seite durch den Browser). */
+html:has(.screen.einkauf) {
+  overscroll-behavior-y: contain;
+}
+
+.ek-ziehen {
+  --zug: 0px;
+  height: var(--zug);
+  margin-bottom: -14px; /* gleicht den Abstand der Seite aus: in Ruhe nimmt die Anzeige keinen Platz ein */
+  overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  transition: height 0.2s ease;
+}
+
+.ek-ziehen[data-phase='ziehen'],
+.ek-ziehen[data-phase='bereit'] {
+  transition: none; /* folgt dem Finger */
+}
+
+.ek-ziehen span:not(:empty) {
+  margin-bottom: 6px;
+  padding: 4px 14px;
+  border-radius: 999px;
+  border: 1.5px solid color-mix(in srgb, var(--einkauf) 45%, transparent);
+  background: color-mix(in srgb, var(--einkauf) 14%, var(--karte));
+  font-size: 0.85rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.ek-ziehen[data-phase='bereit'] span,
+.ek-ziehen[data-phase='fertig'] span {
+  border-color: var(--einkauf);
+  background: color-mix(in srgb, var(--einkauf) 30%, var(--karte));
+}
+
+.ek-stand {
+  margin-top: -10px;
+  color: var(--ink-2);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ek-ziehen {
+    transition: none;
+  }
+}
+
+/* ---------- Nachrichten an Krabbelstube/Kindergarten und Essensgeld ---------- */
+
+/* Textfelder in „Mehr“ (Telefon, E-Mail, Unterschrift, Preis pro Mittagessen) */
+.feld input[type='tel'],
+.feld input[type='email'] {
+  width: 100%;
+}
+
+.feld input[aria-invalid='true'] {
+  border-color: var(--gefahr);
+  background: color-mix(in srgb, var(--gefahr) 8%, var(--karte));
+}
+
+/* 📨 Nachrichten: der Brief kippt, fliegt ein Stück nach rechts oben und kommt zurück */
+.anim-brief {
+  transform-origin: 50% 60%;
+}
+.anim-brief.spielt {
+  animation-name: m-brief;
+}
+@keyframes m-brief {
+  0%,
+  100% {
+    transform: none;
+  }
+  18% {
+    transform: translate(-2px, 2px) rotate(-14deg);
+  }
+  45% {
+    transform: translate(13px, -13px) rotate(-18deg) scale(0.85);
+  }
+  70% {
+    transform: translate(-2px, 1px) rotate(6deg);
+  }
+  86% {
+    transform: rotate(-3deg);
+  }
+}
+
+/* „Krabbelstube benachrichtigen“ auf Heute, unter der Status-Karte */
+.knopf.nachricht-oeffnen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 48px;
+  background: color-mix(in srgb, var(--urlaub) 14%, var(--karte));
+  border-color: color-mix(in srgb, var(--urlaub) 45%, transparent);
+}
+
+/* Blatt „Nachricht an …“ */
+.nachricht-details {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.nachricht-gruppe {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.nachricht-gruppe-titel {
+  font-family: var(--font-titel);
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: var(--ink-2);
+}
+
+.feld textarea.nachricht-text {
+  min-height: 140px;
+  line-height: 1.45;
+  color: var(--ink);
+}
+
+.nachricht-kontakt {
+  gap: 10px;
+}
+
+.nachricht-kontakt p {
+  font-size: 0.95rem;
+}
+
+.nachricht-senden {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); /* zwei nebeneinander; ein einzelner Knopf nimmt die ganze Breite */
+  gap: 10px;
+}
+
+.knopf.senden {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  text-align: center;
+  text-decoration: none;
+  color: var(--ink);
+}
+
+.knopf.senden.primaer {
+  color: var(--akzent-ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .anim-brief.spielt {
+    animation: none; /* steht nach der allgemeinen Regel des Menüs und muss deshalb hier noch einmal aus */
+  }
+}
+
+/* ---------- Bringen & Abholen ---------- */
+
+/* 🚗 Bringen & Abholen: fährt ein Stück nach rechts und federt zurück */
+.anim-auto {
+  transform-origin: 50% 90%;
+}
+.anim-auto.spielt {
+  animation-name: m-auto;
+}
+@keyframes m-auto {
+  0%,
+  100% {
+    transform: none;
+  }
+  12% {
+    transform: translateX(-2px) rotate(3deg); /* Anlauf */
+  }
+  40% {
+    transform: translateX(10px) rotate(-4deg);
+  }
+  55% {
+    transform: translateX(10px) translateY(-2px) rotate(-1deg);
+  }
+  75% {
+    transform: translateX(-3px) rotate(2deg);
+  }
+  88% {
+    transform: translateX(1px);
+  }
+}
+
+/* Auf „Heute“: „🚗 Heute“ mit zwei Knöpfen (wer bringt, wer holt); am Abend dazu „Morgen“ */
+.dienst-karte {
+  display: grid; /* „Heute“ und „Morgen“ teilen sich die Spalten: die Knöpfe stehen genau untereinander */
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  padding: 10px 12px;
+  gap: 8px;
+}
+
+.dienst-zeile {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.dienst-karte .dienst-zeile {
+  display: contents;
+}
+
+.dienst-karte .dienst-leer {
+  grid-column: 1 / -1;
+}
+
+.dienst-wann {
+  font-weight: 800;
+  font-size: 0.95rem;
+  white-space: nowrap;
+  padding-right: 2px;
+}
+
+.dienst-knopf {
+  --c: var(--grau);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  min-width: 0;
+  min-height: 50px;
+  padding: 6px 12px;
+  border-radius: var(--r-zeile);
+  border: 1.5px solid color-mix(in srgb, var(--c) 55%, transparent);
+  background: color-mix(in srgb, var(--c) 16%, var(--karte));
+  text-align: left;
+  line-height: 1.2;
+}
+
+.dienst-knopf:active {
+  transform: scale(0.97);
+}
+
+.dienst-knopf b,
+.dienst-knopf small {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dienst-knopf small {
+  color: var(--ink-2);
+  font-size: 0.82rem;
+}
+
+.dienst-knopf.niemand {
+  border-style: dashed;
+  background: var(--karte);
+}
+
+.dienst-knopf.niemand b {
+  color: var(--ink-2);
+}
+
+/* Noch niemand eingetragen: dezent, ein Tipp legt fest, wer bringt */
+.dienst-leer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 46px;
+  padding: 6px 12px;
+  border: var(--rand) dashed var(--linie);
+  border-radius: var(--r-zeile);
+  background: none;
+  color: var(--ink-2);
+  text-align: left;
+}
+
+.dienst-leer b {
+  color: var(--ink);
+}
+
+.dienst-blatt {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* „Mehr“: eine Zeile je Wochentag – „Mo  Bringt [👨 Papa]  Holt [👩 Mama]“ */
+.dienst-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dienst-plan-zeile {
+  display: grid;
+  grid-template-columns: 1.7em auto minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+}
+
+.dienst-plan-rolle {
+  color: var(--ink-2);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.chip.dienst-chip {
+  justify-content: center;
+  min-width: 0;
+  padding: 6px 8px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.push-person {
+  margin-top: 4px;
+}
+

@@ -1,0 +1,120 @@
+/* ---------- Bewegung (1.2.0, src/ui/bewegung.js): Effekte nur in Glas und Bento, nur mit Bewegung ----------
+   Klassisch nutzt die Effekte nicht (die Klassen entstehen dort nie). Aus bei data-bewegung="reduziert" und prefers-reduced-motion.
+   Nur transform und opacity, keine linear()-Kurven (iOS rechnet sie nicht auf dem Compositor), keine View Transitions (Tabwechsel
+   zeichnet sofort, danach blendet #inhalt nur ein: kein abgefangener Tipp). Allgemeine Klassen für die Aufgaben 4–9; ihre Würze
+   (Kurven, Wege, Dauer über die Tokens) kommt in themes/glas.css bzw. themes/bento.css:
+   .bw-einblenden          am Behälter beim ersten Zeichnen eines Bildschirms je Besuch (einblenden()); jedes Kind trägt --bw-i
+                           (0…8) → Verzögerung --bw-i × --staffel. Ersetzt eine eigene `animation` der Kinder, solange es läuft.
+                           Achtung: transform an den Kindern macht sie kurz zum Bezug für position: fixed darin (z. B. .sp-pinsel).
+   :root.bw-tabwechsel     kurz nach einem Tabwechsel (tabWechsel(), Dauer --dauer-tab): #inhalt blendet ein (nur opacity).
+   :root.bw-tropfen-frisch zwei Bilder lang nach einem Wechsel von einer Seite ohne aktive Karte (tabWechsel()): Tropfen/Blob der
+                           Tab-Leiste entsteht ohne Gleiten (Safari startete sonst einen Übergang vom linken Rand).
+   .bw-fortschritt         Füllung eines Balkens mit voller Breite, transform: scaleX(anteil) (fortschritt(), nur Glas/Bento).
+   .bw-konfetti            Konfetti-Hülle (konfetti(), nur Bento), fest am Anker, ohne Zeiger, aria-hidden;
+   .bw-konfetti-teil       Teilchen mit --bw-dx, --bw-dy, --bw-fall, --bw-dreh, --bw-dauer, --bw-verz, --bw-farbe (--konfetti-1…4).
+   .bw-nur-vorlesen        während hochzaehlen(): der genaue Endwert für Bildschirmleser (die zählende Zahl ist aria-hidden).
+   [data-bw-schluessel]    Schlüssel für hochzaehlen()/fortschritt(): Neuzeichnen mit demselben Wert spielt nichts erneut;
+                           in Glas/Bento mit tabellarischen Ziffern (die Zahl wackelt beim Zählen nicht).
+   Keyframes: bw-rein (Karten), bw-seite-rein (Seite), bw-konfetti (Teilchen).
+   „Bewegung: Reduziert“ gilt in ALLEN Aussehen wie prefers-reduced-motion (Regel am Ende dieses Abschnitts). */
+
+@keyframes bw-rein {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.97);
+  }
+}
+
+@keyframes bw-seite-rein {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes bw-konfetti {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(0deg);
+  }
+  40% {
+    opacity: 1;
+    transform: translate(var(--bw-dx), var(--bw-dy)) rotate(calc(var(--bw-dreh) * 0.4));
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(var(--bw-dx) * 1.25), calc(var(--bw-dy) + var(--bw-fall))) rotate(var(--bw-dreh));
+  }
+}
+
+:root[data-aussehen='glas'] .bw-fortschritt,
+:root[data-aussehen='bento'] .bw-fortschritt {
+  transform-origin: left center;
+}
+
+:root[data-aussehen='glas'] [data-bw-schluessel],
+:root[data-aussehen='bento'] [data-bw-schluessel] {
+  font-variant-numeric: tabular-nums;
+}
+
+.bw-nur-vorlesen {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.bw-konfetti {
+  position: fixed;
+  z-index: 70;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.bw-konfetti-teil {
+  position: absolute;
+  left: -4px;
+  top: -5px;
+  width: 8px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--bw-farbe);
+  will-change: transform, opacity;
+  animation: bw-konfetti var(--bw-dauer, 1s) cubic-bezier(0.2, 0.7, 0.3, 1) var(--bw-verz, 0ms) both;
+}
+
+.bw-konfetti-teil:nth-child(3n) {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .bw-einblenden > *,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .bw-einblenden > * {
+    animation: bw-rein var(--dauer-einblenden) var(--kurve-feder) backwards;
+    animation-delay: calc(var(--bw-i, 0) * var(--staffel));
+  }
+
+  :root[data-aussehen='glas']:not([data-bewegung='reduziert']) .bw-fortschritt,
+  :root[data-aussehen='bento']:not([data-bewegung='reduziert']) .bw-fortschritt {
+    transition: transform var(--dauer-fortschritt) var(--kurve-feder);
+  }
+
+  :root[data-aussehen='glas'].bw-tabwechsel:not([data-bewegung='reduziert']) #inhalt,
+  :root[data-aussehen='bento'].bw-tabwechsel:not([data-bewegung='reduziert']) #inhalt {
+    animation: bw-seite-rein var(--dauer-tab) var(--kurve-sanft);
+  }
+}
+
+/* „Bewegung: Reduziert“ (Konto & App → Darstellung) in JEDEM Aussehen, Klassisch eingeschlossen: wie prefers-reduced-motion keine
+   Übergänge und keine Animationen. Ohne diese Wahl (Standard) ändert sich nichts. */
+:root[data-bewegung='reduziert'] *,
+:root[data-bewegung='reduziert'] *::before,
+:root[data-bewegung='reduziert'] *::after {
+  transition: none !important;
+  animation: none !important;
+}

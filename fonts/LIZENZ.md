@@ -2,7 +2,7 @@
 
 Die drei Schriften in diesem Ordner stehen unter der **SIL Open Font License 1.1** (OFL). Sie liegen hier, damit die App
 keine Anfrage an einen fremden Dienst (z. B. Google Fonts) schickt. Klassisch benutzt sie nicht; sie gehören zu den Aussehen
-„Glas & Licht“ und „Bento bunt“ (theme.css deklariert sie als `FK Onest`, `FK Fredoka`, `FK Nunito`).
+„Glas & Licht“ und „Bento bunt“ (themes/klassisch/basis.css deklariert sie als `FK Onest`, `FK Fredoka`, `FK Nunito`).
 
 | Datei | Schrift | Herkunft | Änderung |
 |---|---|---|---|

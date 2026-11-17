@@ -33,7 +33,7 @@ const KURZ_KNOEPFE = '.konto-segment-knopf[data-kurz]';
  * Abschluss-Review I1: ob ein Name passt, hängt an der Schrift des Telefons (Klassisch hat keine eigene: Segoe UI unter Windows, SF Pro
  * Rounded am iPhone, Roboto/Samsung One, unter Linux DejaVu) – deshalb wird gemessen statt an einer festen Breite entschieden. Jeder
  * Knopf mit Kurzform bekommt die Klasse `kurz` genau dann, wenn sein VOLLER Name breiter ist als der Knopf (scrollWidth > clientWidth;
- * dafür kurz ohne `kurz` gemessen – im selben Bild, es flackert nichts). theme.css zeigt dann die Kurzform (::after aus data-kurz).
+ * dafür kurz ohne `kurz` gemessen – im selben Bild, es flackert nichts). themes/klassisch/konto.css zeigt dann die Kurzform (::after aus data-kurz).
  */
 export function kurzformenPruefen(knoepfe) {
   for (const knopf of knoepfe ?? []) {
@@ -118,7 +118,7 @@ export function kontoUmschalter(ui, { jetzt = jetztMs(), bild = naechstesBild, t
       'data-von': laeuft?.von,
       style: stil,
     },
-    // Mit Kurzform (Abschluss-Review I1): passt der Name nicht (gemessen), zeigt theme.css die Kurzform (::after); der volle Name bleibt
+    // Mit Kurzform (Abschluss-Review I1): passt der Name nicht (gemessen), zeigt themes/klassisch/konto.css die Kurzform (::after); der volle Name bleibt
     // der Text im Knopf, in aria-label (Vorlesen) und title.
     ANSICHTEN.map(([wert, text, kurz]) =>
       h(

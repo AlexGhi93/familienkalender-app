@@ -8,7 +8,7 @@ import { leseAussehen, leseBewegung, leseDarstellung, wendeAussehenAn, wendeBewe
 import { sichernKarte } from './sichern-karte.js';
 
 const DARSTELLUNG_TEXTE = [['auto', 'Automatisch'], ['hell', '☀️ Hell'], ['dunkel', '🌙 Dunkel']];
-/** Aussehen mit Namen und drei Farbtupfen als kleine Vorschau (die Farben stehen in theme.css unter .aussehen-vorschau). */
+/** Aussehen mit Namen und drei Farbtupfen als kleine Vorschau (die Farben stehen in themes/klassisch/basis.css unter .aussehen-vorschau). */
 const AUSSEHEN_TEXTE = [['klassisch', 'Klassisch'], ['glas', 'Glas & Licht'], ['bento', 'Bento bunt']];
 const BEWEGUNG_TEXTE = [['an', 'An'], ['reduziert', 'Reduziert']];
 

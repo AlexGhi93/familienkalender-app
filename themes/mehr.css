@@ -5,7 +5,7 @@
    Aufbau: 1. eigene Tokens (je Aussehen Hell, Dunkel System, Dunkel gewählt)  2. Gemeinsames  3. Glas  4. Bento  5. Bewegung.
    Haken (in Klassisch ohne sichtbare Wirkung): .mehr-seite, .app-seite, .verbinden-seite, .darstellung-karte, .segment-wahl
    (Hell/Dunkel, Bewegung, Ton der Nachricht), .darstellung-wahl, .bewegung-wahl, .aussehen-wahl mit .aussehen-name,
-   .nachricht-gruppe[data-gruppe]. Die Bewegung der Menü-Symbole (theme.css, anim-…) bleibt unverändert; sie und alles hier Bewegte
+   .nachricht-gruppe[data-gruppe]. Die Bewegung der Menü-Symbole (themes/klassisch/mehr.css, anim-…) bleibt unverändert; sie und alles hier Bewegte
    stehen bei „Reduziert“ und prefers-reduced-motion still. */
 
 /* ---------- 1. Tokens ---------- */

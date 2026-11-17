@@ -88,7 +88,7 @@ $env:CI=1; npm run test:e2e
 | `unit/schicht-abgleich.test.js`, `unit/schicht-farben.test.js` | Abgleich alle 30 Sekunden und bei der Rückkehr (höchstens einmal pro Minute); Farbpalette hell/dunkel im Theme (Kontrast der Kürzel) |
 | `unit/blatt-ziehen.test.js` | Blätter nach unten wischen: ab 100 px oder kurz und schnell geworfen schließt, sonst zurück; Totzone und Richtung eines Zugs |
 | `unit/push-*.test.js` | Push-Plan (Zeiten in Wien, Zeitumstellung, Monatsende) und Meldungen (RFC-8291-Testvektor, Entschlüsselung, stabiles `h`) |
-| `unit/design-tokens.test.js` | Design-Tokens in `theme.css` (Werte von Klassisch, Liste im Kopf, alte Namen ersetzt) und lokale Schriften (`FK …`, woff2, ≤ 250 KB, OFL-Texte) |
+| `unit/design-tokens.test.js` | Design-Tokens in `themes/klassisch/*.css` (Werte von Klassisch, Liste im Kopf, alte Namen ersetzt) und lokale Schriften (`FK …`, woff2, ≤ 250 KB, OFL-Texte) |
 | `e2e/schriften.spec.js` | In allen drei Aussehen keine Anfrage an einen anderen Ursprung; Klassisch lädt die neuen Schriften nie; `font/woff2` |
 | `visuell/klassisch.spec.js` | Visuelle Regression Klassisch (Hell, Dunkel per System, Dunkel gewählt): alle Seiten und Blätter, Willkommen, Datenschutz, Meldung, Rückfrage, Formulare (Termin, Fixkosten, Sparziel, Sachen, Schichtart), Schichtarten, Ersatzdienst gestreift, Konflikt, Einrichtung, Code-Fehler, Verbindung (Karte, Banner, Fehler), Fokusring, gesperrter Knopf, Mehr aufgeklappt |
 | `e2e/willkommen.spec.js` | Erster Start mit drei Wegen, Demo starten, falscher Code |

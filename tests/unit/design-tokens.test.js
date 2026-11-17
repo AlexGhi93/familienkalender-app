@@ -1,11 +1,12 @@
-// Design-Tokens in theme.css (1.2.0): jede Eigenschaft, die ein Aussehen (Glas, Bento) ändern darf, ist ein Token mit dem Wert von
-// Klassisch; die Liste steht im Kopf von theme.css. Dazu die lokalen Schriften (nur deklariert, Klassisch nutzt sie nicht).
+// Design-Tokens in themes/klassisch/*.css (1.2.0): jede Eigenschaft, die ein Aussehen (Glas, Bento) ändern darf, ist ein Token mit dem Wert von
+// Klassisch; die Liste steht im Kopf von themes/klassisch/basis.css. Dazu die lokalen Schriften (nur deklariert, Klassisch nutzt sie nicht).
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, statSync } from 'node:fs';
+import { readFileSync, statSync, existsSync } from 'node:fs';
+import { klassischDateien, klassischCss } from './css-hilfen.js';
 
 const wurzel = new URL('../../', import.meta.url);
-const css = readFileSync(new URL('theme.css', wurzel), 'utf8').replace(/\r\n/g, '\n');
+const css = klassischCss();
 
 /** Inhalt des ersten Blocks nach `kopf` bis zur nächsten schließenden Klammer (wie in schicht-farben.test.js). */
 function block(kopf) {
@@ -116,12 +117,28 @@ const KLASSISCH = {
   '--kurve-sanft': 'ease',
 };
 
-describe('Design-Tokens in theme.css', () => {
+describe('Design-Tokens in themes/klassisch/', () => {
+  const ERWARTET = ['basis', 'monat', 'formulare', 'heute', 'konto', 'mehr', 'schicht', 'autos', 'versicherung', 'bewegung'].map((n) => `themes/klassisch/${n}.css`);
+
+  test('Klassisch liegt in themes/klassisch/: zehn Dateien, in dieser Reihenfolge, vor allen Aussehen; theme.css gibt es nicht mehr', () => {
+    const html = readFileSync(new URL('index.html', wurzel), 'utf8');
+    assert.deepEqual(klassischDateien(), ERWARTET);
+    assert.ok(html.indexOf('themes/klassisch/bewegung.css') < html.indexOf('themes/glas.css'));
+    assert.equal(existsSync(new URL('theme.css', wurzel)), false);
+  });
+
+  test('datenschutz.html bindet dieselben zehn Dateien ein, in derselben Reihenfolge, und nicht mehr theme.css', () => {
+    const html = readFileSync(new URL('datenschutz.html', wurzel), 'utf8');
+    const links = [...html.matchAll(/href="(themes[/]klassisch[/][^"]+[.]css)"/g)].map((m) => m[1]);
+    assert.deepEqual(links, ERWARTET);
+    assert.ok(!html.includes('href="theme.css"'));
+  });
+
   test('jedes Token ist im hellen :root-Block definiert, mit dem Wert von Klassisch', () => {
     for (const [name, wert] of Object.entries(KLASSISCH)) assert.equal(HELL[name], wert, name);
   });
 
-  test('der Kopf von theme.css nennt jedes Token, und jedes dort genannte Token gibt es', () => {
+  test('der Kopf von basis.css nennt jedes Token, und jedes dort genannte Token gibt es', () => {
     const genannt = new Set(KOPF.match(/--[\w-]+/g));
     for (const name of Object.keys(KLASSISCH)) assert.ok(genannt.has(name), `${name} fehlt im Kopf`);
     for (const name of genannt) assert.ok(name in HELL, `${name} steht im Kopf, ist aber nicht definiert`);
@@ -211,13 +228,13 @@ describe('Design-Tokens in theme.css', () => {
     }
   });
 
-  test('jede Themen-Datei ist in index.html eingebunden, nach theme.css, und wirkt nur unter [data-aussehen]', () => {
+  test('jede Themen-Datei ist in index.html eingebunden, nach themes/klassisch/bewegung.css, und wirkt nur unter [data-aussehen]', () => {
     const html = readFileSync(new URL('index.html', wurzel), 'utf8');
-    const basis = html.indexOf('href="theme.css"');
-    assert.ok(basis > 0, 'theme.css eingebunden');
+    const basis = html.indexOf('href="themes/klassisch/bewegung.css"');
+    assert.ok(basis > 0, 'themes/klassisch/bewegung.css eingebunden');
     for (const datei of THEMEN_DATEIEN) {
       const stelle = html.indexOf(`href="${datei}"`);
-      assert.ok(stelle > basis, `${datei} nach theme.css eingebunden`);
+      assert.ok(stelle > basis, `${datei} nach themes/klassisch/bewegung.css eingebunden`);
       // jede Regel (außer @-Regeln und Keyframe-Schritten) muss an [data-aussehen=…] hängen, sonst änderte sie Klassisch
       const ohneKommentare = readFileSync(new URL(datei, wurzel), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
       const ohneKeyframes = ohneKommentare.replace(/@keyframes[^{]*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/g, '');
@@ -239,7 +256,9 @@ describe('Schriften (lokal, OFL)', () => {
   test('drei @font-face (Onest, Fredoka, Nunito) aus fonts/, woff2, font-display: swap', () => {
     assert.deepEqual(faces.map(familie).sort(), ['FK Fredoka', 'FK Nunito', 'FK Onest']);
     for (const f of faces) {
-      assert.match(datei(f) ?? '', /^fonts\/[a-z]+\.woff2$/, familie(f));
+      // die @font-face stehen in themes/klassisch/basis.css, die Pfade gelten ab dort (../../fonts/…) und müssen auf die Datei zeigen
+      assert.match(datei(f) ?? '', /^[.][.]\/[.][.]\/fonts\/[a-z]+\.woff2$/, familie(f));
+      assert.ok(existsSync(new URL(datei(f), new URL('themes/klassisch/basis.css', wurzel))), `${familie(f)}: Schriftdatei fehlt`);
       assert.match(f, /font-display:\s*swap/, familie(f));
       assert.doesNotMatch(f, /https?:|\/\//, `${familie(f)}: nur lokale Quellen`);
     }
@@ -261,7 +280,7 @@ describe('Schriften (lokal, OFL)', () => {
   });
 
   test('zusammen höchstens 250 KB, Lizenztexte in fonts/LIZENZ.md', () => {
-    const groesse = faces.map(datei).reduce((s, d) => s + statSync(new URL(d, wurzel)).size, 0);
+    const groesse = faces.map(datei).reduce((s, d) => s + statSync(new URL(d, new URL('themes/klassisch/basis.css', wurzel))).size, 0);
     assert.ok(groesse > 0 && groesse <= 250 * 1024, `${groesse} Bytes`);
     const lizenz = readFileSync(new URL('fonts/LIZENZ.md', wurzel), 'utf8');
     assert.equal(lizenz.match(/SIL OPEN FONT LICENSE Version 1\.1/g)?.length, 3);
