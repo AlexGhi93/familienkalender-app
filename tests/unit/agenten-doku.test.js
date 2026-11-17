@@ -7,7 +7,8 @@ import { fileURLToPath } from 'node:url';
 
 const wurzel = new URL('../../', import.meta.url);
 const wurzelPfad = fileURLToPath(wurzel);
-const lesen = (name) => readFileSync(new URL(name, wurzel), 'utf8');
+const zeilenenden = (text) => text.replace(/\r\n?/g, '\n');
+const lesen = (name) => zeilenenden(readFileSync(new URL(name, wurzel), 'utf8'));
 const zeilen = (name) => lesen(name).trimEnd().split('\n').length;
 
 const ARBEITSORDNER = new Set(['node_modules', '.git', '.superpowers', '.internal', 'test-results', 'playwright-report', '__basis__']);
@@ -37,16 +38,28 @@ function passt(muster, pfad) {
 }
 const hatPlatzhalter = (muster) => /[*{<]/.test(muster);
 
-function bereiche() {
+function bereicheAus(text) {
   const aus = new Map();
   let name = null;
-  for (const zeile of lesen('OWNERS.md').split('\n')) {
+  for (const zeile of zeilenenden(text).split('\n')) {
     const kopf = /^## (.+)$/.exec(zeile);
     if (kopf) { name = kopf[1].trim(); aus.set(name, []); continue; }
     if (name && /^- /.test(zeile)) aus.get(name).push(...[...zeile.matchAll(/`([^`]+)`/g)].map((m) => m[1]));
   }
   return aus;
 }
+const bereiche = () => bereicheAus(lesen('OWNERS.md'));
+
+// Lokale, git-ignorierte Arbeitsordner: in einem frischen Clone/CI nicht vorhanden, daher nie als fehlend melden.
+const LOKALE_ORDNER = ['.internal/', '.superpowers/', 'tests/visuell/__basis__/', 'test-results/', 'playwright-report/'];
+const istLokalerOrdner = (pfad) => LOKALE_ORDNER.some((o) => pfad === o.slice(0, -1) || pfad.startsWith(o));
+
+test('der OWNERS-Parser liefert bei LF und CRLF dasselbe', () => {
+  const lf = '## Hubs\n- `a.js`, `b.js`\n## Shared\n- `c/*.js`\n';
+  const erwartet = new Map([['Hubs', ['a.js', 'b.js']], ['Shared', ['c/*.js']]]);
+  assert.deepEqual(bereicheAus(lf), erwartet);
+  assert.deepEqual(bereicheAus(lf.replace(/\n/g, '\r\n')), erwartet);
+});
 
 test('AGENTS.md und OWNERS.md haben höchstens 100 Zeilen; CLAUDE.md verweist nur auf AGENTS.md', () => {
   assert.ok(zeilen('AGENTS.md') <= 100); assert.ok(zeilen('OWNERS.md') <= 100);
@@ -72,12 +85,12 @@ test('jeder Pfad ohne Platzhalter in OWNERS.md und jede in AGENTS.md genannte Da
   for (const [bereich, muster] of bereiche()) {
     for (const m of muster) {
       if (hatPlatzhalter(m)) { if (!dateien.some((d) => passt(m, d))) fehlend.push(`OWNERS ${bereich}: ${m} trifft nichts`); }
-      else if (!existsSync(new URL(m, wurzel))) fehlend.push(`OWNERS ${bereich}: ${m}`);
+      else if (!istLokalerOrdner(m) && !existsSync(new URL(m, wurzel))) fehlend.push(`OWNERS ${bereich}: ${m}`);
     }
   }
   for (const [, token] of lesen('AGENTS.md').matchAll(/`([^`]+)`/g)) {
     const istPfad = !/[\s*{<$()=:→]/.test(token) && (token.includes('/') || /\.(js|mjs|css|json|md|html)$/.test(token));
-    if (istPfad && !existsSync(new URL(token, wurzel))) fehlend.push(`AGENTS: ${token}`);
+    if (istPfad && !istLokalerOrdner(token) && !existsSync(new URL(token, wurzel))) fehlend.push(`AGENTS: ${token}`);
   }
   assert.deepEqual(fehlend, []);
 });
