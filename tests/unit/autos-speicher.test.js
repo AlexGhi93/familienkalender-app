@@ -324,3 +324,21 @@ describe('Demo-Adapter und Beispieldaten: Autos', () => {
     assert.equal((await a.leseAutos()).daten.autos.length, 2);
   });
 });
+
+describe('Demo-Adapter: laden() und leseAutos() liefern denselben Verlauf (B19)', () => {
+  test('laden().autos enthält alle Jahre aus dem Index', async () => {
+    const { daten: d0, paket } = hauptMitAuto();
+    const id = paket.auto.id;
+    let daten = d0;
+    const teile = {};
+    for (const jahr of [2024, 2025, 2026]) {
+      daten = historieJahrEintragen(daten, id, jahr);
+      teile[historieId(id, jahr)] = historieText(arbeitSetzen(leereHistorie(id, jahr), oel(id, { datum: `${jahr}-03-10`, km: 50_000 + jahr }), { heute: '2026-11-01' }));
+    }
+    const speicher = speicherAttrappe({ 'fk.demo.v1': JSON.stringify({ settings: {}, tage: {}, urlaub: [], termine: [], autos: { text: autosText(daten), teile } }) });
+    const adapter = createDemoAdapter({ speicher, jetzt: () => new Date('2026-11-01T10:00:00+01:00') });
+    const geladen = await adapter.laden();
+    assert.deepEqual(geladen.autos.historie, (await adapter.leseAutos()).historie);
+    assert.deepEqual(Object.keys(geladen.autos.historie[id]).sort(), ['2024', '2025', '2026']);
+  });
+});

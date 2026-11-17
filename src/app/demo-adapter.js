@@ -1,7 +1,7 @@
 import { todayVienna } from '../domain/dates.js';
 import { normalizeSettings } from '../domain/settings.js';
-import { leereListe, normalisiereListe } from '../domain/einkauf.js';
-import { leeresKonto, normalisiereKonto } from '../domain/konto.js';
+import { einkaufText, leereListe, normalisiereListe } from '../domain/einkauf.js';
+import { kontoText, leeresKonto, normalisiereKonto } from '../domain/konto.js';
 import { katalogText, leererMonat, monatText, normalisiereKatalog, normalisiereMonat, standardKatalog } from '../domain/schicht.js';
 import { FIX_SHARDS, leererShard, normalisiereShard, shardText, teilGesperrtFehler } from '../domain/fixkosten.js';
 import { zieleGesperrtFehler, zieleLesen, zieleText, zieleWarnungen } from '../domain/sparziele.js';
@@ -9,6 +9,7 @@ import { autosGesperrtFehler, autosLesen, autosText, historieGesperrtFehler, his
 import { leererVersicherungTeil, pruefeVersicherung, pruefeVersicherungTeil, versicherungGesperrtFehler, versicherungTeilGesperrtFehler, versicherungTeilText, versicherungText } from '../domain/versicherung.js';
 import { autosAusTexten, autosBisJahr, autosTeile, historieAusEreignis, historieId, versicherungAusTexten, versicherungBis, versicherungTeilAusEreignis, versicherungTeile, versicherungTeilId } from '../calendar/mapping.js';
 import { seedDemo } from './seed.js';
+import { standardSpeicher } from './speicher.js';
 
 const KEY = 'fk.demo.v1';
 
@@ -95,7 +96,7 @@ function zieleGelesen(roh) {
  * Schnittstelle (die später auch der Google-Adapter erfüllt):
  * laden, setzeTag, loescheTag, speichereUrlaub, loescheUrlaub, speichereTermin, loescheTermin, speichereSettings, zuruecksetzen.
  */
-export function createDemoAdapter({ speicher = globalThis.localStorage, jetzt = () => new Date() } = {}) {
+export function createDemoAdapter({ speicher = standardSpeicher(), jetzt = () => new Date() } = {}) {
   let daten = null;
 
   function sichern() {
@@ -113,7 +114,7 @@ export function createDemoAdapter({ speicher = globalThis.localStorage, jetzt = 
   }
 
   /** Was laden() und zuruecksetzen() liefern: eine Kopie, Sparziele, Autos und Versicherung gelesen wie beim Google-Adapter. */
-  const nachAussen = () => ({ ...structuredClone(daten), ziele: zieleGelesen(daten.ziele), autos: autosGelesen(daten.autos), versicherung: versicherungGelesen(daten.versicherung, versicherungBis(jetzt())) });
+  const nachAussen = () => ({ ...structuredClone(daten), ziele: zieleGelesen(daten.ziele), autos: autosGelesen(daten.autos, autosBisJahr(jetzt())), versicherung: versicherungGelesen(daten.versicherung, versicherungBis(jetzt())) });
 
   return {
     istDemo: true, // der Store erlaubt „Beispieldaten entfernen“ nur mit einem Adapter, der das von sich sagt
@@ -190,6 +191,7 @@ export function createDemoAdapter({ speicher = globalThis.localStorage, jetzt = 
     async aendereKonto(aenderung) {
       const neu = aenderung(daten.konto ?? leeresKonto());
       if (!neu) return null;
+      kontoText(neu); // wirft, wenn er nicht in den Kalender passen würde (wie bei Google)
       daten.konto = neu;
       sichern();
       return structuredClone(neu);
@@ -351,6 +353,7 @@ export function createDemoAdapter({ speicher = globalThis.localStorage, jetzt = 
     async aendereEinkauf(aenderung) {
       const neu = aenderung(daten.einkauf ?? leereListe());
       if (!neu) return null;
+      einkaufText(neu); // wirft, wenn sie nicht in den Kalender passen würde (wie bei Google)
       daten.einkauf = neu;
       sichern();
       return structuredClone(neu);

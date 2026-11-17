@@ -8,6 +8,7 @@ import { normalizeSettings } from '../../src/domain/settings.js';
 import { leereListe } from '../../src/domain/einkauf.js';
 import { leeresKonto } from '../../src/domain/konto.js';
 import { leererMonat, monatAusText, monatText } from '../../src/domain/schicht.js';
+import { createDemoAdapter } from '../../src/app/demo-adapter.js';
 import { standardSpeicher } from '../../src/app/speicher.js';
 import { speicherAttrappe } from './hilfen.js';
 
@@ -264,6 +265,20 @@ test('gesperrter Speicher (Zugriff wirft): standardSpeicher() gibt null, createS
     assert.equal(standardSpeicher(), null);
     assert.equal(createKonfiguration().lesen(), null);
     assert.doesNotThrow(() => createSnapshot());
+  } finally {
+    if (alt) Object.defineProperty(globalThis, 'localStorage', alt);
+    else delete globalThis.localStorage;
+  }
+});
+
+test('createDemoAdapter wirft nicht bei gesperrtem Speicher (Zugriff auf localStorage wirft)', async () => {
+  const alt = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, get() { throw new DOMException('SecurityError'); } });
+  try {
+    const adapter = createDemoAdapter();
+    const daten = await adapter.laden();
+    assert.ok(daten.termine.length > 0);
+    await assert.doesNotReject(adapter.setzeTag('2026-10-14', 'krank'));
   } finally {
     if (alt) Object.defineProperty(globalThis, 'localStorage', alt);
     else delete globalThis.localStorage;

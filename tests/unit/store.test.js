@@ -1507,3 +1507,34 @@ test('die Fassade bietet genau die Methoden wie vor dem Aufteilen', () => {
   const adapter = createDemoAdapter({ speicher: speicherAttrappe(), jetzt: () => JETZT });
   assert.deepEqual(Object.keys(createStore(adapter)).sort(), METHODEN_1_4_0); // sortierte Liste, im Test festgeschrieben
 });
+
+describe('Demo-Adapter verhält sich wie der Google-Adapter (B19)', () => {
+  const demo = () => createDemoAdapter({ speicher: speicherAttrappe(), jetzt: () => JETZT });
+
+  test('zu lange Einkaufsliste wird wie bei Google abgelehnt und nicht gespeichert', async () => {
+    const adapter = demo();
+    await adapter.laden();
+    const vorher = (await adapter.leseEinkauf()).liste;
+    await assert.rejects(adapter.aendereEinkauf((l) => ({ ...l, h: Object.fromEntries(Array.from({ length: 400 }, (_, i) => [`Artikel ${i} ${'x'.repeat(20)}`, 1])) })), /zu lang/);
+    assert.deepEqual((await adapter.leseEinkauf()).liste, vorher);
+  });
+
+  test('zu langer Kontostand-Verlauf wird abgelehnt und nicht gespeichert', async () => {
+    const adapter = demo();
+    await adapter.laden();
+    const vorher = (await adapter.laden()).konto;
+    const monate = Object.fromEntries(Array.from({ length: 96 }, (_, i) => [`${2018 + Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, '0')}`, -999_999_999 + i]));
+    await assert.rejects(adapter.aendereKonto((k) => ({ ...k, p: { papa: monate, mama: monate }, x: Array.from({ length: 40 }, (_, i) => ({ i: `ex${String(i).padStart(14, '0')}`, p: 'papa', m: '2026-10', c: -999_999_999, t: 'Ä'.repeat(30) })) })), /zu lang/);
+    assert.deepEqual((await adapter.laden()).konto, vorher);
+  });
+
+  test('aendereSchichtMonat behält fremd (unbekannte Felder einer neueren Version)', async () => {
+    const adapter = demo();
+    await adapter.laden();
+    const fremd = { o: { tiefer: [1, 'zwei'] } };
+    await adapter.aendereSchichtMonat('2026-11', (m) => ({ ...m, fremd }));
+    const neu = await adapter.aendereSchichtMonat('2026-11', (m) => setzeSchicht(m, { person: 'mama', tag: 3, k: 'C' }));
+    assert.deepEqual(neu.fremd, fremd);
+    assert.deepEqual((await adapter.leseSchichtMonat('2026-11')).monat.fremd, fremd);
+  });
+});
