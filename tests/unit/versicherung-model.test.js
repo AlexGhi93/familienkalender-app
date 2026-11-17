@@ -10,13 +10,11 @@ import { createGoogleAdapter } from '../../src/calendar/google-adapter.js';
 import { nurHintergrundGeaendert } from '../../src/app/hintergrund.js';
 import { TEXT_VERSICHERUNG_GESPERRT, leererVersicherungTeil, leereVersicherung, polizzeAnlegen, polizzeAusVorlage, quartalVon, rechnungSetzen, versicherungJahrEintragen, versicherungTeilText, versicherungText } from '../../src/domain/versicherung.js';
 import {
-  VERSICHERUNG_ZIEL,
   benutzteKategorien,
   entwurfZuErstattung,
   entwurfZuPolizze,
   entwurfZuRechnung,
   erstattungEntwurf,
-  jahresendeText,
   kategorieKurz,
   kategorieWahl,
   neueKategorieId,
@@ -24,9 +22,8 @@ import {
   rechnungEntwurf,
   rechnungVorschau,
   versicherungModel,
-  versicherungTermine,
 } from '../../src/app/views/versicherung-model.js';
-import { jahresStand } from '../../src/domain/versicherung-rechnung.js';
+import { VERSICHERUNG_ZIEL, jahresStand, jahresendeText, versicherungTermine } from '../../src/domain/versicherung-rechnung.js';
 import { apiAttrappe, zustand } from './hilfen.js';
 
 const HEUTE = '2026-11-08';

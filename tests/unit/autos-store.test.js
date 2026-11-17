@@ -12,7 +12,7 @@ import { historieId } from '../../src/calendar/mapping.js';
 import { sicherungAnzahlText, sicherungErstellen } from '../../src/app/sicherung.js';
 import { TEXT_AUTOS_GESPERRT, TEXT_AUTO_WEG, TEXT_HISTORIE_GESPERRT, autoAnlegen, autoAusVorlage, autosText, historieJahrEintragen, historieText, leereAutos, leereHistorie, arbeitSetzen } from '../../src/domain/autos.js';
 import { planeErinnerungen, planQuellen, quellenGeaendert } from '../../src/push/plan.js';
-import { autoKarteModel } from '../../src/app/views/autos-faellig.js';
+import { autoKarteModel } from '../../src/domain/autos-faellig.js';
 import { KALENDER, apiAttrappe, googleStore, kennungen, speicherAttrappe } from './hilfen.js';
 
 const JETZT = new Date('2026-11-01T08:00:00+01:00');

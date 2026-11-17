@@ -3,17 +3,15 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  KONTO_ANSICHT_SCHLUESSEL,
   entwurfZuPosten,
   fixEntwurf,
   fixkostenModel,
-  kontoAnsichtLesen,
-  kontoAnsichtSpeichern,
   startMonate,
   vertragAbzeichen,
   vertragVorschau,
   vorlageAnwenden,
 } from '../../src/app/views/fixkosten-model.js';
+import { KONTO_ANSICHT_SCHLUESSEL, kontoAnsichtLesen, kontoAnsichtSpeichern } from '../../src/app/views/konto-model.js';
 import { TEXT_TEIL_GESPERRT } from '../../src/domain/fixkosten.js';
 import { speicherAttrappe, zustand } from './hilfen.js';
 

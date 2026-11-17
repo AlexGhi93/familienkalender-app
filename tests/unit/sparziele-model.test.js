@@ -4,7 +4,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { bedarfVorschau, entwurfZuZiel, monatText, sparzieleModel, zielEntwurf, zielBisText, verschiebungFrage, zielLoeschFrage, zieleSperre, zielSymbole, SYMBOL_NAMEN } from '../../src/app/views/sparziele-model.js';
-import { KONTO_ANSICHTEN, kontoAnsichtLesen, kontoAnsichtSpeichern } from '../../src/app/views/fixkosten-model.js';
+import { KONTO_ANSICHTEN, kontoAnsichtLesen, kontoAnsichtSpeichern } from '../../src/app/views/konto-model.js';
 import { nurHintergrundGeaendert } from '../../src/app/hintergrund.js';
 import { TEXT_ZIELE_GESPERRT, TEXT_ZIELE_NICHT_GELADEN, ZIEL_EMOJIS, sparVerlauf, zielLoeschen } from '../../src/domain/sparziele.js';
 import { betragText, deltaText } from '../../src/domain/konto.js';

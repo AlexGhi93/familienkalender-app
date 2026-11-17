@@ -3,7 +3,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { SICHERUNG_VERSION, sicherungAnzahlText, sicherungDateiname, sicherungErstellen, sicherungText } from '../../src/app/sicherung.js';
 import { listeMitEintrag, listeOhneEintrag } from '../../src/app/listen.js';
-import { urlaubChecksAbgleich, urlaubChecksWunsch } from '../../src/app/urlaub-check.js';
+import { urlaubChecksAbgleich, urlaubChecksWunsch } from '../../src/domain/urlaub-check.js';
 import { istNeueVersionVerfuegbar } from '../../src/app/version-check.js';
 import { VERSION } from '../../src/app/version.js';
 import { datumKurz, datumLang, gruss, monatTitel, standText, stundeInWien } from '../../src/app/format-de.js';

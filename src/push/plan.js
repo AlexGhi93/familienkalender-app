@@ -8,10 +8,10 @@ import { instantZuWien, wienZuInstant } from '../domain/instant.js';
 import { SCHICHT_PERSONEN, artFuer, standardKatalog, vorladeMonate } from '../domain/schicht.js';
 import { monatlichKuendbar, vertragStatus } from '../domain/fixkosten.js';
 import { datumAnzeige } from '../domain/eingabe.js';
-import { terminAnzeige } from '../app/views/gemeinsam.js';
-import { urlaubChecksWunsch } from '../app/urlaub-check.js';
-import { autosUebersichten, erinnerungText, erinnerungsTage } from '../app/views/autos-faellig.js';
-import { VERSICHERUNG_ZIEL, versicherungTermine } from '../app/views/versicherung-model.js';
+import { terminAnzeige } from '../domain/termin-anzeige.js';
+import { urlaubChecksWunsch } from '../domain/urlaub-check.js';
+import { autosUebersichten, erinnerungText, erinnerungsTage } from '../domain/autos-faellig.js';
+import { VERSICHERUNG_ZIEL, versicherungTermine } from '../domain/versicherung-rechnung.js';
 import { bytesZuB64u } from './base64url.js';
 
 const TYPEN = ['arzt', 'familie', 'kita_sache', 'urlaub_check'];
@@ -206,7 +206,7 @@ async function autoErinnerungen(state, von, bis) {
 /**
  * Versicherung (Privatarzt, Spec §6), an BEIDE Telefone (ohne `nur`), um 09:00 (Wien), öffnet die Ansicht „Versicherung“ im Konto-Tab:
  * „Erstattung … noch offen?“ 30 Tage nach dem Einreichen (einmal je Rechnung, fällt mit der eingetragenen Erstattung weg) und am 01.12.
- * „Bis 31.12. noch Rest bei der Versicherung …“ (weder Betrag noch Kategorie), nur wenn noch etwas erstattbar ist (Tage und Texte: app/views/versicherung-model.js `versicherungTermine`).
+ * „Bis 31.12. noch Rest bei der Versicherung …“ (weder Betrag noch Kategorie), nur wenn noch etwas erstattbar ist (Tage und Texte: domain/versicherung-rechnung.js `versicherungTermine`).
  * Kennung = Rechnung bzw. Jahr und Art: bleibt bei Neuberechnung gleich, auf beiden Telefonen. Nur aus frisch gelesenen Daten
  * (`state.versicherung.frisch`, sonst keine – der übrige Plan wartet nie auf die Versicherung) und aus dem zuletzt GESPEICHERTEN Stand
  * (`bestaetigt`). Nichts hier darf den übrigen Plan verhindern.

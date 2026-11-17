@@ -1,7 +1,7 @@
 import { addDays } from '../../domain/dates.js';
 import { KITA_RICHTUNGEN } from '../../domain/types.js';
 import { datumKurz } from '../format-de.js';
-import { terminAnzeige } from './gemeinsam.js';
+import { terminAnzeige } from '../../domain/termin-anzeige.js';
 
 const SACHEN_TAGE_ZURUECK = 7;
 const SACHEN_TAGE_VORAUS = 7;

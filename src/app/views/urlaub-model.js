@@ -1,6 +1,6 @@
 // Urlaubsstand eines Kindergartenjahres für „Heute“ und die Urlaub-Seite (mit Jahreswahl): rein, ohne DOM.
 import { urlaubStatus, naechsterUrlaub } from '../../domain/urlaub.js';
-import { schliessTageListe } from './gemeinsam.js';
+import { schliessTageListe } from '../../domain/urlaub-check.js';
 
 export const JAHR_OFFSET_MIN = -3; // so viele Jahre zurück …
 export const JAHR_OFFSET_MAX = 6; // … und voraus lässt sich blättern

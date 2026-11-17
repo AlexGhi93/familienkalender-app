@@ -1,10 +1,9 @@
 // Versicherung (Privatarzt) im Konto-Tab: Modell der Seite (Jahr ‹ JJJJ ›, Gesamt „Noch X € von Y €“, eine Karte je Kategorie mit
 // ⏳ eingereicht und ✓ erstattet getrennt, Rechnungen des Jahres – neueste zuerst – mit „⚠ Limit überschritten“), die Entwürfe der Blätter
-// (Rechnung, Erstattung, Polizze) und die Texte der Push-Erinnerungen (push/plan.js `versicherungErinnerungen`, Spec §6).
+// (Rechnung, Erstattung, Polizze) und (die Texte der Push-Erinnerungen stehen in domain/versicherung-rechnung.js `versicherungTermine`).
 // Rein (ohne DOM, ohne Netz, ohne Uhr: `heute` kommt herein); gerechnet wird nur mit domain/versicherung-rechnung.js.
 import { betragText, centsAusText } from '../../domain/konto.js';
 import { datumAnzeige } from '../../domain/eingabe.js';
-import { kurzDatum } from '../../domain/format.js';
 import { istDatum } from '../../domain/gemeinsam.js';
 import {
   MAX_BETRAG_CENT,
@@ -15,10 +14,8 @@ import {
   polizzeVorlage,
   rechnungPruefen,
 } from '../../domain/versicherung.js';
-import { ERSTATTUNG_ERINNERUNG_TAGE, alleRechnungen, jahresStand, offeneErstattungen, rechnungFinden, rechnungenDesJahres } from '../../domain/versicherung-rechnung.js';
+import { ERSTATTUNG_ERINNERUNG_TAGE, alleRechnungen, jahresStand, offeneErstattungen, rechnungFinden, rechnungenJahr } from '../../domain/versicherung-rechnung.js';
 
-/** Wohin eine Erinnerung führt (Shell: wählt die Ansicht „Versicherung“ im Konto-Tab und lässt `#/konto` stehen). */
-export const VERSICHERUNG_ZIEL = '#/konto/versicherung';
 const TEXT_VERSICHERUNG_NICHT_AKTUELL = 'Die Versicherung konnte gerade nicht neu gelesen werden – angezeigt wird der letzte Stand.';
 export const TEXT_VERSICHERUNG_NICHT_GELADEN = 'Die Versicherung konnte nicht gelesen werden.';
 /** Farbe der Balken (wie --sz-farbe der Sparziele: nur Schmuck, die Zahlen stehen immer als Text daneben). */
@@ -44,9 +41,6 @@ export function kategorieKurz(polizze, kategorieId) {
 /** Warum sich die Versicherung gerade nicht ändern lässt (Hauptteil unlesbar) oder null – wie die Sperre im Store. */
 export const versicherungSperre = (v) => (v?.unlesbar?.main ? TEXT_VERSICHERUNG_GESPERRT : null);
 
-/** Der Teil des Zustands, aus dem gerechnet wird: der zuletzt GESPEICHERTE Stand für Erinnerungen (`bestaetigt`), sonst der angezeigte. */
-const stand = (v, { gespeichert = false } = {}) => (gespeichert && v?.bestaetigt ? v.bestaetigt : v);
-const rechnungenJahr = (v, jahr) => rechnungenDesJahres(v?.teile ?? {}, jahr, { geschrieben: v?.geschrieben });
 
 /** Jahre, durch die man blättern kann: vom ersten (Beginn der Polizze, erstes Jahr mit Rechnungen) bis zum laufenden (oder späteren mit Rechnungen). */
 function versicherungJahre(v, heute) {
@@ -59,9 +53,6 @@ function versicherungJahre(v, heute) {
   const gueltig = kandidaten.filter((j) => Number.isInteger(j) && j >= 2000 && j <= 2100);
   return { von: Math.min(...gueltig), bis: Math.max(...gueltig), jetzt };
 }
-
-/** Rest, der sich bis Jahresende noch erstatten lässt: der Gesamtrest, höchstens die Summe der Reste der Kategorien. */
-const erstattbarerRest = (s) => (s ? Math.min(s.gesamt.restCent, s.kategorien.reduce((summe, k) => summe + k.restCent, 0)) : 0);
 
 function meldungen(v) {
   const gesperrt = versicherungSperre(v);
@@ -333,53 +324,6 @@ export function entwurfZuPolizze(e) {
   if (e.vorlage) polizze.vorlage = e.vorlage;
   const fehler = polizzePruefen(polizze);
   return fehler ? { fehler } : { polizze };
-}
-
-// ---------------------------------------------------------------- Push-Erinnerungen (Spec §6)
-
-/**
- * Die Erinnerungen der Versicherung, deren Tag von `heute` an noch kommen kann → [{ schluessel, art, tag, titel, text }] (je 09:00 Wien,
- * push/plan.js legt Zeit und Kennung fest). Nur aus `v` = state.versicherung (der Aufrufer prüft `frisch`), gerechnet aus dem zuletzt
- * GESPEICHERTEN Stand (`bestaetigt`, solange eigene Änderungen offen sind): so schicken beide Telefone denselben Plan.
- *  - 'versOffen': `eingereichtAm` + 30 Tage, solange keine Erstattung eingetragen ist – einmal je Rechnung (Schlüssel = Rechnung); mit der
- *    Erstattung fällt sie beim nächsten Plan weg. Liegt der Tag schon zurück (z. B. spät nachgetragen), kommt keine mehr.
- *  - 'versJahr': 01.12. des laufenden und des nächsten Jahres, nur wenn bis 31.12. noch etwas erstattbar ist (Rest > 0) und die Polizze
- *    in dem Jahr schon läuft; nennt weder Betrag (E1) noch Kategorie (wie M5) – keine Beträge und keine Gesundheitsangaben in
- *    Benachrichtigungen. Beide Arten rechnen mit denselben Schreibzeiten (`v.geschrieben`, Review T3 M3): `bestaetigt` hat keine.
- * Wirft nie (unbrauchbare Daten → []).
- */
-export function versicherungTermine(v, heute) {
-  try {
-    const teil = stand(v, { gespeichert: true });
-    const polizze = teil?.daten?.polizze;
-    if (!polizze) return [];
-    const termine = [];
-    for (const o of offeneErstattungen(alleRechnungen(teil.teile ?? {}, { geschrieben: v.geschrieben }), heute)) {
-      if (o.erinnerungAm < heute) continue;
-      termine.push({ schluessel: `vers-offen-${o.rechnung.id}`, art: 'versOffen', tag: o.erinnerungAm, titel: '🩺 Versicherung', text: offenText(o.rechnung) });
-    }
-    const jetzt = Number(heute.slice(0, 4));
-    for (const jahr of [jetzt, jetzt + 1]) {
-      const tag = `${jahr}-12-01`;
-      if (tag < heute || (istDatum(polizze.beginn) && polizze.beginn > `${jahr}-12-31`)) continue;
-      const text = jahresendeText(polizze, jahresStand(polizze, rechnungenJahr({ teile: teil.teile, geschrieben: v.geschrieben }, jahr), jahr));
-      if (text) termine.push({ schluessel: `vers-jahr-${jahr}`, art: 'versJahr', tag, titel: '🩺 Versicherung', text });
-    }
-    return termine;
-  } catch {
-    return [];
-  }
-}
-
-/** „Erstattung für Rechnung vom 12.10. noch offen?“ – ohne Kategorie: keine Gesundheitsangabe auf dem Sperrbildschirm (Abschluss-Review M5). */
-const offenText = (rechnung) => `Erstattung für Rechnung vom ${kurzDatum(rechnung.datum)} noch offen?`;
-
-/**
- * „Bis 31.12. noch Rest bei der Versicherung – jetzt nachsehen.“ – ohne Betrag (E1) und ohne Kategorie (wie M5: keine Gesundheitsangabe
- * auf dem Sperrbildschirm); welche Kategorien Rest haben, zeigt die Seite. null, wenn nichts mehr erstattbar ist.
- */
-export function jahresendeText(polizze, s) {
-  return s && erstattbarerRest(s) > 0 ? 'Bis 31.12. noch Rest bei der Versicherung – jetzt nachsehen.' : null;
 }
 
 /** Tage bis zur Erinnerung „noch offen?“ (für den Hinweis im Blatt). */

@@ -1,11 +1,11 @@
 // Autos: was bald oder überfällig ist – für die Karte „🚗 Auto“ auf Heute und die Push-Erinnerungen (push/plan.js `autoErinnerungen`).
 // Rein (ohne DOM, ohne Netz, ohne Uhr: `heute` kommt herein); gerechnet wird mit domain/autos-rechnung.js. Texte nennen nur Auto, Sache,
 // Datum und km.
-import { addDays, diffDays } from '../../domain/dates.js';
-import { kmText } from '../../domain/autos.js';
-import { datumText, kurzDatum } from '../../domain/format.js';
-import { istDatum } from '../../domain/gemeinsam.js';
-import { autoUebersicht, autosHistorien } from '../../domain/autos-rechnung.js';
+import { addDays, diffDays } from './dates.js';
+import { kmText } from './autos.js';
+import { datumText, kurzDatum } from './format.js';
+import { istDatum } from './gemeinsam.js';
+import { autoUebersicht, autosHistorien } from './autos-rechnung.js';
 
 const RANG = { ueberfaellig: 0, bald: 1 };
 const MAX_ZEILEN = 3;

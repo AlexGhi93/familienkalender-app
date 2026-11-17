@@ -5,7 +5,7 @@ import { leeresKonto, normalisiereKonto } from '../domain/konto.js';
 import { normalisiereShard } from '../domain/fixkosten.js';
 import { alleRechnungen } from '../domain/versicherung-rechnung.js';
 import { versicherungTeilId } from '../calendar/mapping.js';
-import { terminAnzeige } from './views/gemeinsam.js';
+import { terminAnzeige } from '../domain/termin-anzeige.js';
 
 export const SICHERUNG_VERSION = 1;
 

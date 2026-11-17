@@ -8,7 +8,8 @@ import { JAHR_OFFSET_MAX, JAHR_OFFSET_MIN, urlaubCountdown, urlaubModel } from '
 import { neuKacheln, urlaubVorschau, urlaubstageImZeitraum, werktageImBereich } from '../../src/app/views/neu-model.js';
 import { sachenModel } from '../../src/app/views/sachen-model.js';
 import { einkaufModel } from '../../src/app/views/einkauf-model.js';
-import { naechsteTermine, tagTyp, terminAnzeige, termineAm } from '../../src/app/views/gemeinsam.js';
+import { naechsteTermine, tagTyp, termineAm } from '../../src/app/views/gemeinsam.js';
+import { terminAnzeige } from '../../src/domain/termin-anzeige.js';
 import { seedDemo } from '../../src/app/seed.js';
 import { normalizeSettings } from '../../src/domain/settings.js';
 import { zustand } from './hilfen.js';

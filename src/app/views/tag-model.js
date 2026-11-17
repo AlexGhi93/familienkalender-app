@@ -1,7 +1,8 @@
 import { feiertagName } from '../../domain/feiertage.js';
 import { FAMILIE_SYMBOLE, TYPES } from '../../domain/types.js';
 import { datumLang } from '../format-de.js';
-import { FEIERTAG_EMOJI, TAGES_TYPEN_REIHENFOLGE, termineAm, typText, urlaubTageSet } from './gemeinsam.js';
+import { TAGES_TYPEN_REIHENFOLGE } from '../../domain/types.js';
+import { FEIERTAG_EMOJI, termineAm, typText, urlaubTageSet } from './gemeinsam.js';
 import { dienstTag } from './dienst-model.js';
 
 /** „Neu an diesem Tag“: dieselben Arten, Symbole und Farben wie die Kacheln in „Neu“ (art = Art für ui.neuTerminStarten). */

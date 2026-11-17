@@ -20,7 +20,7 @@ import { zeitAusDateTime } from '../domain/format.js';
 import { DEFAULT_SETTINGS, normalizeSettings } from '../domain/settings.js';
 import { istObjekt } from '../domain/gemeinsam.js';
 import { huelleLesen } from '../domain/unlesbar.js';
-import { terminAnzeige } from '../app/views/gemeinsam.js';
+import { terminAnzeige } from '../domain/termin-anzeige.js';
 import { CONFIG } from './config.js';
 
 export const EINSTELLUNGEN_ID = 'fkeinstellungen';

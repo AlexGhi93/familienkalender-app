@@ -3,7 +3,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { planeErinnerungen, planQuellen, quellenGeaendert } from '../../src/push/plan.js';
-import { autoKarteModel } from '../../src/app/views/autos-faellig.js';
+import { autoKarteModel } from '../../src/domain/autos-faellig.js';
 import { heuteModel } from '../../src/app/views/heute-model.js';
 import { nurHintergrundGeaendert } from '../../src/app/hintergrund.js';
 import { createStore } from '../../src/app/store.js';

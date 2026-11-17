@@ -3,7 +3,34 @@
 import { MAX_EXTRAS, PERSONEN, nachtragMonate, betragText, deltaText, eintragbarerMonat, kontoVerlaufMitExtra, kontoZusammenfassungMitExtra, leeresKonto, letzterTag } from '../../domain/konto.js';
 import { FUER } from '../../domain/types.js';
 import { MONATE, monatText } from '../format-de.js';
+import { standardSpeicher } from '../speicher.js';
 import { verlaufReihen } from './konto-diagramm.js';
+
+// ---------------------------------------------------------------- gemerkte Ansicht (Kontostand · Fixkosten · Sparziele · Versicherung)
+
+export const KONTO_ANSICHT_SCHLUESSEL = 'fk.konto.ansicht.v1';
+export const KONTO_ANSICHTEN = Object.freeze(['kontostand', 'fixkosten', 'sparziele', 'versicherung']);
+const gueltigeAnsicht = (wert) => (KONTO_ANSICHTEN.includes(wert) ? wert : 'kontostand');
+
+/** Die zuletzt gewählte Ansicht des Konto-Tabs auf diesem Telefon; ohne Eintrag (oder ohne Speicher) „Kontostand“. Wirft nie. */
+export function kontoAnsichtLesen(speicher = standardSpeicher()) {
+  try {
+    return gueltigeAnsicht(speicher?.getItem(KONTO_ANSICHT_SCHLUESSEL));
+  } catch {
+    return 'kontostand';
+  }
+}
+
+/** Merkt die Ansicht (Fehler des Speichers, z. B. im privaten Modus, stören nicht) und gibt den gültigen Wert zurück. */
+export function kontoAnsichtSpeichern(wert, speicher = standardSpeicher()) {
+  const gueltig = gueltigeAnsicht(wert);
+  try {
+    speicher?.setItem(KONTO_ANSICHT_SCHLUESSEL, gueltig);
+  } catch {
+    // dann eben nur bis zum Neuladen
+  }
+  return gueltig;
+}
 
 const MAX_BALKEN = 36; // bei „Alles“ höchstens so viele Monate im Balkendiagramm
 const BEREICHE = [6, 12, 0]; // Monate im Diagramm (0 = alles)

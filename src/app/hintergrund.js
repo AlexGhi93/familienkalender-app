@@ -2,7 +2,7 @@
 // Sonst ginge z. B. beim Eintippen des Kontostands die Tastatur zu, sobald das Vorladen der Fixkosten oder das Nachlesen der Sparziele
 // fertig ist (Neuzeichnen nimmt den Fokus).
 import { todayVienna } from '../domain/dates.js';
-import { autoKarteModel } from './views/autos-faellig.js';
+import { autoKarteModel } from '../domain/autos-faellig.js';
 
 /** Inhalt der Karte „🚗 Auto“ auf Heute als Text (zum Vergleichen). */
 const autoKarte = (state, heute) => JSON.stringify(autoKarteModel(state?.autos, heute ?? todayVienna()));

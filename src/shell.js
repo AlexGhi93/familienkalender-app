@@ -24,7 +24,7 @@ import { schichtScreen } from './ui/schicht-screen.js';
 import { oeffneSchichtTag } from './ui/schicht-tag.js';
 import { oeffneSchichtarten } from './ui/schicht-arten.js';
 import { schichtFilterLesen, schichtFilterSpeichern } from './app/views/schicht-model.js';
-import { KONTO_ANSICHTEN, kontoAnsichtLesen, kontoAnsichtSpeichern } from './app/views/fixkosten-model.js';
+import { KONTO_ANSICHTEN, kontoAnsichtLesen, kontoAnsichtSpeichern } from './app/views/konto-model.js';
 import { createSchichtAbgleich, schichtAktualisierenFaellig } from './app/schicht-abgleich.js';
 import { monatVor } from './domain/konto.js';
 import { planQuellen, quellenGeaendert } from './push/plan.js';

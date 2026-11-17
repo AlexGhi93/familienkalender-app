@@ -3,7 +3,7 @@ import { ARZT_SUBTYPEN, FAMILIE_SYMBOLE, FUER, KITA_RICHTUNGEN, TYPES } from '..
 import { MAX_NOTIZ, bereinigeNotiz } from '../domain/notiz.js';
 import { mitnehmenFor, normalizeSettings } from '../domain/settings.js';
 import { SEP, TITLE_LIMIT, titleLength } from '../domain/titles.js';
-import { terminAnzeige } from './views/gemeinsam.js';
+import { terminAnzeige } from '../domain/termin-anzeige.js';
 import { naechsterKitaTag } from './serie.js';
 
 export const MAX_TITEL = 30;

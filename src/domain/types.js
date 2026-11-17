@@ -88,3 +88,7 @@ export const KITA_VORSCHLAEGE = Object.freeze({
     'Fotos',
   ]),
 });
+
+export const BETREUUNG = Object.freeze(['kita_essen', 'kita_ohne']);
+export const ABWESENHEIT = Object.freeze(['abwesend', 'krank', 'schliess']);
+export const TAGES_TYPEN_REIHENFOLGE = Object.freeze(['kita_essen', 'kita_ohne', 'abwesend', 'krank', 'schliess']);

@@ -5,6 +5,7 @@ import { addDays, eachDay, pad2, weekday } from '../../domain/dates.js';
 import { feiertagName } from '../../domain/feiertage.js';
 import { monatVor } from '../../domain/konto.js';
 import { PALETTE, SCHICHT_PERSONEN, aktiveArten, artAendern, artFuer, artHinzufuegen, istNacht, monatZaehlung, schichtAm, standardKatalog, tageImMonat } from '../../domain/schicht.js';
+import { standardSpeicher } from '../speicher.js';
 import { WOCHENTAGE_KURZ, datumLang, monatTitel } from '../format-de.js';
 
 const SCHICHT_FILTER = Object.freeze(['beide', 'papa', 'mama']);
@@ -13,7 +14,7 @@ export const SCHICHT_FILTER_SCHLUESSEL = 'fk.schicht.filter.v1';
 const gueltigerFilter = (filter) => (SCHICHT_FILTER.includes(filter) ? filter : 'beide');
 
 /** Gemerkter Filter dieses Telefons; ohne Speicher, bei Unsinn oder Fehlern „beide“. */
-export function schichtFilterLesen(speicher = globalThis.localStorage) {
+export function schichtFilterLesen(speicher = standardSpeicher()) {
   try {
     return gueltigerFilter(speicher?.getItem(SCHICHT_FILTER_SCHLUESSEL));
   } catch {
@@ -22,7 +23,7 @@ export function schichtFilterLesen(speicher = globalThis.localStorage) {
 }
 
 /** Merkt den Filter (Fehler des Speichers, z. B. im privaten Modus, stören nicht) und gibt den gültigen Wert zurück. */
-export function schichtFilterSpeichern(filter, speicher = globalThis.localStorage) {
+export function schichtFilterSpeichern(filter, speicher = standardSpeicher()) {
   const wert = gueltigerFilter(filter);
   try {
     speicher?.setItem(SCHICHT_FILTER_SCHLUESSEL, wert);

@@ -5,7 +5,8 @@ import { isFeiertag } from '../../domain/feiertage.js';
 import { jahrVon } from '../../domain/gemeinsam.js';
 import { TYPES } from '../../domain/types.js';
 import { MONATE, datumKurz } from '../format-de.js';
-import { terminAnzeige, typText } from './gemeinsam.js';
+import { terminAnzeige } from '../../domain/termin-anzeige.js';
+import { typText } from './gemeinsam.js';
 import { urlaubstageImZeitraum } from './neu-model.js';
 
 const VERLAUF_MAX_JAHRE = 5; // so weit zurück lässt sich nachladen

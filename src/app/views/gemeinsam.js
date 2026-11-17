@@ -1,26 +1,13 @@
-import { TYPES, ARZT_SUBTYPEN, FUER } from '../../domain/types.js';
-import { fuerName } from '../../domain/fuer.js';
-import { buildDayTitle, buildArztTitle, buildFamilieTitle, buildKitaSacheTitle } from '../../domain/titles.js';
-import { einrichtungFor } from '../../domain/modus.js';
+import { TYPES } from '../../domain/types.js';
+import { buildDayTitle } from '../../domain/titles.js';
 import { spanDays } from '../../domain/span.js';
-import { euroText } from '../../domain/format.js';
+import { terminAnzeige } from '../../domain/termin-anzeige.js';
 
-export const BETREUUNG = Object.freeze(['kita_essen', 'kita_ohne']);
-export const ABWESENHEIT = Object.freeze(['abwesend', 'krank', 'schliess']);
-export const TAGES_TYPEN_REIHENFOLGE = Object.freeze(['kita_essen', 'kita_ohne', 'abwesend', 'krank', 'schliess']);
 export const FEIERTAG_FARBE = '#A7A2B2';
 export const FEIERTAG_EMOJI = '🎉';
 
-export function tageMitTyp(state, typen) {
-  return new Set(Object.keys(state.tage).filter((d) => typen.includes(state.tage[d].typ)));
-}
-
 export function urlaubTageSet(state) {
   return new Set(state.urlaub.flatMap((u) => spanDays(u)));
-}
-
-export function schliessTageListe(state) {
-  return [...tageMitTyp(state, ['schliess'])];
 }
 
 /** Wirksamer Tagestyp: Urlaub schlägt einen Tageseintrag (Vorrang aus dem Design). */
@@ -33,52 +20,6 @@ export function tagTyp(state, date, urlaubSet = urlaubTageSet(state)) {
 export function typText(typ, date, settings) {
   const emoji = TYPES[typ].emoji;
   return { emoji, text: buildDayTitle(typ, date, settings).slice(emoji.length + 1) };
-}
-
-function kostenText(kosten) {
-  if (!kosten) return null;
-  return kosten.kostenlos ? 'kostenlos' : euroText(kosten.betrag);
-}
-
-/** Termin für die Anzeige: Emoji, Beschriftung, Uhrzeit, Mitnehmen, Kosten und der Titel, wie er im Kalender steht. */
-export function terminAnzeige(t, settings) {
-  const gemeinsam = { id: t.id, typ: t.typ, date: t.date, time: t.time ?? null, mitnehmen: t.mitnehmen ?? [], kosten: kostenText(t.kosten), farbe: TYPES[t.typ].farbe };
-  if (t.typ === 'kita_sache') {
-    const einrichtung = einrichtungFor(t.date, settings);
-    return {
-      ...gemeinsam,
-      subtyp: null,
-      fuer: null,
-      fuerText: null,
-      fuerEmoji: null,
-      notiz: null,
-      emoji: TYPES.kita_sache.emoji,
-      label: t.richtung === 'heim' ? `Von ${einrichtung} heimholen` : `${einrichtung} hinbringen`,
-      richtung: t.richtung,
-      serie: t.serie ?? null,
-      titel: buildKitaSacheTitle({ richtung: t.richtung, einrichtung, time: t.time, mitnehmen: t.mitnehmen }),
-    };
-  }
-  const sub = t.typ === 'arzt' ? ARZT_SUBTYPEN[t.subtyp] : null;
-  const fuer = t.fuer && FUER[t.fuer] ? t.fuer : null;
-  const fuerText = fuerName(fuer, settings);
-  const titel =
-    t.typ === 'arzt'
-      ? buildArztTitle({ subtyp: t.subtyp, fuer: fuerText, time: t.time, mitnehmen: t.mitnehmen, kosten: t.kosten })
-      : buildFamilieTitle({ text: t.label, symbol: t.symbol, fuer: fuerText, time: t.time, mitnehmen: t.mitnehmen, kosten: t.kosten });
-  return {
-    ...gemeinsam,
-    subtyp: t.subtyp ?? null,
-    fuer,
-    fuerText,
-    fuerEmoji: fuer ? FUER[fuer].emoji : null,
-    notiz: t.notiz ?? null,
-    emoji: sub ? sub.emoji : t.symbol || TYPES.familie.emoji,
-    label: sub ? sub.label : t.label,
-    richtung: null,
-    serie: null,
-    titel,
-  };
 }
 
 export function termineAm(state, date) {

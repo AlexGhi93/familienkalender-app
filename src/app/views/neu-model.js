@@ -4,7 +4,9 @@ import { FAMILIE_SYMBOLE, TYPES } from '../../domain/types.js';
 import { kindergartenjahr, urlaubStatus } from '../../domain/urlaub.js';
 import { einrichtungFor } from '../../domain/modus.js';
 import { EINKAUF_FARBE } from './einkauf-model.js';
-import { BETREUUNG, TAGES_TYPEN_REIHENFOLGE, schliessTageListe, typText } from './gemeinsam.js';
+import { BETREUUNG, TAGES_TYPEN_REIHENFOLGE } from '../../domain/types.js';
+import { schliessTageListe } from '../../domain/urlaub-check.js';
+import { typText } from './gemeinsam.js';
 
 /** Kacheln für „Neu“: fünf Tagestypen, Urlaub, Arzttermin, Termin (alles andere), Sachen für die Einrichtung und die Einkaufsliste. */
 export function neuKacheln(heute, settings) {

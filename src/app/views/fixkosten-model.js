@@ -24,32 +24,6 @@ import { kurzDatum } from '../../domain/format.js';
 import { monatText } from '../format-de.js';
 import { kontoModel } from './konto-model.js';
 
-// ---------------------------------------------------------------- gemerkte Ansicht (Kontostand · Fixkosten · Sparziele · Versicherung)
-
-export const KONTO_ANSICHT_SCHLUESSEL = 'fk.konto.ansicht.v1';
-export const KONTO_ANSICHTEN = Object.freeze(['kontostand', 'fixkosten', 'sparziele', 'versicherung']);
-const gueltigeAnsicht = (wert) => (KONTO_ANSICHTEN.includes(wert) ? wert : 'kontostand');
-
-/** Die zuletzt gewählte Ansicht des Konto-Tabs auf diesem Telefon; ohne Eintrag (oder ohne Speicher) „Kontostand“. Wirft nie. */
-export function kontoAnsichtLesen(speicher = globalThis.localStorage) {
-  try {
-    return gueltigeAnsicht(speicher?.getItem(KONTO_ANSICHT_SCHLUESSEL));
-  } catch {
-    return 'kontostand';
-  }
-}
-
-/** Merkt die Ansicht (Fehler des Speichers, z. B. im privaten Modus, stören nicht) und gibt den gültigen Wert zurück. */
-export function kontoAnsichtSpeichern(wert, speicher = globalThis.localStorage) {
-  const gueltig = gueltigeAnsicht(wert);
-  try {
-    speicher?.setItem(KONTO_ANSICHT_SCHLUESSEL, gueltig);
-  } catch {
-    // dann eben nur bis zum Neuladen
-  }
-  return gueltig;
-}
-
 // ---------------------------------------------------------------- Hilfen
 
 const FIX_FILTER = Object.freeze(['alle', ...FIX_PERSONEN.map((x) => x.id)]);

@@ -2,7 +2,14 @@
 // Reine Berechnung: was es geben soll (`urlaubChecksWunsch`) und was dafür im Kalender zu tun ist (`urlaubChecksAbgleich`).
 import { istUrlaubCheckId, urlaubCheckEventId } from '../domain/ids.js';
 import { planUrlaubChecks, urlaubStatus } from '../domain/urlaub.js';
-import { schliessTageListe } from './views/gemeinsam.js';
+
+export function tageMitTyp(state, typen) {
+  return new Set(Object.keys(state.tage).filter((d) => typen.includes(state.tage[d].typ)));
+}
+
+export function schliessTageListe(state) {
+  return [...tageMitTyp(state, ['schliess'])];
+}
 
 /** [{ date, title, id }] für das aktuelle Kindergartenjahr; leer, wenn nichts mehr offen ist; nur zukünftige Daten. */
 export function urlaubChecksWunsch(state, heute) {

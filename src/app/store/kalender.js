@@ -4,7 +4,7 @@ import { spanDays } from '../../domain/span.js';
 import { planUmwandlung } from '../../domain/umwandlung.js';
 import { urlaubCheckEventId } from '../../domain/ids.js';
 import { normalisiereTermin } from '../termin.js';
-import { urlaubChecksAbgleich, urlaubChecksWunsch } from '../urlaub-check.js';
+import { urlaubChecksAbgleich, urlaubChecksWunsch } from '../../domain/urlaub-check.js';
 import { MAX_SERIEN_WOCHEN, naechsterWochentag, wochenSerie } from '../serie.js';
 import { istAuthFehler } from './kern.js';
 

@@ -10,14 +10,13 @@ import { einkaufModel } from './einkauf-model.js';
 import { kontoKarteModel } from './konto-model.js';
 import { sachenModel } from './sachen-model.js';
 import { urlaubCountdown, urlaubModel } from './urlaub-model.js';
-import { autoKarteModel } from './autos-faellig.js';
+import { autoKarteModel } from '../../domain/autos-faellig.js';
+import { ABWESENHEIT, BETREUUNG } from '../../domain/types.js';
+import { tageMitTyp } from '../../domain/urlaub-check.js';
 import {
-  ABWESENHEIT,
-  BETREUUNG,
   FEIERTAG_EMOJI,
   FEIERTAG_FARBE,
   naechsteTermine,
-  tageMitTyp,
   tagTyp,
   termineAm,
   typText,
