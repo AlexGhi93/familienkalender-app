@@ -4,6 +4,7 @@ import { monatModel } from '../app/views/monat-model.js';
 import { WOCHENTAGE_KURZ, datumLang } from '../app/format-de.js';
 import { TYPES } from '../domain/types.js';
 import { FEIERTAG_FARBE } from '../app/views/gemeinsam.js';
+import { monatWischen } from './wischen.js';
 
 function zelle(z, ui) {
   const klassen = ['zelle', z.imMonat ? '' : 'ausserhalb', z.konflikt ? 'konflikt' : '', z.istHeute ? 'heute' : '', z.farbe ? 'getoent' : '', z.wochenende ? 'we' : ''];
@@ -40,12 +41,14 @@ export function monatScreen({ store, ui }) {
   const m = monatModel(store.getState(), ui.monat.jahr, ui.monat.monat, store.heute());
   const rund = (zeichen, beschriftung, ziel) =>
     h('button', { class: 'rund', type: 'button', 'aria-label': beschriftung, onClick: () => ui.setzeMonat(ziel) }, zeichen);
+  const raster = h('div', { class: 'raster' }, m.wochen.flat().map((z) => zelle(z, ui)));
+  monatWischen(raster, { zurueck: () => ui.setzeMonat(m.vorher), vor: () => ui.setzeMonat(m.nachher) });
   return h(
     'section',
     { class: 'screen monat-seite' },
     h('div', { class: 'monat-kopf' }, rund('‹', 'Vorheriger Monat', m.vorher), h('h1', {}, m.titel), rund('›', 'Nächster Monat', m.nachher)),
     h('div', { class: 'wochentage', 'aria-hidden': 'true' }, WOCHENTAGE_KURZ.map((t) => h('span', {}, t))),
-    h('div', { class: 'raster' }, m.wochen.flat().map((z) => zelle(z, ui))),
+    raster,
     h('div', { class: 'legende' }, LEGENDE.map(([text, hex]) => h('span', { style: farbe(hex) }, text))),
     h(
       'article',

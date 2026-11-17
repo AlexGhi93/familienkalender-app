@@ -1,6 +1,6 @@
 // „Monat“: blättern, Tag antippen → Tagesblatt mit „Eintragen“, Tagestyp setzen und im Raster sehen; „Neu an diesem Tag“
 // (das Formular beginnt mit dem Tag) und „Bringen & Abholen“ für künftige Betreuungstage (gilt nur für diesen Tag).
-import { test, expect, starteDemo, tab, erwarteToast, WERKTAG_DATUM } from './hilfen.js';
+import { test, expect, starteDemo, tab, erwarteToast, WERKTAG_DATUM, wischeWaagrecht } from './hilfen.js';
 import { seedDemo } from '../../src/app/seed.js';
 
 const zelle = (page, name) => page.locator('.raster').getByRole('button', { name, exact: false });
@@ -382,5 +382,55 @@ test.describe('Monat und Tagesblatt in Glas und Bento', () => {
     const raender = await chips.evaluateAll((cs) => cs.map((c) => getComputedStyle(c).borderTopWidth));
     expect(new Set(raender).size).toBe(1);
     for (const box of await chips.evaluateAll((cs) => cs.map((c) => c.getBoundingClientRect().toJSON()))) expect(box.height).toBeGreaterThanOrEqual(44);
+  });
+});
+
+test.describe('Wischen wechselt den Monat (1.5.0)', () => {
+  test('Wischen nach links zeigt den nächsten Monat, nach rechts den vorigen', async ({ page }) => {
+    await starteDemo(page, { route: '#/monat' });
+    const titel = page.locator('.monat-kopf h1');
+    await expect(titel).toHaveText('Oktober 2026');
+    const ok = await wischeWaagrecht(page, page.locator('.raster'), -120);
+    test.skip(!ok, 'Dieser Browser kann keine Touch-Ereignisse erzeugen.');
+    await expect(titel).toHaveText('November 2026');
+    await wischeWaagrecht(page, page.locator('.raster'), 120);
+    await expect(titel).toHaveText('Oktober 2026');
+    await wischeWaagrecht(page, page.locator('.raster'), 120);
+    await expect(titel).toHaveText('September 2026');
+  });
+
+  test('Wischen, das auf einem Tag endet, öffnet kein Tagesblatt; ein Tipp schon', async ({ page }) => {
+    await starteDemo(page, { route: '#/monat' });
+    const tag = zelle(page, 'Donnerstag, 22. Oktober');
+    const ok = await wischeWaagrecht(page, tag, 0, { dy: 0 }); // nur um die Fähigkeit zu prüfen: Tipp ohne Weg ist kein Wischen
+    test.skip(!ok, 'Dieser Browser kann keine Touch-Ereignisse erzeugen.');
+    await expect(page.locator('.monat-kopf h1')).toHaveText('Oktober 2026');
+    const wischTag = zelle(page, 'Donnerstag, 22. Oktober');
+    await wischeWaagrecht(page, wischTag, -120);
+    await expect(page.locator('.monat-kopf h1')).toHaveText('November 2026');
+    // Ein echtes Wischen löst keinen Klick aus; hier folgt er ausdrücklich: das Raster schluckt ihn.
+    await page.locator('.raster .zelle').first().evaluate((el) => el.click());
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    // Ein Tipp allein öffnet das Blatt.
+    await zelle(page, 'Montag, 2. November').click();
+    await expect(page.getByRole('dialog', { name: 'Montag, 2. November' })).toBeVisible();
+  });
+
+  test('Tippen direkt nach einem Wischen geht nicht verloren (neues Berühren hebt die Sperre auf)', async ({ page }) => {
+    await starteDemo(page, { route: '#/monat' });
+    const ok = await wischeWaagrecht(page, page.locator('.raster'), -120);
+    test.skip(!ok, 'Dieser Browser kann keine Touch-Ereignisse erzeugen.');
+    await expect(page.locator('.monat-kopf h1')).toHaveText('November 2026');
+    await wischeWaagrecht(page, page.locator('.raster'), 0); // neues Berühren ohne Weg (touchstart hebt die Sperre auf)
+    await zelle(page, 'Montag, 2. November').click();
+    await expect(page.getByRole('dialog', { name: 'Montag, 2. November' })).toBeVisible();
+  });
+
+  test('Senkrechtes Ziehen wechselt den Monat nicht', async ({ page }) => {
+    await starteDemo(page, { route: '#/monat' });
+    const ok = await wischeWaagrecht(page, page.locator('.raster'), -20, { dy: 150 });
+    test.skip(!ok, 'Dieser Browser kann keine Touch-Ereignisse erzeugen.');
+    await wischeWaagrecht(page, page.locator('.raster'), -80, { dy: 100 });
+    await expect(page.locator('.monat-kopf h1')).toHaveText('Oktober 2026');
   });
 });
