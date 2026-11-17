@@ -1,4 +1,8 @@
 import { starte } from './start.js';
+import { blattVerlaufStarten } from './ui/components.js';
+
+// neu geladen über einem offenen Blatt: dessen Verlaufseinträge sofort verlassen (sonst tote Zurück-Drücke)
+blattVerlaufStarten();
 
 starte({ wurzel: document.getElementById('app') });
 

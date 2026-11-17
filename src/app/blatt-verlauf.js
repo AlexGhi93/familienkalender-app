@@ -5,6 +5,12 @@
 // Ein eigenes go() läuft verzögert; navigiert die App inzwischen (Speichern → ui.gehZu nach einem await), nimmt der Rücksprung die
 // Navigation zurück (Chrome und WebKit gleich). Alle eigenen Sprünge landen auf derselben Adresse, von der sie ausgingen: ein popstate
 // mit anderer Adresse ist diese Navigation; sie wird nach dem Rücksprung über `gehe(adresse)` wiederholt.
+// Kommt der Rücksprung nicht an (Browser verschluckt ihn), stellt ein Wächter nach WAECHTER_MS den Takt wieder her.
+// Ohne offenes Blatt wird jeder Blatt-Eintrag übersprungen, auch einer aus einem früheren Laden; die Sitzung trennt nur bei offenen
+// Blättern eigene von fremden Einträgen. Startet die App auf einem Blatt-Eintrag (PWA neu geladen), geht `beimStart` einmal zurück.
+
+/** So lange darf der eigene Rücksprung dauern, bis der Wächter ihn aufgibt. */
+export const WAECHTER_MS = 800;
 
 /** Tiefe des Blatts, zu dem ein Verlaufszustand gehört; 0 für Seiten, fremde Sitzungen (früheres Laden) und alles Unbekannte. */
 export function tiefeAus(state, sitzung) {
@@ -12,6 +18,9 @@ export function tiefeAus(state, sitzung) {
   const n = state.fkBlatt;
   return Number.isInteger(n) && n >= 1 ? n : 0;
 }
+
+/** Tiefe eines Blatt-Eintrags gleich welcher Sitzung (0 für Seiten und alles Unbekannte). */
+const blattTiefe = (state) => (state && typeof state === 'object' ? tiefeAus(state, state.s) : 0);
 
 /** Was nach einem Sprung im Verlauf zu tun ist: `schliessen` Blätter von oben schließen oder `zurueck` tote Einträge überspringen. */
 export function blattAbgleich({ tiefe, offen }) {
@@ -31,13 +40,32 @@ export function createBlattVerlauf({ verlauf, sitzung, planen = queueMicrotask, 
   let adresseBeimGo = null; // dort landet das eigene go() wieder
   let tiefeBeimGo = 0; // von dort ging es los (jedes eigene go() ändert die Tiefe)
   let ueberholt = null; // Adresse einer Navigation, die während des eigenen go() kam (wird danach wiederholt)
+  let waechter = null; // Zeitgeber, falls der eigene Rücksprung nie ankommt
 
   const tiefeJetzt = () => tiefeAus(verlauf.state, sitzung);
   const eintragen = (n) => verlauf.pushState({ fkBlatt: n, s: sitzung }, '');
+  const angekommen = () => {
+    unterwegs = false;
+    clearTimeout(waechter);
+    waechter = null;
+  };
+  // kein popstate zum eigenen go: aufgeben und die Tiefe des aktuellen Eintrags wieder mit den offenen Blättern in Deckung bringen
+  function waechterSchlaegtAn() {
+    waechter = null;
+    if (!unterwegs) return;
+    unterwegs = false;
+    ueberholt = null; // die Navigation ist ohne Rücksprung schon da, es gibt nichts zu wiederholen
+    adresseBeimGo = null;
+    const tiefe = tiefeJetzt();
+    if (tiefe > stapel.length) verlauf.replaceState(stapel.length ? { fkBlatt: stapel.length, s: sitzung } : null, '');
+    else for (let n = tiefe + 1; n <= stapel.length; n += 1) eintragen(n);
+  }
   const zurueckSpringen = (k) => {
     unterwegs = true;
     adresseBeimGo = adresse();
-    tiefeBeimGo = tiefeJetzt();
+    tiefeBeimGo = blattTiefe(verlauf.state);
+    clearTimeout(waechter);
+    waechter = setTimeout(waechterSchlaegtAn, WAECHTER_MS);
     verlauf.go(-k);
   };
 
@@ -72,7 +100,8 @@ export function createBlattVerlauf({ verlauf, sitzung, planen = queueMicrotask, 
       planen(geplantesZurueck);
     },
     beiPopstate(state) {
-      const tiefe = tiefeAus(state, sitzung);
+      // ohne offenes Blatt zählt jeder Blatt-Eintrag (auch aus einem früheren Laden), sonst nur die eigenen
+      const tiefe = stapel.length ? tiefeAus(state, sitzung) : blattTiefe(state);
       if (unterwegs && adresse() !== adresseBeimGo) {
         // nicht der eigene Rücksprung, sondern eine Navigation der App dazwischen: merken, der Rücksprung kommt noch
         ueberholt = adresse();
@@ -83,7 +112,7 @@ export function createBlattVerlauf({ verlauf, sitzung, planen = queueMicrotask, 
       if (unterwegs && tiefe === tiefeBeimGo && tiefe > 0) return;
       if (geplant && tiefe === geplant.erwartet) return; // ebenso vor dem geplanten go: das erledigt den Abgleich
       if (unterwegs) {
-        unterwegs = false;
+        angekommen();
         if (ueberholt !== null) {
           // der Rücksprung hat die Navigation zurückgenommen: wiederholen (neuer Eintrag; der übersprungene bleibt tot)
           const ziel = ueberholt;
@@ -99,6 +128,11 @@ export function createBlattVerlauf({ verlauf, sitzung, planen = queueMicrotask, 
       const { schliessen, zurueck } = blattAbgleich({ tiefe, offen: stapel.length });
       for (let i = 0; i < schliessen; i += 1) stapel.pop().zu();
       if (zurueck > 0) zurueckSpringen(zurueck);
+    },
+    /** Einmal beim Laden: steht die App auf einem Blatt-Eintrag (Neuladen über einem Blatt), um dessen Tiefe zurück. */
+    beimStart() {
+      const tiefe = blattTiefe(verlauf.state);
+      if (tiefe > 0 && !stapel.length && !unterwegs) zurueckSpringen(tiefe);
     },
     beiHashwechsel() {
       // neue Seite: alle Blätter zu (mit beimSchliessen), ohne go – ihre Einträge bleiben tot und werden später übersprungen

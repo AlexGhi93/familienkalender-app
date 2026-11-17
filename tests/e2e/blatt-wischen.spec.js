@@ -566,4 +566,16 @@ test.describe('Zurück, Escape und Seitenwechsel (B6, B7)', () => {
     await expect(page).toHaveURL(/#\/monat$/);
     await expect(page.locator('nav.tabs')).toBeVisible();
   });
+
+  test('neu geladen über einem offenen Blatt: die App verlässt dessen Eintrag, ein Zurück führt zur vorigen Seite', async ({ page }) => {
+    await starteDemo(page, { route: '#/heute' });
+    await tab(page, 'Monat');
+    await tagMitRueckfrage(page); // Tiefe 2
+    await page.reload();
+    await expect(page.locator('nav.tabs')).toBeVisible();
+    await expect.poll(() => page.evaluate(() => history.state)).toBeNull(); // zurück auf der Seite unter den Blättern
+    await expect(page).toHaveURL(/#\/monat$/);
+    await page.goBack(); // kein toter Druck
+    await expect(page).toHaveURL(/#\/heute$/);
+  });
 });

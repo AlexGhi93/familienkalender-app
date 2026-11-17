@@ -30,6 +30,14 @@ describe('nurHintergrundGeaendert', () => {
     assert.equal(nurHintergrundGeaendert(mitVers, danach, { seite: 'konto', kontoAnsicht: 'versicherung' }), false);
   });
 
+  test('Autos geändert, während „Mehr“ offen ist: kein Neuzeichnen der Seite (nur die Marke „N fällig“ wird neu beschriftet, ui.autosMarkeZeichnen) – die Tastatur bleibt offen', () => {
+    const vorher = { ...basis, autos: { status: 'geladen', autos: [] } };
+    const nachher = { ...basis, autos: { status: 'geladen', autos: [{ id: 'a1', name: 'Kombi' }] } };
+    assert.equal(nurHintergrundGeaendert(vorher, nachher, { seite: 'mehr', kontoAnsicht: 'kontostand', heute: '2026-11-17' }), true);
+    // auf der Seite Autos dagegen neu zeichnen
+    assert.equal(nurHintergrundGeaendert(vorher, nachher, { seite: 'autos', kontoAnsicht: 'kontostand', heute: '2026-11-17' }), false);
+  });
+
   test('etwas anderes geändert (z. B. der Kontostand) oder gar nichts: neu zeichnen wie immer', () => {
     assert.equal(nurHintergrundGeaendert(basis, { ...mitFix, konto: { v: 2 } }, { seite: 'konto', kontoAnsicht: 'kontostand' }), false);
     assert.equal(nurHintergrundGeaendert(basis, basis, { seite: 'konto', kontoAnsicht: 'kontostand' }), false);

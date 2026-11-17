@@ -51,7 +51,7 @@ export function urlaubRing({ genommen, geplant, ziel, groesse = 66 }) {
 }
 
 // Ein Verlauf für alle Blätter: „Zurück“ (Android) schließt nur das oberste, Escape ebenso, eine neue Seite schließt alle (src/app/blatt-verlauf.js).
-// Die Sitzung trennt die Einträge dieses Ladens von denen eines früheren (nach Neuladen werden sie nicht übersprungen).
+// Die Sitzung trennt bei offenen Blättern die Einträge dieses Ladens von denen eines früheren; ohne offenes Blatt wird jeder Blatt-Eintrag übersprungen.
 let blattVerlauf = null;
 function verlaufDerBlaetter() {
   if (blattVerlauf) return blattVerlauf;
@@ -73,6 +73,11 @@ function verlaufDerBlaetter() {
     oben.zu();
   });
   return blattVerlauf;
+}
+
+/** Einmal beim Laden der App: steht sie auf einem Blatt-Eintrag (PWA über einem Blatt neu geladen), zurück zur Seite darunter. */
+export function blattVerlaufStarten() {
+  verlaufDerBlaetter().beimStart();
 }
 
 /**

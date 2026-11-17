@@ -1,6 +1,6 @@
 // Blätter und Browser-Verlauf (T7 B6+B7): „Zurück“ schließt nur das oberste Blatt, ✕ hinterlässt keinen toten Eintrag,
 // Navigation aus einem Blatt schließt es. Mit einer Attrappe von `history` (Einträge + Stelle; `go` läuft später und meldet popstate).
-import { test } from 'node:test';
+import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { blattAbgleich, createBlattVerlauf, tiefeAus } from '../../src/app/blatt-verlauf.js';
 
@@ -218,14 +218,45 @@ test('Erstes Blatt nach Kaltstart (Länge 1): Zurück schließt es, die Seite bl
   assert.deepEqual(verlauf.gos, [-1]); // kein weiteres go
 });
 
-test('Eintrag einer früheren Sitzung (nach Neuladen) wird nicht übersprungen', async () => {
+test('ohne offenes Blatt wird auch ein Eintrag einer früheren Sitzung (nach Neuladen) übersprungen – kein toter Zurück-Druck', async () => {
   const { verlauf, bv } = aufbau({ laenge: 1 });
   verlauf.pushState({ fkBlatt: 1, s: 'alt' }, '');
   verlauf.navigiere('#/neu');
+  verlauf.back(); // landet auf dem fremden Eintrag (Tiefe 1) über #/monat
+  await ruhe();
+  assert.deepEqual(verlauf.gos, [-1, -1]);
+  assert.equal(verlauf.stelle, 0);
+  assert.equal(verlauf.state, null);
+  assert.equal(bv.anzahl(), 0);
+});
+
+test('mit offenem Blatt zählt ein fremder Eintrag als Seite: Zurück darauf schließt das Blatt, kein weiteres go', async () => {
+  const { verlauf, bv, blatt } = aufbau({ laenge: 1 });
+  verlauf.replaceState({ fkBlatt: 1, s: 'alt' }, '');
+  const a = blatt('a');
   verlauf.back();
   await ruhe();
-  assert.deepEqual(verlauf.gos, [-1]);
+  assert.equal(a.offen, false);
   assert.equal(bv.anzahl(), 0);
+  assert.deepEqual(verlauf.gos, [-1]);
+});
+
+test('App-Start auf einem Blatt-Eintrag (PWA neu geladen): einmal um dessen Tiefe zurück, dann zählt jedes Zurück', async () => {
+  const verlauf = attrappe({ laenge: 1 });
+  verlauf.pushState({ fkBlatt: 1, s: 'alt' }, '');
+  verlauf.pushState({ fkBlatt: 2, s: 'alt' }, '');
+  const bv = createBlattVerlauf({ verlauf, sitzung: 'neu', adresse: () => verlauf.url });
+  verlauf.beiPopstate = (s) => bv.beiPopstate(s);
+  bv.beimStart();
+  await ruhe();
+  assert.deepEqual(verlauf.gos, [-2]);
+  assert.equal(verlauf.stelle, 0);
+  assert.equal(verlauf.state, null);
+  // ohne Blatt-Eintrag beim Start: nichts
+  const leer = attrappe({ laenge: 1 });
+  createBlattVerlauf({ verlauf: leer, sitzung: 'neu' }).beimStart();
+  await ruhe();
+  assert.deepEqual(leer.gos, []);
 });
 
 test('während ein go unterwegs ist geöffnetes Blatt bekommt danach seinen Eintrag', async () => {
@@ -288,4 +319,63 @@ test('popstate ohne Sprung, bevor das geplante go läuft: trotzdem nur ein go', 
   await ruhe();
   assert.deepEqual(verlauf.gos, [-1]);
   assert.equal(verlauf.stelle, 0);
+});
+
+/**
+ * Wächter-Aufbau mit Schein-Zeitgebern: Blatt „a“ auf, ✕, der Browser verschluckt das go (kein Sprung, kein popstate).
+ * `zwischendurch(t)` läuft nach 799 ms (noch unterwegs); dann schlägt der Wächter an und `go` arbeitet wieder.
+ */
+async function mitVerschlucktemGo(pruefe, zwischendurch = () => {}) {
+  mock.timers.enable({ apis: ['setTimeout'] });
+  try {
+    const t = aufbau();
+    const echtesGo = t.verlauf.go;
+    t.verlauf.go = (d) => t.verlauf.gos.push(d);
+    t.schliesse(t.blatt('a'));
+    await Promise.resolve(); // geplantes go läuft
+    assert.deepEqual(t.verlauf.gos, [-1]);
+    mock.timers.tick(799);
+    const extra = zwischendurch(t);
+    mock.timers.tick(1); // Wächter
+    t.verlauf.go = echtesGo;
+    /** ein Zurück; danach ist nur `b` zu, die Seite bleibt */
+    t.zurueckSchliesst = (b) => {
+      t.verlauf.back();
+      mock.timers.tick(0);
+      assert.equal(b.offen, false);
+      assert.equal(t.bv.anzahl(), 0);
+      assert.equal(t.verlauf.url, '#/monat');
+      assert.equal(t.verlauf.state, null);
+    };
+    pruefe(t, extra);
+  } finally {
+    mock.timers.reset();
+  }
+}
+
+test('Wächter: kommt der eigene Rücksprung nie an, ist der Verlauf nach 800 ms wieder im Takt – Zurück schließt nur das Blatt, die Seite bleibt', async () => {
+  await mitVerschlucktemGo(
+    ({ verlauf, blatt, zurueckSchliesst }, b) => {
+      // jetzt stimmt die Tiefe des aktuellen Eintrags wieder mit den offenen Blättern überein
+      assert.deepEqual(verlauf.state, { fkBlatt: 1, s: 'sitz' });
+      zurueckSchliesst(b);
+      assert.deepEqual(verlauf.gos, [-1, -1]); // kein weiteres go
+      // ein neues Blatt bekommt wieder seinen Eintrag (nicht mehr „unterwegs“)
+      const c = blatt('c');
+      assert.deepEqual(verlauf.state, { fkBlatt: 1, s: 'sitz' });
+      zurueckSchliesst(c);
+    },
+    ({ verlauf, blatt }) => {
+      const b = blatt('b'); // noch unterwegs: bekommt (noch) keinen Eintrag
+      assert.equal(verlauf.length, 2);
+      return b;
+    },
+  );
+});
+
+test('Wächter: hängt der Verlauf über den offenen Blättern, wird der Eintrag zur Seite – Zurück schließt danach nur das neue Blatt', async () => {
+  await mitVerschlucktemGo(({ verlauf, blatt, zurueckSchliesst }) => {
+    assert.equal(verlauf.state, null); // Eintrag umgeschrieben: Tiefe 0 wie keine offenen Blätter
+    zurueckSchliesst(blatt('b'));
+  });
 });
