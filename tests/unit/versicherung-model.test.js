@@ -277,7 +277,7 @@ describe('Seite „Versicherung“ (versicherungModel)', () => {
     assert.match(m.meldungen.nichtAktuell, /letzte Stand/);
     const ohne = { ...P, kategorien: P.kategorien.filter((k) => k.id !== 'medi') };
     const v = versTeil({ rechnungen: [r('rech0001')] });
-    const m2 = versicherungModel(mitVers({ ...v, daten: { ...v.daten, polizze: ohne } }), HEUTE);
+    const m2 = versicherungModel(mitVers({ ...v, daten: { ...v.daten, polizzen: [ohne] } }), HEUTE);
     assert.match(m2.gesamt.ohneKategorie, /15,20 € stehen bei einer Kategorie/);
     assert.equal(m2.rechnungen[0].titel, 'ohne Kategorie');
   });

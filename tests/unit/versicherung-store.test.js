@@ -46,7 +46,7 @@ describe('Versicherung laden', () => {
     await store.versicherungLaden();
     const v = vers(store);
     assert.deepEqual([v.status, v.frisch], ['geladen', true]);
-    assert.deepEqual([v.daten.polizze.name, v.daten.polizze.person, v.daten.polizze.beginn, v.daten.polizze.maximumCent], ['MedPLUS Privatarzt Basic', 'Mia', '2026-10-18', 314400]);
+    assert.deepEqual([v.daten.polizzen[0].name, v.daten.polizzen[0].person, v.daten.polizzen[0].beginn, v.daten.polizzen[0].maximumCent], ['MedPLUS Privatarzt Basic', 'Mia', '2026-10-18', 314400]);
     const alle = alleRechnungen(v.teile);
     assert.deepEqual(alle.map((r) => [r.kategorie, r.betragCent]), [['medi', 1520], ['medi', 1980]]);
     assert.equal(alle.filter((r) => r.erstattetCent !== undefined).length, 1, 'eine erstattet, eine offen');
@@ -57,7 +57,7 @@ describe('Versicherung laden', () => {
     const t = await google({ vorhanden: { fkversicherung: haupt(2026), fkvr20264: teilText(2026, 4, rechnung()) } });
     assert.deepEqual(await t.store.versicherungLaden(), { ok: true });
     const v = vers(t.store);
-    assert.deepEqual([v.status, v.frisch, v.daten.polizze.id], ['geladen', true, P.id]);
+    assert.deepEqual([v.status, v.frisch, v.daten.polizzen[0].id], ['geladen', true, P.id]);
     assert.deepEqual(rechnungen(t.store, 2026).map((r) => r.id), ['rech0001']);
     assert.deepEqual(Object.keys(v.teile[2026]), ['4'], 'Q1–Q3 nie angelegt: leer, ohne Eintrag');
     assert.deepEqual([v.warnungen, v.unlesbar], [[], { teile: [] }]);
@@ -74,7 +74,7 @@ describe('Versicherung laden', () => {
     await t.store.laden();
     assert.deepEqual([t.store.getState().geladen, t.store.getState().fehler], [true, null]);
     assert.deepEqual(await t.store.versicherungLaden(), { ok: false, fehler: TEXT_NICHT_GELESEN });
-    assert.deepEqual([vers(t.store).status, vers(t.store).frisch, vers(t.store).daten.polizze.id], ['fehler', false, P.id]);
+    assert.deepEqual([vers(t.store).status, vers(t.store).frisch, vers(t.store).daten.polizzen[0].id], ['fehler', false, P.id]);
     await t.store.schichtVorladen();
     assert.equal(t.store.getState().schicht.vorgeladen, '2026-11', 'das Push-Tor wartet nicht auf die Versicherung');
     assert.equal(await t.store.schichtFrischLesen(), true);
@@ -129,11 +129,11 @@ describe('Polizze', () => {
     const { id: _vorlageId, ...ohneId } = P;
     const r = await t.store.polizzeSpeichern(ohneId);
     assert.deepEqual(r, { ok: true, id: 'pol00001' });
-    assert.equal(vers(t.store).daten.polizze.id, 'pol00001');
-    assert.equal(JSON.parse(t.text('fkversicherung')).p.i, 'pol00001');
-    const neu = { ...vers(t.store).daten.polizze, kategorien: vers(t.store).daten.polizze.kategorien.map((k) => (k.id === 'medi' ? { ...k, limitCent: 50000 } : k)) };
+    assert.equal(vers(t.store).daten.polizzen[0].id, 'pol00001');
+    assert.equal(JSON.parse(t.text('fkversicherung')).l[0].i, 'pol00001');
+    const neu = { ...vers(t.store).daten.polizzen[0], kategorien: vers(t.store).daten.polizzen[0].kategorien.map((k) => (k.id === 'medi' ? { ...k, limitCent: 50000 } : k)) };
     assert.deepEqual(await t.store.polizzeSpeichern(neu), { ok: true, id: 'pol00001' });
-    assert.equal(JSON.parse(t.text('fkversicherung')).p.k.find((k) => k.i === 'medi').l, 50000);
+    assert.equal(JSON.parse(t.text('fkversicherung')).l[0].k.find((k) => k.i === 'medi').l, 50000);
     assert.deepEqual(await t.store.polizzeSpeichern({ ...neu, id: 'anders01' }), { ok: false, fehler: TEXT_POLIZZE_WEG });
     const falsch = await t.store.polizzeSpeichern({ ...neu, name: '' });
     assert.equal(falsch.ok, false);
@@ -145,11 +145,11 @@ describe('Polizze', () => {
     const b = await google({ api: a, ids: ['bbbb0001'] });
     await Promise.all([a.store.versicherungLaden(), b.store.versicherungLaden()]);
     const [ra, rb] = await Promise.all([a.store.polizzeSpeichern({ ...P, id: undefined }), b.store.polizzeSpeichern({ ...P, id: undefined, person: 'Kind' })]);
-    const gilt = JSON.parse(a.text('fkversicherung')).p.i;
+    const gilt = JSON.parse(a.text('fkversicherung')).l[0].i;
     const [sieger, verlierer] = gilt === 'aaaa0001' ? [ra, rb] : [rb, ra];
     assert.equal(sieger.ok, true);
     assert.deepEqual([verlierer.ok, /schon eine Polizze/.test(verlierer.fehler)], [false, true]);
-    for (const s of [a.store, b.store]) assert.equal(vers(s).daten.polizze.id, gilt, 'beide zeigen die gespeicherte');
+    for (const s of [a.store, b.store]) assert.equal(vers(s).daten.polizzen[0].id, gilt, 'beide zeigen die gespeicherte');
   });
 
   test('C4: eine Kategorie mit Rechnungen lässt sich nicht entfernen (nichts geschrieben); ohne Rechnungen schon', async () => {
@@ -162,7 +162,7 @@ describe('Polizze', () => {
     assert.match(r.fehler, /Physiotherapie.*Rechnungen/);
     assert.deepEqual(t.neu(), []);
     assert.equal((await t.store.polizzeSpeichern(ohne('heil'))).ok, true);
-    assert.equal(JSON.parse(t.text('fkversicherung')).p.k.length, 4);
+    assert.equal(JSON.parse(t.text('fkversicherung')).l[0].k.length, 4);
   });
 });
 
@@ -512,7 +512,7 @@ describe('Schnappschuss, Sicherung, Demo', () => {
     snapshot.speichern({ ...t.store.getState(), anmeldungNoetig: false }, HEUTE);
     const g = snapshot.lesen().daten.versicherung;
     assert.equal(g.teile[2026][4].rechnungen[0].betragCent, 9000, 'die wartende Änderung gilt nicht als gespeichert');
-    assert.equal(g.daten.polizze.person, 'Mia');
+    assert.equal(g.daten.polizzen[0].person, 'Mia');
   });
 
   test('sehr viele Jahre sprengen den Schnappschuss nicht: erst die letzten 2 Jahre, sonst ohne Versicherung – der Rest wird gespeichert', () => {
@@ -543,12 +543,33 @@ describe('Schnappschuss, Sicherung, Demo', () => {
     const t = await google({ vorhanden: { fkversicherung: haupt(2025), fkvr20251: '{kaputt', fkvr20264: teilText(2026, 4, rechnung(), rechnung({ id: 'rech0002', datum: '2026-10-05' })) } });
     await t.store.versicherungLaden();
     const s = sicherungErstellen({ state: await t.store.sicherungsDaten(), appVersion: '1.3.0', jetzt: JETZT });
-    assert.equal(s.versicherung.polizze.person, 'Mia');
+    assert.equal(s.versicherung.polizzen[0].person, 'Mia');
     assert.deepEqual(s.versicherung.rechnungen.map((r) => r.id), ['rech0002', 'rech0001'], 'nach Rechnungsdatum');
     assert.deepEqual(s.versicherung.unlesbar, [{ id: 'fkvr20251', text: '{kaputt' }]);
-    assert.match(sicherungAnzahlText(s), /Versicherung \(2 Rechnungen\) · Versicherung teilweise unlesbar \(als Text gesichert\)$/);
+    assert.match(sicherungAnzahlText(s), /Versicherung \(1 Polizze, 2 Rechnungen\) · Versicherung teilweise unlesbar \(als Text gesichert\)$/);
     const { versicherung: _weg, ...alt } = s;
     assert.doesNotMatch(sicherungAnzahlText(alt), /Versicherung/);
+  });
+
+  test('Sicherung: zwei Polizzen und ihre Rechnungen (Stamm für Rechnungen ohne Polizze); aus v:1 geht nichts verloren', async () => {
+    const B = { ...P, id: 'polb0001', name: 'Zweite' };
+    const zwei = versicherungText(versicherungJahrEintragen(polizzeAnlegen(polizzeAnlegen(leereVersicherung(), P), B), 2026));
+    const vonB = versicherungTeilText(rechnungSetzen(rechnungSetzen(leererVersicherungTeil(2026, 4), rechnung(), { heute: HEUTE }), rechnung({ id: 'rech0002', datum: '2026-10-05' }), { heute: HEUTE, polizze: B }));
+    const t = await google({ vorhanden: { fkversicherung: zwei, fkvr20264: vonB } });
+    await t.store.versicherungLaden();
+    const s = sicherungErstellen({ state: await t.store.sicherungsDaten(), appVersion: '1.5.0', jetzt: JETZT });
+    assert.equal(s.versicherung.polizzen.length, 2);
+    assert.deepEqual([s.versicherung.polizzen.map((p) => p.name), s.versicherung.stamm], [['MedPLUS Privatarzt Basic', 'Zweite'], P.id]);
+    assert.equal('polizze' in s.versicherung, false);
+    assert.deepEqual(s.versicherung.rechnungen.map((r) => [r.id, r.polizze]), [['rech0002', 'polb0001'], ['rech0001', undefined]]);
+    assert.match(sicherungAnzahlText(s), /Versicherung \(2 Polizzen, 2 Rechnungen\)$/);
+    // ein v:1-Hauptteil (1.4.x) mit fremder Kategorie: die Sicherung hat die Polizze und die fremde Kategorie
+    const v1 = JSON.stringify({ v: 1, p: { i: 'abcd1234', n: 'MedPLUS', w: 'Mia', b: '2026-09-01', k: [{ i: 'arzt', n: 'Arzt', l: 100 }, { i: 'zahn', n: 'Zahn', l: 1, q: 1 }], m: 100 }, j: 2026 });
+    const alt = await google({ vorhanden: { fkversicherung: v1 } });
+    await alt.store.versicherungLaden();
+    const s1 = sicherungErstellen({ state: await alt.store.sicherungsDaten(), appVersion: '1.5.0', jetzt: JETZT });
+    assert.deepEqual([s1.versicherung.polizzen.map((p) => p.id), s1.versicherung.stamm, s1.versicherung.fremdeKategorien], [['abcd1234'], 'abcd1234', { abcd1234: [{ i: 'zahn', n: 'Zahn', l: 1, q: 1 }] }]);
+    assert.match(sicherungAnzahlText(s1), /Versicherung \(1 Polizze, 0 Rechnungen\)$/);
   });
 
   test('„Beispieldaten entfernen“ (nur Demo) leert auch die Versicherung – gespeichert, ein neuer Start bleibt leer', async () => {
@@ -557,15 +578,15 @@ describe('Schnappschuss, Sicherung, Demo', () => {
     const store = createStore(adapter, { jetzt: () => JETZT });
     await store.laden();
     await store.versicherungLaden();
-    assert.ok(vers(store).daten.polizze);
+    assert.equal(vers(store).daten.polizzen.length, 1);
     await store.kontoLeeren();
-    assert.deepEqual([vers(store).daten.polizze, alleRechnungen(vers(store).teile)], [null, []]);
+    assert.deepEqual([vers(store).daten.polizzen, alleRechnungen(vers(store).teile)], [[], []]);
     const g = await adapter.leseVersicherung();
-    assert.deepEqual([g.daten.polizze, alleRechnungen(g.teile)], [null, []]);
+    assert.deepEqual([g.daten.polizzen, alleRechnungen(g.teile)], [[], []]);
     const zweiter = createStore(createDemoAdapter({ speicher, jetzt: () => JETZT }), { jetzt: () => JETZT });
     await zweiter.laden();
     await zweiter.versicherungLaden();
-    assert.equal(vers(zweiter).daten.polizze, null);
+    assert.deepEqual(vers(zweiter).daten.polizzen, []);
   });
 
   test('Demo zurücksetzen: Versicherung aus den neuen Beispieldaten ', async () => {
@@ -574,7 +595,7 @@ describe('Schnappschuss, Sicherung, Demo', () => {
     await store.versicherungLaden();
     await store.kontoLeeren();
     await store.zuruecksetzen();
-    assert.equal(vers(store).daten.polizze.person, 'Mia');
+    assert.equal(vers(store).daten.polizzen[0].person, 'Mia');
     assert.equal(alleRechnungen(vers(store).teile).length, 2);
   });
 });
@@ -583,7 +604,7 @@ describe('Demo-Beispieldaten (seedDemo)', () => {
   for (const heute of ['2026-11-08', '2026-10-14', '2027-01-03', '2026-10-20']) {
     test(`am ${heute}: Polizze MedPLUS Basic für „Mia“ ab heute − 3 Wochen (D1), zwei Medikamenten-Rechnungen (eine erstattet), nie „vor dem Beginn“, nichts in der Zukunft`, () => {
       const { versicherung } = seedDemo(heute);
-      const p = versicherung.daten.polizze;
+      const p = versicherung.daten.polizzen[0];
       assert.deepEqual([p.vorlage, p.person, p.beginn], ['medplusBasic', 'Mia', addDays(heute, -21)]);
       const alle = alleRechnungen(versicherung.teile);
       assert.deepEqual(alle.map((r) => [r.kategorie, r.betragCent]), [['medi', 1520], ['medi', 1980]]);

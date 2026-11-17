@@ -11,7 +11,7 @@ import { jahresStand, rechnungenDesJahres } from '../../src/domain/versicherung-
 test.use({ viewport: { width: 375, height: 812 } });
 
 const demo = seedDemo(WERKTAG_DATUM).versicherung;
-const POLIZZE = demo.daten.polizze;
+const POLIZZE = demo.daten.polizzen[0];
 const STAND = jahresStand(POLIZZE, rechnungenDesJahres(demo.teile, 2026), 2026);
 const kat = (id) => STAND.kategorien.find((k) => k.id === id);
 

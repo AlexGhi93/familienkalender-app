@@ -10,6 +10,7 @@ import {
   MAX_KATEGORIEN,
   POLIZZE_VORLAGEN,
   TEXT_VERSICHERUNG_GESPERRT,
+  aktivePolizzen,
   polizzePruefen,
   polizzeVorlage,
   rechnungPruefen,
@@ -38,6 +39,9 @@ export function kategorieKurz(polizze, kategorieId) {
   return vorlage && vorlage.name === k.name && KURZ[k.id] ? KURZ[k.id] : k.name;
 }
 
+/** Die angezeigte Polizze (Hauptteil `daten`): bis zum Umschalter die erste aktive; keine → null. */
+export const gezeigtePolizze = (daten) => aktivePolizzen(daten)[0] ?? null;
+
 /** Warum sich die Versicherung gerade nicht ändern lässt (Hauptteil unlesbar) oder null – wie die Sperre im Store. */
 export const versicherungSperre = (v) => (v?.unlesbar?.main ? TEXT_VERSICHERUNG_GESPERRT : null);
 
@@ -45,7 +49,7 @@ export const versicherungSperre = (v) => (v?.unlesbar?.main ? TEXT_VERSICHERUNG_
 /** Jahre, durch die man blättern kann: vom ersten (Beginn der Polizze, erstes Jahr mit Rechnungen) bis zum laufenden (oder späteren mit Rechnungen). */
 function versicherungJahre(v, heute) {
   const jetzt = Number(heute.slice(0, 4));
-  const polizze = v?.daten?.polizze;
+  const polizze = gezeigtePolizze(v?.daten);
   const kandidaten = [jetzt];
   if (istDatum(polizze?.beginn)) kandidaten.push(Number(polizze.beginn.slice(0, 4)));
   if (Number.isInteger(v?.daten?.ab)) kandidaten.push(v.daten.ab);
@@ -59,7 +63,7 @@ function meldungen(v) {
   const warnungen = (v?.warnungen ?? []).filter((w) => w !== TEXT_VERSICHERUNG_GESPERRT);
   return {
     unlesbar: gesperrt,
-    nichtAktuell: v?.status === 'fehler' && v?.daten?.polizze ? TEXT_VERSICHERUNG_NICHT_AKTUELL : null,
+    nichtAktuell: v?.status === 'fehler' && gezeigtePolizze(v?.daten) ? TEXT_VERSICHERUNG_NICHT_AKTUELL : null,
     warnungen: v?.status === 'fehler' ? [] : warnungen,
   };
 }
@@ -131,7 +135,7 @@ export function versicherungModel(state, heute, { jahr = null } = {}) {
   const v = state?.versicherung ?? null;
   const gesperrt = versicherungSperre(v);
   const basis = { meldungen: meldungen(v), gesperrt, vorlagen: Object.values(POLIZZE_VORLAGEN).map((x) => ({ id: x.id, name: x.name })) };
-  const polizze = v?.daten?.polizze ?? null;
+  const polizze = gezeigtePolizze(v?.daten);
   if (gesperrt) return { ...basis, zustand: 'gesperrt' };
   if (!polizze) {
     if (!v || v.status === null || v.status === undefined || (v.status === 'laedt' && !v.frisch)) return { ...basis, zustand: 'laedt' };
@@ -191,7 +195,7 @@ export function versicherungRechnung(state, id) {
  * → { id?, kategorie, datum, betrag (Text), eingereichtAm, stelle, notiz } oder null (Rechnung gibt es nicht).
  */
 export function rechnungEntwurf(state, heute, id = null) {
-  const polizze = state?.versicherung?.daten?.polizze;
+  const polizze = gezeigtePolizze(state?.versicherung?.daten);
   if (id === null) return { kategorie: polizze?.kategorien[0]?.id ?? '', datum: heute, betrag: '', eingereichtAm: heute, stelle: '', notiz: '' };
   const r = versicherungRechnung(state, id);
   if (!r) return null;
@@ -200,7 +204,7 @@ export function rechnungEntwurf(state, heute, id = null) {
 
 /** Kategorien zur Auswahl: die der Polizze; eine Rechnung, deren Kategorie fehlt, bekommt einen leeren Eintrag „bitte wählen“. */
 export function kategorieWahl(state, e) {
-  const liste = (state?.versicherung?.daten?.polizze?.kategorien ?? []).map((k) => [k.id, k.name]);
+  const liste = (gezeigtePolizze(state?.versicherung?.daten)?.kategorien ?? []).map((k) => [k.id, k.name]);
   return liste.some(([id]) => id === e.kategorie) ? liste : [['', '– bitte wählen –'], ...liste];
 }
 
@@ -222,7 +226,7 @@ export function entwurfZuRechnung(state, heute, e) {
   }
   if (String(e.stelle ?? '').trim()) rechnung.stelle = e.stelle;
   if (String(e.notiz ?? '').trim()) rechnung.notiz = e.notiz;
-  const { fehler } = rechnungPruefen(rechnung, { heute, polizze: state?.versicherung?.daten?.polizze });
+  const { fehler } = rechnungPruefen(rechnung, { heute, polizze: gezeigtePolizze(state?.versicherung?.daten) });
   return fehler ? { fehler } : { rechnung };
 }
 
@@ -235,12 +239,12 @@ export function rechnungVorschau(state, heute, e) {
   try {
     const { rechnung } = entwurfZuRechnung(state, heute, e);
     const v = state?.versicherung;
-    if (!rechnung || !v?.daten?.polizze) return null;
+    if (!rechnung || !gezeigtePolizze(v?.daten)) return null;
     const id = rechnung.id ?? '~neu';
     const jahr = Number(rechnung.datum.slice(0, 4));
     const jetzt = rechnungenJahr(v, jahr);
-    const vorher = jahresStand(v.daten.polizze, jetzt, jahr).gesamt.ueberschrittenCent;
-    const nachher = jahresStand(v.daten.polizze, [...jetzt.filter((r) => r.id !== id), { ...rechnung, id }], jahr).gesamt.ueberschrittenCent;
+    const vorher = jahresStand(gezeigtePolizze(v.daten), jetzt, jahr).gesamt.ueberschrittenCent;
+    const nachher = jahresStand(gezeigtePolizze(v.daten), [...jetzt.filter((r) => r.id !== id), { ...rechnung, id }], jahr).gesamt.ueberschrittenCent;
     const mehr = nachher - vorher;
     return mehr > 0 ? `⚠ Limit überschritten – ca. ${betragText(mehr)} werden nicht erstattet` : null;
   } catch {
@@ -260,7 +264,7 @@ export function erstattungEntwurf(state, heute, id) {
     datum: vorhanden ? r.erstattetAm : heute,
     vorschlag: `80 % von ${betragText(r.betragCent)} wären ${betragText(Math.round(r.betragCent * ERSTATTUNG_ANTEIL))}.`,
     vorhanden,
-    titel: `${kategorieKurz(state.versicherung.daten.polizze, r.kategorie)}, Rechnung vom ${datumAnzeige(r.datum)} (${betragText(r.betragCent)})`,
+    titel: `${kategorieKurz(gezeigtePolizze(state.versicherung.daten), r.kategorie)}, Rechnung vom ${datumAnzeige(r.datum)} (${betragText(r.betragCent)})`,
   };
 }
 
@@ -291,7 +295,7 @@ const kategorieZeile = (k) => ({ id: k.id, name: k.name ?? '', info: k.info ?? '
  * vorhandenen Polizze (`bearbeiten`). → { id?, vorlage?, name, person, beginn, maximum (Text), kategorien: [{ id, name, info, limit }] }.
  */
 export function polizzeEntwurf(state, heute, { vorlageId = null, bearbeiten = false } = {}) {
-  const p = state?.versicherung?.daten?.polizze;
+  const p = gezeigtePolizze(state?.versicherung?.daten);
   if (bearbeiten && p) return { id: p.id, vorlage: p.vorlage, name: p.name, person: p.person ?? '', beginn: p.beginn, maximum: euroFeld(p.maximumCent), kategorien: p.kategorien.map(kategorieZeile) };
   const v = vorlageId ? POLIZZE_VORLAGEN[vorlageId] : null;
   if (v) return { vorlage: v.id, name: v.name, person: '', beginn: heute, maximum: euroFeld(v.maximumCent), kategorien: v.kategorien.map(kategorieZeile) };

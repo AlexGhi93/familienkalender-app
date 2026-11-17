@@ -5,7 +5,7 @@
 import { addDays, diffDays, heutePruefen } from './dates.js';
 import { kurzDatum } from './format.js';
 import { istDatum } from './gemeinsam.js';
-import { rechnungJahr, rechnungQuartal } from './versicherung.js';
+import { aktivePolizzen, polizzeVonRechnung, rechnungJahr, rechnungQuartal } from './versicherung.js';
 
 /** Nach so vielen Tagen ohne Erstattung erinnert die App an eine eingereichte Rechnung (Spec §6). */
 export const ERSTATTUNG_ERINNERUNG_TAGE = 30;
@@ -141,6 +141,13 @@ export function rechnungenDesJahres(teile, jahr, { geschrieben } = {}) {
     .map((f) => f.rechnung);
 }
 
+/**
+ * Die Rechnungen (beliebige Liste) der Polizze `polizzeId`: ihre eigenen (`polizze`) und – ist sie die Stamm-Polizze von `daten` –
+ * die ohne Polizze (aus 1.4.x). Für jahresStand(polizze, rechnungenDerPolizze(rechnungenDesJahres(…), daten, polizze.id), jahr): jede
+ * Polizze rechnet nur mit ihren Rechnungen, dieselbe Kategorie-Kennung in zwei Polizzen zählt getrennt.
+ */
+export const rechnungenDerPolizze = (rechnungen, daten, polizzeId) => (rechnungen ?? []).filter((r) => r && polizzeVonRechnung(daten, r) === polizzeId);
+
 /** Alle Rechnungen aller gelesenen Teile, je Kennung einmal (Rangfolge oben) – z. B. für offeneErstattungen und die Erinnerungen. */
 export function alleRechnungen(teile, { geschrieben } = {}) {
   return gueltige(teile, geschrieben).map((f) => f.rechnung);
@@ -193,16 +200,18 @@ const erstattbarerRest = (s) => (s ? Math.min(s.gesamt.restCent, s.kategorien.re
  * GESPEICHERTEN Stand (`bestaetigt`, solange eigene Änderungen offen sind): so schicken beide Telefone denselben Plan.
  *  - 'versOffen': `eingereichtAm` + 30 Tage, solange keine Erstattung eingetragen ist – einmal je Rechnung (Schlüssel = Rechnung); mit der
  *    Erstattung fällt sie beim nächsten Plan weg. Liegt der Tag schon zurück (z. B. spät nachgetragen), kommt keine mehr.
- *  - 'versJahr': 01.12. des laufenden und des nächsten Jahres, nur wenn bis 31.12. noch etwas erstattbar ist (Rest > 0) und die Polizze
- *    in dem Jahr schon läuft; nennt weder Betrag (E1) noch Kategorie (wie M5) – keine Beträge und keine Gesundheitsangaben in
- *    Benachrichtigungen. Beide Arten rechnen mit denselben Schreibzeiten (`v.geschrieben`, Review T3 M3): `bestaetigt` hat keine.
+ *    Für die Rechnungen ALLER Polizzen, auch beendeter (die Erstattung kommt trotzdem).
+ *  - 'versJahr': 01.12. des laufenden und des nächsten Jahres, EINE je Jahr (Schlüssel 'vers-jahr-<JJJJ>'), wenn bei wenigstens einer
+ *    AKTIVEN Polizze, die in dem Jahr schon läuft, bis 31.12. noch etwas erstattbar ist (Rest > 0, gerechnet nur mit ihren Rechnungen);
+ *    beendete zählen nicht. Nennt weder Betrag (E1) noch Kategorie (wie M5) noch die Polizze – keine Beträge und keine
+ *    Gesundheitsangaben in Benachrichtigungen. Beide Arten rechnen mit denselben Schreibzeiten (`v.geschrieben`, Review T3 M3): `bestaetigt` hat keine.
  * Wirft nie (unbrauchbare Daten → []).
  */
 export function versicherungTermine(v, heute) {
   try {
     const teil = stand(v, { gespeichert: true });
-    const polizze = teil?.daten?.polizze;
-    if (!polizze) return [];
+    const daten = teil?.daten;
+    if (!Array.isArray(daten?.polizzen) || daten.polizzen.length === 0) return [];
     const termine = [];
     for (const o of offeneErstattungen(alleRechnungen(teil.teile ?? {}, { geschrieben: v.geschrieben }), heute)) {
       if (o.erinnerungAm < heute) continue;
@@ -211,8 +220,10 @@ export function versicherungTermine(v, heute) {
     const jetzt = Number(heute.slice(0, 4));
     for (const jahr of [jetzt, jetzt + 1]) {
       const tag = `${jahr}-12-01`;
-      if (tag < heute || (istDatum(polizze.beginn) && polizze.beginn > `${jahr}-12-31`)) continue;
-      const text = jahresendeText(polizze, jahresStand(polizze, rechnungenJahr({ teile: teil.teile, geschrieben: v.geschrieben }, jahr), jahr));
+      if (tag < heute) continue;
+      const imJahr = rechnungenJahr({ teile: teil.teile, geschrieben: v.geschrieben }, jahr);
+      const laeuft = aktivePolizzen(daten).filter((p) => !(istDatum(p.beginn) && p.beginn > `${jahr}-12-31`));
+      const text = laeuft.map((p) => jahresendeText(p, jahresStand(p, rechnungenDerPolizze(imJahr, daten, p.id), jahr))).find(Boolean);
       if (text) termine.push({ schluessel: `vers-jahr-${jahr}`, art: 'versJahr', tag, titel: '🩺 Versicherung', text });
     }
     return termine;

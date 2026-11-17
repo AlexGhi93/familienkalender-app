@@ -22,6 +22,7 @@ import {
   kategorieMoeglich,
   kategorieWahl,
   neueKategorieId,
+  gezeigtePolizze,
   polizzeEntwurf,
   rechnungEntwurf,
   rechnungVorschau,
@@ -39,7 +40,7 @@ export function oeffneRechnungFormular({ store, ui }, id) {
     toast('Diese Rechnung gibt es nicht mehr.', { art: 'fehler' });
     return null;
   }
-  if (!store.getState().versicherung?.daten?.polizze) {
+  if (!gezeigtePolizze(store.getState().versicherung?.daten)) {
     toast('Bitte zuerst die Polizze anlegen.', { art: 'fehler' });
     return null;
   }
@@ -196,7 +197,7 @@ export function oeffnePolizzeFormular({ store }, { vorlageId = null, bearbeiten 
     const gesperrt = versicherungSperre(state.versicherung);
     const aus = Boolean(gesperrt) || speichert;
     const benutzt = bearbeiten ? benutzteKategorien(state) : new Set();
-    const bisherige = new Set(bearbeiten ? (state.versicherung?.daten?.polizze?.kategorien ?? []).map((k) => k.id) : []);
+    const bisherige = new Set(bearbeiten ? (gezeigtePolizze(state.versicherung?.daten)?.kategorien ?? []).map((k) => k.id) : []);
 
     const kategorieZeile = (k, i) => {
       const gesperrtWeg = bisherige.has(k.id) && benutzt.has(k.id);

@@ -1,8 +1,8 @@
 // Versicherung – die Rechnung: Verbrauch, Rest und Überschreitung je Kategorie und Kalenderjahr (Spec §5), offene Erstattungen.
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { ERSTATTUNG_ERINNERUNG_TAGE, alleRechnungen, jahresStand, offeneErstattungen, rechnungFinden, rechnungenDesJahres } from '../../src/domain/versicherung-rechnung.js';
-import { POLIZZE_VORLAGEN, leererVersicherungTeil, polizzeAusVorlage, pruefeVersicherungTeil, rechnungSetzen, rechnungTeilWechseln } from '../../src/domain/versicherung.js';
+import { ERSTATTUNG_ERINNERUNG_TAGE, alleRechnungen, jahresStand, offeneErstattungen, rechnungFinden, rechnungenDerPolizze, rechnungenDesJahres, versicherungTermine } from '../../src/domain/versicherung-rechnung.js';
+import { POLIZZE_VORLAGEN, leererVersicherungTeil, leereVersicherung, polizzeAnlegen, polizzeAusVorlage, polizzeBeenden, pruefeVersicherungTeil, rechnungSetzen, rechnungTeilWechseln } from '../../src/domain/versicherung.js';
 
 const POLIZZE = polizzeAusVorlage('medplusBasic', { person: 'Mia', beginn: '2026-09-01' }, { zufall: () => 0.5 });
 
@@ -287,5 +287,49 @@ describe('Fix-Runde 1 Task 2: die höchste Fassung gilt (I2)', () => {
     assert.deepEqual(rechnungenDesJahres(teile, 2026).map((x) => x.betragCent), [5]);
     const alt = { 2026: { 3: { ...falsch, rechnungen: [r1({ betragCent: 5 })] }, 4: teilMit(2026, 4, r1()) } };
     assert.deepEqual(rechnungenDesJahres(alt, 2026).map((x) => x.betragCent), [9000], 'richtig abgelegt gilt wie bisher');
+  });
+});
+
+describe('mehrere Polizzen (1.5.0)', () => {
+  const A = { ...polizzeAusVorlage('medplusBasic', { person: 'Mia', beginn: '2026-01-01' }, { zufall: () => 0 }), id: 'pola0001' };
+  const B = { ...polizzeAusVorlage('medplusBasic', { person: 'Mia', beginn: '2026-01-01' }, { zufall: () => 0 }), id: 'polb0001', name: 'Zweite' };
+  const zwei = () => polizzeAnlegen(polizzeAnlegen(leereVersicherung(), A), B);
+  const voll = (polizze, ohne = null) => polizze.kategorien.filter((k) => k.id !== ohne).map((k, i) => ({ id: `${polizze.id.slice(3, 4)}voll00${i}`, kategorie: k.id, datum: '2026-03-02', betragCent: k.limitCent, eingereichtAm: '2026-03-03', erstattetCent: k.limitCent, erstattetAm: '2026-03-20', polizze: polizze.id }));
+  const zustand = (daten, rechnungen) => ({ daten, teile: { 2026: { 1: { ...leererVersicherungTeil(2026, 1), rechnungen } } }, geschrieben: {} });
+
+  test('jahresStand je Polizze: gleiche Kategorie-Kennung in zwei Polizzen zählt getrennt', () => {
+    const d = zwei();
+    const ohneP = { id: 'alt00001', kategorie: 'physio', datum: '2026-03-02', betragCent: 10000, eingereichtAm: '2026-03-03' };
+    const vonB = { id: 'neub0001', kategorie: 'physio', datum: '2026-03-02', betragCent: 4000, eingereichtAm: '2026-03-03', polizze: 'polb0001' };
+    const alle = [ohneP, vonB];
+    assert.deepEqual(rechnungenDerPolizze(alle, d, 'pola0001'), [ohneP], 'ohne p → Stamm');
+    assert.deepEqual(rechnungenDerPolizze(alle, d, 'polb0001'), [vonB]);
+    assert.deepEqual(rechnungenDerPolizze(alle, d, 'weg00001'), []);
+    const sA = jahresStand(A, rechnungenDerPolizze(alle, d, A.id), 2026);
+    const sB = jahresStand(B, rechnungenDerPolizze(alle, d, B.id), 2026);
+    assert.deepEqual([kat(sA, 'physio').verbrauchtCent, kat(sB, 'physio').verbrauchtCent], [10000, 4000]);
+    assert.deepEqual([sA.gesamt.verbrauchtCent, sB.gesamt.verbrauchtCent], [10000, 4000]);
+  });
+
+  test('versicherungTermine: eine Jahresend-Erinnerung, auch wenn zwei Polizzen Rest haben; beendete zählen nicht; offene Erstattung auch bei beendeter', () => {
+    const heute = '2026-11-08';
+    // beide haben Rest → je Jahr EINE Erinnerung (Schlüssel unverändert), nicht zwei
+    const termine = versicherungTermine(zustand(zwei(), []), heute);
+    assert.deepEqual(termine.filter((t) => t.art === 'versJahr').map((t) => t.schluessel), ['vers-jahr-2026', 'vers-jahr-2027']);
+    // A ausgeschöpft, B hat Rest → eine
+    assert.deepEqual(versicherungTermine(zustand(zwei(), voll(A)), heute).filter((t) => t.art === 'versJahr' && t.tag === '2026-12-01').length, 1);
+    // A ausgeschöpft, B (mit Rest) beendet → für 2026 keine; eine offene Rechnung der beendeten B erinnert trotzdem
+    const offenB = { id: 'offb0001', kategorie: 'arzt', datum: '2026-10-20', betragCent: 5000, eingereichtAm: '2026-10-21', polizze: 'polb0001' };
+    const beendet = polizzeBeenden(zwei(), 'polb0001', true);
+    const t2 = versicherungTermine({ ...zustand(beendet, voll(A)), teile: { 2026: { 1: { ...leererVersicherungTeil(2026, 1), rechnungen: voll(A) }, 4: { ...leererVersicherungTeil(2026, 4), rechnungen: [offenB] } } } }, heute);
+    assert.deepEqual(t2.filter((t) => t.art === 'versJahr' && t.tag === '2026-12-01'), [], 'beendete zählen nicht');
+    assert.deepEqual(t2.filter((t) => t.art === 'versOffen').map((t) => t.schluessel), ['vers-offen-offb0001']);
+    // nur beendete Polizzen → keine Jahresend-Erinnerung mehr
+    assert.deepEqual(versicherungTermine(zustand(polizzeBeenden(beendet, 'pola0001', true), []), heute).filter((t) => t.art === 'versJahr'), []);
+    // Texte: ohne Betrag, Kategorie oder Name der Polizze
+    for (const t of [...termine, ...t2]) {
+      assert.equal(/€|\d+,\d\d/.test(t.text), false, t.text);
+      for (const wort of ['Zweite', 'MedPLUS', ...A.kategorien.map((k) => k.name)]) assert.equal(t.text.includes(wort), false, `${t.text}: ${wort}`);
+    }
   });
 });

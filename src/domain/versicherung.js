@@ -1,29 +1,38 @@
-// Versicherung (Privatarzt): eine Polizze mit Jahres-Limits je Kategorie und einem Maximum, dazu die eingereichten Rechnungen –
+// Versicherung (Privatarzt): bis zu MAX_POLIZZEN Polizzen mit Jahres-Limits je Kategorie und einem Maximum, dazu die eingereichten Rechnungen –
 // gespeichert je Quartal, gerechnet je Kalenderjahr. Rein, ohne DOM und ohne Netz. Beträge GANZE CENT (≥ 0), Daten 'JJJJ-MM-TT'
 // (Wiener Datum). Die Rechnung (Verbrauch, Rest, Überschreitung, offene Erstattungen) steht in versicherung-rechnung.js.
 //
 // Im Speicher (lesbare Namen):
-//   Versicherung { v: 1, polizze: Polizze | null, ab: erstes Jahr mit Rechnungen | null, fremd?: { k: [Kategorie roh] } }
-//   Polizze      { id, name, person?, beginn, kategorien: [Kategorie], maximumCent, vorlage? }   vorlage = Schlüssel in POLIZZE_VORLAGEN
+//   Versicherung { v: 2, polizzen: [Polizze] (≤ MAX_POLIZZEN), stamm: Kennung | null, ab: erstes Jahr mit Rechnungen | null,
+//                  fremd?: { k: { [Polizze-Kennung]: [Kategorie roh] } }, ausV1?: true }
+//                stamm = die Stamm-Polizze: ihr gehören die Rechnungen ohne Polizze (aus 1.4.x); die erste angelegte, nach dem Entfernen die
+//                erste verbliebene. ausV1 = gelesen aus einem v:1-Hauptteil (nur im Speicher, nie geschrieben): der Store schreibt den
+//                Hauptteil dann zuerst als v:2, bevor er Rechnungen mit Polizze in einen Teil schreibt.
+//   Polizze      { id, name, person?, beginn, kategorien: [Kategorie], maximumCent, vorlage?, beendet?: true }
+//                vorlage = Schlüssel in POLIZZE_VORLAGEN; beendet = „Versicherung beendet“ (bleibt mit ihren Rechnungen erhalten)
 //   Kategorie    { id, name, info?, limitCent }   id = kurzer Schlüssel (a-z, 0-9), auf den die Rechnungen zeigen
 //   Teil         { v: 1, jahr, quartal (1–4), rechnungen: [Rechnung], fremd?: { r: [Rechnung roh] } }
-//   Rechnung     { id, kategorie, datum (Rechnungsdatum), betragCent, eingereichtAm, erstattetCent?, erstattetAm?, stelle?, notiz? }
+//   Rechnung     { id, kategorie, datum (Rechnungsdatum), betragCent, eingereichtAm, erstattetCent?, erstattetAm?, stelle?, notiz?, fassung?,
+//                  polizze? }  polizze = Kennung ihrer Polizze (1.5.0 schreibt sie immer); fehlt sie → die Stamm-Polizze (polizzeVonRechnung)
 //                erstattetCent und erstattetAm gibt es nur zusammen („Erstattung erhalten“). Jahr und Quartal einer Rechnung = die
 //                ihres Rechnungsdatums; sie liegt immer im Teil dieses Quartals.
 //
 // Im Kalender zwei Arten versteckter Ereignisse (calendar/mapping.js), je ein JSON ≤ 6000 Zeichen mit KURZEN Schlüsseln:
-//  1) Hauptteil „fkversicherung“: { v: 1, p?: Polizze, j?: erstes Jahr }
-//     Polizze:   i=id n=name w=person b=beginn k=[Kategorie] m=maximumCent v=vorlage
+//  1) Hauptteil „fkversicherung“: { v: 2, l: [Polizze], h?: Kennung der Stamm-Polizze (Pflicht, sobald es eine gibt), j?: erstes Jahr }
+//     Polizze:   i=id n=name w=person b=beginn k=[Kategorie] m=maximumCent v=vorlage x=1 (beendet)
+//     Bis 1.4.x: { v: 1, p?: Polizze, j? } – wird beim Lesen ohne Verlust umgestellt (p → einzige Polizze und Stamm), geschrieben wird
+//     immer v:2. Ein Telefon mit 1.4.x liest v:2 als unlesbar und sperrt (überschreibt nie).
 //     Kategorie: i=id n=name o=info l=limitCent
 //     j = das ERSTE Jahr mit einem Teil – gelesen werden alle Quartale von dort bis heute, ein fehlender Teil zählt leer. So wächst der
 //     Hauptteil nicht mit der Zeit (Lehre M3 aus den Autos).
 //  2) Rechnungen je Quartal „fkvr<JJJJ><Q>“ (C1: je Jahr hätten nur ~46 Rechnungen Platz gehabt): { v: 1, j: Jahr, q: Quartal, r: [Rechnung] }
-//     Rechnung:  i=id k=kategorie d=datum b=betragCent e=eingereichtAm r=erstattetCent t=erstattetAm s=stelle n=notiz
+//     Rechnung:  i=id k=kategorie d=datum b=betragCent e=eingereichtAm r=erstattetCent t=erstattetAm s=stelle n=notiz z=fassung p=polizze
+//                Die Teile bleiben v:1: 1.4.x legt Rechnungen mit `p` unverändert nach `fremd` (es ist ohnehin über den Hauptteil gesperrt).
 //                Daten als ZAHL JJJJMMTT (20261028 statt "2026-10-28": 4 Zeichen weniger je Datum, ≈ 50 statt 46 Rechnungen je Teil).
 // Wie bei Fixkosten/Sparziele/Autos: Kategorien und Rechnungen, die diese Version nicht versteht (unbekanntes Feld – neuere Version –,
 // beschädigt oder doppelte Kennung), bleiben roh in `fremd` und werden unverändert mitgeschrieben; unlesbarer Text (kein JSON, andere
 // Version `v`, falscher Aufbau, eine Polizze, die selbst nicht verstanden wird, ein anderes Jahr/Quartal im Text) ergibt
-// `unlesbar: true` und darf NIE überschrieben werden. Neue Felder auf oberster Ebene oder in der Polizze → `v` erhöhen.
+// `unlesbar: true` und darf NIE überschrieben werden. Neue Felder auf oberster Ebene oder in der Polizze → `v` erhöhen (1.5.0: v:2).
 // Jede Änderung ist eine reine Funktion Daten → Daten (das Argument bleibt unverändert, zweimal angewendet = einmal angewendet), die
 // nach HTTP 412 auf die NEUESTE Fassung angewendet wird. Zwei Telefone, die im selben Quartal Rechnungen eintragen, behalten beide.
 
@@ -34,6 +43,7 @@ import { fremdeKennung, istDatum, istObjekt, sauber, tiefFrieren, zeichen } from
 export const MAX_VERSICHERUNG_ZEICHEN = 6000; // wie Kontostand/Fixkosten/Sparziele/Autos: Google kürzt Beschreibungen still bei 8192 Zeichen
 export const MAX_VERSICHERUNG_TEIL_ZEICHEN = 6000;
 export const MAX_KATEGORIEN = 12;
+export const MAX_POLIZZEN = 5;
 export const MAX_POLIZZE_NAME = 40;
 export const MAX_PERSON = 30;
 export const MAX_KATEGORIE_NAME = 50;
@@ -88,8 +98,12 @@ export const TEXT_VERSICHERUNG_TEIL_VOLL = 'In diesem Quartal ist kein Platz meh
 export const TEXT_VERSICHERUNG_GESPERRT = 'Die Versicherung ist unlesbar (beschädigt oder von einer neueren App-Version). Damit nichts verloren geht, lässt sie sich hier nicht ändern – bitte die App auf beiden Telefonen aktualisieren.';
 export const TEXT_VERSICHERUNG_TEIL_GESPERRT = 'Die Rechnungen dieses Quartals sind unlesbar (beschädigt oder von einer neueren App-Version). Damit nichts verloren geht, lassen sie sich hier nicht ändern – bitte die App auf beiden Telefonen aktualisieren.';
 export const TEXT_POLIZZE_WEG = 'Diese Polizze gibt es nicht mehr.';
+export const TEXT_POLIZZEN_MAX = 'Höchstens 5 Versicherungen.';
+export const TEXT_POLIZZE_HAT_RECHNUNGEN = 'Diese Polizze hat Rechnungen – sie lässt sich nur beenden, nicht löschen.';
 export const TEXT_RECHNUNG_WEG = 'Diese Rechnung gibt es nicht mehr.';
 const TEXT_KENNUNG_NEUER = 'Diese Kennung gehört einem Eintrag einer neueren App-Version – bitte die App aktualisieren.';
+const TEXT_POLIZZE_UNGUELTIG = 'Ungültige Polizze.';
+const TEXT_ANDERE_POLIZZE = 'Diese Rechnung gehört zu einer anderen Polizze.';
 const TEXT_BETRAG = 'Bitte einen Betrag von 0 € bis 99.999,99 € eingeben.';
 
 /** Fehler „Versicherung gesperrt“ (Name 'VersicherungGesperrt'): ein Adapter wirft ihn, statt einen unlesbaren Hauptteil zu überschreiben. */
@@ -227,7 +241,13 @@ function normalisiereKopf(roh) {
 const mitSchluss = (p, roh) => {
   p.maximumCent = roh.maximumCent;
   if (!leer(roh.vorlage)) p.vorlage = roh.vorlage;
+  if (roh.beendet === true) p.beendet = true;
   return p;
+};
+/** Dieselbe Polizze, beendet oder nicht (`beendet` steht immer am Ende – gleich() vergleicht als Text). */
+const mitStatus = (p, beendet) => {
+  const { beendet: _b, ...ohne } = p;
+  return beendet ? { ...ohne, beendet: true } : ohne;
 };
 
 /** Eine gültige Polizze mit Kennung → bereinigt in fester Feldreihenfolge (leere Felder und Zusatzfelder fallen weg); sonst null. */
@@ -252,19 +272,21 @@ function kurzPolizze(p, fremdeKategorien = []) {
   k.k = [...p.kategorien.map(kurzKategorie), ...fremdeKategorien];
   k.m = p.maximumCent;
   if (p.vorlage) k.v = p.vorlage;
+  if (p.beendet) k.x = 1;
   return k;
 }
 
-const POLIZZE_SCHLUESSEL = new Set(['i', 'n', 'w', 'b', 'k', 'm', 'v']);
+const POLIZZE_SCHLUESSEL = new Set(['i', 'n', 'w', 'b', 'k', 'm', 'v', 'x']);
 
 /**
  * Polizze aus dem Kalender → { polizze, fremd: [Kategorie roh] } oder null (dann ist der ganze Hauptteil unlesbar). Review I1: auch null,
  * wenn 0 oder mehr als MAX_KATEGORIEN Kategorien verstanden werden – so eine Polizze könnte diese Version nicht zurückschreiben
  * (polizzePruefen verlangt 1–12) und würde beim nächsten Schreiben verloren gehen; gesperrt bleibt sie für die neuere Version erhalten.
  */
-function langPolizze(k) {
+function langPolizze(k, { mitEnde = true } = {}) {
   if (!istObjekt(k) || Object.keys(k).some((s) => !POLIZZE_SCHLUESSEL.has(s)) || !Array.isArray(k.k)) return null;
-  const roh = { id: k.i, name: k.n, person: k.w, beginn: k.b, maximumCent: k.m, vorlage: k.v };
+  if (k.x !== undefined && !(mitEnde && k.x === 1)) return null; // v:1 kannte kein „beendet“; v:2 nur x = 1
+  const roh = { id: k.i, name: k.n, person: k.w, beginn: k.b, maximumCent: k.m, vorlage: k.v, beendet: k.x === 1 };
   if (!istKennung(roh.id) || kopfPruefen(roh) !== null) return null;
   const kat = trenne(k.k, langKategorie);
   if (kat.gut.length === 0 || kat.gut.length > MAX_KATEGORIEN) return null;
@@ -294,30 +316,81 @@ export function polizzeAusVorlage(vorlageId, felder = {}, { zufall = Math.random
 
 // ---------------------------------------------------------------- Hauptteil: lesen und schreiben
 
-export const leereVersicherung = () => ({ v: 1, polizze: null, ab: null });
+export const leereVersicherung = () => ({ v: 2, polizzen: [], stamm: null, ab: null });
 
-const mitFremd = (d, fremd) => (fremd?.k?.length > 0 ? { ...d, fremd: { k: fremd.k } } : d);
-const baueVersicherung = (alt, polizze, ab) => mitFremd({ v: 1, polizze, ab }, polizze ? alt?.fremd : undefined);
+/** Die fremden Kategorien je Polizze ({ [Kennung]: [roh] }); fehlt/unbrauchbar → {}. */
+const fremdJePolizze = (fremd) => (istObjekt(fremd?.k) && !Array.isArray(fremd.k) ? fremd.k : {});
+
+/** Hauptteil im Speicher; fremde Kategorien bleiben nur bei Polizzen, die es noch gibt. `ausV1` fällt weg (es wird jetzt v:2 geschrieben). */
+function baueVersicherung(alt, polizzen, stamm, ab) {
+  const d = { v: 2, polizzen, stamm, ab };
+  const ids = new Set(polizzen.map((p) => p.id));
+  const k = Object.fromEntries(Object.entries(fremdJePolizze(alt?.fremd)).filter(([id, liste]) => ids.has(id) && Array.isArray(liste) && liste.length > 0));
+  return Object.keys(k).length > 0 ? { ...d, fremd: { k } } : d;
+}
 
 /**
- * Die Daten als Text für das Ereignis „fkversicherung“ (kurze Schlüssel, fremde Kategorien am Ende); zu voll → TEXT_VERSICHERUNG_VOLL.
- * Eine Polizze, die sich nicht normalisieren lässt, wirft (Review I1) – sie fällt nie still weg.
+ * Die Daten als Text für das Ereignis „fkversicherung“, immer v:2 (kurze Schlüssel, fremde Kategorien am Ende ihrer Polizze; `ausV1`
+ * wird nie geschrieben); zu voll → TEXT_VERSICHERUNG_VOLL, mehr als MAX_POLIZZEN → TEXT_POLIZZEN_MAX. Eine Polizze, die sich nicht
+ * normalisieren lässt, eine doppelte Kennung oder ein Stamm, den es nicht gibt, wirft (Review I1) – nichts fällt still weg.
  */
 export function versicherungText(daten) {
-  const polizze = daten?.polizze ? normalisierePolizze(daten.polizze) : null;
-  if (daten?.polizze && !polizze) throw new Error(`Ungültige Polizze: ${polizzePruefen(daten.polizze) ?? 'Ungültige Kennung.'}`);
-  const roh = { v: 1 };
-  if (polizze) roh.p = kurzPolizze(polizze, daten.fremd?.k ?? []);
+  const polizzen = Array.isArray(daten?.polizzen) ? daten.polizzen : [];
+  if (polizzen.length > MAX_POLIZZEN) throw new Error(TEXT_POLIZZEN_MAX);
+  const fremd = fremdJePolizze(daten?.fremd);
+  const ids = new Set();
+  const l = polizzen.map((p) => {
+    const n = normalisierePolizze(p);
+    if (!n) throw new Error(`Ungültige Polizze: ${polizzePruefen(p) ?? 'Ungültige Kennung.'}`);
+    if (ids.has(n.id)) throw new Error('Ungültige Polizze: Kennung doppelt.');
+    ids.add(n.id);
+    return kurzPolizze(n, Array.isArray(fremd[n.id]) ? fremd[n.id] : []);
+  });
+  if (l.length > 0 && !ids.has(daten.stamm)) throw new Error('Ungültige Stamm-Polizze.');
+  const roh = { v: 2, l };
+  if (l.length > 0) roh.h = daten.stamm;
   if (istJahr(daten?.ab)) roh.j = daten.ab;
   const text = JSON.stringify(roh);
   if (text.length > MAX_VERSICHERUNG_ZEICHEN) throw new Error(TEXT_VERSICHERUNG_VOLL);
   return text;
 }
 
+const tiefKopie = (x) => JSON.parse(JSON.stringify(x));
+
+/** v:1 (bis 1.4.x): { v: 1, p?, j? } → Daten im neuen Format mit `ausV1: true`, oder null (unlesbar). */
+function ausV1(roh) {
+  if (Object.keys(roh).some((s) => !['v', 'p', 'j'].includes(s))) return null;
+  let polizzen = [];
+  const fremd = {};
+  if (roh.p !== undefined && roh.p !== null) {
+    const p = langPolizze(roh.p, { mitEnde: false });
+    if (!p) return null;
+    polizzen = [p.polizze];
+    fremd[p.polizze.id] = tiefKopie(p.fremd);
+  }
+  return { ...baueVersicherung({ fremd: { k: fremd } }, polizzen, polizzen[0]?.id ?? null, roh.j ?? null), ausV1: true };
+}
+
+/** v:2: { v: 2, l, h?, j? } → Daten oder null (unlesbar: ein unbekanntes Feld, eine nicht verstandene oder doppelte Polizze, zu viele, h falsch). */
+function ausV2(roh) {
+  if (Object.keys(roh).some((s) => !['v', 'l', 'h', 'j'].includes(s)) || !Array.isArray(roh.l) || roh.l.length > MAX_POLIZZEN) return null;
+  const polizzen = [];
+  const fremd = {};
+  for (const k of roh.l) {
+    const p = langPolizze(k);
+    if (!p || polizzen.some((x) => x.id === p.polizze.id)) return null;
+    polizzen.push(p.polizze);
+    fremd[p.polizze.id] = tiefKopie(p.fremd);
+  }
+  if (polizzen.length === 0 ? roh.h !== undefined : !polizzen.some((p) => p.id === roh.h)) return null;
+  return baueVersicherung({ fremd: { k: fremd } }, polizzen, polizzen.length > 0 ? roh.h : null, roh.j ?? null);
+}
+
 /**
- * Text aus dem Kalender → { daten, unlesbar }. Wirft nie. Fehlender Text → leere Daten. Unlesbar (kein JSON, andere Version, eine
- * Polizze, deren eigene Felder diese Version nicht versteht, `j` kein gültiges Jahr) → leere Daten mit `unlesbar: true`: NIE
- * überschreiben (siehe versicherungGesperrtFehler). Nicht verstandene Kategorien → `daten.fremd.k` (roh, bleiben erhalten).
+ * Text aus dem Kalender → { daten, unlesbar }. Wirft nie. Fehlender Text → leere Daten. v:1 (1.4.x) wird ohne Verlust umgestellt
+ * (Polizze → einzige Polizze und Stamm, erstes Jahr bleibt, `ausV1: true`). Unlesbar (kein JSON, andere Version, ein unbekanntes Feld,
+ * eine Polizze, deren eigene Felder diese Version nicht versteht, `j` kein gültiges Jahr) → leere Daten mit `unlesbar: true`: NIE
+ * überschreiben (siehe versicherungGesperrtFehler). Nicht verstandene Kategorien → `daten.fremd.k[Polizze]` (roh, bleiben erhalten).
  */
 export function pruefeVersicherung(text) {
   if (typeof text !== 'string' || text.trim() === '') return { daten: leereVersicherung(), unlesbar: false };
@@ -328,17 +401,9 @@ export function pruefeVersicherung(text) {
     roh = null;
   }
   const kaputt = { daten: leereVersicherung(), unlesbar: true };
-  if (!istObjekt(roh) || roh.v !== 1 || Object.keys(roh).some((s) => !['v', 'p', 'j'].includes(s))) return kaputt;
-  if (roh.j !== undefined && !istJahr(roh.j)) return kaputt;
-  let polizze = null;
-  let fremd;
-  if (roh.p !== undefined && roh.p !== null) {
-    const p = langPolizze(roh.p);
-    if (!p) return kaputt;
-    polizze = p.polizze;
-    fremd = { k: JSON.parse(JSON.stringify(p.fremd)) };
-  }
-  return { daten: baueVersicherung({ fremd }, polizze, roh.j ?? null), unlesbar: false };
+  if (!istObjekt(roh) || (roh.j !== undefined && !istJahr(roh.j))) return kaputt;
+  const daten = roh.v === 1 ? ausV1(roh) : roh.v === 2 ? ausV2(roh) : null;
+  return daten ? { daten, unlesbar: false } : kaputt;
 }
 
 const anzahl = (n, eins, mehr) => `${n} ${n === 1 ? eins : mehr}`;
@@ -346,15 +411,17 @@ const anzahl = (n, eins, mehr) => `${n} ${n === 1 ? eins : mehr}`;
 /** Hinweise zum Gelesenen ({ daten, unlesbar } wie aus pruefeVersicherung) für die Anzeige; nichts → []. */
 export function versicherungWarnungen({ daten, unlesbar } = {}) {
   if (unlesbar) return ['Die Versicherung ist unlesbar (beschädigt oder von einer neueren App-Version); sie wird leer gezeigt und lässt sich nicht ändern.'];
-  const n = daten?.fremd?.k?.length ?? 0;
+  const n = Object.values(fremdJePolizze(daten?.fremd)).reduce((summe, liste) => summe + (Array.isArray(liste) ? liste.length : 0), 0);
   return n > 0 ? [`${anzahl(n, 'Kategorie konnte', 'Kategorien konnten')} nicht gelesen werden (beschädigt oder von einer neueren App-Version); ${n === 1 ? 'sie bleibt' : 'sie bleiben'} gespeichert, ${n === 1 ? 'wird' : 'werden'} hier aber nicht gezeigt.`] : [];
 }
 
 // ---------------------------------------------------------------- Änderungen am Hauptteil (rein, wiederholbar)
 
+const polizzenVon = (daten) => (Array.isArray(daten?.polizzen) ? daten.polizzen : []);
+
 /** Neue Daten; wirft TEXT_VERSICHERUNG_VOLL, wenn sie nicht mehr in den Kalender passen. */
-function mitVersicherung(alt, { polizze = alt.polizze, ab = alt.ab } = {}) {
-  const neu = baueVersicherung(alt, polizze, ab);
+function mitVersicherung(alt, { polizzen = polizzenVon(alt), stamm = alt.stamm ?? null, ab = alt.ab ?? null } = {}) {
+  const neu = baueVersicherung(alt, polizzen, stamm, ab);
   versicherungText(neu);
   return neu;
 }
@@ -366,29 +433,65 @@ function polizzeOderFehler(polizze) {
   return normalisierePolizze(polizze);
 }
 
+/** Die nicht beendeten Polizzen, in ihrer Reihenfolge. */
+export const aktivePolizzen = (daten) => polizzenVon(daten).filter((p) => !p.beendet);
+
+/** Zu welcher Polizze gehört die Rechnung? Ihre Kennung `polizze`, ohne sie (aus 1.4.x) die Stamm-Polizze; keine → null. */
+export const polizzeVonRechnung = (daten, rechnung) => (istKennung(rechnung?.polizze) ? rechnung.polizze : daten?.stamm ?? null);
+
 /**
- * Legt die Polizze an. Gibt es schon eine (dieselbe oder – zwei Telefone gleichzeitig – eine andere) → dieselben Daten: die zuerst
- * gespeicherte gilt. Wirft mit der Meldung aus polizzePruefen.
+ * Legt eine Polizze an (immer aktiv, hinten angehängt); die erste wird Stamm. Gibt es ihre Kennung schon → dieselben Daten (zweimal =
+ * einmal). Zwei Telefone, die gleichzeitig anlegen, behalten beide (verschiedene Kennungen). Mehr als MAX_POLIZZEN → TEXT_POLIZZEN_MAX;
+ * sonst wirft es mit der Meldung aus polizzePruefen.
  */
 export function polizzeAnlegen(daten, polizze) {
-  const neu = polizzeOderFehler(polizze);
-  if (daten.polizze) return daten;
-  return mitVersicherung(daten, { polizze: neu });
+  const neu = mitStatus(polizzeOderFehler(polizze), false);
+  const liste = polizzenVon(daten);
+  if (liste.some((p) => p.id === neu.id)) return daten;
+  if (liste.length >= MAX_POLIZZEN) throw new Error(TEXT_POLIZZEN_MAX);
+  return mitVersicherung(daten, { polizzen: [...liste, neu], stamm: liste.length === 0 ? neu.id : daten.stamm });
 }
 
 /**
- * Ändert die bestehende Polizze (gleiche Kennung; sonst TEXT_POLIZZE_WEG): Name, Person, Beginn, Kategorien, Limits, Maximum. Gleich →
- * dieselben Daten. Nicht verstandene Kategorien bleiben erhalten; eine neue Kategorie mit deren Kennung wird abgelehnt.
+ * Ändert eine bestehende Polizze (gleiche Kennung; sonst TEXT_POLIZZE_WEG): Name, Person, Beginn, Kategorien, Limits, Maximum; ob sie
+ * beendet ist, ändert nur polizzeBeenden. Gleich → dieselben Daten. Nicht verstandene Kategorien DIESER Polizze bleiben erhalten; eine
+ * neue Kategorie mit deren Kennung wird abgelehnt.
  */
 export function polizzeAendern(daten, polizze) {
-  const neu = polizzeOderFehler(polizze);
-  const alt = daten.polizze;
-  if (!alt || alt.id !== neu.id) throw new Error(TEXT_POLIZZE_WEG);
+  const liste = polizzenVon(daten);
+  const i = liste.findIndex((p) => p.id === polizze?.id);
+  const neu0 = polizzeOderFehler(polizze);
+  if (i < 0) throw new Error(TEXT_POLIZZE_WEG);
+  const alt = liste[i];
+  const neu = mitStatus(neu0, alt.beendet === true);
   if (gleich(alt, neu)) return daten;
+  const fremd = fremdJePolizze(daten.fremd)[alt.id] ?? [];
   const bekannt = new Set(alt.kategorien.map((k) => k.id));
-  if (neu.kategorien.some((k) => !bekannt.has(k.id) && fremdeKennung(daten.fremd?.k, k.id))) throw new Error(TEXT_KENNUNG_NEUER);
-  if (neu.kategorien.length + (daten.fremd?.k?.length ?? 0) > MAX_KATEGORIEN) throw new Error(`Höchstens ${MAX_KATEGORIEN} Kategorien.`);
-  return mitVersicherung(daten, { polizze: neu });
+  if (neu.kategorien.some((k) => !bekannt.has(k.id) && fremdeKennung(fremd, k.id))) throw new Error(TEXT_KENNUNG_NEUER);
+  if (neu.kategorien.length + fremd.length > MAX_KATEGORIEN) throw new Error(`Höchstens ${MAX_KATEGORIEN} Kategorien.`);
+  return mitVersicherung(daten, { polizzen: liste.map((p, j) => (j === i ? neu : p)) });
+}
+
+/** Beendet eine Polizze (`beendet` true) oder holt sie zurück (false); der Stamm bleibt. Unbekannt → TEXT_POLIZZE_WEG; gleich → dieselben Daten. */
+export function polizzeBeenden(daten, id, beendet) {
+  const liste = polizzenVon(daten);
+  const i = liste.findIndex((p) => p.id === id);
+  if (i < 0) throw new Error(TEXT_POLIZZE_WEG);
+  if ((liste[i].beendet === true) === Boolean(beendet)) return daten;
+  return mitVersicherung(daten, { polizzen: liste.map((p, j) => (j === i ? mitStatus(p, Boolean(beendet)) : p)) });
+}
+
+/**
+ * Entfernt eine Polizze samt ihren fremden Kategorien – nur ohne Rechnungen: `hatRechnungen` (Pflicht, vom Aufrufer über ALLE Teile
+ * mit polizzeVonRechnung bestimmt) nicht false → TEXT_POLIZZE_HAT_RECHNUNGEN (dann nur beenden). War sie Stamm, wird die erste
+ * verbliebene Stamm (keine → null). Schon weg → dieselben Daten.
+ */
+export function polizzeEntfernen(daten, id, { hatRechnungen } = {}) {
+  const liste = polizzenVon(daten);
+  if (!liste.some((p) => p.id === id)) return daten;
+  if (hatRechnungen !== false) throw new Error(TEXT_POLIZZE_HAT_RECHNUNGEN);
+  const rest = liste.filter((p) => p.id !== id);
+  return mitVersicherung(daten, { polizzen: rest, stamm: daten.stamm === id ? rest[0]?.id ?? null : daten.stamm });
 }
 
 /**
@@ -406,7 +509,7 @@ export const versicherungJahrBekannt = (daten, jahr) => istJahr(daten?.ab) && da
 
 // ---------------------------------------------------------------- Rechnung
 
-const RECHNUNG_SCHLUESSEL = new Set(['i', 'k', 'd', 'b', 'e', 'r', 't', 's', 'n', 'z']);
+const RECHNUNG_SCHLUESSEL = new Set(['i', 'k', 'd', 'b', 'e', 'r', 't', 's', 'n', 'z', 'p']);
 
 /** Aufbau einer Rechnung ohne „heute“ und ohne Polizze → { rechnung (bereinigt, ohne id) } oder { fehler }. */
 function rechnungLesen(e) {
@@ -430,6 +533,7 @@ function rechnungLesen(e) {
   if (!leer(e.notiz) && typeof e.notiz !== 'string') return { fehler: 'Ungültige Notiz.' };
   const notiz = sauber(e.notiz);
   if (zeichen(notiz) > MAX_RECHNUNG_NOTIZ) return { fehler: `Die Notiz darf höchstens ${MAX_RECHNUNG_NOTIZ} Zeichen haben.` };
+  if (!leer(e.polizze) && !istKennung(e.polizze)) return { fehler: TEXT_POLIZZE_UNGUELTIG };
   const r = { kategorie: e.kategorie, datum: e.datum, betragCent: e.betragCent, eingereichtAm: e.eingereichtAm };
   if (mitErstattung) {
     r.erstattetCent = e.erstattetCent;
@@ -438,6 +542,7 @@ function rechnungLesen(e) {
   if (stelle !== '') r.stelle = stelle;
   if (notiz !== '') r.notiz = notiz;
   if (!leer(e.fassung)) r.fassung = e.fassung;
+  if (!leer(e.polizze)) r.polizze = e.polizze;
   return { rechnung: r };
 }
 
@@ -506,17 +611,18 @@ function kurzRechnung(r) {
   if (r.stelle) k.s = r.stelle;
   if (r.notiz) k.n = r.notiz;
   if (r.fassung !== undefined) k.z = r.fassung;
+  if (r.polizze !== undefined) k.p = r.polizze;
   return k;
 }
 function langRechnung(k) {
   if (!istObjekt(k) || Object.keys(k).some((s) => !RECHNUNG_SCHLUESSEL.has(s))) return null;
   // kurz gespeicherte Beträge und Daten müssen schon Zahlen sein (Text käme nur von einer fremden Version)
-  if (typeof k.b !== 'number' || (k.r !== undefined && typeof k.r !== 'number') || (k.z !== undefined && typeof k.z !== 'number')) return null;
+  if (typeof k.b !== 'number' || (k.r !== undefined && typeof k.r !== 'number') || (k.z !== undefined && typeof k.z !== 'number') || (k.p !== undefined && typeof k.p !== 'string')) return null;
   const datum = langDatum(k.d);
   const eingereichtAm = langDatum(k.e);
   const erstattetAm = k.t === undefined ? undefined : langDatum(k.t);
   if (!datum || !eingereichtAm || erstattetAm === null) return null;
-  return normalisiereRechnung({ id: k.i, kategorie: k.k, datum, betragCent: k.b, eingereichtAm, erstattetCent: k.r, erstattetAm, stelle: k.s, notiz: k.n, fassung: k.z });
+  return normalisiereRechnung({ id: k.i, kategorie: k.k, datum, betragCent: k.b, eingereichtAm, erstattetCent: k.r, erstattetAm, stelle: k.s, notiz: k.n, fassung: k.z, polizze: k.p });
 }
 
 // ---------------------------------------------------------------- Quartal-Teil: lesen und schreiben
@@ -584,11 +690,19 @@ function mitTeil(alt, rechnungen) {
   return neu;
 }
 
+/**
+ * Geprüfte, bereinigte Rechnung. Mit `opts.polizze` trägt sie deren Kennung (1.5.0 schreibt sie immer); eine andere Kennung in der
+ * Rechnung → Fehler (sie gehört zu einer anderen Polizze).
+ */
 function rechnungOderFehler(rechnung, opts) {
   if (!istObjekt(rechnung) || !istKennung(rechnung.id)) throw new Error('Ungültige Kennung.');
   const { fehler } = rechnungPruefen(rechnung, opts);
   if (fehler) throw new Error(fehler);
-  return normalisiereRechnung(rechnung);
+  const r = normalisiereRechnung(rechnung);
+  const p = opts?.polizze?.id;
+  if (!istKennung(p)) return r;
+  if (r.polizze !== undefined && r.polizze !== p) throw new Error(TEXT_ANDERE_POLIZZE);
+  return { ...r, polizze: p };
 }
 
 /**

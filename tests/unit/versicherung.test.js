@@ -4,6 +4,14 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { MAX_FASSUNG, fassungJetzt, versicherungTeilText as teilTextFuer } from '../../src/domain/versicherung.js';
 import {
+  MAX_POLIZZEN,
+  TEXT_POLIZZEN_MAX,
+  TEXT_POLIZZE_HAT_RECHNUNGEN,
+  TEXT_POLIZZE_WEG,
+  aktivePolizzen,
+  polizzeBeenden,
+  polizzeEntfernen,
+  polizzeVonRechnung,
   MAX_VERSICHERUNG_TEIL_ZEICHEN,
   MAX_VERSICHERUNG_ZEICHEN,
   POLIZZE_VORLAGEN,
@@ -54,7 +62,7 @@ const FREMD_KATEGORIE = { i: 'zahn', n: 'Zahn', l: 10000, q: 1 };
 
 describe('Versicherung: Vorlage, Kennungen, leere Daten', () => {
   test('leere Daten; Kennungen aus 0-9 und a-v', () => {
-    assert.deepEqual(leereVersicherung(), { v: 1, polizze: null, ab: null });
+    assert.deepEqual(leereVersicherung(), { v: 2, polizzen: [], stamm: null, ab: null });
     assert.deepEqual(leererVersicherungTeil(2026, 4), { v: 1, jahr: 2026, quartal: 4, rechnungen: [] });
     assert.notEqual(leererVersicherungTeil(2026, 4).rechnungen, leererVersicherungTeil(2026, 4).rechnungen);
     assert.deepEqual(['2026-01-01', '2026-03-31', '2026-04-01', '2026-06-30', '2026-07-01', '2026-09-30', '2026-10-01', '2026-12-31'].map(quartalVon), [1, 1, 2, 2, 3, 3, 4, 4]);
@@ -122,19 +130,21 @@ describe('Versicherung: Hauptteil lesen und schreiben', () => {
     const d = versicherungJahrEintragen(MIT, 2026);
     const text = versicherungText(d);
     const roh = JSON.parse(text);
-    assert.deepEqual(Object.keys(roh), ['v', 'p', 'j']);
+    assert.deepEqual(Object.keys(roh), ['v', 'l', 'h', 'j']);
     assert.equal(roh.j, 2026);
-    assert.deepEqual(Object.keys(roh.p.k[1]), ['i', 'n', 'o', 'l']);
+    assert.deepEqual(Object.keys(roh.l[0].k[1]), ['i', 'n', 'o', 'l']);
     assert.deepEqual(pruefeVersicherung(text), { daten: d, unlesbar: false });
     assert.deepEqual(pruefeVersicherung(''), { daten: leereVersicherung(), unlesbar: false });
     assert.deepEqual(pruefeVersicherung(null), { daten: leereVersicherung(), unlesbar: false });
-    assert.equal(versicherungText(leereVersicherung()), '{"v":1}');
-    assert.deepEqual(pruefeVersicherung('{"v":1}'), { daten: leereVersicherung(), unlesbar: false });
+    assert.equal(versicherungText(leereVersicherung()), '{"v":2,"l":[]}');
+    assert.deepEqual(pruefeVersicherung('{"v":2,"l":[]}'), { daten: leereVersicherung(), unlesbar: false });
   });
 
   test('kaputt, andere Version, Polizze nicht verstanden oder falscher Index → unlesbar (nie überschreiben)', () => {
     const gut = JSON.parse(versicherungText(MIT));
-    for (const kaputt of ['{kaputt', '[]', JSON.stringify({ v: 2 }), JSON.stringify({ ...gut, p: { ...gut.p, zz: 1 } }), JSON.stringify({ ...gut, p: { ...gut.p, n: '' } }), JSON.stringify({ ...gut, p: 'x' }), JSON.stringify({ ...gut, j: 'x' }), JSON.stringify({ ...gut, j: 1999 }), JSON.stringify({ ...gut, p: { ...gut.p, k: 'x' } })]) {
+    const p0 = gut.l[0];
+    const mit = (p) => JSON.stringify({ ...gut, l: [p] });
+    for (const kaputt of ['{kaputt', '[]', JSON.stringify({ v: 3, l: [] }), mit({ ...p0, zz: 1 }), mit({ ...p0, n: '' }), mit('x'), JSON.stringify({ ...gut, j: 'x' }), JSON.stringify({ ...gut, j: 1999 }), mit({ ...p0, k: 'x' }), JSON.stringify({ v: 1, p: { ...p0, x: 1 } })]) {
       assert.deepEqual(pruefeVersicherung(kaputt), { daten: leereVersicherung(), unlesbar: true }, kaputt);
     }
     assert.equal(versicherungWarnungen({ unlesbar: true }).length, 1);
@@ -145,17 +155,19 @@ describe('Versicherung: Hauptteil lesen und schreiben', () => {
 
   test('fremd: unbekannte oder doppelte Kategorien bleiben roh erhalten, unverändert mitgeschrieben, mit Warnung', () => {
     const roh = JSON.parse(versicherungText(MIT));
-    roh.p.k.push(FREMD_KATEGORIE, { i: 'arzt', n: 'Doppelt', l: 1 });
+    roh.l[0].k.push(FREMD_KATEGORIE, { i: 'arzt', n: 'Doppelt', l: 1 });
     const g = pruefeVersicherung(JSON.stringify(roh));
     assert.equal(g.unlesbar, false);
-    assert.equal(g.daten.polizze.kategorien.length, 5);
-    assert.deepEqual(g.daten.fremd, { k: [FREMD_KATEGORIE, { i: 'arzt', n: 'Doppelt', l: 1 }] });
+    const p = g.daten.polizzen[0];
+    assert.equal(p.kategorien.length, 5);
+    assert.deepEqual(g.daten.fremd, { k: { [P.id]: [FREMD_KATEGORIE, { i: 'arzt', n: 'Doppelt', l: 1 }] } });
     assert.equal(versicherungWarnungen(g).length, 1);
-    const geaendert = polizzeAendern(g.daten, { ...g.daten.polizze, person: 'Mia M.' });
+    assert.match(versicherungWarnungen(g)[0], /^2 Kategorien/);
+    const geaendert = polizzeAendern(g.daten, { ...p, person: 'Mia M.' });
     const zurueck = JSON.parse(versicherungText(geaendert));
-    assert.deepEqual(zurueck.p.k.slice(-2), [FREMD_KATEGORIE, { i: 'arzt', n: 'Doppelt', l: 1 }]);
-    assert.equal(zurueck.p.w, 'Mia M.');
-    assert.throws(() => polizzeAendern(g.daten, { ...g.daten.polizze, kategorien: [...g.daten.polizze.kategorien, { id: 'zahn', name: 'Z', limitCent: 1 }] }), /neueren App-Version/);
+    assert.deepEqual(zurueck.l[0].k.slice(-2), [FREMD_KATEGORIE, { i: 'arzt', n: 'Doppelt', l: 1 }]);
+    assert.equal(zurueck.l[0].w, 'Mia M.');
+    assert.throws(() => polizzeAendern(g.daten, { ...p, kategorien: [...p.kategorien, { id: 'zahn', name: 'Z', limitCent: 1 }] }), /neueren App-Version/);
   });
 
   test('M3: der Hauptteil merkt sich nur das ERSTE Jahr – seine Größe wächst nicht mit den Jahren', () => {
@@ -179,22 +191,24 @@ describe('Versicherung: Hauptteil lesen und schreiben', () => {
     assert.equal(MAX_VERSICHERUNG_ZEICHEN, 6000);
     const viele = Array.from({ length: 12 }, (_, i) => ({ id: `k${i}`, name: 'K'.repeat(50), info: 'I'.repeat(80), limitCent: 1 }));
     assert.ok(versicherungText(polizzeAendern(MIT, { ...P, kategorien: viele })).length < 6000, 'volle 12 Kategorien passen');
-    const fremd = { ...MIT, fremd: { k: Array.from({ length: 5 }, (_, i) => ({ i: `f${i}`, n: 'x'.repeat(1200), q: 1 })) } };
+    const fremd = { ...MIT, fremd: { k: { [P.id]: Array.from({ length: 5 }, (_, i) => ({ i: `f${i}`, n: 'x'.repeat(1200), q: 1 })) } } };
     assert.throws(() => polizzeAendern(fremd, { ...P, person: 'Mia M.' }), (e) => e.message === TEXT_VERSICHERUNG_VOLL);
-    assert.throws(() => polizzeAendern({ ...MIT, fremd: { k: [{ i: 'f', q: 1 }] } }, { ...P, kategorien: viele }), /Höchstens 12/);
+    assert.throws(() => polizzeAendern({ ...MIT, fremd: { k: { [P.id]: [{ i: 'f', q: 1 }] } } }, { ...P, kategorien: viele }), /Höchstens 12/);
   });
 });
 
 describe('Versicherung: Polizze anlegen und ändern (rein, wiederholbar)', () => {
-  test('polizzeAnlegen: einmal; zweimal = einmal; eine andere schon da → die erste gilt; Argument unverändert', () => {
+  test('polizzeAnlegen: einmal; zweimal = einmal; eine andere dazu → beide (1.5.0); Argument unverändert', () => {
     const leer = leereVersicherung();
     const vorher = tiefKopie(leer);
     const d = polizzeAnlegen(leer, P);
     assert.deepEqual(leer, vorher);
-    assert.deepEqual(d.polizze, P);
+    assert.deepEqual([d.polizzen, d.stamm], [[P], P.id]);
     assert.equal(polizzeAnlegen(d, P), d);
     const andere = { ...P, id: '11111111', name: 'Eigene' };
-    assert.equal(polizzeAnlegen(d, andere), d, 'zwei Telefone legen gleichzeitig an: die zuerst gespeicherte bleibt');
+    const beide = polizzeAnlegen(d, andere);
+    assert.deepEqual([beide.polizzen.map((p) => p.id), beide.stamm], [[P.id, '11111111'], P.id], 'zwei Telefone legen gleichzeitig an: beide bleiben');
+    assert.equal(polizzeAnlegen(leer, { ...P, beendet: true }).polizzen[0].beendet, undefined, 'neu angelegt ist sie immer aktiv');
     assert.throws(() => polizzeAnlegen(leer, { ...P, name: '' }), /Namen/);
   });
 
@@ -203,9 +217,9 @@ describe('Versicherung: Polizze anlegen und ändern (rein, wiederholbar)', () =>
     assert.throws(() => polizzeAendern(MIT, { ...P, id: '11111111' }), /gibt es nicht mehr/);
     assert.equal(polizzeAendern(MIT, P), MIT);
     const neu = polizzeAendern(MIT, { ...P, maximumCent: 300000, kategorien: P.kategorien.map((k) => (k.id === 'heil' ? { ...k, limitCent: 30000 } : k)) });
-    assert.equal(neu.polizze.maximumCent, 300000);
-    assert.equal(neu.polizze.kategorien[4].limitCent, 30000);
-    assert.equal(polizzeAendern(neu, neu.polizze), neu, 'zweimal = einmal');
+    assert.equal(neu.polizzen[0].maximumCent, 300000);
+    assert.equal(neu.polizzen[0].kategorien[4].limitCent, 30000);
+    assert.equal(polizzeAendern(neu, neu.polizzen[0]), neu, 'zweimal = einmal');
   });
 
   test('normalisierePolizze: bereinigt Leerzeichen, leere Felder fallen weg, Zusatzfelder fallen weg', () => {
@@ -264,7 +278,7 @@ describe('Versicherung: Rechnungen je Quartal (C1)', () => {
     const r = rechnung({ erstattetCent: 7200, erstattetAm: '2026-11-05', stelle: 'Praxis am Park', notiz: 'Serie 1/3' });
     const t = rechnungSetzen(Q4(), r, { heute: HEUTE, polizze: P });
     const text = versicherungTeilText(t);
-    assert.deepEqual(JSON.parse(text), { v: 1, j: 2026, q: 4, r: [{ i: 'rech0001', k: 'physio', d: 20261028, b: 9000, e: 20261030, r: 7200, t: 20261105, s: 'Praxis am Park', n: 'Serie 1/3' }] });
+    assert.deepEqual(JSON.parse(text), { v: 1, j: 2026, q: 4, r: [{ i: 'rech0001', k: 'physio', d: 20261028, b: 9000, e: 20261030, r: 7200, t: 20261105, s: 'Praxis am Park', n: 'Serie 1/3', p: P.id }] });
     assert.deepEqual(pruefeVersicherungTeil(text, { jahr: 2026, quartal: 4 }), { teil: t, unlesbar: false });
     assert.deepEqual(pruefeVersicherungTeil(text, { jahr: 2025, quartal: 4 }), { teil: leererVersicherungTeil(2025, 4), unlesbar: true });
     assert.deepEqual(pruefeVersicherungTeil(text, { jahr: 2026, quartal: 3 }), { teil: leererVersicherungTeil(2026, 3), unlesbar: true });
@@ -343,7 +357,7 @@ describe('Versicherung: Rechnungen je Quartal (C1)', () => {
     const plan = rechnungTeilWechseln(verschoben, { jahr: 2026, quartal: 4 }, { heute: HEUTE, polizze: P });
     assert.deepEqual([plan.von, plan.nach], [{ jahr: 2026, quartal: 4 }, { jahr: 2025, quartal: 4 }]);
     const neu = plan.inNeu(leererVersicherungTeil(2025, 4));
-    assert.deepEqual(neu.rechnungen, [normalisiereRechnung(verschoben)]);
+    assert.deepEqual(neu.rechnungen, [{ ...normalisiereRechnung(verschoben), polizze: P.id }], 'mit Polizze: sie trägt deren Kennung');
     assert.equal(plan.inNeu(neu), neu, 'wiederholbar');
     const altOhne = plan.ausAlt(alt);
     assert.deepEqual(altOhne.rechnungen, []);
@@ -390,9 +404,9 @@ describe('Versicherung: Fix-Runde 2 (Review I1, M1, M5)', () => {
     const gemischt = JSON.parse(NEUERE_VERSION);
     delete gemischt.p.k[1].x;
     const g = pruefeVersicherung(JSON.stringify(gemischt));
-    assert.deepEqual([g.unlesbar, g.daten.polizze.kategorien.map((k) => k.id), g.daten.fremd.k.length], [false, ['heil'], 1]);
+    assert.deepEqual([g.unlesbar, g.daten.polizzen[0].kategorien.map((k) => k.id), g.daten.fremd.k.abcd1234.length], [false, ['heil'], 1]);
     const geschrieben = JSON.parse(versicherungText(versicherungJahrEintragen(g.daten, 2025)));
-    assert.deepEqual([geschrieben.j, geschrieben.p.k], [2025, [{ i: 'heil', n: 'Heil', l: 22400 }, gemischt.p.k[0]]], 'altes Telefon trägt ein Jahr ein: Polizze und fremde Kategorie bleiben');
+    assert.deepEqual([geschrieben.j, geschrieben.l[0].k], [2025, [{ i: 'heil', n: 'Heil', l: 22400 }, gemischt.p.k[0]]], 'ein Jahr eintragen (jetzt als v:2): Polizze und fremde Kategorie bleiben');
   });
 
   test('I1: mehr als 12 verstandene Kategorien → unlesbar; genau 12 → lesbar', () => {
@@ -400,15 +414,18 @@ describe('Versicherung: Fix-Runde 2 (Review I1, M1, M5)', () => {
     const text = (n) => JSON.stringify({ v: 1, p: { i: 'abcd1234', n: 'Eigene', b: '2026-09-01', k: kategorien(n), m: 1000 }, j: 2026 });
     assert.equal(pruefeVersicherung(text(13)).unlesbar, true);
     assert.equal(pruefeVersicherung(text(12)).unlesbar, false);
-    assert.equal(pruefeVersicherung(text(12)).daten.polizze.kategorien.length, 12);
+    assert.equal(pruefeVersicherung(text(12)).daten.polizzen[0].kategorien.length, 12);
+    assert.equal(pruefeVersicherung(JSON.stringify({ v: 2, l: [JSON.parse(text(13)).p], h: 'abcd1234' })).unlesbar, true, 'ebenso in v:2');
   });
 
   test('I1: versicherungText wirft bei einer Polizze, die nicht normalisierbar ist, statt sie still wegzulassen', () => {
     for (const kaputt of [{ ...P, kategorien: [] }, { ...P, name: '' }, { ...P, id: 'X' }, { ...P, kategorien: Array.from({ length: 13 }, (_, i) => ({ id: `k${i}`, name: 'K', limitCent: 1 })) }]) {
-      assert.throws(() => versicherungText({ v: 1, polizze: kaputt, ab: 2026 }), /Polizze/, JSON.stringify(kaputt).slice(0, 60));
-      assert.throws(() => versicherungJahrEintragen({ v: 1, polizze: kaputt, ab: 2026 }, 2025), /Polizze/);
+      assert.throws(() => versicherungText({ v: 2, polizzen: [kaputt], stamm: kaputt.id, ab: 2026 }), /Polizze/, JSON.stringify(kaputt).slice(0, 60));
+      assert.throws(() => versicherungJahrEintragen({ v: 2, polizzen: [kaputt], stamm: kaputt.id, ab: 2026 }, 2025), /Polizze/);
     }
-    assert.equal(versicherungText({ v: 1, polizze: null, ab: 2026 }), '{"v":1,"j":2026}', 'ohne Polizze bleibt es erlaubt');
+    assert.throws(() => versicherungText({ v: 2, polizzen: [P, P], stamm: P.id, ab: 2026 }), /doppelt/);
+    assert.throws(() => versicherungText({ v: 2, polizzen: [P], stamm: '11111111', ab: 2026 }), /Stamm/);
+    assert.equal(versicherungText({ v: 2, polizzen: [], stamm: null, ab: 2026 }), '{"v":2,"l":[],"j":2026}', 'ohne Polizze bleibt es erlaubt');
   });
 
   test('M1: eine Rechnung, deren Datum nicht zum Teil passt, bleibt lesbar – mit Hinweis', () => {
@@ -481,5 +498,153 @@ describe('Versicherung: Fassung je Rechnung (Fix-Runde 1 Task 2: I2, M3)', () =>
       assert.equal(plan.ausAlt(t, { nurAelterAls: grenze }), t, `${f} gegen ${grenze}: bleibt`);
     }
     assert.deepEqual(plan.ausAlt(alt(99)).rechnungen, [], 'ohne Grenze wie bisher');
+  });
+});
+
+describe('Versicherung v:2: mehrere Polizzen (1.5.0)', () => {
+  // Ein Hauptteil, wie ihn 1.4.x schreibt: v:1 mit einer Polizze (eine Kategorie einer neueren Version dabei) und dem ersten Jahr.
+  const V1_POLIZZE = { i: 'abcd1234', n: 'MedPLUS Privatarzt Basic', w: 'Mia', b: '2026-09-01', k: [{ i: 'arzt', n: 'Arzt', l: 160000 }, { i: 'physio', n: 'Physio', o: 'inkl. Logopädie', l: 49000 }, FREMD_KATEGORIE], m: 314400, v: 'medplusBasic' };
+  const V1_TEXT = JSON.stringify({ v: 1, p: V1_POLIZZE, j: 2026 });
+  const B = { ...polizzeAusVorlage('medplusBasic', { person: 'Mia', beginn: '2026-01-01' }, { zufall: () => 0.5 }), id: 'polb0001', name: 'Zweite' };
+  const eigene = (id, mehr = {}) => ({ id, name: `Eigene ${id}`, beginn: '2026-01-01', kategorien: [{ id: 'arzt', name: 'Arzt', limitCent: 1000 }], maximumCent: 1000, ...mehr });
+
+  test('leere Daten im neuen Format', () => {
+    assert.deepEqual(leereVersicherung(), { v: 2, polizzen: [], stamm: null, ab: null });
+    assert.equal(versicherungText(leereVersicherung()), '{"v":2,"l":[]}');
+    assert.deepEqual(pruefeVersicherung('{"v":2,"l":[]}'), { daten: leereVersicherung(), unlesbar: false });
+  });
+
+  test('v:1 mit Polizze → beim Lesen eine Polizze, Stamm; geschrieben als v:2', () => {
+    const { daten, unlesbar } = pruefeVersicherung(V1_TEXT);
+    assert.equal(unlesbar, false);
+    assert.equal(daten.polizzen.length, 1);
+    assert.equal(daten.stamm, daten.polizzen[0].id);
+    assert.equal(daten.stamm, 'abcd1234');
+    assert.equal(daten.ab, 2026);
+    assert.deepEqual(daten.polizzen[0].kategorien.map((k) => k.id), ['arzt', 'physio']);
+    assert.deepEqual(daten.fremd, { k: { abcd1234: [FREMD_KATEGORIE] } }, 'die fremde Kategorie bleibt bei ihrer Polizze');
+    assert.equal(daten.ausV1, true, 'Merker für den Store: der Hauptteil im Kalender ist noch v:1');
+    const roh = JSON.parse(versicherungText(daten));
+    assert.equal(roh.v, 2);
+    assert.equal(roh.l.length, 1);
+    assert.equal(roh.h, daten.stamm);
+    assert.equal(roh.j, 2026);
+    assert.deepEqual(Object.keys(roh).sort(), ['h', 'j', 'l', 'v'], 'ausV1 wird nicht geschrieben');
+    assert.deepEqual(roh.l[0], V1_POLIZZE, 'nichts verloren: dieselbe Polizze, die fremde Kategorie am Ende');
+    const wieder = pruefeVersicherung(versicherungText(daten));
+    assert.equal(wieder.daten.ausV1, undefined);
+    assert.deepEqual(wieder, { daten: { v: 2, polizzen: daten.polizzen, stamm: 'abcd1234', ab: 2026, fremd: daten.fremd }, unlesbar: false });
+  });
+
+  test('v:1 ohne Polizze → keine Polizze, kein Stamm, das erste Jahr bleibt', () => {
+    assert.deepEqual(pruefeVersicherung('{"v":1,"j":2025}'), { daten: { v: 2, polizzen: [], stamm: null, ab: 2025, ausV1: true }, unlesbar: false });
+    assert.equal(versicherungText(pruefeVersicherung('{"v":1}').daten), '{"v":2,"l":[]}');
+  });
+
+  test('v:2 hin und zurück: zwei Polizzen, eine beendet (x: 1), Stamm', () => {
+    const d = polizzeBeenden(polizzeAnlegen(polizzeAnlegen(leereVersicherung(), P), B), B.id, true);
+    const roh = JSON.parse(versicherungText(d));
+    assert.deepEqual([roh.v, roh.h, roh.l.map((p) => p.i), roh.l.map((p) => p.x)], [2, P.id, [P.id, B.id], [undefined, 1]]);
+    const g = pruefeVersicherung(versicherungText(d));
+    assert.deepEqual(g, { daten: d, unlesbar: false });
+    assert.equal(g.daten.polizzen[1].beendet, true);
+  });
+
+  test('v:2 mit unbekanntem Feld oder v:3 → unlesbar', () => {
+    const gut = JSON.parse(versicherungText(polizzeAnlegen(polizzeAnlegen(leereVersicherung(), P), B)));
+    assert.equal(pruefeVersicherung(JSON.stringify(gut)).unlesbar, false);
+    const kaputt = [
+      { ...gut, v: 3 },
+      { ...gut, neu: 1 },
+      { ...gut, p: gut.l[0] },
+      { ...gut, l: [{ ...gut.l[0], q: 1 }, gut.l[1]] },
+      { ...gut, l: [{ ...gut.l[0], x: 2 }, gut.l[1]] },
+      { ...gut, l: [gut.l[0], gut.l[0]] },
+      { ...gut, h: 'zzzz0000' },
+      { ...gut, h: 'abcdefgh' },
+      { v: 2, l: gut.l },
+      { v: 2, l: [], h: P.id },
+      { v: 2 },
+      { ...gut, l: 'x' },
+      { ...gut, j: 1999 },
+      { ...gut, l: [...gut.l, ...['a', 'b', 'c', 'd'].map((c) => ({ ...gut.l[0], i: `${c}0000000` }))] },
+    ];
+    for (const roh of kaputt) assert.deepEqual(pruefeVersicherung(JSON.stringify(roh)), { daten: leereVersicherung(), unlesbar: true }, JSON.stringify(roh).slice(0, 80));
+  });
+
+  test('höchstens 5 Polizzen; zu voll → TEXT_VERSICHERUNG_VOLL', () => {
+    assert.equal(MAX_POLIZZEN, 5);
+    assert.equal(TEXT_POLIZZEN_MAX, 'Höchstens 5 Versicherungen.');
+    let d = leereVersicherung();
+    for (const id of ['pola0001', 'pola0002', 'pola0003', 'pola0004', 'pola0005']) d = polizzeAnlegen(d, eigene(id));
+    assert.deepEqual([d.polizzen.length, d.stamm], [5, 'pola0001'], 'die erste wird Stamm');
+    assert.throws(() => polizzeAnlegen(d, eigene('pola0006')), { message: TEXT_POLIZZEN_MAX });
+    assert.equal(polizzeAnlegen(d, eigene('pola0003')), d, 'dieselbe noch einmal = einmal');
+    // groß: 12 Kategorien mit vollem Namen und Hinweis (≈ 1950 Zeichen) – zwei passen, die dritte nicht mehr
+    const gross = (id) => eigene(id, { kategorien: Array.from({ length: 12 }, (_, i) => ({ id: `k${i}`, name: 'N'.repeat(50), info: 'I'.repeat(80), limitCent: 1 })) });
+    let g = leereVersicherung();
+    for (const id of ['grob0001', 'grob0002']) g = polizzeAnlegen(g, gross(id));
+    assert.equal(g.polizzen.length, 2);
+    assert.throws(() => polizzeAnlegen(g, gross('grob0003')), { message: TEXT_VERSICHERUNG_VOLL });
+    // fremde Kategorien je Polizze zählen mit (Pre-flight C1)
+    const fremd = JSON.parse(versicherungText(polizzeAnlegen(leereVersicherung(), eigene('frem0001'))));
+    fremd.l[0].k.push(...Array.from({ length: 30 }, (_, i) => ({ i: `f${i}`, n: 'F'.repeat(150), l: 1, q: 1 })));
+    const gelesen = pruefeVersicherung(JSON.stringify(fremd));
+    assert.equal(gelesen.daten.fremd.k.frem0001.length, 30);
+    assert.throws(() => polizzeAnlegen(gelesen.daten, gross('grob0005')), { message: TEXT_VERSICHERUNG_VOLL });
+  });
+
+  test('polizzeAendern: je Polizze, fremde Kategorien bleiben bei ihrer Polizze; beendet bleibt; unbekannt → TEXT_POLIZZE_WEG', () => {
+    const d = polizzeBeenden(polizzeAnlegen(pruefeVersicherung(V1_TEXT).daten, B), B.id, true);
+    const neu = polizzeAendern(d, { ...B, maximumCent: 200000 });
+    assert.deepEqual([neu.polizzen[1].maximumCent, neu.polizzen[1].beendet, neu.polizzen[0]], [200000, true, d.polizzen[0]]);
+    assert.equal(polizzeAendern(neu, { ...B, maximumCent: 200000 }), neu, 'zweimal = einmal');
+    assert.ok(polizzeAendern(d, { ...B, kategorien: [...B.kategorien.slice(0, 4), { id: 'zahn', name: 'Z', limitCent: 1 }] }), 'zahn ist nur bei der ersten Polizze fremd');
+    assert.throws(() => polizzeAendern(d, { ...d.polizzen[0], kategorien: [...d.polizzen[0].kategorien, { id: 'zahn', name: 'Z', limitCent: 1 }] }), /neueren App-Version/);
+    assert.throws(() => polizzeAendern(d, eigene('fehl0001')), { message: TEXT_POLIZZE_WEG });
+    assert.deepEqual(JSON.parse(versicherungText(neu)).l[0].k.at(-1), FREMD_KATEGORIE);
+  });
+
+  test('Rechnung ohne p gehört der Stamm-Polizze; neue Rechnung trägt p', () => {
+    const d = polizzeAnlegen(pruefeVersicherung(V1_TEXT).daten, B);
+    const alt = pruefeVersicherungTeil(JSON.stringify({ v: 1, j: 2026, q: 4, r: [{ i: 'rech0001', k: 'physio', d: 20261028, b: 9000, e: 20261030 }] }), { jahr: 2026, quartal: 4 });
+    assert.equal(alt.unlesbar, false);
+    assert.equal(alt.teil.rechnungen[0].polizze, undefined);
+    assert.equal(polizzeVonRechnung(d, alt.teil.rechnungen[0]), 'abcd1234');
+    const t = rechnungSetzen(alt.teil, rechnung({ id: 'rech0002' }), { heute: HEUTE, polizze: B });
+    const roh = JSON.parse(versicherungTeilText(t));
+    assert.equal(roh.v, 1, 'der Teil bleibt v:1');
+    assert.equal(roh.r[0].p, undefined, 'die alte Rechnung bleibt, wie sie war');
+    assert.equal(roh.r[1].p, 'polb0001');
+    const wieder = pruefeVersicherungTeil(versicherungTeilText(t), { jahr: 2026, quartal: 4 }).teil.rechnungen[1];
+    assert.deepEqual([wieder.polizze, polizzeVonRechnung(d, wieder)], ['polb0001', 'polb0001']);
+    assert.throws(() => rechnungSetzen(alt.teil, rechnung({ id: 'rech0003', polizze: 'abcd1234' }), { heute: HEUTE, polizze: B }), /Polizze/);
+    assert.equal(normalisiereRechnung(rechnung({ polizze: 'KAPUTT' })), null);
+    assert.equal(polizzeVonRechnung(leereVersicherung(), alt.teil.rechnungen[0]), null);
+    // Erstattung eintragen: die Polizze der Rechnung bleibt
+    assert.equal(JSON.parse(versicherungTeilText(erstattungSetzen(t, 'rech0002', { erstattetCent: 100, erstattetAm: '2026-11-05' }, { heute: HEUTE }))).r[1].p, 'polb0001');
+  });
+
+  test('Löschen nur ohne Rechnungen; Beenden und Zurückholen gehen; Stamm rückt nach', () => {
+    assert.equal(TEXT_POLIZZE_HAT_RECHNUNGEN, 'Diese Polizze hat Rechnungen – sie lässt sich nur beenden, nicht löschen.');
+    const d = polizzeAnlegen(polizzeAnlegen(pruefeVersicherung(V1_TEXT).daten, B), eigene('polc0001'));
+    const vorher = tiefKopie(d);
+    assert.throws(() => polizzeEntfernen(d, 'abcd1234', { hatRechnungen: true }), { message: TEXT_POLIZZE_HAT_RECHNUNGEN });
+    const beendet = polizzeBeenden(d, 'abcd1234', true);
+    assert.deepEqual(aktivePolizzen(beendet).map((p) => p.id), ['polb0001', 'polc0001']);
+    assert.equal(beendet.stamm, 'abcd1234', 'Beenden ändert den Stamm nicht');
+    assert.equal(polizzeBeenden(beendet, 'abcd1234', true), beendet, 'zweimal = einmal');
+    const zurueck = polizzeBeenden(beendet, 'abcd1234', false);
+    assert.deepEqual(zurueck.polizzen, d.polizzen);
+    assert.throws(() => polizzeBeenden(d, 'fehl0001', true), { message: TEXT_POLIZZE_WEG });
+    const ohne = polizzeEntfernen(d, 'abcd1234', { hatRechnungen: false });
+    assert.deepEqual([ohne.polizzen.map((p) => p.id), ohne.stamm, ohne.fremd], [['polb0001', 'polc0001'], 'polb0001', undefined]);
+    assert.equal(polizzeEntfernen(ohne, 'abcd1234', { hatRechnungen: false }), ohne, 'schon weg → dieselben Daten');
+    const nurB = polizzeEntfernen(ohne, 'polc0001', { hatRechnungen: false });
+    assert.equal(nurB.stamm, 'polb0001', 'eine andere entfernt → Stamm bleibt');
+    const leer = polizzeEntfernen(nurB, 'polb0001', { hatRechnungen: false });
+    assert.deepEqual([leer.polizzen, leer.stamm, leer.ab], [[], null, 2026]);
+    assert.equal(versicherungText(leer), '{"v":2,"l":[],"j":2026}');
+    assert.deepEqual(d, vorher, 'Argument unverändert');
   });
 });

@@ -67,10 +67,11 @@ function autosSicherung(autos) {
 }
 
 /**
- * Versicherung: die Polizze (wie im Zustand) und alle Rechnungen aller gelesenen Quartale in einer Liste, je Kennung einmal (die
- * gültige Fassung, siehe rechnungenDesJahres), nach Rechnungsdatum sortiert. `versicherung` = { daten, teile, geschrieben?, rohtexte?,
+ * Versicherung: die Polizzen (wie im Zustand, auch beendete), die Stamm-Polizze (ihr gehören Rechnungen ohne `polizze`) und alle
+ * Rechnungen aller gelesenen Quartale in einer Liste (jede mit `polizze`, sofern gespeichert), je Kennung einmal (die gültige Fassung,
+ * siehe rechnungenDesJahres), nach Rechnungsdatum sortiert. `versicherung` = { daten, teile, geschrieben?, rohtexte?,
  * weitereTeile? } wie aus store.sicherungsDaten; ohne → leer. Was diese Version nicht versteht, fehlt nicht unbemerkt: `fremdeKategorien`
- * (roh, Hauptteil), `fremdeRechnungen` = [{ id (Teil), eintraege }] (roh), `unlesbar` = [{ id, text }] Rohtexte unlesbarer Teile,
+ * (roh, Hauptteil, je Polizze: { [Kennung]: [roh] }), `fremdeRechnungen` = [{ id (Teil), eintraege }] (roh), `unlesbar` = [{ id, text }] Rohtexte unlesbarer Teile,
  * `weitereTeile` = [{ id, text }] Quartal-Teile, die nicht gelesen wurden (bei unlesbarem Hauptteil alle), roh.
  */
 function versicherungSicherung(v) {
@@ -82,9 +83,10 @@ function versicherungSicherung(v) {
     .map((t) => ({ id: versicherungTeilId(t.jahr, t.quartal), eintraege: t.fremd.r }))
     .sort((a, b) => a.id.localeCompare(b.id));
   return {
-    polizze: d.polizze ?? null,
+    polizzen: Array.isArray(d.polizzen) ? d.polizzen : [],
+    stamm: d.stamm ?? null,
     rechnungen,
-    ...(d.fremd?.k?.length > 0 ? { fremdeKategorien: d.fremd.k } : {}),
+    ...(Object.keys(d.fremd?.k ?? {}).length > 0 ? { fremdeKategorien: d.fremd.k } : {}),
     ...(fremdeRechnungen.length > 0 ? { fremdeRechnungen } : {}),
     ...(Array.isArray(v?.rohtexte) && v.rohtexte.length > 0 ? { unlesbar: v.rohtexte.map(({ id, text }) => ({ id, text })) } : {}),
     ...(Array.isArray(v?.weitereTeile) && v.weitereTeile.length > 0 ? { weitereTeile: v.weitereTeile.map(({ id, text }) => ({ id, text })) } : {}),
@@ -145,7 +147,8 @@ export function sicherungAnzahlText(s) {
   if (s.autos?.unlesbar?.some((u) => u.id === 'fkautos')) teile.push('Autos unlesbar (als Text gesichert)');
   else if (s.autos?.unlesbar?.length > 0) teile.push('Autos teilweise unlesbar (als Text gesichert)');
   const rechnungen = s.versicherung?.rechnungen?.length ?? 0;
-  if (s.versicherung?.polizze || rechnungen > 0) teile.push(`Versicherung (${zahl(rechnungen, 'Rechnung', 'Rechnungen')})`);
+  const polizzen = s.versicherung?.polizzen?.length ?? 0;
+  if (polizzen > 0 || rechnungen > 0) teile.push(`Versicherung (${zahl(polizzen, 'Polizze', 'Polizzen')}, ${zahl(rechnungen, 'Rechnung', 'Rechnungen')})`);
   if (s.versicherung?.unlesbar?.some((u) => u.id === 'fkversicherung')) teile.push('Versicherung unlesbar (als Text gesichert)');
   else if (s.versicherung?.unlesbar?.length > 0) teile.push('Versicherung teilweise unlesbar (als Text gesichert)');
   return teile.join(' · ');

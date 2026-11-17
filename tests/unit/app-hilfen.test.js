@@ -45,7 +45,7 @@ describe('Sicherung', () => {
 
   test('Dateiname und Anzahl (Einzahl und Mehrzahl)', () => {
     assert.equal(sicherungDateiname('2026-10-14'), 'familienkalender-sicherung-2026-10-14.json');
-    assert.equal(sicherungAnzahlText(s), '2 Tage · 2 Urlaube · 8 Termine · 4 Artikel auf der Einkaufsliste · 10 Kontostände · 3 Monate Schichtplan · 13 Fixkosten-Posten · 2 Autos · Versicherung (2 Rechnungen)');
+    assert.equal(sicherungAnzahlText(s), '2 Tage · 2 Urlaube · 8 Termine · 4 Artikel auf der Einkaufsliste · 10 Kontostände · 3 Monate Schichtplan · 13 Fixkosten-Posten · 2 Autos · Versicherung (1 Polizze, 2 Rechnungen)');
     const eins = { tage: { a: 1 }, urlaub: [1], termine: [1], einkauf: { e: [1] }, konto: { p: { papa: { '2026-09': 1 }, mama: {} } } };
     assert.equal(sicherungAnzahlText(eins), '1 Tag · 1 Urlaub · 1 Termin · 1 Artikel auf der Einkaufsliste · 1 Kontostand');
     assert.equal(sicherungAnzahlText({ ...eins, schicht: { katalog: null, monate: { '2026-09': {} } } }), '1 Tag · 1 Urlaub · 1 Termin · 1 Artikel auf der Einkaufsliste · 1 Kontostand · 1 Monat Schichtplan');

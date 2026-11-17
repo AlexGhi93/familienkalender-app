@@ -262,7 +262,7 @@ describe('Demo-Adapter: Versicherung', () => {
     await a.aendereVersicherung((d) => versicherungJahrEintragen(polizzeAnlegen(d, P), 2026));
     await a.aendereVersicherungTeil(2026, 4, (x) => rechnungSetzen(x, rechnung(), { heute: HEUTE }));
     const g = await a.leseVersicherung();
-    assert.deepEqual([g.daten.polizze.person, g.teile[2026][4].rechnungen.length], ['Mia', 1]);
+    assert.deepEqual([g.daten.polizzen[0].person, g.teile[2026][4].rechnungen.length], ['Mia', 1]);
     assert.deepEqual(await a.leseVersicherungTeil(2027, 1), { teil: leererVersicherungTeil(2027, 1), unlesbar: false, warnungen: [], text: null, fehlt: true });
     const roh = JSON.parse(speicher.getItem(KEY)).versicherung;
     assert.deepEqual([typeof roh.text, typeof roh.teile.fkvr20264], ['string', 'string']);
@@ -289,11 +289,11 @@ describe('Demo-Adapter: Versicherung', () => {
     const a = createDemoAdapter({ speicher: speicherAttrappe(), jetzt: JETZT });
     await a.laden();
     await a.aendereVersicherung(() => leereVersicherung());
-    assert.equal((await a.leseVersicherung()).daten.polizze, null);
+    assert.deepEqual((await a.leseVersicherung()).daten.polizzen, []);
     const z = await a.zuruecksetzen();
-    assert.equal(z.versicherung.daten.polizze.person, 'Mia', 'zuruecksetzen liefert sie gelesen wie leseVersicherung');
+    assert.equal(z.versicherung.daten.polizzen[0].person, 'Mia', 'zuruecksetzen liefert sie gelesen wie leseVersicherung');
     const g = await a.leseVersicherung();
-    assert.equal(g.daten.polizze.person, 'Mia');
+    assert.equal(g.daten.polizzen[0].person, 'Mia');
     assert.equal(Object.values(g.teile).flatMap((q) => Object.values(q)).flatMap((t) => t.rechnungen).length, 2);
   });
 });

@@ -1,6 +1,6 @@
 import { todayVienna } from '../../domain/dates.js';
 import { istObjekt } from '../../domain/gemeinsam.js';
-import { TEXT_POLIZZE_WEG, TEXT_RECHNUNG_WEG, TEXT_VERSICHERUNG_GESPERRT, TEXT_VERSICHERUNG_TEIL_GESPERRT, erstattungSetzen, fassungJetzt, leererVersicherungTeil, leereVersicherung, polizzeAendern, polizzeAnlegen, rechnungJahr, rechnungLoeschen as rechnungLoeschenRein, rechnungPruefen, rechnungQuartal, rechnungSetzen, rechnungSpur, rechnungTeilWechseln, rechnungWiederherstellen, versicherungJahrBekannt, versicherungJahrEintragen, versicherungTeilWarnungen, versicherungWarnungen } from '../../domain/versicherung.js';
+import { TEXT_POLIZZE_WEG, aktivePolizzen, TEXT_RECHNUNG_WEG, TEXT_VERSICHERUNG_GESPERRT, TEXT_VERSICHERUNG_TEIL_GESPERRT, erstattungSetzen, fassungJetzt, leererVersicherungTeil, leereVersicherung, polizzeAendern, polizzeAnlegen, rechnungJahr, rechnungLoeschen as rechnungLoeschenRein, rechnungPruefen, rechnungQuartal, rechnungSetzen, rechnungSpur, rechnungTeilWechseln, rechnungWiederherstellen, versicherungJahrBekannt, versicherungJahrEintragen, versicherungTeilWarnungen, versicherungWarnungen } from '../../domain/versicherung.js';
 import { rechnungFinden } from '../../domain/versicherung-rechnung.js';
 import { FACHLICH, TEXT_FEHLER, gleichOder } from './kern.js';
 import { createGeteilt, eintragVorhanden, neueKennung } from './geteilt.js';
@@ -10,10 +10,12 @@ const TEXT_VERSICHERUNG_ANMELDEN = 'Bitte zuerst neu anmelden; danach lässt sic
 const TEXT_KEINE_POLIZZE = 'Bitte zuerst die Polizze anlegen.';
 const TEXT_POLIZZE_SCHON_DA = 'Auf dem anderen Telefon wurde inzwischen schon eine Polizze angelegt – sie wird jetzt gezeigt. Bitte dort ändern, was nicht passt.';
 const TEXT_KOPIE_GEAENDERT = 'Gespeichert. Die Rechnung wurde inzwischen auf dem anderen Telefon geändert – bitte noch einmal ansehen.';
+/** Die Polizze, mit der der Store bis zu mehreren Polizzen (C2) arbeitet: die erste aktive. */
+const gezeigtePolizze = (daten) => aktivePolizzen(daten)[0] ?? null;
 const TEXT_KATEGORIE_UNPRUEFBAR = 'Ein Teil der Rechnungen ist unlesbar – ob die Kategorie dort noch vorkommt, lässt sich nicht prüfen. Bitte die App auf beiden Telefonen aktualisieren.';
 
 /**
- * Versicherung im Zustand (wie die Autos): `daten` = Hauptteil { v, polizze, ab, fremd? } (domain/versicherung.js; unlesbar → leer),
+ * Versicherung im Zustand (wie die Autos): `daten` = Hauptteil { v, polizzen, stamm, ab, fremd?, ausV1? } (domain/versicherung.js; unlesbar → leer),
  * `teile` = { [jahr]: { [quartal]: { v, jahr, quartal, rechnungen, fremd? } } } (die gelesenen Quartal-Teile; ein nie angelegter fehlt),
  * `geschrieben` = { [jahr]: { [quartal]: Zeitstempel } } (Google: `updated`; entscheidet bei doppelt stehenden Rechnungen nur, wenn ihre
  * `fassung` gleich ist, siehe rechnungenDesJahres(teile, jahr, { geschrieben })), `status` null | 'gespeichert' | 'laedt' | 'geladen' | 'fehler' wie bei den Autos,
@@ -248,7 +250,7 @@ export function createVersicherungSlice(kern, { store, versicherungId, versicher
         pruefe(await versTeilAendern(t, (x) => (x.fremd ? { ...leererVersicherungTeil(t.jahr, t.quartal), fremd: x.fremd } : leererVersicherungTeil(t.jahr, t.quartal))));
       }
     }
-    if (!kern.state.versicherung.daten.polizze) return;
+    if ((kern.state.versicherung.daten.polizzen ?? []).length === 0) return;
     pruefe(await versHauptAendern((d) => ({ ...leereVersicherung(), ab: bleibt ? d.ab : null })));
   }
 
@@ -278,13 +280,14 @@ export function createVersicherungSlice(kern, { store, versicherungId, versicher
       const x = istObjekt(eingabe) ? eingabe : {};
       const nichtBereit = await versBereit();
       if (nichtBereit) return { ok: false, fehler: nichtBereit };
-      const alt = kern.state.versicherung.daten.polizze;
+      const alt = gezeigtePolizze(kern.state.versicherung.daten);
       if (!alt) {
         const id = x.id ?? neueVersKennung(new Set());
         if (!id) return { ok: false, fehler: TEXT_FEHLER };
-        const r = await versHauptSicher((d) => polizzeAnlegen(d, { ...x, id }));
+        // bis zur Seite mit mehreren Polizzen (C2/C3): gibt es inzwischen eine, gilt die zuerst gespeicherte
+        const r = await versHauptSicher((d) => (aktivePolizzen(d).length > 0 ? d : polizzeAnlegen(d, { ...x, id })));
         if (!r.ok) return r;
-        return kern.state.versicherung.daten.polizze?.id === id ? { ok: true, id } : { ok: false, fehler: TEXT_POLIZZE_SCHON_DA };
+        return gezeigtePolizze(kern.state.versicherung.daten)?.id === id ? { ok: true, id } : { ok: false, fehler: TEXT_POLIZZE_SCHON_DA };
       }
       if (x.id !== alt.id) return { ok: false, fehler: TEXT_POLIZZE_WEG };
       const bleiben = new Set((Array.isArray(x.kategorien) ? x.kategorien : []).map((k) => k?.id));
@@ -315,7 +318,7 @@ export function createVersicherungSlice(kern, { store, versicherungId, versicher
       const x = istObjekt(entwurf) ? entwurf : {};
       const nichtBereit = await versBereit();
       if (nichtBereit) return { ok: false, fehler: nichtBereit };
-      const polizze = kern.state.versicherung.daten.polizze;
+      const polizze = gezeigtePolizze(kern.state.versicherung.daten);
       if (!polizze) return { ok: false, fehler: TEXT_KEINE_POLIZZE };
       const f = x.id == null ? null : versRechnungFinden(x.id);
       if (x.id != null && !f) return { ok: false, fehler: TEXT_RECHNUNG_WEG };
