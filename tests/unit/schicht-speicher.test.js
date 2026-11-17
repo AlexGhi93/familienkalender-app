@@ -1,10 +1,11 @@
 // Schichtplan speichern: Demo-Adapter (localStorage), Google-Adapter (versteckte Ereignisse, mit Attrappe der API) und Beispieldaten.
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
+import { createStore } from '../../src/app/store.js';
 import { createDemoAdapter } from '../../src/app/demo-adapter.js';
 import { createGoogleAdapter } from '../../src/calendar/google-adapter.js';
 import { seedDemo } from '../../src/app/seed.js';
-import { LEER, leererMonat, normalisiereMonat, setzeNotiz, setzeSchicht, standardKatalog } from '../../src/domain/schicht.js';
+import { LEER, leererMonat, normalisiereMonat, setzeNotiz, setzeSchicht, standardKatalog, tagZeitenAm } from '../../src/domain/schicht.js';
 import { googleStore, speicherAttrappe } from './hilfen.js';
 
 const JETZT = () => new Date('2026-10-14T08:00:00+02:00');
@@ -265,5 +266,36 @@ describe('Google-Adapter: Schichtplan', () => {
         assert.deepEqual(patches, [], vorher);
       }
     });
+  });
+});
+
+describe('Uhrzeiten je Tag über den Store', () => {
+  const pruefen = async (store, gespeichertesLesen) => {
+    await store.schichtLaden('2030-02');
+    await assert.rejects(store.schichtTagZeiten('2030-02', 4, 'papa', { von: '08:00', bis: '16:00' }), { message: 'Bitte zuerst einen Dienst eintragen.' });
+    const k = store.getState().schicht.katalog.arten.papa.find((a) => a.kuerzel === 'S').k;
+    await store.schichtSetzen('2030-02', 4, 'papa', k);
+    const neu = await store.schichtTagZeiten('2030-02', 4, 'papa', { von: '08:00', bis: '16:00' });
+    assert.deepEqual(tagZeitenAm(neu, 'papa', 4), { von: '08:00', bis: '16:00' });
+    assert.deepEqual(tagZeitenAm(store.getState().schicht.monate['2030-02'], 'papa', 4), { von: '08:00', bis: '16:00' });
+    assert.deepEqual(tagZeitenAm(await gespeichertesLesen(), 'papa', 4), { von: '08:00', bis: '16:00' }); // nach dem Neuladen aus dem Speicher
+    await store.schichtTagZeiten('2030-02', 4, 'papa', { von: '', bis: '' });
+    assert.equal(tagZeitenAm(await gespeichertesLesen(), 'papa', 4), null);
+  };
+
+  test('Tageszeiten speichern und nach Neuladen wieder da (Demo und Google)', async () => {
+    const speicher = speicherAttrappe();
+    const adapter = createDemoAdapter({ speicher, jetzt: JETZT });
+    await adapter.laden();
+    const store = createStore(adapter, { jetzt: JETZT });
+    await store.laden();
+    await pruefen(store, async () => {
+      const neu = createDemoAdapter({ speicher, jetzt: JETZT });
+      await neu.laden();
+      return normalisiereMonat((await neu.leseSchichtMonat('2030-02')).monat, '2030-02').monat;
+    });
+
+    const g = await googleStore({ jetzt: new Date('2030-02-10T08:00:00+01:00') });
+    await pruefen(g.store, async () => normalisiereMonat(JSON.parse(g.text('fksch203002')), '2030-02').monat);
   });
 });

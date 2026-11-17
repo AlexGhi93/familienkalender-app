@@ -226,9 +226,25 @@
   letter-spacing: -0.02em;
 }
 
-.sp-notiz {
+.sp-notiz,
+.sp-uhr {
   font-size: 0.6rem;
   color: var(--ink-2);
+}
+
+/* Karte „Dienst heute“ auf der Seite Heute */
+.sp-heute-kopf {
+  margin: 0 0 6px;
+  font-size: 0.95rem;
+}
+
+.sp-heute-liste {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 @media (max-width: 359px) {
@@ -551,7 +567,8 @@
   color: var(--akzent);
 }
 
-.sp-tag-zusatz-form {
+.sp-tag-zusatz-form,
+.sp-tag-tagzeiten {
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -560,7 +577,8 @@
   border-radius: var(--r-zeile);
 }
 
-.sp-tag-zusatz-kopf {
+.sp-tag-zusatz-kopf,
+.sp-tag-tagzeiten-kopf {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -570,7 +588,8 @@
 }
 
 /* „🔔 Erinnerung 1 Tag und 1 Stunde vorher auf dem Telefon von Mama“ unter dem Formular */
-.sp-tag-erinnerung {
+.sp-tag-erinnerung,
+.sp-tag-zeitmeldung {
   margin: -2px 0 0;
   font-size: 0.78rem;
   font-weight: 700;
@@ -579,6 +598,7 @@
 
 /* kein Telefon gehört der Person (bzw. hier nicht zu sehen): die Erinnerung käme nicht an; ebenso in Konto & App */
 .sp-tag-erinnerung.warnung,
+.sp-tag-zeitmeldung.warnung,
 .push-telefon-fehlt {
   margin: 0;
   padding: 8px 10px;

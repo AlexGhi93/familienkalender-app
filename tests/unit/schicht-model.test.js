@@ -1,8 +1,8 @@
 // Ansicht des Schichtplans ohne DOM: Monatsraster mit zwei Streifen je Tag, Filter, Zählung, Legende, gemerkter Filter.
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { SCHICHT_FILTER_SCHLUESSEL, artEntwurf, artEntwurfFehler, erinnerungHinweis, fehlendeErinnerungsTelefone, pinselAktion, pinselModel, pinselStart, rasterFilter, schichtFilterLesen, schichtFilterSpeichern, schichtArtenModel, schichtMonatModel, schichtTagModel } from '../../src/app/views/schicht-model.js';
-import { artAendern, artArchivieren, artHinzufuegen, artVerschieben, leererMonat, setzeNotiz, setzeSchicht, standardKatalog, zusatzHinzufuegen } from '../../src/domain/schicht.js';
+import { SCHICHT_FILTER_SCHLUESSEL, schichtHeuteZeilen, artEntwurf, artEntwurfFehler, erinnerungHinweis, fehlendeErinnerungsTelefone, pinselAktion, pinselModel, pinselStart, rasterFilter, schichtFilterLesen, schichtFilterSpeichern, schichtArtenModel, schichtMonatModel, schichtTagModel } from '../../src/app/views/schicht-model.js';
+import { artAendern, artArchivieren, artHinzufuegen, artVerschieben, leererMonat, setzeNotiz, setzeSchicht, setzeTagZeiten, standardKatalog, zusatzHinzufuegen } from '../../src/domain/schicht.js';
 import { speicherAttrappe, zustand } from './hilfen.js';
 
 const JM = '2026-10';
@@ -480,5 +480,67 @@ describe('Schichtarten bearbeiten', () => {
     // beim Bearbeiten darf die Art ihr eigenes Kürzel behalten, nicht aber das einer anderen nehmen
     assert.equal(artEntwurfFehler(state, 'papa', k('papa', 'F'), { ...artEntwurf(state, 'papa', k('papa', 'F')), farbe: 'oliv' }), null);
     assert.equal(artEntwurfFehler(state, 'papa', k('papa', 'F'), { ...artEntwurf(state, 'papa', k('papa', 'F')), kuerzel: 'm' }), 'Dieses Kürzel gibt es schon.');
+  });
+});
+
+describe('Uhrzeiten je Tag (Tagesblatt, Raster, Heute)', () => {
+  const mitZeiten = (monat, person, tag, kuerzel, von, bis) => {
+    let m = setzeSchicht(monat, { person, tag, k: k(person, kuerzel) });
+    if (von) m = setzeTagZeiten(m, { person, tag, von, bis }, katalog);
+    return m;
+  };
+  const stand = (monat) => stateMit({ monate: { [JM]: monat } });
+  const papa = (m) => m.personen.find((x) => x.person === 'papa');
+
+  test('Tagesblatt zeigt Tageszeiten vor den Zeiten der Art, Nacht aus den Tageszeiten', () => {
+    let m = mitZeiten(leererMonat(JM), 'papa', 10, 'S', '08:00', '16:00');
+    m = mitZeiten(m, 'papa', 11, 'F', '22:00', '06:00');
+    m = mitZeiten(m, 'papa', 12, 'S');
+    m = mitZeiten(m, 'papa', 13, 'U');
+    m = mitZeiten(m, 'mama', 10, 'T', '08:00', '12:00');
+    const zehn = papa(schichtTagModel(stand(m), '2026-10-10'));
+    assert.deepEqual(zehn.schicht, { text: 'Schulung 08:00–16:00', nacht: false });
+    assert.deepEqual(zehn.zeiten, { von: '08:00', bis: '16:00', artVon: '', artBis: '', eigene: true });
+    assert.equal(zehn.zeitenMoeglich, true);
+    const elf = papa(schichtTagModel(stand(m), '2026-10-11'));
+    assert.equal(elf.schicht.nacht, true); // Frühdienst hat keine Nachtmarke; Nacht kommt aus 22:00–06:00
+    assert.equal(elf.schicht.text, 'Frühdienst 22:00–06:00');
+    // ohne eigene Zeiten: Zeiten der Art (Mama T) bzw. keine (Papa S)
+    const zwoelf = papa(schichtTagModel(stand(m), '2026-10-12'));
+    assert.deepEqual(zwoelf.schicht, { text: 'Schulung', nacht: false });
+    assert.deepEqual(zwoelf.zeiten, { von: '', bis: '', artVon: '', artBis: '', eigene: false });
+    assert.equal(zwoelf.zeitenMoeglich, true);
+    const mama = schichtTagModel(stand(m), '2026-10-10').personen.find((x) => x.person === 'mama');
+    assert.deepEqual(mama.schicht, { text: 'Tagdienst 08:00–12:00', nacht: false });
+    assert.deepEqual(mama.zeiten, { von: '08:00', bis: '12:00', artVon: '07:00', artBis: '17:45', eigene: true });
+    const mama2 = schichtTagModel(stand(mitZeiten(leererMonat(JM), 'mama', 5, 'T')), '2026-10-05').personen.find((x) => x.person === 'mama');
+    assert.deepEqual(mama2.zeiten, { von: '07:00', bis: '17:45', artVon: '07:00', artBis: '17:45', eigene: false });
+    // Urlaub und freie Tage: keine Zeiten möglich
+    assert.equal(papa(schichtTagModel(stand(m), '2026-10-13')).zeitenMoeglich, false);
+    assert.equal(papa(schichtTagModel(stand(m), '2026-10-20')).zeitenMoeglich, false);
+    assert.deepEqual(papa(schichtTagModel(stand(m), '2026-10-20')).zeiten, { von: '', bis: '', artVon: '', artBis: '', eigene: false });
+  });
+
+  test('Raster markiert Tage mit eigenen Zeiten', () => {
+    let m = mitZeiten(leererMonat(JM), 'papa', 10, 'S', '08:00', '16:00');
+    m = mitZeiten(m, 'papa', 11, 'S');
+    m = mitZeiten(m, 'mama', 12, 'T', '08:00', '12:00');
+    const gesamt = schichtMonatModel(stand(m), JM, { heute: HEUTE, filter: 'beide' });
+    assert.deepEqual(gesamt.zellen.filter((z) => z.zeiten).map((z) => z.tag), [10, 12]);
+    assert.equal(zelleAm(gesamt, 10).zeitenText.papa, '08:00–16:00');
+    const nurMama = schichtMonatModel(stand(m), JM, { heute: HEUTE, filter: 'mama' });
+    assert.deepEqual(nurMama.zellen.filter((z) => z.zeiten).map((z) => z.tag), [12]);
+    assert.equal(zelleAm(model(), 1).zeiten, false);
+  });
+
+  test('schichtHeuteZeilen nur für heute und nur mit eigenen Zeiten', () => {
+    let m = mitZeiten(leererMonat(JM), 'papa', 14, 'S', '08:00', '16:00'); // heute
+    m = mitZeiten(m, 'papa', 13, 'S', '09:00', '10:00'); // gestern
+    m = mitZeiten(m, 'mama', 14, 'T'); // heute, aber nur die Zeiten der Art
+    const z = schichtHeuteZeilen(stand(m), HEUTE);
+    assert.deepEqual(z.map((x) => x.text), ['Schulung 08:00–16:00']);
+    assert.deepEqual([z[0].person, z[0].emoji, z[0].name], ['papa', '👨', 'Papa']);
+    assert.deepEqual(schichtHeuteZeilen(stand(m), '2026-10-15'), []);
+    assert.deepEqual(schichtHeuteZeilen(zustand(), HEUTE), []);
   });
 });

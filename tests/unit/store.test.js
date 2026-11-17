@@ -1496,7 +1496,7 @@ const METHODEN_1_4_0 = [
   'kontoLeeren', 'kontoLoeschen', 'kontoNachtragen', 'kontoSpeichern', 'laden', 'loescheTag', 'polizzeBeenden', 'polizzeLoeschen', 'polizzeSpeichern', 'pyjamasWechselSpeichern',
   'rechnungLoeschen', 'rechnungSpeichern', 'regelLoeschen', 'regelSpeichern', 'sachenSpeichern', 'satzLoeschen', 'satzSpeichern',
   'schichtAktualisieren', 'schichtArtArchivieren', 'schichtArtSpeichern', 'schichtArtVerschieben', 'schichtFrischLesen', 'schichtLaden',
-  'schichtNotiz', 'schichtPinsel', 'schichtSetzen', 'schichtVorladen', 'schichtZusatzEntfernen', 'schichtZusatzHinzufuegen',
+  'schichtNotiz', 'schichtPinsel', 'schichtSetzen', 'schichtTagZeiten', 'schichtVorladen', 'schichtZusatzEntfernen', 'schichtZusatzHinzufuegen',
   'schichtZusatzLoeschen', 'setTag', 'setTage', 'sichereBereich', 'sicherungsDaten', 'starteAusSnapshot', 'subscribe', 'terminErledigt',
   'terminLoeschen', 'terminLoeschenAbHier', 'terminSpeichern', 'urlaubAendern', 'urlaubChecksAbgleichen', 'urlaubHinzufuegen', 'urlaubLoeschen',
   'verschiebungLoeschen', 'verschiebungWiederherstellen', 'versicherungFrischLesen', 'versicherungLaden', 'wiederholeAusstehende',

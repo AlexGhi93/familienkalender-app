@@ -175,6 +175,7 @@
 }
 
 :root[data-aussehen='glas'] .sp-mehr,
+:root[data-aussehen='glas'] .sp-uhr,
 :root[data-aussehen='glas'] .sp-notiz {
   font-size: 0.6875rem; /* 11 px: kleinste Schrift (Kürzel im dichten Raster) */
 }
@@ -526,26 +527,30 @@
   color: var(--akzent-text);
 }
 
-:root[data-aussehen='glas'] .sp-tag-zusatz-form {
+:root[data-aussehen='glas'] .sp-tag-zusatz-form,
+:root[data-aussehen='glas'] .sp-tag-tagzeiten {
   gap: 12px;
   padding: 12px;
   border: 1.5px dashed color-mix(in srgb, var(--ink) 22%, transparent);
   background: color-mix(in srgb, var(--akzent) 5%, transparent);
 }
 
-:root[data-aussehen='glas'] .sp-tag-zusatz-kopf {
+:root[data-aussehen='glas'] .sp-tag-zusatz-kopf,
+:root[data-aussehen='glas'] .sp-tag-tagzeiten-kopf {
   gap: 8px;
   font-size: 1rem;
   font-weight: 700;
 }
 
-:root[data-aussehen='glas'] .sp-tag-erinnerung {
+:root[data-aussehen='glas'] .sp-tag-erinnerung,
+:root[data-aussehen='glas'] .sp-tag-zeitmeldung {
   font-size: 1rem;
   font-weight: 600;
   line-height: 1.4;
 }
 
-:root[data-aussehen='glas'] .sp-tag-erinnerung.warnung {
+:root[data-aussehen='glas'] .sp-tag-erinnerung.warnung,
+:root[data-aussehen='glas'] .sp-tag-zeitmeldung.warnung {
   border: 1px solid color-mix(in srgb, var(--gefahr) 30%, transparent);
   background: color-mix(in srgb, var(--gefahr) 12%, var(--glas-stark));
 }
@@ -789,6 +794,7 @@
 }
 
 :root[data-aussehen='bento'] .sp-mehr,
+:root[data-aussehen='bento'] .sp-uhr,
 :root[data-aussehen='bento'] .sp-notiz {
   font-size: 0.6875rem; /* 11 px: kleinste Schrift (Kürzel im dichten Raster) */
 }
@@ -1159,25 +1165,29 @@
   box-shadow: var(--lippe);
 }
 
-:root[data-aussehen='bento'] .sp-tag-zusatz-form {
+:root[data-aussehen='bento'] .sp-tag-zusatz-form,
+:root[data-aussehen='bento'] .sp-tag-tagzeiten {
   gap: 12px;
   padding: 12px;
   border: 2px dashed var(--linie);
 }
 
-:root[data-aussehen='bento'] .sp-tag-zusatz-kopf {
+:root[data-aussehen='bento'] .sp-tag-zusatz-kopf,
+:root[data-aussehen='bento'] .sp-tag-tagzeiten-kopf {
   gap: 8px;
   font-size: 1rem;
   font-weight: 800;
 }
 
-:root[data-aussehen='bento'] .sp-tag-erinnerung {
+:root[data-aussehen='bento'] .sp-tag-erinnerung,
+:root[data-aussehen='bento'] .sp-tag-zeitmeldung {
   font-size: 1rem;
   font-weight: 700;
   line-height: 1.4;
 }
 
-:root[data-aussehen='bento'] .sp-tag-erinnerung.warnung {
+:root[data-aussehen='bento'] .sp-tag-erinnerung.warnung,
+:root[data-aussehen='bento'] .sp-tag-zeitmeldung.warnung {
   background: color-mix(in srgb, var(--gefahr) 14%, var(--karte));
   box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--gefahr) 25%, transparent);
 }
@@ -1281,9 +1291,11 @@
 /* Platzhalter: das Token des Fundaments (--platzhalter), solange es fehlt die leise Schrift */
 :root[data-aussehen='glas'] .sp-tag-notiz input::placeholder,
 :root[data-aussehen='glas'] .sp-art-form input::placeholder,
+:root[data-aussehen='glas'] .sp-tag-tagzeiten input::placeholder,
 :root[data-aussehen='glas'] .sp-tag-zusatz-form input::placeholder,
 :root[data-aussehen='bento'] .sp-tag-notiz input::placeholder,
 :root[data-aussehen='bento'] .sp-art-form input::placeholder,
+:root[data-aussehen='bento'] .sp-tag-tagzeiten input::placeholder,
 :root[data-aussehen='bento'] .sp-tag-zusatz-form input::placeholder {
   color: var(--platzhalter, var(--ink-2));
   opacity: 1;

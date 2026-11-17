@@ -1,6 +1,6 @@
 import { todayVienna } from '../../domain/dates.js';
 import { monatVor } from '../../domain/konto.js';
-import { artAendern, artArchivieren, artHinzufuegen, artVerschieben, katalogErgaenzen, leererMonat, normalisiereKatalog, normalisiereMonat, schaltePinsel, schichtAm, setzeNotiz, setzeSchicht, standardKatalog, tageImMonat, vorladeMonate, zusatzEntfernen, zusatzHinzufuegen, zusatzWiederherstellen } from '../../domain/schicht.js';
+import { artAendern, artArchivieren, artHinzufuegen, artVerschieben, katalogErgaenzen, leererMonat, normalisiereKatalog, normalisiereMonat, schaltePinsel, schichtAm, setzeNotiz, setzeSchicht, setzeTagZeiten, standardKatalog, tageImMonat, vorladeMonate, zusatzEntfernen, zusatzHinzufuegen, zusatzWiederherstellen } from '../../domain/schicht.js';
 import { TEXT_FEHLER, gleichOder, istAuthFehler } from './kern.js';
 
 const SCHICHT_SICHERUNG_AB = '2026-01'; // erster Monat, den die Sicherung nach einem Schichtplan fragt
@@ -293,6 +293,15 @@ export function createSchichtSlice(kern, { store, fixLesen, autosHolen, versHole
       return schichtMonatAendern(jm, (m) => setzeSchicht(m, { person, tag, k: ziel }));
     },
     schichtSetzen: (jm, tag, person, k) => schichtMonatAendern(jm, (m) => setzeSchicht(m, { person, tag, k })),
+    /**
+     * Uhrzeiten dieses Tages (Von/Bis; beide '' = die Zeiten der Art gelten wieder): → der sofort angezeigte Monat; wirft bei einer
+     * abgelehnten Eingabe. Nur mit gelesenen Schichtarten (die Zeiten der Art entscheiden, ob ein Eintrag nötig ist).
+     */
+    schichtTagZeiten: (jm, tag, person, { von, bis }) => {
+      const katalog = kern.state.schicht.katalog;
+      if (!katalog) return Promise.reject(new Error('Die Schichtarten sind noch nicht geladen.'));
+      return schichtMonatAendern(jm, (m) => setzeTagZeiten(m, { person, tag, von, bis }, katalog));
+    },
     schichtNotiz: (jm, tag, person, text) => schichtMonatAendern(jm, (m) => setzeNotiz(m, { person, tag, text })),
     schichtZusatzHinzufuegen: (jm, tag, person, { k, von, bis }) => schichtMonatAendern(jm, (m) => zusatzHinzufuegen(m, { person, tag, k, von, bis })),
     schichtZusatzEntfernen: (jm, tag, person, { k, von, bis }) => schichtMonatAendern(jm, (m) => zusatzEntfernen(m, { person, tag, k, von, bis })),

@@ -4,7 +4,7 @@
 import { addDays, eachDay, pad2, weekday } from '../../domain/dates.js';
 import { feiertagName } from '../../domain/feiertage.js';
 import { monatVor } from '../../domain/konto.js';
-import { PALETTE, SCHICHT_PERSONEN, aktiveArten, artAendern, artFuer, artHinzufuegen, istNacht, monatZaehlung, schichtAm, standardKatalog, tageImMonat } from '../../domain/schicht.js';
+import { PALETTE, SCHICHT_PERSONEN, aktiveArten, artAendern, artFuer, artHinzufuegen, istNacht, monatZaehlung, schichtAm, standardKatalog, tageImMonat, tagZeitenAm, zeitenFuer } from '../../domain/schicht.js';
 import { standardSpeicher } from '../speicher.js';
 import { WOCHENTAGE_KURZ, datumLang, monatTitel } from '../format-de.js';
 
@@ -37,6 +37,8 @@ export function schichtFilterSpeichern(filter, speicher = standardSpeicher()) {
 const personenFuer = (filter) => (gueltigerFilter(filter) === 'beide' ? [...SCHICHT_PERSONEN] : [gueltigerFilter(filter)]);
 
 const zeitenText = (art) => (art.von && art.bis ? `${art.von}–${art.bis}` : null);
+/** „Name von–bis“ bzw. nur „Name“, wenn Von oder Bis fehlt (Zeiten ohne Wert: undefined oder ''). */
+const mitSpanne = (name, von, bis) => (von && bis ? `${name} ${von}–${bis}` : name);
 /** Muster einer Art für die Anzeige: 'urlaub' oder 'offen' (beide gestreift, z. B. Ersatzdienst E), sonst null. */
 const musterVon = (art) => art.muster ?? null;
 
@@ -55,6 +57,16 @@ function zusatzMarke(monat, katalog, personen, tag) {
   const erste = alle[0];
   const art = artFuer(katalog, erste.person, erste.k);
   return { kuerzel: art?.kuerzel ?? '?', farbe: art?.farbe ?? 'grau', mehr: alle.length > 1, weitere: alle.length - 1 };
+}
+
+/** Eigene Uhrzeiten des Tages der angezeigten Personen: `zeiten` = mindestens eine, `zeitenText` = „von–bis“ je Person (nur wo es welche gibt). */
+function eigeneZeiten(monat, personen, tag) {
+  const zeitenText = {};
+  for (const p of personen) {
+    const z = tagZeitenAm(monat, p, tag);
+    if (z) zeitenText[p] = `${z.von}–${z.bis}`;
+  }
+  return { zeiten: Object.keys(zeitenText).length > 0, zeitenText };
 }
 
 /** „20 Dienste · 4× F · 4× N · 5× U“ (Katalog-Reihenfolge; Urlaub ist kein Dienst) oder „Noch nichts eingetragen“. */
@@ -108,6 +120,7 @@ export function schichtMonatModel(state, jm, { heute, filter = 'beide' } = {}) {
       streifen: daten ? Object.fromEntries(personen.map((p) => [p, streifen(katalog, p, schichtAm(monat, p, tag))])) : {},
       zusatz: daten ? zusatzMarke(monat, katalog, personen, tag) : null,
       notiz: daten ? personen.some((p) => Boolean(monat.n?.[p]?.[tag])) : false,
+      ...(daten ? eigeneZeiten(monat, personen, tag) : { zeiten: false, zeitenText: {} }),
     };
   });
 
@@ -217,12 +230,19 @@ export function fehlendeErinnerungsTelefone(state, telefone) {
 const UNBEKANNT = { kuerzel: '?', name: 'Unbekannte Art', farbe: 'grau' };
 
 /** Eine Person im Tagesblatt: Kopf (Art mit Zeiten, Nacht), Knöpfe der aktiven Dienst-Arten, Notiz, Zusätze und Zusatz-Arten zum Hinzufügen (mit Hinweis auf die Erinnerung). */
-function tagPerson(katalog, monat, person, tag) {
+function tagPerson(katalog, monat, person, tag, katalogGelesen = true) {
   const k = schichtAm(monat, person, tag);
   const art = k === null ? null : artFuer(katalog, person, k);
   const arten = aktiveArten(katalog, person, 'dienst').map((a) => ({ k: a.k, kuerzel: a.kuerzel, name: a.name, farbe: a.farbe, muster: musterVon(a), aktiv: a.k === k }));
   let schicht = { text: 'Frei', nacht: false };
-  if (k !== null) schicht = art ? { text: zeitenText(art) ? `${art.name} ${zeitenText(art)}` : art.name, nacht: istNacht(art) } : { text: UNBEKANNT.name, nacht: false };
+  let zeiten = { von: '', bis: '', artVon: '', artBis: '', eigene: false };
+  if (k !== null) {
+    const z = zeitenFuer(monat, katalog, person, tag); // Zeiten des Tages vor den Zeiten der Art; Von/Bis können ohne Wert sein
+    schicht = art ? { text: mitSpanne(art.name, z.von, z.bis), nacht: z.nacht } : { text: UNBEKANNT.name, nacht: false };
+    zeiten = { von: z.von || '', bis: z.bis || '', artVon: art?.von ?? '', artBis: art?.bis ?? '', eigene: z.eigene };
+  }
+  // Zeiten für diesen Tag: bei jedem Dienst außer Urlaub (und nur mit gelesenen Schichtarten, siehe store.schichtTagZeiten)
+  const zeitenMoeglich = katalogGelesen && Boolean(art) && art.muster !== 'urlaub' && art.gruppe !== 'zusatz';
   // Eingetragen, aber nicht (mehr) wählbar: archiviert, unbekannt oder inzwischen ein Zusatz – sichtbar, aber kein Knopf
   let nichtWaehlbar = null;
   if (k !== null && !arten.some((a) => a.aktiv)) {
@@ -242,7 +262,7 @@ function tagPerson(katalog, monat, person, tag) {
     bis: a.bis ?? '',
     erinnern: a.erinnern !== false,
   }));
-  return { person, ...personKopf(person), schicht, arten, frei: k === null, nichtWaehlbar, notiz: monat?.n?.[person]?.[tag] ?? '', zusaetze, zusatzArten };
+  return { person, ...personKopf(person), schicht, zeiten, zeitenMoeglich, arten, frei: k === null, nichtWaehlbar, notiz: monat?.n?.[person]?.[tag] ?? '', zusaetze, zusatzArten };
 }
 
 /**
@@ -254,7 +274,26 @@ export function schichtTagModel(state, datum) {
   const tag = Number(datum.slice(8));
   const katalog = katalogVon(state);
   const monat = state.schicht?.monate?.[jm] ?? null;
-  return { titel: datumLang(datum), jm, tag, geladen: monat !== null, personen: SCHICHT_PERSONEN.map((p) => tagPerson(katalog, monat, p, tag)) };
+  return { titel: datumLang(datum), jm, tag, geladen: monat !== null, personen: SCHICHT_PERSONEN.map((p) => tagPerson(katalog, monat, p, tag, state.schicht?.katalog != null)) };
+}
+
+// ---------- Heute ----------
+
+/**
+ * Zeilen für die Karte auf „Heute“: je Person, die HEUTE eigene Uhrzeiten für den Dienst hat (im Tagesblatt eingetragen), eine Zeile
+ * wie „Schulung 08:00–16:00“. Die Zeiten der Art allein zählen nicht (sie stehen im Schichtplan); sonst [].
+ */
+export function schichtHeuteZeilen(state, heute) {
+  const monat = state.schicht?.monate?.[heute.slice(0, 7)] ?? null;
+  if (!monat) return [];
+  const katalog = katalogVon(state);
+  const tag = Number(heute.slice(8));
+  return SCHICHT_PERSONEN.flatMap((person) => {
+    const z = tagZeitenAm(monat, person, tag);
+    if (!z) return [];
+    const art = artFuer(katalog, person, schichtAm(monat, person, tag));
+    return [{ person, emoji: PERSONEN_TAG[person].emoji, name: PERSONEN_TAG[person].name, text: mitSpanne(art?.name ?? UNBEKANNT.name, z.von, z.bis) }];
+  });
 }
 
 // ---------- Schichtarten bearbeiten ----------

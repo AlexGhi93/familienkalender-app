@@ -227,7 +227,7 @@ test.describe('Tagesblatt (ein Tag)', () => {
     await karte(page, 'mama').getByRole('button', { name: 'Abbrechen' }).click();
     await knopf(page, 'mama', '＋ Elternabend').click();
     await expect(karte(page, 'mama').locator('.sp-tag-zusatz-kopf')).toHaveText('EA Elternabend');
-    await expect(karte(page, 'mama').getByRole('textbox', { name: 'Von', exact: true })).toHaveValue('19:00');
+    await expect(karte(page, 'mama').locator('.sp-tag-zusatz-form').getByRole('textbox', { name: 'Von', exact: true })).toHaveValue('19:00');
     await expect(karte(page, 'mama').locator('.sp-tag-erinnerung')).toHaveText('🔔 Erinnerung 1 Tag und 1 Stunde vorher auf dem Telefon von Mama (in der Demo kommen keine Benachrichtigungen)');
   });
 
@@ -268,6 +268,65 @@ test.describe('Tagesblatt (ein Tag)', () => {
     await zelle(page, '2026-10-08').click();
     await expect(blattAm(page, 'Donnerstag, 8. Oktober')).toBeVisible();
     await expect(knopf(page, 'papa', 'F Frühdienst')).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  test('Schulung mit Zeiten für diesen Tag', async ({ page }) => {
+    await starteDemo(page, { route: '#/schicht' });
+    const von = (person = 'papa') => karte(page, person).getByRole('textbox', { name: 'Von', exact: true });
+    const bis = (person = 'papa') => karte(page, person).getByRole('textbox', { name: 'Bis', exact: true });
+    await zelle(page, '2026-10-08').click();
+    const blatt = blattAm(page, 'Donnerstag, 8. Oktober');
+    await knopf(page, 'papa', 'S Schulung').click();
+    await expect(karte(page, 'papa').getByText('Zeiten für diesen Tag').first()).toBeVisible();
+    await expect(von()).toHaveValue('');
+    await expect(bis()).toHaveValue('');
+    await expect(von()).toBeFocused(); // gleich schreiben: der Dienst hat keine Zeiten
+    await von().fill('08:00');
+    await bis().fill('16:00');
+    await bis().press('Enter');
+    await expect(kopfText(page, 'papa')).toHaveText('Schulung 08:00–16:00');
+    await blatt.getByRole('button', { name: 'Schließen' }).click();
+    await expect(zelle(page, '2026-10-08').locator('.sp-uhr')).toHaveText('🕘');
+    await expect(zelle(page, '2026-10-08')).toHaveAttribute('aria-label', /Papa Schulung 08:00–16:00/);
+    await expect.poll(async () => (await demo(page)).zt.papa['8']).toEqual([expect.any(String), '08:00', '16:00']);
+
+    await page.reload();
+    await expect(zelle(page, '2026-10-08').locator('.sp-uhr')).toHaveText('🕘');
+    await zelle(page, '2026-10-08').click();
+    await expect(kopfText(page, 'papa')).toHaveText('Schulung 08:00–16:00');
+    await expect(von()).toHaveValue('08:00');
+    await expect(bis()).toHaveValue('16:00');
+    // eine andere Art: die Zeiten des Tages sind weg
+    await knopf(page, 'papa', 'F Frühdienst').click();
+    await expect(kopfText(page, 'papa')).toHaveText('Frühdienst');
+    await expect(von()).toHaveValue('');
+    await blattAm(page, 'Donnerstag, 8. Oktober').getByRole('button', { name: 'Schließen' }).click();
+    await expect(zelle(page, '2026-10-08').locator('.sp-uhr')).toHaveCount(0);
+  });
+
+  test('Eine Uhrzeit allein wird nicht gespeichert', async ({ page }) => {
+    await starteDemo(page, { route: '#/schicht' });
+    await zelle(page, '2026-10-08').click();
+    await knopf(page, 'papa', 'S Schulung').click();
+    const von = karte(page, 'papa').getByRole('textbox', { name: 'Von', exact: true });
+    const bis = karte(page, 'papa').getByRole('textbox', { name: 'Bis', exact: true });
+    await von.fill('08:00');
+    await von.press('Enter');
+    await expect(karte(page, 'papa').getByText('Bitte beide Uhrzeiten eingeben.')).toBeVisible();
+    await expect(kopfText(page, 'papa')).toHaveText('Schulung');
+    expect((await demo(page)).zt).toBeUndefined();
+    await bis.fill('12:30');
+    await bis.press('Enter');
+    await expect(karte(page, 'papa').getByText('Bitte beide Uhrzeiten eingeben.')).toBeHidden();
+    await expect(kopfText(page, 'papa')).toHaveText('Schulung 08:00–12:30');
+    // beide leeren: zurück zu den Zeiten der Art (Schulung hat keine)
+    await von.fill('');
+    await von.press('Enter');
+    await expect(karte(page, 'papa').getByText('Bitte beide Uhrzeiten eingeben.')).toBeVisible();
+    await bis.fill('');
+    await bis.press('Enter');
+    await expect(kopfText(page, 'papa')).toHaveText('Schulung');
+    await expect.poll(async () => (await demo(page)).zt).toBeUndefined();
   });
 
   test('auf 375 px ragt im Tagesblatt nichts seitwärts hinaus', async ({ page }) => {

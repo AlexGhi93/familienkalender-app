@@ -29,7 +29,7 @@ function streifenKnoten(person, s, gemalt = null) {
 /** Vorlesetext eines Tages: „Montag, 5. Oktober: Papa Frühdienst, Mama frei“ (+ Feiertag, Zusatz, Notiz). */
 function beschriftung(z, personen) {
   const kopf = `${datumLang(z.datum)}${z.feiertag ? `, ${z.feiertag}` : ''}`;
-  const teile = personen.map((p) => `${PERSON[p].name} ${z.streifen[p]?.name ?? 'frei'}`);
+  const teile = personen.map((p) => `${PERSON[p].name} ${z.streifen[p]?.name ?? 'frei'}${z.zeitenText?.[p] ? ` ${z.zeitenText[p]}` : ''}`);
   if (z.zusatz) teile.push(`Zusatz ${z.zusatz.kuerzel}${z.zusatz.weitere > 0 ? ` und ${z.zusatz.weitere} weitere` : ''}`);
   if (z.notiz) teile.push('mit Notiz');
   return `${kopf}: ${teile.join(', ')}`;
@@ -56,12 +56,13 @@ function zelle(z, m, { store, ui }, gemalt) {
       { class: 'sp-zkopf', 'aria-hidden': 'true' },
       h('span', { class: 'nr' }, z.tag),
       z.feiertag ? h('span', { class: 'sp-feiertag', title: z.feiertag }, FEIERTAG_EMOJI) : null,
-      z.zusatz || z.notiz
+      z.zusatz || z.notiz || z.zeiten
         ? h(
             'span',
             { class: 'sp-marken' }, // bleiben beisammen rechts; ist der Tag sehr voll, rutschen sie gemeinsam in eine zweite Zeile
             z.zusatz ? h('span', { class: `sp-zusatz sf-${z.zusatz.farbe}` }, z.zusatz.kuerzel) : null,
             z.zusatz?.weitere > 0 ? h('span', { class: 'sp-mehr' }, `+${z.zusatz.weitere}`) : null,
+            z.zeiten ? h('span', { class: 'sp-uhr' }, '🕘') : null, // eigene Uhrzeiten an diesem Tag (die Zeiten selbst stehen im Tagesblatt)
             z.notiz ? h('span', { class: 'sp-notiz' }, '✎') : null,
           )
         : null,
