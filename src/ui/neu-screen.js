@@ -7,6 +7,15 @@ import { terminFormular } from './termin-formular.js';
 import { sachenFormular } from './sachen-formular.js';
 import { eingetragenMelden } from './fortschritt.js';
 import { einmal } from '../app/einmal.js';
+import { einmalSpeichern, erledigt } from './formular.js';
+
+/** Öffnet „Neu“ im Formular „Urlaub bearbeiten“ für den Urlaub `id` (Von/Bis vorbelegt); ein Urlaub, den es nicht mehr gibt, wird nicht geöffnet. */
+export function urlaubBearbeitenStarten({ store, ui }, id) {
+  const u = store.getState().urlaub.find((x) => x.id === id);
+  if (!u) return;
+  ui.neu = { auswahl: 'urlaub', von: u.start, bis: u.end, urlaubId: id };
+  ui.gehZu('neu');
+}
 
 function auswahlAnsicht({ ui }, kacheln) {
   return h(
@@ -59,7 +68,7 @@ function formularAnsicht({ store, ui }, kachel) {
       const tage = werktageImBereich(n.von, n.bis);
       return [tage.length === 0 ? 'In diesem Zeitraum gibt es keine Werktage.' : `Gilt für ${tage.length} ${tage.length === 1 ? 'Werktag' : 'Werktage'} (Mo–Fr, ohne Feiertage).`];
     }
-    const v = urlaubVorschau(state, { start: n.von, end: n.bis }, heute);
+    const v = urlaubVorschau(state, { start: n.von, end: n.bis }, heute, { ohneId: n.urlaubId ?? null });
     const zeilen = [`${v.werktage} ${v.werktage === 1 ? 'Urlaubstag' : 'Urlaubstage'} (ohne Wochenenden und Feiertage).`];
     if (v.umwandeln > 0) zeilen.push(`${v.umwandeln} ${v.umwandeln === 1 ? 'Betreuungstag wird' : 'Betreuungstage werden'} umgewandelt.`);
     zeilen.push(`Danach: noch ${werktageText(v.nachher.offen)} offen (Kindergartenjahr ${v.nachher.jahrId}/${String(v.nachher.jahrId + 1).slice(2)}).`);
@@ -107,12 +116,15 @@ function formularAnsicht({ store, ui }, kachel) {
       ui.gehZuMonat(ziel);
       return;
     }
-    const vorschau = urlaubVorschau(store.getState(), { start: n.von, end: n.bis }, heute);
+    const vorschau = urlaubVorschau(store.getState(), { start: n.von, end: n.bis }, heute, { ohneId: n.urlaubId ?? null });
     const anlegen = async () => {
-      const r = await einmal(n, () => store.urlaubHinzufuegen({ start: n.von, end: n.bis }));
+      const r = n.urlaubId
+        ? await einmalSpeichern(n, () => store.urlaubAendern(n.urlaubId, { start: n.von, end: n.bis }))
+        : await einmal(n, () => store.urlaubHinzufuegen({ start: n.von, end: n.bis }));
       if (r === undefined) return;
-      if (!eingetragenMelden(r, r.umgewandelt > 0 ? `Urlaub gespeichert, ${r.umgewandelt} Betreuungstage umgewandelt ✓` : 'Urlaub gespeichert ✓')) {
-        ui.rendern();
+      const text = n.urlaubId ? 'Urlaub geändert ✓' : r.umgewandelt > 0 ? `Urlaub gespeichert, ${r.umgewandelt} Betreuungstage umgewandelt ✓` : 'Urlaub gespeichert ✓';
+      if (!(n.urlaubId && !r.rueckgaengig ? erledigt(r, text) : eingetragenMelden(r, text))) {
+        ui.rendern(); // nicht gespeichert: das Formular bleibt mit dem Zeitraum offen, „Speichern“ geht wieder
         return;
       }
       ui.neuZuruecksetzen();
@@ -135,7 +147,7 @@ function formularAnsicht({ store, ui }, kachel) {
     'section',
     { class: 'screen neu-formular' },
     h('button', { class: 'zurueck', type: 'button', onClick: () => ui.neuZuruecksetzen(true) }, '‹ Zurück'),
-    h('div', { class: 'karte tint formular', style: farbe(kachel.farbe) }, h('div', { class: 'karte-zeile' }, h('span', { class: 'emoji gross' }, kachel.emoji), h('div', { class: 'karte-text' }, h('b', {}, kachel.titel))), von.knoten, bisFeld.knoten, info),
+    h('div', { class: 'karte tint formular', style: farbe(kachel.farbe) }, h('div', { class: 'karte-zeile' }, h('span', { class: 'emoji gross' }, kachel.emoji), h('div', { class: 'karte-text' }, h('b', {}, n.urlaubId ? 'Urlaub bearbeiten' : kachel.titel))), von.knoten, bisFeld.knoten, info),
     h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein', type: 'button', onClick: () => ui.neuZuruecksetzen(true) }, 'Abbrechen'), h('button', { class: 'knopf klein primaer', type: 'button', disabled: n.speichert, onClick: speichern }, 'Speichern')),
   );
 }

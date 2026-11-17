@@ -2,6 +2,8 @@ import { h } from './dom.js';
 import { bestaetigen, blatt, chip, farbe } from './components.js';
 import { erledigt } from './formular.js';
 import { tagModel } from '../app/views/tag-model.js';
+import { urlaubBearbeitbar } from '../app/views/neu-model.js';
+import { urlaubBearbeitenStarten } from './neu-screen.js';
 import { datumLang } from '../app/format-de.js';
 import { sacheErledigt, sacheLoeschen } from './sachen-aktionen.js';
 import { geloeschtMelden, sicherLoeschen } from './fortschritt.js';
@@ -71,20 +73,38 @@ function eintragZeile(e, { store, ui }, schliessen) {
       : null,
     e.art === 'urlaub'
       ? h(
-          'button',
-          {
-            class: 'knopf klein',
-            type: 'button',
-            onClick: () =>
-              bestaetigen({
-                titel: 'Urlaub löschen?',
-                text: 'Der ganze Urlaubszeitraum wird entfernt, nicht nur dieser Tag.',
-                ja: 'Urlaub löschen',
-                gefahr: true,
-                beiJa: async () => geloeschtMelden(await sicherLoeschen(store.urlaubLoeschen(e.id))),
-              }),
-          },
-          'Löschen',
+          'div',
+          { class: 'knopfspalte' },
+          urlaubBearbeitbar(e.id)
+            ? h(
+                'button',
+                {
+                  class: 'knopf klein',
+                  type: 'button',
+                  onClick: () => {
+                    schliessen();
+                    urlaubBearbeitenStarten({ store, ui }, e.id);
+                  },
+                },
+                'Bearbeiten',
+              )
+            : null,
+          h(
+            'button',
+            {
+              class: 'knopf klein',
+              type: 'button',
+              onClick: () =>
+                bestaetigen({
+                  titel: 'Urlaub löschen?',
+                  text: 'Der ganze Urlaubszeitraum wird entfernt, nicht nur dieser Tag.',
+                  ja: 'Urlaub löschen',
+                  gefahr: true,
+                  beiJa: async () => geloeschtMelden(await sicherLoeschen(store.urlaubLoeschen(e.id))),
+                }),
+            },
+            'Löschen',
+          ),
         )
       : null,
   );

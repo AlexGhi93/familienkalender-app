@@ -71,4 +71,47 @@ test.describe('Urlaub', () => {
     await page.getByRole('button', { name: 'Speichern', exact: true }).click();
     await erwarteToast(page, 'Bitte den Zeitraum prüfen.');
   });
+
+  test('Urlaub bearbeiten auf der Urlaub-Seite', async ({ page }) => {
+    await starteDemo(page, { route: '#/urlaub' });
+    const zeile = page.locator('.liste .zeile').filter({ hasText: '2. Nov.' });
+    await zeile.getByRole('button', { name: 'Bearbeiten' }).click();
+    await expect(page.locator('.formular .karte-text b')).toHaveText('Urlaub bearbeiten');
+    await expect(page.getByRole('textbox', { name: 'Von', exact: true })).toHaveValue('02.11.2026');
+    await expect(page.getByRole('textbox', { name: 'Bis', exact: true })).toHaveValue('13.11.2026');
+    await page.getByRole('textbox', { name: 'Bis', exact: true }).fill('11.11.2026');
+    await page.getByRole('button', { name: 'Speichern', exact: true }).click();
+    await erwarteToast(page, 'Urlaub geändert ✓');
+    await expect(page).toHaveURL(/#\/urlaub$/);
+    await expect(page.locator('.liste .zeile')).toHaveCount(2);
+    await expect(page.locator('.liste .zeile b')).toHaveText(['Mo 21. Sep. – Fr 25. Sep.', 'Mo 2. Nov. – Mi 11. Nov.']);
+    await page.reload();
+    await expect(page.locator('.liste .zeile b')).toHaveText(['Mo 21. Sep. – Fr 25. Sep.', 'Mo 2. Nov. – Mi 11. Nov.']);
+  });
+
+  test('Urlaub bearbeiten im Tagesblatt', async ({ page }) => {
+    await starteDemo(page, { route: '#/monat' });
+    await page.getByRole('button', { name: 'Nächster Monat' }).click();
+    await page.locator('.raster').getByRole('button', { name: 'Mittwoch, 4. November', exact: false }).click();
+    const tag = page.getByRole('dialog', { name: 'Mittwoch, 4. November' });
+    await tag.getByRole('button', { name: 'Bearbeiten' }).click();
+    await expect(page.locator('.formular .karte-text b')).toHaveText('Urlaub bearbeiten');
+    await expect(page.getByRole('textbox', { name: 'Von', exact: true })).toHaveValue('02.11.2026');
+    await page.getByRole('textbox', { name: 'Bis', exact: true }).fill('12.11.2026');
+    await page.getByRole('button', { name: 'Speichern', exact: true }).click();
+    await erwarteToast(page, 'Urlaub geändert ✓');
+    await expect(page.locator('.liste .zeile b')).toHaveText(['Mo 21. Sep. – Fr 25. Sep.', 'Mo 2. Nov. – Do 12. Nov.']);
+  });
+
+  test('Rückgängig nach dem Bearbeiten', async ({ page }) => {
+    await starteDemo(page, { route: '#/urlaub' });
+    const zeile = page.locator('.liste .zeile').filter({ hasText: '2. Nov.' });
+    await zeile.getByRole('button', { name: 'Bearbeiten' }).click();
+    await page.getByRole('textbox', { name: 'Bis', exact: true }).fill('11.11.2026');
+    await page.getByRole('button', { name: 'Speichern', exact: true }).click();
+    const meldung = page.locator('.toast').filter({ hasText: 'Urlaub geändert ✓' });
+    await meldung.getByRole('button', { name: 'Rückgängig' }).click();
+    await erwarteToast(page, 'Rückgängig gemacht');
+    await expect(page.locator('.liste .zeile b')).toHaveText(['Mo 21. Sep. – Fr 25. Sep.', 'Mo 2. Nov. – Fr 13. Nov.']);
+  });
 });

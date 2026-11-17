@@ -6,7 +6,8 @@ import { urlaubCheckEventId } from '../../domain/ids.js';
 import { normalisiereTermin } from '../termin.js';
 import { urlaubChecksAbgleich, urlaubChecksWunsch } from '../../domain/urlaub-check.js';
 import { MAX_SERIEN_WOCHEN, naechsterWochentag, wochenSerie } from '../serie.js';
-import { istAuthFehler } from './kern.js';
+import { TEXT_URLAUB_WEG } from '../../domain/urlaub.js';
+import { FACHLICH, istAuthFehler } from './kern.js';
 
 const KITA_TYPEN = ['kita_essen', 'kita_ohne'];
 
@@ -114,6 +115,25 @@ export function createKalenderSlice(kern, { store }) {
     });
   }
 
+  /** Betreuungstage in [start, end], die ein Urlaub ersetzt: → { tage (Zustand ohne sie), loeschen (Daten), entfernt ([[Datum, Typ], …] fürs Rückgängig) }. */
+  function betreuungUmwandeln(start, end) {
+    const tage = { ...kern.state.tage };
+    const betreuung = new Set(spanDays({ start, end }).filter((d) => KITA_TYPEN.includes(tage[d]?.typ)));
+    const plan = planUmwandlung({ dates: [...betreuung], zielTyp: 'urlaub', vorhandeneBifen: betreuung });
+    const entfernt = plan.loeschen.map((d) => [d, tage[d].typ]);
+    for (const d of plan.loeschen) delete tage[d];
+    return { tage, loeschen: plan.loeschen, entfernt };
+  }
+
+  /** Löscht die umgewandelten Betreuungstage im Kalender; `gesamt` = alle Schreibvorgänge der Aktion (Fortschrittsanzeige), `ab` = schon erledigte. */
+  async function umgewandelteTageLoeschen(loeschen, bericht, gesamt, ab = 0) {
+    let i = ab;
+    for (const d of loeschen) {
+      await adapter.loescheTag(d);
+      bericht((i += 1), gesamt);
+    }
+  }
+
   const methoden = {
     /**
      * Holt Tage, Urlaub und Termine eines Zeitraums nach (Monat zurückblättern); mehrfaches Anfordern lädt nur einmal: wer einen
@@ -199,19 +219,11 @@ export function createKalenderSlice(kern, { store }) {
      */
     async urlaubHinzufuegen({ start, end }) {
       if (!(start <= end)) throw new Error('Ungültiger Zeitraum');
-      const tage = { ...kern.state.tage };
-      const betreuung = new Set(spanDays({ start, end }).filter((d) => KITA_TYPEN.includes(tage[d]?.typ)));
-      const plan = planUmwandlung({ dates: [...betreuung], zielTyp: 'urlaub', vorhandeneBifen: betreuung });
-      const entfernt = plan.loeschen.map((d) => [d, tage[d].typ]);
-      for (const d of plan.loeschen) delete tage[d];
+      const { tage, loeschen, entfernt } = betreuungUmwandeln(start, end);
       const eintrag = { id: neueId(), start, end };
       const e = await aendere({ tage, urlaub: [...kern.state.urlaub, eintrag] }, async (bericht) => {
-        const gesamt = plan.loeschen.length + 1;
-        let i = 0;
-        for (const d of plan.loeschen) {
-          await adapter.loescheTag(d);
-          bericht((i += 1), gesamt);
-        }
+        const gesamt = loeschen.length + 1;
+        await umgewandelteTageLoeschen(loeschen, bericht, gesamt);
         await adapter.speichereUrlaub(eintrag);
         bericht(gesamt, gesamt);
       });
@@ -220,7 +232,44 @@ export function createKalenderSlice(kern, { store }) {
           zustand: { urlaub: kern.state.urlaub.filter((u) => u.id !== eintrag.id) },
           vorher: () => adapter.loescheUrlaub(eintrag.id),
         });
-      return mitZuruecknehmen({ ...ergebnisVon(e), id: eintrag.id, umgewandelt: plan.loeschen.length }, zurueck);
+      return mitZuruecknehmen({ ...ergebnisVon(e), id: eintrag.id, umgewandelt: loeschen.length }, zurueck);
+    },
+
+    /**
+     * Ändert Beginn und Ende eines Urlaubs (dasselbe Ereignis, gleiche Kennung); Betreuungstage im neuen Zeitraum werden wie beim Anlegen
+     * umgewandelt. Wirft sofort bei einem ungültigen Zeitraum. Ist der Urlaub inzwischen (anderes Telefon) gelöscht: { ok: false, fehler }
+     * und nichts wird angelegt. → wie `ergebnisVon`, dazu { umgewandelt } und `rueckgaengig()` (alter Zeitraum und umgewandelte Tage
+     * zurück; nicht bei einem Ereignis einer wiederkehrenden Google-Serie, nicht nach einem Fehlschlag). Danach laufen die Urlaub-Checks neu.
+     */
+    async urlaubAendern(id, { start, end }) {
+      if (!(start <= end)) throw new Error('Ungültiger Zeitraum');
+      const alt = kern.state.urlaub.find((u) => u.id === id);
+      if (!alt) return { ok: false, fehler: TEXT_URLAUB_WEG };
+      const { tage, loeschen, entfernt } = betreuungUmwandeln(start, end);
+      const zeitraum = (z) => kern.state.urlaub.map((u) => (u.id === id ? { ...u, ...z } : u));
+      let weg = false;
+      const e = await aendere({ tage, urlaub: zeitraum({ start, end }) }, async (bericht) => {
+        try {
+          await adapter.aendereUrlaub({ id, start, end }); // zuerst: ist der Urlaub weg, bleiben die Betreuungstage unberührt
+        } catch (fehler) {
+          if (fehler?.name === 'UrlaubWeg') {
+            weg = true;
+            FACHLICH.add(fehler); // ihre Meldung steht dann in state.fehler
+          }
+          throw fehler;
+        }
+        await umgewandelteTageLoeschen(loeschen, bericht, loeschen.length + 1, 1);
+        bericht(loeschen.length + 1, loeschen.length + 1);
+      });
+      if (weg) return { ok: false, fehler: TEXT_URLAUB_WEG, gemeldet: true };
+      const r = { ...ergebnisVon(e), umgewandelt: loeschen.length };
+      if (r.ok) store.urlaubChecksAbgleichen();
+      const zurueck = () =>
+        stelleTageWieder(entfernt, {
+          zustand: { urlaub: zeitraum({ start: alt.start, end: alt.end }) },
+          vorher: () => adapter.aendereUrlaub({ id, start: alt.start, end: alt.end }),
+        });
+      return mitRueckgaengig(r, einzelnWiederherstellbar(id) ? zurueck : null);
     },
 
     /**

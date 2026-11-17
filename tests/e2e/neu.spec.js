@@ -39,6 +39,21 @@ test('Tagestyp für einen Zeitraum: Werktage zählen, speichern, Monat zeigt es'
   await expect(page.locator('.raster').getByRole('button', { name: 'Freitag, 23. Oktober' }).locator('i')).toHaveText('🔒');
 });
 
+test('Urlaub hinzufügen unverändert (auch nach einem abgebrochenen Bearbeiten: ein neuer Urlaub)', async ({ page }) => {
+  await starteDemo(page, { route: '#/urlaub' });
+  await page.locator('.liste .zeile').filter({ hasText: '2. Nov.' }).getByRole('button', { name: 'Bearbeiten' }).click();
+  await page.getByRole('button', { name: 'Abbrechen' }).click();
+  await tab(page, 'Neu');
+  await page.locator('.kachel').filter({ hasText: /^.{0,3}Urlaub$/ }).click();
+  await expect(page.locator('.formular .karte-text b')).toHaveText('Urlaub');
+  await page.getByRole('textbox', { name: 'Von', exact: true }).fill('21.12.2026');
+  await page.getByRole('textbox', { name: 'Bis', exact: true }).fill('23.12.2026');
+  await page.getByRole('button', { name: 'Speichern', exact: true }).click();
+  await erwarteToast(page, 'Urlaub gespeichert ✓');
+  await expect(page).toHaveURL(/#\/urlaub$/);
+  await expect(page.locator('.liste .zeile')).toHaveCount(3);
+});
+
 test('Arzttermin: Mutter-Kind-Pass, Vorschau mit Zeichenzahl, speichern, in Heute, Monat und Verlauf wiederfinden', async ({ page }) => {
   await starteDemo(page, { route: '#/neu' });
   await page.locator('.kachel').filter({ hasText: 'Arzttermin' }).click();

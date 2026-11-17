@@ -27,12 +27,13 @@ export function neuKacheln(heute, settings) {
 /**
  * Was ein neuer Urlaub bewirkt: wie viele Urlaubstage dazukommen (Werktage ohne Feiertage), wie viele
  * Betreuungstage umgewandelt werden und wie der Stand des betroffenen Kindergartenjahres danach aussieht.
+ * `ohneId`: beim Bearbeiten die Kennung des Urlaubs, dessen alter Zeitraum nicht mitzählt (er wird ja ersetzt).
  */
-export function urlaubVorschau(state, { start, end }, heute) {
+export function urlaubVorschau(state, { start, end }, heute, { ohneId = null } = {}) {
   const tage = eachDay(start, end);
   const werktage = tage.filter((d) => isWerktag(d) && !isFeiertag(d)).length;
   const umwandeln = tage.filter((d) => BETREUUNG.includes(state.tage[d]?.typ)).length;
-  const spans = [...state.urlaub.map(({ start: s, end: e }) => ({ start: s, end: e })), { start, end }];
+  const spans = [...state.urlaub.filter((u) => u.id !== ohneId).map(({ start: s, end: e }) => ({ start: s, end: e })), { start, end }];
   const jahrOffset = kindergartenjahr(start, state.settings.jahresstart).id - kindergartenjahr(heute, state.settings.jahresstart).id;
   const nachher = urlaubStatus({ spans, schliessTage: schliessTageListe(state), settings: state.settings, today: heute, jahrOffset });
   return {
@@ -47,6 +48,9 @@ export function urlaubVorschau(state, { start, end }, heute) {
     },
   };
 }
+
+/** Kann der Urlaub bearbeitet werden? Nicht ein Ereignis einer wiederkehrenden Google-Serie (Kennung „<Serie>_<Zeitpunkt>“): wie beim Rückgängig des Löschens. */
+export const urlaubBearbeitbar = (id) => typeof id === 'string' && id !== '' && !id.includes('_');
 
 /** Werktage (Mo–Fr, ohne Feiertage) eines Zeitraums: darauf wirkt ein Tageseintrag. Leer bei umgekehrtem Zeitraum. */
 export function werktageImBereich(von, bis) {

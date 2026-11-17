@@ -1498,7 +1498,7 @@ const METHODEN_1_4_0 = [
   'schichtAktualisieren', 'schichtArtArchivieren', 'schichtArtSpeichern', 'schichtArtVerschieben', 'schichtFrischLesen', 'schichtLaden',
   'schichtNotiz', 'schichtPinsel', 'schichtSetzen', 'schichtVorladen', 'schichtZusatzEntfernen', 'schichtZusatzHinzufuegen',
   'schichtZusatzLoeschen', 'setTag', 'setTage', 'sichereBereich', 'sicherungsDaten', 'starteAusSnapshot', 'subscribe', 'terminErledigt',
-  'terminLoeschen', 'terminLoeschenAbHier', 'terminSpeichern', 'urlaubChecksAbgleichen', 'urlaubHinzufuegen', 'urlaubLoeschen',
+  'terminLoeschen', 'terminLoeschenAbHier', 'terminSpeichern', 'urlaubAendern', 'urlaubChecksAbgleichen', 'urlaubHinzufuegen', 'urlaubLoeschen',
   'verschiebungLoeschen', 'verschiebungWiederherstellen', 'versicherungFrischLesen', 'versicherungLaden', 'wiederholeAusstehende',
   'zielAusblenden', 'zielBeenden', 'zielLoeschen', 'zielSpeichern', 'zielWiederherstellen', 'zielZurueckZuFrei', 'zieleLaden', 'zuruecksetzen',
 ];

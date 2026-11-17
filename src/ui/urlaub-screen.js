@@ -2,7 +2,8 @@ import { h } from './dom.js';
 import { bestaetigen, farbe, urlaubRing } from './components.js';
 import { geloeschtMelden, sicherLoeschen } from './fortschritt.js';
 import { urlaubModel } from '../app/views/urlaub-model.js';
-import { urlaubstageImZeitraum } from '../app/views/neu-model.js';
+import { urlaubBearbeitbar, urlaubstageImZeitraum } from '../app/views/neu-model.js';
+import { urlaubBearbeitenStarten } from './neu-screen.js';
 import { datumKurz } from '../app/format-de.js';
 import { werktageText } from '../domain/format.js';
 import { TYPES } from '../domain/types.js';
@@ -20,7 +21,7 @@ function zeitraumText(u) {
   return h('b', { class: 'zeitraum' }, h('span', {}, von), ' – ', h('span', {}, bis));
 }
 
-function zeitraumZeile(u, heute, store) {
+function zeitraumZeile(u, heute, { store, ui }) {
   const tage = urlaubstageImZeitraum(u);
   const status = u.end < heute ? 'vorbei' : u.start <= heute ? 'jetzt' : 'geplant';
   return h(
@@ -29,20 +30,25 @@ function zeitraumZeile(u, heute, store) {
     h('span', { class: 'emoji' }, '✈️'),
     h('div', { class: 'zeile-text' }, zeitraumText(u), h('small', {}, `${tage} ${tage === 1 ? 'Urlaubstag' : 'Urlaubstage'} · ${status}`)),
     h(
-      'button',
-      {
-        class: 'knopf klein',
-        type: 'button',
-        onClick: () =>
-          bestaetigen({
-            titel: 'Urlaub löschen?',
-            text: `${datumKurz(u.start)} bis ${datumKurz(u.end)} wird entfernt.`,
-            ja: 'Urlaub löschen',
-            gefahr: true,
-            beiJa: async () => geloeschtMelden(await sicherLoeschen(store.urlaubLoeschen(u.id))),
-          }),
-      },
-      'Löschen',
+      'div',
+      { class: 'knopfspalte' },
+      urlaubBearbeitbar(u.id) ? h('button', { class: 'knopf klein', type: 'button', onClick: () => urlaubBearbeitenStarten({ store, ui }, u.id) }, 'Bearbeiten') : null,
+      h(
+        'button',
+        {
+          class: 'knopf klein',
+          type: 'button',
+          onClick: () =>
+            bestaetigen({
+              titel: 'Urlaub löschen?',
+              text: `${datumKurz(u.start)} bis ${datumKurz(u.end)} wird entfernt.`,
+              ja: 'Urlaub löschen',
+              gefahr: true,
+              beiJa: async () => geloeschtMelden(await sicherLoeschen(store.urlaubLoeschen(u.id))),
+            }),
+        },
+        'Löschen',
+      ),
     ),
   );
 }
@@ -73,6 +79,6 @@ export function urlaubScreen({ store, ui }) {
     h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein primaer', type: 'button', onClick: () => ui.neuStarten('urlaub') }, 'Urlaub planen')),
     u.istAktuell && u.offen > 0 ? h('p', { class: 'leise' }, '🏖️ Solange noch Urlaub offen ist, erinnert die App am 1. März, 1. Mai und 1. Juli um 09:00 („Urlaub-Check“) daran, wie viel noch fehlt.') : null,
     h('h2', { class: 'abschnitt-titel' }, `Eingetragen in ${u.kurz}`),
-    zeitraeume.length > 0 ? h('div', { class: 'liste' }, zeitraeume.map((z) => zeitraumZeile(z, store.heute(), store))) : h('p', { class: 'leise' }, u.istAktuell ? 'Noch kein Urlaub eingetragen.' : 'In diesem Jahr ist noch kein Urlaub eingetragen.'),
+    zeitraeume.length > 0 ? h('div', { class: 'liste' }, zeitraeume.map((z) => zeitraumZeile(z, store.heute(), { store, ui }))) : h('p', { class: 'leise' }, u.istAktuell ? 'Noch kein Urlaub eingetragen.' : 'In diesem Jahr ist noch kein Urlaub eingetragen.'),
   );
 }
