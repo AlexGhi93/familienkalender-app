@@ -179,7 +179,10 @@ export function versicherungModel(state, heute, { jahr = null, polizzeId = null 
     meldungen: meldungen(v, polizze),
     gesperrt,
     vorlagen: Object.values(POLIZZE_VORLAGEN).map((x) => ({ id: x.id, name: x.name })),
-    polizzen: aktive.map((p) => ({ id: p.id, kurz: p.name })),
+    polizzen: aktive.map((p, i) => {
+      const davor = aktive.slice(0, i).filter((q) => q.name === p.name).length;
+      return { id: p.id, kurz: davor > 0 ? `${p.name} (${davor + 1})` : p.name };
+    }),
     gewaehlt: polizze?.id ?? null,
     umschalter: aktive.length >= 2,
     beendete: beendeteVersicherungen(state),

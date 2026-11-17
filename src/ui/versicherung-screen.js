@@ -186,7 +186,7 @@ export function versicherungInhalt({ store, ui }) {
       'div',
       { class: 'knopfzeile vs-polizze-knoepfe' },
       h('button', { class: 'knopf klein', type: 'button', disabled: Boolean(m.gesperrt), onClick: () => oeffnePolizzeFormular(ctx, { bearbeiten: true }) }, 'Polizze bearbeiten'),
-      m.umschalter || m.beendete.length > 0 ? h('button', { class: 'knopf klein vs-weitere', type: 'button', disabled: Boolean(m.gesperrt), onClick: () => oeffneWeitereVersicherung(ctx) }, '＋ Weitere Versicherung') : null,
+      h('button', { class: 'knopf klein vs-weitere', type: 'button', disabled: Boolean(m.gesperrt), onClick: () => oeffneWeitereVersicherung(ctx) }, '＋ Weitere Versicherung'),
     ),
     beendeteKnopf(m, ctx),
   ];

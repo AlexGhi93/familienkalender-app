@@ -360,15 +360,45 @@ test.describe('Versicherung im Konto-Tab (Demo)', () => {
   }
   const chips = (page) => page.locator('.vs-umschalter .chip');
 
-  test('eine Polizze: Seite wie bisher (kein Umschalter, keine weiteren Knöpfe, Rechnungsblatt ohne Polizzenzeile)', async ({ page }) => {
+  test('eine Polizze: Seite wie bisher, aber „＋ Weitere Versicherung“ sichtbar (kein Umschalter, Rechnungsblatt ohne Polizzenzeile)', async ({ page }) => {
     await oeffne(page);
     await expect(page.locator('.vs-umschalter')).toHaveCount(0);
-    await expect(page.locator('.vs-weitere')).toHaveCount(0);
+    const weitere = page.locator('.vs-polizze-knoepfe .vs-weitere');
+    await expect(weitere).toBeVisible();
+    await expect(weitere).toHaveText('＋ Weitere Versicherung');
+    await page.setViewportSize({ width: 360, height: 780 });
+    const mass = await weitere.boundingBox();
+    expect(mass.height).toBeGreaterThanOrEqual(44);
+    expect(mass.x).toBeGreaterThanOrEqual(0);
+    expect(mass.x + mass.width).toBeLessThanOrEqual(360);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
     await expect(page.locator('.vs-beendete')).toHaveCount(0);
-    await expect(page.locator('.vs-polizze-knoepfe button')).toHaveText(['Polizze bearbeiten']);
+    await expect(page.locator('.vs-polizze-knoepfe button')).toHaveText(['Polizze bearbeiten', '＋ Weitere Versicherung']);
     await page.getByRole('button', { name: '＋ Rechnung einreichen' }).click();
     await expect(blatt(page, '＋ Rechnung einreichen')).toBeVisible();
     await expect(page.locator('.vs-polizze-zeile')).toHaveCount(0);
+  });
+
+  test('Zurück-Taste über gestapelte Blätter schließt immer nur das oberste; die Seite bleibt', async ({ page }) => {
+    await oeffne(page);
+    const konto = () => expect(page).toHaveURL(/#\/konto/);
+    // Polizze bearbeiten → Weitere Versicherung: Zurück schließt zuerst nur „Weitere“, dann „Polizze bearbeiten“
+    await page.getByRole('button', { name: 'Polizze bearbeiten' }).click();
+    await blatt(page, 'Polizze bearbeiten').getByRole('button', { name: '＋ Weitere Versicherung' }).click();
+    await expect(blatt(page, '＋ Weitere Versicherung')).toBeVisible();
+    await page.goBack();
+    await expect(blatt(page, '＋ Weitere Versicherung')).toHaveCount(0);
+    await expect(blatt(page, 'Polizze bearbeiten')).toBeVisible();
+    await konto();
+    // weiter bis zum Formular: Zurück schließt nur das Formular
+    await blatt(page, 'Polizze bearbeiten').getByRole('button', { name: '＋ Weitere Versicherung' }).click();
+    await blatt(page, '＋ Weitere Versicherung').getByRole('button', { name: 'Eigene Polizze' }).click();
+    await expect(blatt(page, 'Eigene Polizze')).toBeVisible();
+    await page.goBack();
+    await expect(blatt(page, 'Eigene Polizze')).toHaveCount(0);
+    await konto();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Versicherung 🩺' })).toBeVisible();
   });
 
   test('Weitere Versicherung anlegen, umschalten, Wahl bleibt nach Neuladen', async ({ page }) => {

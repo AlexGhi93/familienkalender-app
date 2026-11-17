@@ -378,6 +378,12 @@ describe('Mehrere Versicherungen (1.5.0, C3)', () => {
     assert.deepEqual(eine.beendete, []);
   });
 
+  test('gleiche Namen: der Umschalter unterscheidet sie mit „ (2)“', () => {
+    const C = { ...B, id: 'polc0001', name: P.name };
+    const m = versicherungModel(mitVers(versTeil({ polizze: P, weitere: [C, { ...B, id: 'pold0001', name: P.name }] })), HEUTE);
+    assert.deepEqual(m.polizzen.map((x) => x.kurz), [P.name, `${P.name} (2)`, `${P.name} (3)`]);
+  });
+
   test('gemerkte Wahl gelöscht oder beendet → erste aktive (Review Focus 5)', () => {
     assert.equal(versicherungModel(zwei(), HEUTE, { polizzeId: B.id }).gewaehlt, B.id);
     assert.equal(versicherungModel(zwei(), HEUTE, { polizzeId: B.id }).titel, 'Zahnzusatz');
