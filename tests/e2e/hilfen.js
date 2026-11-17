@@ -63,6 +63,17 @@ function aussehenVorbelegen(wert) {
 }
 
 /**
+ * Playwrights Bildschirmfoto nach einem Fehlschlag (`screenshot: 'only-on-failure'`) hängt kurz ein `<style>` an (playwright-core
+ * screenshotter.js: „body {}“); WebKit meldet das unter unserer CSP (`style-src 'self'`) als console.error. Die Meldung stammt vom
+ * Werkzeug, nicht von der App – bei einem schon gescheiterten Test fällt sie weg, damit sie den eigentlichen Fehler nicht verdeckt.
+ * Bei einem bestandenen Test zählt sie weiter (dann hätte die App selbst ein Inline-Stylesheet eingefügt).
+ */
+const FOTO_CSP = /^console\.error \S+ ms \S+: Refused to apply a stylesheet because its hash, its nonce, or 'unsafe-inline' does not appear in the style-src directive/;
+export function meldenswerteFehler(fehler, { gescheitert }) {
+  return gescheitert ? fehler.filter((f) => !FOTO_CSP.test(f)) : fehler;
+}
+
+/**
  * `test` mit Wache: jeder `pageerror` und jedes `console.error` lässt den Test scheitern.
  * Ein Test kann erwartete Meldungen erlauben: `test.use({ erlaubteFehler: /Muster/ })`.
  * Jede Seite bekommt dazu `browserAttrappen` (Zwischenablage nur im Test, kein Teilen).
@@ -77,7 +88,7 @@ export const test = basis.extend({
   },
   erlaubteFehler: [null, { option: true }],
   fehlerWache: [
-    async ({ page, erlaubteFehler }, use) => {
+    async ({ page, erlaubteFehler }, use, testInfo) => {
       // Jede Meldung mit Zeitpunkt (ms seit Testbeginn), Seite (Hash) und Herkunft (Datei:Zeile bzw. erste Stack-Zeile): so lässt sich
       // ein Fehler unter Last (z. B. abgebrochene Anfrage beim Testende) von einem echten Fehler der App unterscheiden.
       const fehler = [];
@@ -100,7 +111,8 @@ export const test = basis.extend({
         fehler.push(`console.error +${Date.now() - beginn} ms ${wo()}: ${m.text()}${herkunft}`);
       });
       await use(fehler);
-      expect(fehler, 'Fehler im Browser (Zeit seit Testbeginn, Seite, Meldung, Herkunft)').toEqual([]);
+      const gescheitert = testInfo.status !== testInfo.expectedStatus;
+      expect(meldenswerteFehler(fehler, { gescheitert }), 'Fehler im Browser (Zeit seit Testbeginn, Seite, Meldung, Herkunft)').toEqual([]);
     },
     { auto: true },
   ],

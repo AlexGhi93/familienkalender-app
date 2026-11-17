@@ -13,7 +13,7 @@ Files not listed belong to the integrator (Nicht aufgeführte Dateien gehören d
 - `.github/workflows/tests.yml`, `.gitignore`, `manifest.webmanifest`, `fonts/*`, `icons/*`
 - `tests/README.md`, `tests/duplikate-basis.json`, `tests/{duplikate,server}.mjs`, `tests/visuell/*`
 - `tests/unit/hilfen.js`
-- `tests/unit/{store,store-scheiben,hintergrund,mapping,speicher,app-hilfen,loeschen-rueckgaengig,seiten-besuch,sw,ebenen,agenten-doku}.test.js`
+- `tests/unit/{store,store-scheiben,hintergrund,mapping,speicher,app-hilfen,loeschen-rueckgaengig,seiten-besuch,sw,ebenen,agenten-doku,fehler-wache}.test.js`
 - `tests/e2e/{app,tabs,google}.spec.js`, `tests/e2e/hilfen.js`
 
 ## Base (shared helpers and look)
