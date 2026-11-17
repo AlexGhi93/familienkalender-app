@@ -1,20 +1,42 @@
 import { todayVienna } from '../../domain/dates.js';
 import { monatVor } from '../../domain/konto.js';
 import { artAendern, artArchivieren, artHinzufuegen, artVerschieben, katalogErgaenzen, leererMonat, normalisiereKatalog, normalisiereMonat, schaltePinsel, schichtAm, setzeNotiz, setzeSchicht, setzeTagZeiten, standardKatalog, tageImMonat, vorladeMonate, zusatzEntfernen, zusatzHinzufuegen, zusatzWiederherstellen } from '../../domain/schicht.js';
+import { leererTausch, tauschAnwenden, tauschAusText, tauschEintrag, tauschEntfernen, tauschHinzufuegen, tauschPruefen, tauschText, tauschZuruecknehmen, tauschZustand } from '../../domain/schicht-tausch.js';
+import { UNLESBAR_TEXT } from '../../domain/unlesbar.js';
+import { eintragVorhanden, neueKennung } from './geteilt.js';
 import { TEXT_FEHLER, gleichOder, istAuthFehler } from './kern.js';
 
 const SCHICHT_SICHERUNG_AB = '2026-01'; // erster Monat, den die Sicherung nach einem Schichtplan fragt
 const SCHICHT_SICHERUNG_VORAUS = 12; // … bis zwölf Monate nach dem laufenden
 const SCHICHT_SICHERUNG_PARALLEL = 6; // so viele Monate werden gleichzeitig gefragt
+const TEXT_TAUSCH_NICHT_GELESEN = 'Der Schichtplan konnte gerade nicht gelesen werden. Bitte noch einmal versuchen.';
+const TEXT_TAUSCH_WEG = 'Diesen Diensttausch gibt es nicht mehr.';
+const TEXT_TAUSCH_GEBROCHEN = 'Dieser Tausch wurde inzwischen von Hand geändert – bitte die beiden Tage selbst richtigstellen.';
+const TEXT_TAGE = 'Bitte zwei Tage wählen.';
+const DATUM = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+const jmVon = (datum) => datum.slice(0, 7);
 
 /**
- * Schichtplan im Zustand: `katalog` null = noch nicht gelesen (die Ansicht zeigt dann die Standardarten). `vorgeladen` = der Monat
+ * Schichtplan im Zustand: `katalog` null = noch nicht gelesen (die Ansicht zeigt dann die Standardarten). `tausch` = die Diensttausche
+ * (siehe domain/schicht-tausch.js), gelesen mit den Monaten (`schichtLesen`); fehlt das Feld (oder ist es null), sind sie noch nicht
+ * gelesen – wie `zt` und `fremd` der Monate steht es nur da, wenn es etwas gibt (die Form des leeren Zustands bleibt). `vorgeladen` = der Monat
  * ('JJJJ-MM'), ab dem Schichtarten und Monate (siehe `schichtVorladen`) seit dem Start aus dem Kalender gelesen wurden, nicht nur aus dem
  * gespeicherten Stand; null = noch nicht. Die Erinnerungen gelten nur, solange das der laufende Monat ist (siehe push/plan.js planQuellen).
  */
 export const leererSchichtplan = () => ({ katalog: null, monate: {}, status: {}, vorgeladen: null });
 
-/** Schichtplan aus Schnappschuss oder Beispieldaten ({ katalog, monate }): normalisiert, alle Monate gelten als geladen. */
+/** Diensttausche aus Schnappschuss oder Beispieldaten (Form im Speicher); ungültig oder unlesbar → null (= nicht gelesen). */
+function tauschAusDaten(roh) {
+  if (!roh) return null;
+  try {
+    const r = tauschAusText(tauschText(roh));
+    return r.unlesbar ? null : r.daten;
+  } catch {
+    return null;
+  }
+}
+
+/** Schichtplan aus Schnappschuss oder Beispieldaten ({ katalog, monate, tausch? }): normalisiert, alle Monate gelten als geladen. */
 export function schichtAusDaten(roh) {
   const monate = {};
   for (const [jm, monat] of Object.entries(roh?.monate ?? {})) {
@@ -24,7 +46,8 @@ export function schichtAusDaten(roh) {
       // kein gültiger Monat als Schlüssel: weglassen
     }
   }
-  return { katalog: roh?.katalog ? normalisiereKatalog(roh.katalog).katalog : null, monate, status: Object.fromEntries(Object.keys(monate).map((jm) => [jm, 'geladen'])), vorgeladen: null };
+  const tausch = tauschAusDaten(roh?.tausch);
+  return { katalog: roh?.katalog ? normalisiereKatalog(roh.katalog).katalog : null, monate, status: Object.fromEntries(Object.keys(monate).map((jm) => [jm, 'geladen'])), vorgeladen: null, ...(tausch ? { tausch } : {}) };
 }
 
 /**
@@ -92,13 +115,16 @@ export function createSchichtSlice(kern, { store, fixLesen, autosHolen, versHole
    * der Katalog im Kalender, gelten die Standardarten. Wurde inzwischen selbst etwas geändert, bleibt Vorhandenes, wie es ist (die
    * Antwort könnte älter sein). Ergebnis: { katalogGelesen, monateGelesen } – ob die Schichtarten bzw. alle Monate gelesen werden konnten.
    * Unlesbare Schichtarten oder Monate (Standardarten bzw. leer gezeigt) werden in `state.unlesbar` vermerkt, lesbare wieder herausgenommen.
+   * Gleichzeitig die Diensttausche (`schicht.tausch`; unlesbar → leer gezeigt, 'schichttausch' in `state.unlesbar`, nie überschrieben);
+   * `tauschGelesen` im Ergebnis = sie konnten gelesen werden.
    */
   async function schichtLesen(jms, { katalogNeu = false } = {}) {
     const mitKatalog = katalogNeu || kern.state.schicht.katalog === null;
     const stand = kern.schreibStand;
     kern.state = { ...kern.state, schicht: { ...kern.state.schicht, status: { ...kern.state.schicht.status, ...Object.fromEntries(jms.map((m) => [m, 'laedt'])) } } };
     melden();
-    const [katalog, ...monate] = await Promise.allSettled([mitKatalog ? adapter.leseSchichtarten() : null, ...jms.map((m) => adapter.leseSchichtMonat(m))]);
+    const mitTausch = Boolean(adapter.leseDiensttausch);
+    const [katalog, tausch, ...monate] = await Promise.allSettled([mitKatalog ? adapter.leseSchichtarten() : null, mitTausch ? adapter.leseDiensttausch() : null, ...jms.map((m) => adapter.leseSchichtMonat(m))]);
     const eigene = stand !== kern.schreibStand || kern.schreibend > 0 || wartend.length > 0 || schichtSchreibtNoch();
     const s = kern.state.schicht;
     const neueMonate = { ...s.monate };
@@ -120,12 +146,18 @@ export function createSchichtSlice(kern, { store, fixLesen, autosHolen, versHole
     if (katalogGelesen) gelesenMerken('schichtarten', katalog.value);
     if (mitKatalog && katalog.status === 'rejected') auth ||= istAuthFehler(katalog.reason);
     else if (katalogGelesen && (kat === null || (katalogNeu && !eigene))) kat = gleichOder(kat, normalisiereKatalog(katalog.value?.katalog ?? null).katalog);
+    let tz = s.tausch ?? null;
+    const tauschGelesen = mitTausch && tausch.status === 'fulfilled';
+    if (tauschGelesen) {
+      gelesenMerken('schichttausch', tausch.value);
+      if (!(eigene && tz)) tz = gleichOder(tz, tausch.value?.daten ?? leererTausch());
+    } else if (mitTausch) auth ||= istAuthFehler(tausch.reason);
     // Unverändert gelesen: dieselben Objekte behalten. Der Push-Plan (push/plan.js `planQuellen`) vergleicht nach Identität; ein neues,
     // aber gleiches Objekt löste sonst bei jedem Blättern oder Abgleich einen Push-Abgleich samt frischem Lesen aus.
     const monateGleich = Object.keys(neueMonate).length === Object.keys(s.monate).length && Object.keys(neueMonate).every((m) => neueMonate[m] === s.monate[m]);
-    kern.state = { ...kern.state, schicht: { ...s, katalog: kat, monate: monateGleich ? s.monate : neueMonate, status }, ...(auth ? { anmeldungNoetig: true } : {}) };
+    kern.state = { ...kern.state, schicht: { ...s, katalog: kat, monate: monateGleich ? s.monate : neueMonate, status, ...(tz ? { tausch: tz } : {}) }, ...(auth ? { anmeldungNoetig: true } : {}) };
     melden();
-    return { katalogGelesen, monateGelesen: jms.every((m) => status[m] === 'geladen') };
+    return { katalogGelesen, monateGelesen: jms.every((m) => status[m] === 'geladen'), tauschGelesen };
   }
 
   /**
@@ -151,9 +183,15 @@ export function createSchichtSlice(kern, { store, fixLesen, autosHolen, versHole
     melden();
   }
 
-  /** Schichtplan für die Sicherung: Katalog und alle vorhandenen Monate von Jänner 2026 bis zwölf Monate nach heute (fehlende übersprungen). */
+  /**
+   * Schichtplan für die Sicherung: Katalog und alle vorhandenen Monate von Jänner 2026 bis zwölf Monate nach heute (fehlende übersprungen),
+   * dazu `tausch` (die Diensttausche), wenn es welche gibt und sie lesbar sind (das Format der Sicherung legt sicherung.js fest).
+   */
   async function schichtFuerSicherung() {
-    if (!adapter.leseSchichtMonat) return { katalog: kern.state.schicht.katalog, monate: kern.state.schicht.monate };
+    if (!adapter.leseSchichtMonat) {
+      const { katalog, monate, tausch } = kern.state.schicht;
+      return { katalog, monate, ...(tausch ? { tausch } : {}) };
+    }
     const bis = monatVor(todayVienna(jetzt()), -SCHICHT_SICHERUNG_VORAUS);
     const jms = [];
     for (let jm = SCHICHT_SICHERUNG_AB; jm <= bis; jm = monatVor(jm, -1)) jms.push(jm);
@@ -166,7 +204,108 @@ export function createSchichtSlice(kern, { store, fixLesen, autosHolen, versHole
         if (gelesen[j]?.monat) monate[jm] = normalisiereMonat(gelesen[j].monat, jm).monat;
       });
     }
-    return { katalog: katalog ? normalisiereKatalog(katalog).katalog : null, monate };
+    const tausch = adapter.leseDiensttausch ? await adapter.leseDiensttausch() : null;
+    return { katalog: katalog ? normalisiereKatalog(katalog).katalog : null, monate, ...(tausch?.daten && !tausch.unlesbar ? { tausch: tausch.daten } : {}) };
+  }
+
+  // ---------- Diensttausch ----------
+  // Ein Tausch schreibt drei Dinge in fester Reihenfolge: 1) die Verknüpfung („fkschtausch“, merkt sich ka, vb, za, zb), 2) Monat A,
+  // 3) Monat B (derselbe Monat: eine Schreibung). Rückgängig umgekehrt: erst die Monate (B, dann A), zuletzt die Verknüpfung. Scheitert
+  // ein Schritt, bleibt alles Bisherige stehen: nichts geht verloren (die Verknüpfung kennt beide Tage, wie sie vorher waren), der Tausch
+  // ist dann „offen“ oder „halb“ und lässt sich abschließen oder rückgängig machen. Vor jedem Schritt werden die Verknüpfung und die
+  // betroffenen Monate frisch gelesen; geschrieben wird immer als reine Änderung auf der neuesten Fassung (Warteschlange je Teil wie
+  // beim Schichtplan, siehe `teilAendern` im Kern; die Verknüpfung hat den Teil 'tausch', der Adapter schreibt über `aendereVersteckt`).
+
+  const tauschMonat = (jm) => kern.state.schicht.monate[jm] ?? null;
+  const tauschZustandJetzt = (e) => tauschZustand(e, tauschMonat(jmVon(e.a)), tauschMonat(jmVon(e.b)));
+  const tauschOptionen = () => ({ heute: todayVienna(jetzt()), zustand: tauschZustandJetzt });
+
+  /** Ändert die Verknüpfung (siehe `teilAendern`) → { neu, ergebnis, fehler }. */
+  const tauschAendern = (fn) =>
+    teilAendern(schichtOffen, 'tausch', fn, {
+      leer: leererTausch,
+      aktuell: () => kern.state.schicht.tausch ?? null,
+      mit: (wert) => ({ ...kern.state, schicht: { ...kern.state.schicht, tausch: wert } }),
+      speichern: async (f) => {
+        const gespeichert = await adapter.aendereDiensttausch(f);
+        unlesbarMerken('schichttausch', false); // nicht abgelehnt: die neueste Fassung war lesbar
+        return gespeichert;
+      },
+      lesen: async () => gelesenMerken('schichttausch', await adapter.leseDiensttausch()).daten ?? null,
+      normalisiere: (d) => d ?? leererTausch(),
+    });
+
+  /** Ergebnis eines Teil-Schreibens für die Oberfläche; lehnt die Änderung schon am angezeigten Stand ab, → { ok: false, fehler }. */
+  async function sicher(schreiben) {
+    try {
+      return teilErgebnis(await schreiben());
+    } catch (e) {
+      return { ok: false, fehler: e?.message || TEXT_FEHLER };
+    }
+  }
+
+  /** Was an den Tausch-Teilen gesperrt ist (unlesbar) → Meldung oder null. */
+  function tauschGesperrt(jms) {
+    const { unlesbar } = kern.state;
+    if (unlesbar.includes('schichttausch')) return UNLESBAR_TEXT.schichttausch;
+    return jms.some((jm) => unlesbar.includes(`schicht:${jm}`)) ? UNLESBAR_TEXT.schicht : null;
+  }
+
+  /** Liest Verknüpfung, Schichtarten (falls nötig) und die Monate `jms` frisch; → Meldung, wenn nicht getauscht werden kann, sonst null. */
+  async function tauschVorbereiten(jms) {
+    if (!adapter.leseDiensttausch || !adapter.aendereDiensttausch) return TEXT_TAUSCH_NICHT_GELESEN;
+    if (kern.state.unlesbar.includes('schichttausch')) return UNLESBAR_TEXT.schichttausch; // gesperrt, bis ein Lesen sie wieder lesbar findet
+    if (!kern.state.geladen || kern.state.nurSnapshot || kern.state.anmeldungNoetig) return TEXT_TAUSCH_NICHT_GELESEN;
+    const { monateGelesen, tauschGelesen } = await schichtLesen([...new Set(jms)]);
+    const gesperrt = tauschGesperrt(jms);
+    if (gesperrt) return gesperrt;
+    if (!monateGelesen || !tauschGelesen || !kern.state.schicht.katalog || !kern.state.schicht.tausch) return TEXT_TAUSCH_NICHT_GELESEN;
+    return null;
+  }
+
+  /** Der Eintrag `id` nach dem frischen Lesen (samt seinen Monaten): { e } oder { fehler } (gibt es nicht mehr, gesperrt, nicht gelesen). */
+  async function tauschHolen(id) {
+    const vorab = (kern.state.schicht.tausch?.eintraege ?? []).find((x) => x.id === id);
+    const fehler = await tauschVorbereiten(vorab ? [jmVon(vorab.a), jmVon(vorab.b)] : []);
+    if (fehler) return { fehler };
+    const t = kern.state.schicht.tausch;
+    let e;
+    try {
+      e = eintragVorhanden(t.eintraege, t.fremd?.l, id, TEXT_TAUSCH_WEG);
+    } catch (f) {
+      return { fehler: f.message };
+    }
+    if (!vorab || vorab.a !== e.a || vorab.b !== e.b) {
+      const noch = await tauschVorbereiten([jmVon(e.a), jmVon(e.b)]); // erst jetzt bekannt: die Monate dieses Tauschs lesen
+      if (noch) return { fehler: noch };
+    }
+    return { e };
+  }
+
+  /** Braucht die Seite `seite` von `e` noch `op` (Anwenden bzw. Zurücknehmen)? Wirft `op` (Tag von Hand geändert): ja – das Schreiben meldet es. */
+  function seiteOffen(e, seite, op) {
+    const m = tauschMonat(jmVon(seite === 'a' ? e.a : e.b));
+    try {
+      return op(m, e, seite) !== m;
+    } catch {
+      return true;
+    }
+  }
+
+  /** Schreibt die Seiten `seiten` (in dieser Reihenfolge) mit `op`; liegen sie im selben Monat: eine Schreibung. Hält beim ersten Scheitern an. */
+  async function seitenSchreiben(e, seiten, op) {
+    const gruppen = [];
+    for (const seite of seiten) {
+      const jm = jmVon(seite === 'a' ? e.a : e.b);
+      const g = gruppen.find((x) => x.jm === jm);
+      if (g) g.seiten.push(seite);
+      else gruppen.push({ jm, seiten: [seite] });
+    }
+    for (const g of gruppen) {
+      const r = await sicher(() => schichtMonatSchreiben(g.jm, (m) => g.seiten.reduce((x, seite) => op(x, e, seite), m)));
+      if (!r.ok) return r;
+    }
+    return { ok: true };
   }
 
   const methoden = {
@@ -346,6 +485,66 @@ export function createSchichtSlice(kern, { store, fixLesen, autosHolen, versHole
     schichtArtArchivieren: (person, k, archiv) => schichtKatalogAendern((kat) => artArchivieren(kat, person, k, archiv)),
     /** Art mit der Nachbarin tauschen (−1 hoch, 1 runter); Ergebnis wie `schichtKatalogAendern`. */
     schichtArtVerschieben: (person, k, richtung) => schichtKatalogAendern((kat) => artVerschieben(kat, person, k, richtung)),
+
+    /**
+     * Diensttausch speichern ({ person, a: abgegebener Tag, b: übernommener Tag, kb: übernommene Schicht, mitWem? }): liest zuerst
+     * Verknüpfung und die Monate von A und B frisch, prüft (`tauschPruefen`, auch auf der neuesten Fassung der Verknüpfung) und schreibt
+     * dann Verknüpfung, Monat A, Monat B (siehe oben). → { ok, id?, fehler?, gemeldet?, wartet? }; `id` = der Tausch, sobald die
+     * Verknüpfung geschrieben ist oder wartet (scheitert danach ein Monat, ist er „offen“ oder „halb“: abschließen oder rückgängig
+     * machen). Wirft nicht.
+     */
+    async diensttauschSpeichern(entwurf) {
+      const { a, b } = entwurf ?? {};
+      if (!DATUM.test(a ?? '') || !DATUM.test(b ?? '')) return { ok: false, fehler: TEXT_TAGE };
+      const fehlt = await tauschVorbereiten([jmVon(a), jmVon(b)]);
+      if (fehlt) return { ok: false, fehler: fehlt };
+      const { katalog, tausch: daten } = kern.state.schicht;
+      const { heute } = tauschOptionen();
+      const meldung = tauschPruefen(entwurf, { daten, monate: tauschMonat, katalog, heute });
+      if (meldung) return { ok: false, fehler: meldung };
+      const id = neueKennung(kern.neueId, new Set([...daten.eintraege.map((x) => x.id), ...(daten.fremd?.l ?? []).map((w) => w?.i)]));
+      if (!id) return { ok: false, fehler: TEXT_FEHLER };
+      const e = tauschEintrag(entwurf, { id, monatA: tauschMonat(jmVon(a)), monatB: tauschMonat(jmVon(b)), heute }); // beide frisch gelesen
+      const verknuepft = await sicher(() =>
+        tauschAendern((d) => {
+          // auf der neuesten Fassung noch einmal prüfen (das andere Telefon könnte inzwischen getauscht haben); schon drin = wiederholt
+          if (!(d.eintraege ?? []).some((x) => x.id === id)) {
+            const neu = tauschPruefen(entwurf, { daten: d, monate: tauschMonat, katalog, heute });
+            if (neu) throw new Error(neu);
+          }
+          return tauschHinzufuegen(d, e, tauschOptionen());
+        }),
+      );
+      if (!verknuepft.ok) return verknuepft.wartet ? { ...verknuepft, id } : verknuepft; // ohne Verknüpfung kein Monat
+      return { ...(await seitenSchreiben(e, ['a', 'b'], tauschAnwenden)), id };
+    },
+
+    /**
+     * Halben (oder offenen) Tausch `id` abschließen: schreibt die fehlende Hälfte (A, dann B). Schon ganz → { ok: true } ohne Schreiben;
+     * von Hand übermalt („gebrochen“) → { ok: false, fehler }, nichts wird repariert. → { ok, fehler?, gemeldet?, wartet? }; wirft nicht.
+     */
+    async diensttauschAbschliessen(id) {
+      const { e, fehler } = await tauschHolen(id);
+      if (fehler) return { ok: false, fehler };
+      const zustand = tauschZustandJetzt(e);
+      if (zustand === 'ganz') return { ok: true };
+      if (zustand !== 'halb' && zustand !== 'offen') return { ok: false, fehler: TEXT_TAUSCH_GEBROCHEN };
+      return seitenSchreiben(e, ['a', 'b'].filter((s) => seiteOffen(e, s, tauschAnwenden)), tauschAnwenden);
+    },
+
+    /**
+     * Tausch `id` rückgängig machen: erst die Monate (B, dann A; nur, was angekommen ist) genau wie vorher – Schicht und eigene Zeiten,
+     * auch was vorher in B stand –, dann die Verknüpfung entfernen. Scheitert ein Monat, bleibt die Verknüpfung (der Tausch ist dann halb).
+     * Von Hand übermalt („gebrochen“) → { ok: false, fehler }, nichts wird geschrieben. → { ok, fehler?, gemeldet?, wartet? }; wirft nicht.
+     */
+    async diensttauschRueckgaengig(id) {
+      const { e, fehler } = await tauschHolen(id);
+      if (fehler) return { ok: false, fehler };
+      if (tauschZustandJetzt(e) === 'gebrochen') return { ok: false, fehler: TEXT_TAUSCH_GEBROCHEN };
+      const monate = await seitenSchreiben(e, ['b', 'a'].filter((s) => seiteOffen(e, s, tauschZuruecknehmen)), tauschZuruecknehmen);
+      if (!monate.ok) return monate;
+      return sicher(() => tauschAendern((d) => tauschEntfernen(d, id, tauschOptionen())));
+    },
   };
 
   return { methoden, intern: { schichtFuerSicherung } };

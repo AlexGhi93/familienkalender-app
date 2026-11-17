@@ -1489,6 +1489,7 @@ describe('unlesbarer Text in den älteren versteckten Ereignissen (B2)', () => {
 // Die öffentlichen Methoden des Stores in 1.4.0 (sortiert): die Fassade über src/app/store/* muss genau diese bieten.
 const METHODEN_1_4_0 = [
   'aktualisieren', 'arbeitLoeschen', 'arbeitSpeichern', 'ausstehend', 'autoLoeschen', 'autoSpeichern', 'autosFrischLesen', 'autosLaden',
+  'diensttauschAbschliessen', 'diensttauschRueckgaengig', 'diensttauschSpeichern',
   'einkaufAktualisieren', 'einkaufEntfernen', 'einkaufErledigteEntfernen', 'einkaufGeprueftAm', 'einkaufHinzufuegen', 'einkaufUmschalten',
   'einstellungen', 'erinnerungenPruefen', 'erinnerungenReparieren', 'erinnerungenTestBeenden', 'erinnerungenTestStarten', 'erstattungSpeichern',
   'extraEntfernen', 'extraHinzufuegen', 'fixFrischLesen', 'fixLaden', 'fixPostenArchivieren', 'fixPostenLoeschen', 'fixPostenSpeichern',

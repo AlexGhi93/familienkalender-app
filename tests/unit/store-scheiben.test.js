@@ -17,7 +17,7 @@ import { speicherAttrappe } from './hilfen.js';
 const JETZT = new Date('2026-10-14T08:00:00+02:00');
 const FASSADE = ['aktualisieren', 'ausstehend', 'getState', 'heute', 'jetzt', 'kontoLeeren', 'laden', 'sicherungsDaten', 'starteAusSnapshot', 'subscribe', 'wiederholeAusstehende', 'zuruecksetzen'];
 
-test('keine Methode wird beim Zusammensetzen überschrieben: Fassade (12) + alle Scheiben = 93', () => {
+test('keine Methode wird beim Zusammensetzen überschrieben: Fassade (12) + alle Scheiben = 96', () => {
   const jetzt = () => JETZT;
   const adapter = createDemoAdapter({ speicher: speicherAttrappe(), jetzt });
   const kern = createKern({ adapter, jetzt, neueId: () => 'id' });
@@ -35,6 +35,6 @@ test('keine Methode wird beim Zusammensetzen überschrieben: Fassade (12) + alle
   const namen = [...FASSADE, ...Object.values(scheiben).flatMap((s) => Object.keys(s.methoden))];
   const doppelt = namen.filter((n, i) => namen.indexOf(n) !== i);
   assert.deepEqual(doppelt, [], 'jeder Name gehört genau einem Teil');
-  assert.equal(namen.length, 93);
+  assert.equal(namen.length, 96);
   assert.deepEqual([...namen].sort(), Object.keys(createStore(adapter)).sort(), 'die Fassade bietet genau diese Namen');
 });
