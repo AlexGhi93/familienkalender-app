@@ -28,6 +28,8 @@ jobs:
             login-dienst/package-lock.json
       - run: npm ci
       - run: npm test
+      - name: Duplikate (jscpd)
+        run: npm run test:duplikate
       - name: Login-Dienst (Cloudflare Worker)
         working-directory: login-dienst
         run: |

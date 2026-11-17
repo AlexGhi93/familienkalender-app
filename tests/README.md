@@ -31,6 +31,7 @@ npm run test:visuell   # Klassisch Pixel für Pixel gegen die Basis in tests/vis
 npm run test:kontrast  # Kontrast ≥ 4,5:1 (Buchstabenpixel gegen den Hintergrund) und Ziele ≥ 44 px, alle Bildschirme × 3 Aussehen × Hell/Dunkel (etwa 10 Minuten)
 npm run test:leistung  # Bewegung auf 4× langsamerer CPU: lange Aufgaben und verlorene Bilder in Glas und Bento (etwa 3 Minuten)
 npm run test:webkit    # nur lokal: Glas und Bento in Safari/WebKit als iPhone (einmalig `npx playwright install webkit`)
+npm run test:duplikate # jscpd 4.3.0 über src/, tests/ und themes/: scheitert bei jedem neuen Klon (Basis in tests/duplikate-basis.json; sinkt der Stand, Basis dort senken; braucht Netz für `npx`)
 node tests/visuell/galerie.mjs   # Fotos aller Bildschirme × 3 Aussehen × Hell/Dunkel mit index.html (Standard: .superpowers/…/screens/task-10)
 ```
 
@@ -152,5 +153,5 @@ und stehen dort mit Datei und Zeile im Kommentar. Wird ein Fehler behoben, die M
 ## CI
 
 `.github/workflows/tests.yml` läuft bei Pushes auf `main`, `claude/**` und `agent/**` sowie bei Pull Requests:
-Job `unit` (`npm ci`, `npm test`) und Job `e2e` (`npm ci`, `npx playwright install --with-deps chromium`, `npm run test:e2e`).
+Job `unit` (`npm ci`, `npm test`, `npm run test:duplikate`) und Job `e2e` (`npm ci`, `npx playwright install --with-deps chromium`, `npm run test:e2e`).
 Schlägt `e2e` fehl, liegen Bericht, Screenshots und Traces als Artefakt `playwright-report` bereit.

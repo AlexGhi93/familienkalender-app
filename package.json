@@ -12,7 +12,8 @@
     "test:visuell": "playwright test -c playwright.visuell.config.js",
     "test:webkit": "playwright test --project=webkit-glas --project=webkit-bento",
     "test:kontrast": "node tests/visuell/kontrast.mjs",
-    "test:leistung": "node tests/visuell/leistung.mjs"
+    "test:leistung": "node tests/visuell/leistung.mjs",
+    "test:duplikate": "node tests/duplikate.mjs"
   },
   "engines": {
     "node": ">=22"
