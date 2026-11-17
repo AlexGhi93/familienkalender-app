@@ -1,6 +1,6 @@
 // Blätter (Dialoge von unten) nach unten wischen zum Schließen – echte Touch-Ereignisse über das DevTools-Protokoll –
 // und kein Neuladen der Seite durch Herunterziehen, solange ein Blatt offen ist.
-import { test, expect, starteDemo } from './hilfen.js';
+import { test, expect, starteDemo, tab } from './hilfen.js';
 
 const zelle = (page, datum) => page.locator(`.sp-zelle[data-datum="${datum}"]`);
 const tafel = (page) => page.locator('.blatt').last(); // das oberste Blatt
@@ -453,5 +453,117 @@ test.describe('Neuzeichnen und Stelle im Blatt (B8)', () => {
     await page.getByRole('dialog', { name: 'Auto löschen?' }).getByRole('button', { name: 'Abbrechen' }).click();
     await expect(page.getByRole('dialog', { name: 'Auto löschen?' })).toHaveCount(0);
     expect(await stelle()).toBe(200);
+  });
+});
+
+test.describe('Zurück, Escape und Seitenwechsel (B6, B7)', () => {
+  const tagImMonat = (page, name) => page.locator('.raster').getByRole('button', { name, exact: false });
+  const huellen = (page) => page.locator('.blatt-huelle:not(.zu)');
+  /** Ein Zurück: auf #/monat, kein Blatt, die Seite steht. */
+  async function zurueckZumMonatOhneBlatt(page) {
+    await page.goBack();
+    await expect(page).toHaveURL(/#\/monat$/);
+    await expect(page.locator('.blatt-huelle')).toHaveCount(0);
+    await expect(page.locator('.monat-kopf h1')).toHaveText('Oktober 2026');
+  }
+  /** Kalender → 15. Oktober (Kinderarzt) → „Löschen“: Tagesblatt mit Rückfrage darüber. */
+  async function tagMitRueckfrage(page) {
+    await tagImMonat(page, 'Donnerstag, 15. Oktober').click();
+    const tag = page.getByRole('dialog', { name: 'Donnerstag, 15. Oktober' });
+    await tag.locator('.zeile').filter({ hasText: 'Kinderarzt' }).getByRole('button', { name: 'Löschen' }).click();
+    const frage = page.getByRole('dialog', { name: 'Termin löschen?' });
+    await expect(frage).toBeVisible();
+    return { tag, frage };
+  }
+
+  test('Zurück schließt nur das oberste Blatt und bleibt auf der Seite', async ({ page }) => {
+    await starteDemo(page, { route: '#/heute' });
+    await tab(page, 'Monat');
+    const { tag, frage } = await tagMitRueckfrage(page);
+    await page.goBack();
+    await expect(frage).toHaveCount(0);
+    await expect(tag).toBeVisible();
+    await expect(page).toHaveURL(/#\/monat$/);
+    await page.goBack();
+    await expect(page.locator('.blatt-huelle')).toHaveCount(0);
+    await expect(page).toHaveURL(/#\/monat$/);
+    await expect(page.locator('.monat-kopf h1')).toHaveText('Oktober 2026');
+  });
+
+  test('Schließen mit ✕: ein Zurück geht zur vorigen Seite', async ({ page }) => {
+    await starteDemo(page, { route: '#/heute' });
+    await tab(page, 'Monat');
+    await tagImMonat(page, 'Donnerstag, 15. Oktober').click();
+    const tag = page.getByRole('dialog', { name: 'Donnerstag, 15. Oktober' });
+    await tag.getByRole('button', { name: 'Schließen' }).click();
+    await expect(page.locator('.blatt-huelle')).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => history.state)).toBeNull(); // der eigene Eintrag ist verbraucht
+    await page.goBack();
+    await expect(page).toHaveURL(/#\/heute$/);
+  });
+
+  test('gestapelt (Tagesblatt → Rückfrage): ✕ schließt beide nacheinander ohne tote Einträge', async ({ page }) => {
+    await starteDemo(page, { route: '#/heute' });
+    await tab(page, 'Monat');
+    const { tag, frage } = await tagMitRueckfrage(page);
+    await frage.getByRole('button', { name: 'Abbrechen' }).click();
+    await expect(frage).toHaveCount(0);
+    await expect(tag).toBeVisible();
+    await tag.getByRole('button', { name: 'Schließen' }).click();
+    await expect(page.locator('.blatt-huelle')).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => history.state)).toBeNull();
+    await page.goBack();
+    await expect(page).toHaveURL(/#\/heute$/);
+  });
+
+  test('Navigation aus einem Blatt schließt es; ein Zurück führt zur Seite davor', async ({ page }) => {
+    await starteDemo(page, { route: '#/heute' });
+    await tab(page, 'Monat');
+    await tagImMonat(page, 'Donnerstag, 15. Oktober').click();
+    await expect(page.getByRole('dialog', { name: 'Donnerstag, 15. Oktober' })).toBeVisible();
+    await page.evaluate(() => {
+      location.hash = '#/neu';
+    });
+    await expect(huellen(page)).toHaveCount(0);
+    await expect(page).toHaveURL(/#\/neu$/);
+    await zurueckZumMonatOhneBlatt(page);
+  });
+
+  test('Tagesblatt: Neu-Chip (schließen + navigieren) → #/neu; ein Zurück → #/monat, kein Blatt, Seite bleibt', async ({ page }) => {
+    await starteDemo(page, { route: '#/heute' });
+    await tab(page, 'Monat');
+    await tagImMonat(page, 'Freitag, 23. Oktober').click();
+    const tag = page.getByRole('dialog', { name: 'Freitag, 23. Oktober' });
+    await tag.locator('h3:text-is("Neu an diesem Tag") + .chip-reihe .chip').filter({ hasText: 'Arzttermin' }).click();
+    await expect(page).toHaveURL(/#\/neu$/);
+    await expect(page.locator('.formular .karte-text b')).toHaveText('Arzttermin');
+    await page.waitForTimeout(300); // ein verspätetes go(-1) würde die Navigation hier zurücknehmen
+    await expect(page).toHaveURL(/#\/neu$/);
+    await expect(page.locator('.formular .karte-text b')).toHaveText('Arzttermin');
+    await zurueckZumMonatOhneBlatt(page);
+    await page.waitForTimeout(300); // das Überspringen des toten Eintrags bleibt auf #/monat
+    await expect(page).toHaveURL(/#\/monat$/);
+    await expect(page.locator('.blatt-huelle')).toHaveCount(0);
+  });
+
+  test('Escape schließt nur das oberste Blatt', async ({ page }) => {
+    await starteDemo(page, { route: '#/monat' });
+    const { tag, frage } = await tagMitRueckfrage(page);
+    await page.keyboard.press('Escape');
+    await expect(frage).toHaveCount(0);
+    await expect(tag).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.blatt-huelle')).toHaveCount(0);
+    await expect(page).toHaveURL(/#\/monat$/);
+  });
+
+  test('Kaltstart direkt auf #/monat: Zurück schließt das Blatt, die App bleibt', async ({ page }) => {
+    await starteDemo(page, { route: '#/monat' });
+    await tagImMonat(page, 'Donnerstag, 15. Oktober').click();
+    await expect(page.getByRole('dialog', { name: 'Donnerstag, 15. Oktober' })).toBeVisible();
+    await page.goBack();
+    await expect(page.locator('.blatt-huelle')).toHaveCount(0);
+    await expect(page).toHaveURL(/#\/monat$/);
+    await expect(page.locator('nav.tabs')).toBeVisible();
   });
 });

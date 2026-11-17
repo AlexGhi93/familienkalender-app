@@ -39,29 +39,28 @@ test('Mehr → Autos → Auto: Zeile mit „N fällig“, Karten je Auto, Seite 
   await expect(page).toHaveURL(/#\/autos$/);
 });
 
-test('Marke „N fällig“ in Mehr: ändert sich an Ort und Stelle, wenn eine Arbeit das Fällige erledigt (ohne Neuzeichnen der Seite)', async ({ page }) => {
+test('Marke „N fällig“ in Mehr: Wechsel nach „Mehr“ schließt ein offenes Blatt (B7); die Marke zählt nach dem Eintragen eins weniger', async ({ page }) => {
   const zeit = '2026-10-20T08:00:00+02:00';
   const tesla = autoId('2026-10-20', 'Tesla Model 3');
   await starteDemo(page, { route: `#/autos/${tesla}`, zeit, speicher: { 'fk.demo.v1': demoMitAutos('2026-10-20', vierFaellig) } });
-  // das Blatt „Reifenwechsel eintragen“ bleibt offen, darunter geht es zurück nach „Mehr“
+  // seit 1.5.0 (B7) bleibt ein Blatt nicht über einer anderen Seite offen: der Seitenwechsel schließt es
   await page.getByRole('button', { name: 'Reifenwechsel (saisonal): Reifenwechsel eintragen' }).click();
   const b = blatt(page, '🛞 Reifenwechsel eintragen');
   await expect(b.getByRole('button', { name: '❄️ Winter' })).toHaveAttribute('aria-pressed', 'true');
   await page.evaluate(() => (location.hash = '#/mehr'));
+  await expect(b).toHaveCount(0);
   const zeile = page.locator('.menue-eintrag[data-id="autos"] .menue-zeile');
   const marke = zeile.locator('.menue-marke');
   await expect(marke).toHaveText('4 fällig');
-  // Merker an der Seite und an der Marke: ein Neuzeichnen von „Mehr“ würde beide ersetzen
-  await page.evaluate(() => {
-    document.querySelector('#inhalt').firstElementChild.dataset.testMerker = 'mehr';
-    document.querySelector('.menue-eintrag[data-id="autos"] .menue-marke').dataset.testMerker = 'marke';
-  });
-  await b.getByRole('button', { name: 'Eintragen' }).click();
+  // eingetragen auf der Seite des Autos, zurück in „Mehr“: eins weniger fällig
+  await page.goBack();
+  await expect(page).toHaveURL(new RegExp(`#/autos/${tesla}$`));
+  await page.getByRole('button', { name: 'Reifenwechsel (saisonal): Reifenwechsel eintragen' }).click();
+  await blatt(page, '🛞 Reifenwechsel eintragen').getByRole('button', { name: 'Eintragen' }).click();
   await erwarteToast(page, 'Eingetragen ✓');
+  await page.evaluate(() => (location.hash = '#/mehr'));
   await expect(marke).toHaveText('3 fällig');
-  await expect(page).toHaveURL(/#\/mehr$/);
-  await expect(page.locator('#inhalt > [data-test-merker="mehr"]')).toHaveCount(1);
-  await expect(marke).toHaveAttribute('data-test-merker', 'marke');
+  await expect(page.locator('.blatt-huelle')).toHaveCount(0);
 });
 
 test('Fällig: ✓ ok, ? unbekannt mit „Letzte Erledigung eintragen“, ⚠ überfällig und ⏳ bald; Regel mit Info und Quelle', async ({ page }) => {

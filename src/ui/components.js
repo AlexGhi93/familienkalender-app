@@ -1,3 +1,4 @@
+import { createBlattVerlauf } from '../app/blatt-verlauf.js';
 import { blattZiehenAnbinden } from './blatt-ziehen.js';
 import { blattSchliessenMs } from './bewegung.js';
 import { fuelle, h, svg } from './dom.js';
@@ -49,9 +50,35 @@ export function urlaubRing({ genommen, geplant, ziel, groesse = 66 }) {
   );
 }
 
+// Ein Verlauf für alle Blätter: „Zurück“ (Android) schließt nur das oberste, Escape ebenso, eine neue Seite schließt alle (src/app/blatt-verlauf.js).
+// Die Sitzung trennt die Einträge dieses Ladens von denen eines früheren (nach Neuladen werden sie nicht übersprungen).
+let blattVerlauf = null;
+function verlaufDerBlaetter() {
+  if (blattVerlauf) return blattVerlauf;
+  blattVerlauf = createBlattVerlauf({
+    verlauf: globalThis.history,
+    sitzung: Math.random().toString(36).slice(2, 12),
+    adresse: () => globalThis.location.hash,
+    gehe: (ziel) => {
+      globalThis.location.hash = ziel;
+    },
+  });
+  globalThis.addEventListener('popstate', () => blattVerlauf.beiPopstate(globalThis.history.state));
+  globalThis.addEventListener('hashchange', () => blattVerlauf.beiHashwechsel());
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const oben = blattVerlauf.oberstes();
+    if (!oben) return;
+    blattVerlauf.geschlossen(oben);
+    oben.zu();
+  });
+  return blattVerlauf;
+}
+
 /**
  * Blatt von unten (Tagesdetails, Bestätigungen). `render({ schliessen, neuZeichnen })` baut den Inhalt; `neuZeichnen()` aktualisiert ihn (und hält die Stelle im Blatt).
- * Schließen mit ✕, Escape, Tipp auf den Hintergrund oder nach unten wischen; `beimSchliessen` läuft dabei genau einmal.
+ * Schließen mit ✕, Escape (nur das oberste), Tipp auf den Hintergrund, nach unten wischen, „Zurück“ (nur das oberste) oder Seitenwechsel;
+ * `beimSchliessen` läuft dabei genau einmal.
  */
 export function blatt({ titel, render, beimSchliessen = () => {} }) {
   const inhalt = h('div', { class: 'blatt-inhalt' });
@@ -62,9 +89,9 @@ export function blatt({ titel, render, beimSchliessen = () => {} }) {
   const huelle = h('div', { class: 'blatt-huelle' }, hintergrund, tafel);
 
   let offen = true;
-  const beiTaste = (e) => {
-    if (e.key === 'Escape') schliessen();
-  };
+  const verlauf = verlaufDerBlaetter();
+  // schließt ohne den Verlauf anzufassen (Zurück, neue Seite); `schliessen` meldet es vorher dem Verlauf (der geht dann selbst zurück)
+  const eintrag = { zu };
   function neuZeichnen() {
     // die eigene Stelle halten (nicht die des obersten Blatts: darüber kann eine Bestätigung liegen)
     const oben = tafel.scrollTop;
@@ -73,8 +100,12 @@ export function blatt({ titel, render, beimSchliessen = () => {} }) {
   }
   function schliessen() {
     if (!offen) return;
+    verlauf.geschlossen(eintrag);
+    zu();
+  }
+  function zu() {
+    if (!offen) return;
     offen = false;
-    document.removeEventListener('keydown', beiTaste);
     huelle.classList.add('zu');
     // Bei reduzierter Bewegung gibt es nichts hinauszugleiten: gleich weg, damit nichts unsichtbar über der Seite liegt.
     // Klassisch wie bisher 180 ms; Glas/Bento so lange wie ihr Blatt-Übergang (--dauer-mittel), siehe bewegung.js.
@@ -84,9 +115,9 @@ export function blatt({ titel, render, beimSchliessen = () => {} }) {
     beimSchliessen();
   }
   blattZiehenAnbinden({ huelle, tafel, schliessen });
-  document.addEventListener('keydown', beiTaste);
   neuZeichnen();
   document.body.append(huelle);
+  verlauf.geoeffnet(eintrag);
   // erst im nächsten Bild „auf“ (damit es hereingleitet) – aber nicht mehr, wenn es inzwischen schon geschlossen wurde
   requestAnimationFrame(() => {
     if (offen) huelle.classList.add('auf');
