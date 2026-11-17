@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { VORLADEN_WARTEN_MS, createSchichtVorlader } from '../../src/app/schicht-vorladen.js';
-import { uhrAttrappe } from './hilfen.js';
+import { googleStore, uhrAttrappe } from './hilfen.js';
 
 /** Vorlader mit einstellbarem Ergebnis: `klappt` = ob das nächste Vorladen den laufenden Monat liefert. */
 function aufbau({ bereit = true, monat = '2026-10' } = {}) {
@@ -127,4 +127,16 @@ test('nicht mehr bereit (z. B. Anmeldung abgelaufen): kein Versuch; wieder berei
   t.vorlader.anstossen(); // neu verbunden: Schichtarten und Monate neu lesen
   await fertig();
   assert.equal(t.aufrufe, 3);
+});
+
+test('Vorladen: fkschtausch scheitert → vorgeladen bleibt leer (kein Push-Plan); beim nächsten Vorladen gesetzt', async () => {
+  let kaputt = true;
+  const stoeren = (e) => ({ ...e, holen: async (k, id) => (kaputt && id === 'fkschtausch' ? Promise.reject(Object.assign(new Error('HTTP 500'), { status: 500 })) : e.holen(k, id)) });
+  const { store } = await googleStore({ jetzt: new Date('2026-10-14T08:00:00+02:00'), stoeren });
+  await store.schichtVorladen();
+  assert.equal(store.getState().schicht.status['2026-10'], 'geladen', 'der Schichtplan selbst ist da');
+  assert.equal(store.getState().schicht.vorgeladen, null);
+  kaputt = false;
+  await store.schichtVorladen();
+  assert.equal(store.getState().schicht.vorgeladen, '2026-10');
 });

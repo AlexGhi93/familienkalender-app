@@ -1,7 +1,7 @@
 import { todayVienna } from '../../domain/dates.js';
 import { monatVor } from '../../domain/konto.js';
 import { artAendern, artArchivieren, artHinzufuegen, artVerschieben, katalogErgaenzen, leererMonat, normalisiereKatalog, normalisiereMonat, schaltePinsel, schichtAm, setzeNotiz, setzeSchicht, setzeTagZeiten, standardKatalog, tageImMonat, vorladeMonate, zusatzEntfernen, zusatzHinzufuegen, zusatzWiederherstellen } from '../../domain/schicht.js';
-import { TEXT_TAUSCH_WEG, leererTausch, tauschAnwenden, tauschAusText, tauschEintrag, tauschEntfernen, tauschHinzufuegen, tauschPartnerMonate, tauschPruefen, tauschText, tauschZuruecknehmen, tauschZustand } from '../../domain/schicht-tausch.js';
+import { TEXT_TAUSCH_WEG, leererTausch, tauschAnwenden, tauschAusText, tauschEintrag, tauschEntfernen, tauschErsetzen, tauschHinzufuegen, tauschIstOffen, tauschOffenEintrag, tauschOffenPruefen, tauschOffenTag, tauschPartnerMonate, tauschPruefen, tauschRueckgabeEintrag, tauschRueckgabePruefen, tauschSeiten, tauschText, tauschZuruecknehmen, tauschZustand } from '../../domain/schicht-tausch.js';
 import { UNLESBAR_TEXT } from '../../domain/unlesbar.js';
 import { eintragVorhanden, neueKennung } from './geteilt.js';
 import { TEXT_FEHLER, gleichOder, istAuthFehler } from './kern.js';
@@ -12,6 +12,9 @@ const SCHICHT_SICHERUNG_PARALLEL = 6; // so viele Monate werden gleichzeitig gef
 const TEXT_TAUSCH_NICHT_GELESEN = 'Der Schichtplan konnte gerade nicht gelesen werden. Bitte noch einmal versuchen.';
 const TEXT_TAUSCH_GEBROCHEN = 'Dieser Tausch wurde inzwischen von Hand geändert – bitte die beiden Tage selbst richtigstellen.';
 const TEXT_TAGE = 'Bitte zwei Tage wählen.';
+const TEXT_TAG = 'Bitte einen Tag wählen.';
+const TEXT_ERST_ABSCHLIESSEN = 'Bitte zuerst den Tausch abschließen.';
+const TEXT_NUR_GEBROCHEN = 'Nur ein von Hand geänderter offener Tausch lässt sich so entfernen.';
 const DATUM = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
 const jmVon = (datum) => datum.slice(0, 7);
 
@@ -228,9 +231,15 @@ export function createSchichtSlice(kern, { store, fixLesen, autosHolen, versHole
   // ist dann „offen“ oder „halb“ und lässt sich abschließen oder rückgängig machen. Vor jedem Schritt werden die Verknüpfung und die
   // betroffenen Monate frisch gelesen; geschrieben wird immer als reine Änderung auf der neuesten Fassung (Warteschlange je Teil wie
   // beim Schichtplan, siehe `teilAendern` im Kern; die Verknüpfung hat den Teil 'tausch', der Adapter schreibt über `aendereVersteckt`).
+  // Offener Tausch (nur ein Tag, die Rückgabe steht aus): 1) Verknüpfung, 2) der Monat seines Tages; Abschließen und Rückgängig kennen nur
+  // diese eine Seite (`tauschSeiten`). Die Rückgabe schließt ihn: 1) der geschlossene Eintrag ersetzt den offenen in der Verknüpfung,
+  // 2) der Monat des Rückgabetags; scheitert der, ist der Tausch „halb“ (abschließen oder rückgängig wie oben). Ein offener Tausch fällt
+  // nie von selbst weg; ist sein Tag von Hand übermalt („gebrochen“), lässt sich nur die Verknüpfung entfernen (`diensttauschVerwerfen`).
 
   const tauschMonat = (jm) => kern.state.schicht.monate[jm] ?? null;
-  const tauschZustandJetzt = (e) => tauschZustand(e, tauschMonat(jmVon(e.a)), tauschMonat(jmVon(e.b)));
+  const tauschZustandJetzt = (e) => tauschZustand(e, e.a ? tauschMonat(jmVon(e.a)) : null, e.b ? tauschMonat(jmVon(e.b)) : null); // offen: ein Tag
+  /** Die Monate der Tage, die der Tausch hat (offen: einer). */
+  const tauschMonate = (e) => tauschSeiten(e).map((seite) => jmVon(e[seite]));
   const tauschOptionen = () => ({ heute: todayVienna(jetzt()), zustand: tauschZustandJetzt });
 
   /** Ändert die Verknüpfung (siehe `teilAendern`) → { neu, ergebnis, fehler }. */
@@ -276,10 +285,13 @@ export function createSchichtSlice(kern, { store, fixLesen, autosHolen, versHole
     return null;
   }
 
-  /** Der Eintrag `id` nach dem frischen Lesen (samt seinen Monaten): { e } oder { fehler } (gibt es nicht mehr, gesperrt, nicht gelesen). */
-  async function tauschHolen(id) {
+  /**
+   * Der Eintrag `id` nach dem frischen Lesen (samt den Monaten seiner Tage und den Monaten `dazu`): { e } oder { fehler } (gibt es nicht
+   * mehr, gesperrt, nicht gelesen).
+   */
+  async function tauschHolen(id, dazu = []) {
     const vorab = (kern.state.schicht.tausch?.eintraege ?? []).find((x) => x.id === id);
-    const fehler = await tauschVorbereiten(vorab ? [jmVon(vorab.a), jmVon(vorab.b)] : []);
+    const fehler = await tauschVorbereiten([...(vorab ? tauschMonate(vorab) : []), ...dazu]);
     if (fehler) return { fehler };
     const t = kern.state.schicht.tausch;
     let e;
@@ -289,7 +301,7 @@ export function createSchichtSlice(kern, { store, fixLesen, autosHolen, versHole
       return { fehler: f.message };
     }
     if (!vorab || vorab.a !== e.a || vorab.b !== e.b) {
-      const noch = await tauschVorbereiten([jmVon(e.a), jmVon(e.b)]); // erst jetzt bekannt: die Monate dieses Tauschs lesen
+      const noch = await tauschVorbereiten([...tauschMonate(e), ...dazu]); // erst jetzt bekannt: die Monate dieses Tauschs lesen
       if (noch) return { fehler: noch };
     }
     return { e };
@@ -297,7 +309,7 @@ export function createSchichtSlice(kern, { store, fixLesen, autosHolen, versHole
 
   /** Braucht die Seite `seite` von `e` noch `op` (Anwenden bzw. Zurücknehmen)? Wirft `op` (Tag von Hand geändert): ja – das Schreiben meldet es. */
   function seiteOffen(e, seite, op) {
-    const m = tauschMonat(jmVon(seite === 'a' ? e.a : e.b));
+    const m = tauschMonat(jmVon(e[seite]));
     try {
       return op(m, e, seite) !== m;
     } catch {
@@ -309,7 +321,7 @@ export function createSchichtSlice(kern, { store, fixLesen, autosHolen, versHole
   async function seitenSchreiben(e, seiten, op) {
     const gruppen = [];
     for (const seite of seiten) {
-      const jm = jmVon(seite === 'a' ? e.a : e.b);
+      const jm = jmVon(e[seite]);
       const g = gruppen.find((x) => x.jm === jm);
       if (g) g.seiten.push(seite);
       else gruppen.push({ jm, seiten: [seite] });
@@ -338,6 +350,48 @@ export function createSchichtSlice(kern, { store, fixLesen, autosHolen, versHole
     return r;
   }
 
+  /**
+   * Schreibt einen neuen Tausch: Kennung, `eintragFuer(id)`, dann 1) die Verknüpfung – auf ihrer neuesten Fassung noch einmal `pruefe(daten)`
+   * (das andere Telefon könnte inzwischen getauscht haben; schon drin = wiederholt) –, 2) die Monate seiner Seiten. → { ok, id?, fehler?, gemeldet?, wartet? }.
+   */
+  async function tauschNeuSchreiben(daten, pruefe, eintragFuer) {
+    const id = neueKennung(kern.neueId, new Set([...daten.eintraege.map((x) => x.id), ...(daten.fremd?.l ?? []).map((w) => w?.i)]));
+    if (!id) return { ok: false, fehler: TEXT_FEHLER };
+    const e = eintragFuer(id);
+    const verknuepft = await sicher(() =>
+      tauschAendern((d) => {
+        if (!(d.eintraege ?? []).some((x) => x.id === id)) {
+          const neu = pruefe(d);
+          if (neu) throw new Error(neu);
+        }
+        return tauschHinzufuegen(d, e, tauschOptionen());
+      }),
+    );
+    if (!verknuepft.ok) return verknuepft.wartet ? nachAnmeldungAbschliessen({ ...verknuepft, id }) : verknuepft; // ohne Verknüpfung kein Monat
+    return nachAnmeldungAbschliessen({ ...(await seitenSchreiben(e, tauschSeiten(e), tauschAnwenden)), id });
+  }
+
+  /**
+   * Speichert einen neuen Tausch: liest Verknüpfung, Schichtarten und die Monate `jms` frisch, prüft mit `pruefen({ daten, monate, katalog,
+   * heute })` → Meldung | null und schreibt (`tauschNeuSchreiben`; Eintrag = `eintrag(id, heute)`). Steht derselbe Tausch (`gleich(x)`)
+   * schon „offen“ da (Verknüpfung geschrieben, Monate nicht) und besteht er die Prüfung ohne sich selbst, wird er fortgesetzt (nur die
+   * Monate) statt mit unsichtbarem Grund abgelehnt.
+   */
+  async function tauschNeuSpeichern(jms, { pruefen, gleich, eintrag }) {
+    const fehlt = await tauschVorbereiten(jms);
+    if (fehlt) return { ok: false, fehler: fehlt };
+    const { katalog, tausch: daten } = kern.state.schicht;
+    const { heute } = tauschOptionen();
+    const pruefe = (d) => pruefen({ daten: d, monate: tauschMonat, katalog, heute });
+    const da = daten.eintraege.find((x) => gleich(x) && tauschZustandJetzt(x) === 'offen');
+    if (da && !pruefe({ ...daten, eintraege: daten.eintraege.filter((x) => x !== da) })) {
+      return nachAnmeldungAbschliessen({ ...(await seitenSchreiben(da, tauschSeiten(da), tauschAnwenden)), id: da.id });
+    }
+    const meldung = pruefe(daten);
+    if (meldung) return { ok: false, fehler: meldung };
+    return tauschNeuSchreiben(daten, pruefe, (id) => eintrag(id, heute));
+  }
+
   const methoden = {
     /**
      * Schichtplan beim Öffnen seiner Seite: die Schichtarten (falls noch nicht gelesen) und der Monat `jm` mit seinem Vor- und
@@ -352,7 +406,7 @@ export function createSchichtSlice(kern, { store, fixLesen, autosHolen, versHole
      * Schichtplan, Fixkosten und Autos im Hintergrund nach dem Start (Google und Demo), damit die Erinnerungen von jedem Telefon aus
      * stimmen: liest die Schichtarten (immer neu), den laufenden Monat mit den zwei folgenden und – gleichzeitig – die vier Teile der
      * Fixkosten (Kündigungsfristen) und die Autos samt Verlauf (Vignette, Pickerl …; sie zählen NICHT für das Tor, siehe
-     * state.autos.frisch); erst wenn Schichtplan und Fixkosten gelesen sind, gilt `schicht.vorgeladen` = der laufende Monat (das eine
+     * state.autos.frisch); erst wenn Schichtplan (samt Diensttauschen, wenn der Adapter sie kennt) und Fixkosten gelesen sind, gilt `schicht.vorgeladen` = der laufende Monat (das eine
      * Tor für den Push-Plan: bleibt, auch wenn ein späteres Vorladen im selben Monat scheitert; nach dem Monatswechsel braucht es ein
      * neues Vorladen). Fehlt Papa noch eine später dazugekommene Standardart (E – Ersatzdienst), wird sie einmal still ergänzt
      * (siehe `schichtKatalogStillErgaenzen`; das zweite Telefon ergänzt nichts doppelt). Tut nichts vor dem Laden, solange nur
@@ -369,8 +423,9 @@ export function createSchichtSlice(kern, { store, fixLesen, autosHolen, versHole
         // Tor für den nächsten Monat ginge nicht auf. Wer die Autos braucht, wartet auf `autosLaden()` (dasselbe laufende Lesen).
         if (adapter.leseAutos) autosHolen();
         if (adapter.leseVersicherung) versHolen(); // ebenso die Versicherung: nur angestoßen, nie abgewartet (eigener Vorlader in der Shell)
-        const [{ katalogGelesen, monateGelesen }, fixOk] = await Promise.all([schichtLesen(vorladeMonate(jm), { katalogNeu: true }), adapter.leseFixkosten ? fixLesen() : true]);
-        if (katalogGelesen && monateGelesen && fixOk && kern.state.schicht.vorgeladen !== jm) {
+        const [{ katalogGelesen, monateGelesen, tauschGelesen }, fixOk] = await Promise.all([schichtLesen(vorladeMonate(jm), { katalogNeu: true }), adapter.leseFixkosten ? fixLesen() : true]);
+        const tauschOk = tauschGelesen || !adapter.leseDiensttausch; // die Diensttausche zählen mit (Erinnerungen an offene Tausche)
+        if (katalogGelesen && monateGelesen && tauschOk && fixOk && kern.state.schicht.vorgeladen !== jm) {
           kern.state = { ...kern.state, schicht: { ...kern.state.schicht, vorgeladen: jm } };
           melden();
         }
@@ -533,36 +588,84 @@ export function createSchichtSlice(kern, { store, fixLesen, autosHolen, versHole
     async diensttauschSpeichern(entwurf) {
       const { a, b } = entwurf ?? {};
       if (!DATUM.test(a ?? '') || !DATUM.test(b ?? '')) return { ok: false, fehler: TEXT_TAGE };
-      const fehlt = await tauschVorbereiten([jmVon(a), jmVon(b)]);
-      if (fehlt) return { ok: false, fehler: fehlt };
-      const { katalog, tausch: daten } = kern.state.schicht;
-      const { heute } = tauschOptionen();
-      // derselbe Tausch steht schon „offen“ da (Verknüpfung geschrieben, Monate nicht): fortsetzen statt mit unsichtbarem Grund ablehnen
-      const gleich = daten.eintraege.find((x) => x.person === entwurf.person && x.a === a && x.b === b && x.kb === entwurf.kb && tauschZustandJetzt(x) === 'offen');
-      if (gleich && !tauschPruefen(entwurf, { daten: { ...daten, eintraege: daten.eintraege.filter((x) => x !== gleich) }, monate: tauschMonat, katalog, heute })) {
-        return nachAnmeldungAbschliessen({ ...(await seitenSchreiben(gleich, ['a', 'b'], tauschAnwenden)), id: gleich.id });
-      }
-      const meldung = tauschPruefen(entwurf, { daten, monate: tauschMonat, katalog, heute });
-      if (meldung) return { ok: false, fehler: meldung };
-      const id = neueKennung(kern.neueId, new Set([...daten.eintraege.map((x) => x.id), ...(daten.fremd?.l ?? []).map((w) => w?.i)]));
-      if (!id) return { ok: false, fehler: TEXT_FEHLER };
-      const e = tauschEintrag(entwurf, { id, monatA: tauschMonat(jmVon(a)), monatB: tauschMonat(jmVon(b)), heute }); // beide frisch gelesen
-      const verknuepft = await sicher(() =>
-        tauschAendern((d) => {
-          // auf der neuesten Fassung noch einmal prüfen (das andere Telefon könnte inzwischen getauscht haben); schon drin = wiederholt
-          if (!(d.eintraege ?? []).some((x) => x.id === id)) {
-            const neu = tauschPruefen(entwurf, { daten: d, monate: tauschMonat, katalog, heute });
-            if (neu) throw new Error(neu);
-          }
-          return tauschHinzufuegen(d, e, tauschOptionen());
-        }),
-      );
-      if (!verknuepft.ok) return verknuepft.wartet ? nachAnmeldungAbschliessen({ ...verknuepft, id }) : verknuepft; // ohne Verknüpfung kein Monat
-      return nachAnmeldungAbschliessen({ ...(await seitenSchreiben(e, ['a', 'b'], tauschAnwenden)), id });
+      return tauschNeuSpeichern([jmVon(a), jmVon(b)], {
+        pruefen: (o) => tauschPruefen(entwurf, o),
+        gleich: (x) => !tauschIstOffen(x) && x.person === entwurf.person && x.a === a && x.b === b && x.kb === entwurf.kb,
+        eintrag: (id, heute) => tauschEintrag(entwurf, { id, monatA: tauschMonat(jmVon(a)), monatB: tauschMonat(jmVon(b)), heute }), // beide frisch gelesen
+      });
     },
 
     /**
-     * Halben (oder offenen) Tausch `id` abschließen: schreibt die fehlende Hälfte (A, dann B). Schon ganz → { ok: true } ohne Schreiben;
+     * Offenen Diensttausch speichern ({ person, richtung: 'abgegeben'|'uebernommen', tag, kb? (bei übernommen), mitWem? }): liest die
+     * Verknüpfung und den Monat des Tages frisch, prüft (`tauschOffenPruefen`, auch auf der neuesten Fassung der Verknüpfung) und schreibt
+     * dann die Verknüpfung und den Monat. Ergebnis, Fortsetzen eines „offen“ stehengebliebenen gleichen Tauschs (Person, Richtung, Tag,
+     * `kb`) und Warten auf die Anmeldung wie bei `diensttauschSpeichern`. Wirft nicht.
+     */
+    async diensttauschOffenSpeichern(entwurf) {
+      const { tag, richtung } = entwurf ?? {};
+      if (!DATUM.test(tag ?? '')) return { ok: false, fehler: TEXT_TAG };
+      return tauschNeuSpeichern([jmVon(tag)], {
+        pruefen: (o) => tauschOffenPruefen(entwurf, o),
+        gleich: (x) => tauschIstOffen(x) && x.person === entwurf.person && x.richtung === richtung && tauschOffenTag(x) === tag && (richtung === 'abgegeben' || x.kb === entwurf.kb),
+        eintrag: (id, heute) => tauschOffenEintrag(entwurf, { id, monat: tauschMonat(jmVon(tag)), heute }),
+      });
+    },
+
+    /**
+     * Rückgabe zum offenen Tausch `id` ({ tag, kb? }: abgegeben → am Rückgabetag wird der Dienst `kb` übernommen; übernommen → der Tag wird
+     * frei): liest die Verknüpfung, den Monat des offenen Tages und den des Rückgabetags frisch. Nur aus 'ganz' (offen → „Bitte zuerst den
+     * Tausch abschließen.“, von Hand geändert → TEXT_TAUSCH_GEBROCHEN); geprüft mit `tauschRueckgabePruefen`, auch auf der neuesten Fassung.
+     * Schreibt 1) die Verknüpfung (der geschlossene Eintrag ersetzt den offenen), 2) den Monat des Rückgabetags; scheitert der, ist der
+     * Tausch „halb“. → { ok, id?, fehler?, gemeldet?, wartet? }; wirft nicht.
+     */
+    async diensttauschRueckgabe(id, rueckgabe) {
+      const { tag, kb } = rueckgabe ?? {};
+      if (!DATUM.test(tag ?? '')) return { ok: false, fehler: TEXT_TAG };
+      const { e, fehler } = await tauschHolen(id, [jmVon(tag)]); // der Monat des Rückgabetags wird vor jedem Schreiben gelesen
+      if (fehler) return { ok: false, fehler };
+      const zustand = tauschIstOffen(e) ? tauschZustandJetzt(e) : 'ganz'; // geschlossen: die Prüfung meldet „schon abgeschlossen“
+      if (zustand === 'offen') return { ok: false, fehler: TEXT_ERST_ABSCHLIESSEN };
+      if (zustand !== 'ganz') return { ok: false, fehler: TEXT_TAUSCH_GEBROCHEN };
+      const { katalog, tausch: daten } = kern.state.schicht;
+      const { heute } = tauschOptionen();
+      const pruefe = (x, d) => tauschRueckgabePruefen(x, { tag, kb }, { daten: d, monate: tauschMonat, katalog, heute });
+      const meldung = pruefe(e, daten);
+      if (meldung) return { ok: false, fehler: meldung };
+      const zu = tauschRueckgabeEintrag(e, { tag, kb }, { monat: tauschMonat(jmVon(tag)) });
+      const verknuepft = await sicher(() =>
+        tauschAendern((d) => {
+          // auf der neuesten Fassung noch einmal prüfen, solange er dort offen ist; schon geschlossen: das entscheidet tauschErsetzen
+          const dort = (d.eintraege ?? []).find((x) => x.id === id);
+          const neu = dort && tauschIstOffen(dort) ? pruefe(dort, d) : null;
+          if (neu) throw new Error(neu);
+          return tauschErsetzen(d, zu, tauschOptionen());
+        }),
+      );
+      if (!verknuepft.ok) return verknuepft.wartet ? nachAnmeldungAbschliessen({ ...verknuepft, id }) : verknuepft;
+      const seite = e.richtung === 'abgegeben' ? 'b' : 'a'; // die Seite des Rückgabetags; die des offenen Tages ist schon angekommen
+      return nachAnmeldungAbschliessen({ ...(await seitenSchreiben(zu, [seite], tauschAnwenden)), id });
+    },
+
+    /**
+     * „Eintrag entfernen“: nur ein offener Tausch, dessen Tag von Hand übermalt ist („gebrochen“) – entfernt nur die Verknüpfung, kein
+     * Monat wird geschrieben (der Tag bleibt, wie er ist). Sonst { ok: false, fehler }. → { ok, fehler?, gemeldet?, wartet? }; wirft nicht.
+     */
+    async diensttauschVerwerfen(id) {
+      const { e, fehler } = await tauschHolen(id);
+      if (fehler) return { ok: false, fehler };
+      const verwerfbar = (x) => tauschIstOffen(x) && tauschZustandJetzt(x) === 'gebrochen';
+      if (!verwerfbar(e)) return { ok: false, fehler: TEXT_NUR_GEBROCHEN };
+      return sicher(() =>
+        tauschAendern((d) => {
+          const dort = (d.eintraege ?? []).find((x) => x.id === id);
+          if (dort && !verwerfbar(dort)) throw new Error(TEXT_NUR_GEBROCHEN);
+          return tauschEntfernen(d, id, tauschOptionen());
+        }),
+      );
+    },
+
+    /**
+     * Halben (oder offenen) Tausch `id` abschließen: schreibt die fehlende Hälfte (A, dann B; ein offener Tausch hat nur seinen Tag). Schon ganz → { ok: true } ohne Schreiben;
      * von Hand übermalt („gebrochen“) → { ok: false, fehler }, nichts wird repariert. → { ok, fehler?, gemeldet?, wartet? }; wirft nicht.
      */
     async diensttauschAbschliessen(id) {
@@ -571,11 +674,11 @@ export function createSchichtSlice(kern, { store, fixLesen, autosHolen, versHole
       const zustand = tauschZustandJetzt(e);
       if (zustand === 'ganz') return { ok: true };
       if (zustand !== 'halb' && zustand !== 'offen') return { ok: false, fehler: TEXT_TAUSCH_GEBROCHEN };
-      return seitenSchreiben(e, ['a', 'b'].filter((s) => seiteOffen(e, s, tauschAnwenden)), tauschAnwenden);
+      return seitenSchreiben(e, tauschSeiten(e).filter((s) => seiteOffen(e, s, tauschAnwenden)), tauschAnwenden);
     },
 
     /**
-     * Tausch `id` rückgängig machen: erst die Monate (B, dann A; nur, was angekommen ist) genau wie vorher – Schicht und eigene Zeiten,
+     * Tausch `id` rückgängig machen: erst die Monate (B, dann A; offen: sein Tag; nur, was angekommen ist) genau wie vorher – Schicht und eigene Zeiten,
      * auch was vorher in B stand –, dann die Verknüpfung entfernen. Scheitert ein Monat, bleibt die Verknüpfung (der Tausch ist dann halb).
      * Von Hand übermalt („gebrochen“) → { ok: false, fehler }, nichts wird geschrieben. → { ok, fehler?, gemeldet?, wartet? }; wirft nicht.
      */
@@ -583,7 +686,7 @@ export function createSchichtSlice(kern, { store, fixLesen, autosHolen, versHole
       const { e, fehler } = await tauschHolen(id);
       if (fehler) return { ok: false, fehler };
       if (tauschZustandJetzt(e) === 'gebrochen') return { ok: false, fehler: TEXT_TAUSCH_GEBROCHEN };
-      const monate = await seitenSchreiben(e, ['b', 'a'].filter((s) => seiteOffen(e, s, tauschZuruecknehmen)), tauschZuruecknehmen);
+      const monate = await seitenSchreiben(e, [...tauschSeiten(e)].reverse().filter((s) => seiteOffen(e, s, tauschZuruecknehmen)), tauschZuruecknehmen);
       if (!monate.ok) return monate;
       return sicher(() => tauschAendern((d) => tauschEntfernen(d, id, tauschOptionen())));
     },
