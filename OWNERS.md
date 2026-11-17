@@ -3,16 +3,17 @@
 An agent edits only the files of its area. Hubs belong to the integrator: an area agent hands over a described change
 (file, place, exact lines) instead of editing a hub. `tests/unit/agenten-doku.test.js` checks that every file under `src/`
 and `themes/` is listed in exactly one area (`## Shared` is not an area) and that every path below exists.
-Format: `*` matches inside one path segment, `{a,b}` lists alternatives.
+Files not listed belong to the integrator (Nicht aufgeführte Dateien gehören dem Integrator). Format: `*` matches inside one path segment, `{a,b}` lists alternatives.
 
 ## Hubs
 - `src/{shell,start,main}.js`, `src/ui/seiten.js`, `src/app/seiten-besuch.js`, `src/app/store.js`, `src/app/store/{kern,geteilt}.js`
 - `src/app/{hintergrund,seed,sicherung,version,demo-adapter}.js`, `src/calendar/{mapping,google-adapter,snapshot}.js`, `src/push/plan.js`
 - `themes/klassisch/basis.css`, `themes/glas.css`, `themes/bento.css`
 - `index.html`, `datenschutz.html`, `sw.js`, `package.json`, `package-lock.json`, `playwright.config.js`, `playwright.visuell.config.js`
-- `.github/workflows/tests.yml`, `tests/duplikate-basis.json`, `tests/visuell/*.js`
+- `.github/workflows/tests.yml`, `.gitignore`, `manifest.webmanifest`, `fonts/*`, `icons/*`
+- `tests/README.md`, `tests/duplikate-basis.json`, `tests/{duplikate,server}.mjs`, `tests/visuell/*`
 - `tests/unit/hilfen.js`
-- `tests/unit/{store,store-scheiben,hintergrund,mapping,speicher,app-hilfen,loeschen-rueckgaengig,seiten-besuch,sw,ebenen}.test.js`
+- `tests/unit/{store,store-scheiben,hintergrund,mapping,speicher,app-hilfen,loeschen-rueckgaengig,seiten-besuch,sw,ebenen,agenten-doku}.test.js`
 - `tests/e2e/{app,tabs,google}.spec.js`, `tests/e2e/hilfen.js`
 
 ## Base (shared helpers and look)
@@ -30,7 +31,7 @@ Format: `*` matches inside one path segment, `{a,b}` lists alternatives.
 - `src/ui/{heute,monat,neu,urlaub}-screen.js`, `src/ui/{tagesblatt,termin-formular,sachen-formular,sachen-aktionen,pyjamas-wechsel,bringen-holen,nachricht-blatt}.js`
 - `themes/{monat,formulare}.css`, `themes/klassisch/{monat,formulare,heute}.css`
 - `tests/unit/{dates,titles,classify,types,domain-regeln,dienst,termin,serie,nachrichten,views-tage}.test.js`
-- `tests/e2e/{heute,monat,neu,bringen-holen,essensgeld,nachrichten,urlaub}.spec.js`
+- `tests/e2e/{heute,aussehen-heute,monat,neu,bringen-holen,essensgeld,nachrichten,urlaub}.spec.js`
 
 ## Shopping list
 - `src/domain/einkauf.js`, `src/app/einkauf-abgleich.js`, `src/app/views/einkauf-model.js`, `src/ui/einkauf-screen.js`
@@ -73,7 +74,7 @@ Format: `*` matches inside one path segment, `{a,b}` lists alternatives.
 
 ## Google connection
 - `src/calendar/{api,auth,config,konfiguration,login-dienst,setup,erinnerungen,zustand}.js`
-- `login-dienst/src/index.js`, `login-dienst/test/dienst.test.js`
+- `login-dienst/*`, `login-dienst/{src,test}/*.js`
 - `tests/unit/{auth-login,login-dienst}.test.js`
 
 ## Push

@@ -53,13 +53,13 @@ test('AGENTS.md und OWNERS.md haben höchstens 100 Zeilen; CLAUDE.md verweist nu
   assert.equal(lesen('CLAUDE.md').trim(), '@AGENTS.md');
 });
 
-test('jede Datei unter src/ und themes/ gehört laut OWNERS.md zu genau einem Bereich', () => {
+test('jede Datei des Repos (außer den drei Doku-Dateien) gehört laut OWNERS.md zu genau einem Bereich', () => {
   const alle = bereiche();
   const zonen = [...alle].filter(([name]) => name !== 'Shared');
   assert.ok(zonen.length >= 10);
   const ohneBereich = [];
   const inMehrerenBereichen = [];
-  for (const datei of dateien.filter((d) => d.startsWith('src/') || d.startsWith('themes/'))) {
+  for (const datei of dateien.filter((d) => !['AGENTS.md', 'OWNERS.md', 'CLAUDE.md'].includes(d))) {
     const treffer = zonen.filter(([, muster]) => muster.some((m) => passt(m, datei))).map(([name]) => name);
     if (treffer.length === 0) ohneBereich.push(datei);
     if (treffer.length > 1) inMehrerenBereichen.push(`${datei}: ${treffer.join(', ')}`);
@@ -80,4 +80,11 @@ test('jeder Pfad ohne Platzhalter in OWNERS.md und jede in AGENTS.md genannte Da
     if (istPfad && !existsSync(new URL(token, wurzel))) fehlend.push(`AGENTS: ${token}`);
   }
   assert.deepEqual(fehlend, []);
+});
+
+test('die Hub-Liste in AGENTS.md ist identisch mit dem Abschnitt Hubs in OWNERS.md', () => {
+  const aus = lesen('AGENTS.md').split('\n').find((z) => z.startsWith('- Hub files are integrator-only'));
+  assert.ok(aus);
+  const inAgents = [...aus.split('):')[1].matchAll(/`([^`]+)`/g)].map((m) => m[1]);
+  assert.deepEqual(inAgents, bereiche().get('Hubs'));
 });
