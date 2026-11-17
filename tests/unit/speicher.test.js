@@ -8,6 +8,7 @@ import { normalizeSettings } from '../../src/domain/settings.js';
 import { leereListe } from '../../src/domain/einkauf.js';
 import { leeresKonto } from '../../src/domain/konto.js';
 import { leererMonat, monatAusText, monatText } from '../../src/domain/schicht.js';
+import { tauschAusText, tauschText } from '../../src/domain/schicht-tausch.js';
 import { createDemoAdapter } from '../../src/app/demo-adapter.js';
 import { standardSpeicher } from '../../src/app/speicher.js';
 import { speicherAttrappe } from './hilfen.js';
@@ -148,6 +149,25 @@ describe('Schnappschuss', () => {
       // aus dem gelesenen Schnappschuss entsteht wieder derselbe Kalendertext (nichts verschachtelt, nichts verloren)
       assert.equal(monatText(gelesen['2026-10']), monatText(monat));
       assert.deepEqual(JSON.parse(monatText(gelesen['2026-10'])).o, O);
+    });
+
+    test('Schnappschuss behält die Diensttausche (offline sichtbar); unbrauchbare fallen weg, der Rest bleibt gültig', () => {
+      const e = { id: 'tausch01', person: 'papa', a: '2026-10-01', b: '2026-10-07', ka: 'a', kb: 'b', vb: 'c', mitWem: 'Kollege', am: '2026-09-30' };
+      const tausch = tauschAusText(tauschText({ v: 1, eintraege: [e] })).daten;
+      const s = speicherAttrappe();
+      const snap = createSnapshot({ speicher: s, jetzt: () => new Date('2026-10-22T06:00:00.000Z') });
+      assert.equal(snap.speichern({ ...state, schicht: { katalog: null, monate: {}, tausch } }, '2026-10-22'), true);
+      assert.deepEqual(snap.lesen().daten.schicht, { katalog: null, monate: {}, tausch });
+      // nicht gelesen: kein Feld (wie bisher)
+      snap.speichern({ ...state, schicht: { katalog: null, monate: {} } }, '2026-10-22');
+      assert.deepEqual(snap.lesen().daten.schicht, { katalog: null, monate: {} });
+      const roh = { v: 1, gespeichertAm: '2026-10-22T06:00:00.000Z', settings: {}, tage: {}, urlaub: [], termine: [] };
+      const lies = (t) => createSnapshot({ speicher: speicherAttrappe({ [SNAPSHOT_KEY]: JSON.stringify({ ...roh, schicht: { katalog: null, monate: {}, tausch: t } }) }) }).lesen();
+      for (const kaputt of ['kaputt', { v: 2, eintraege: 'x' }, [1]]) {
+        const g = lies(kaputt);
+        assert.ok(g, JSON.stringify(kaputt));
+        assert.deepEqual(g.daten.schicht, { katalog: null, monate: {} });
+      }
     });
 
     test('lesen: zu viele Monate werden um den Monat des Speicherns gekürzt, nicht auf die neuesten', () => {

@@ -7,6 +7,7 @@ import { normalizeSettings } from '../domain/settings.js';
 import { normalisiereListe } from '../domain/einkauf.js';
 import { normalisiereKonto } from '../domain/konto.js';
 import { normalisiereKatalog, normalisiereMonat } from '../domain/schicht.js';
+import { tauschAusText, tauschText } from '../domain/schicht-tausch.js';
 import { FIX_SHARDS, normalisiereShard } from '../domain/fixkosten.js';
 import { zieleLesen, zieleText } from '../domain/sparziele.js';
 import { autosLesen, autosText, historieLesen, historieText } from '../domain/autos.js';
@@ -39,8 +40,19 @@ function naechsteMonate(monate, bezug, max) {
 /**
  * Schichtplan nachsichtig lesen (anders als der Rest: er ist nur eine Kopie und wird beim Öffnen der Seite ohnehin neu geholt):
  * unbrauchbare Monate fallen weg, der Katalog wird normalisiert; nichts davon macht den ganzen Schnappschuss ungültig. Höchstens sechs
- * Monate bleiben, die nächsten zu `bezug` (dem Monat des Speicherns), nach derselben Regel wie beim Speichern.
+ * Monate bleiben, die nächsten zu `bezug` (dem Monat des Speicherns), nach derselben Regel wie beim Speichern. Die Diensttausche
+ * (`tausch`, offline sichtbar) gehen einmal durch Text und zurück (tauschText/tauschAusText); unbrauchbar oder unlesbar → fallen weg.
  */
+function pruefeTausch(roh) {
+  if (!istObjekt(roh) || !Array.isArray(roh.eintraege)) return null;
+  try {
+    const r = tauschAusText(tauschText(roh));
+    return r.unlesbar ? null : r.daten;
+  } catch {
+    return null;
+  }
+}
+
 function pruefeSchicht(roh, bezug) {
   if (!istObjekt(roh)) return { katalog: null, monate: {} };
   const katalog = istObjekt(roh.katalog) ? normalisiereKatalog(roh.katalog).katalog : null;
@@ -48,7 +60,8 @@ function pruefeSchicht(roh, bezug) {
   for (const [jm, monat] of Object.entries(istObjekt(roh.monate) ? roh.monate : {})) {
     if (MONAT.test(jm) && istObjekt(monat)) monate[jm] = normalisiereMonat(monat, jm).monat;
   }
-  return { katalog, monate: naechsteMonate(monate, bezug, MAX_SNAPSHOT_SCHICHT_MONATE) };
+  const tausch = pruefeTausch(roh.tausch);
+  return { katalog, monate: naechsteMonate(monate, bezug, MAX_SNAPSHOT_SCHICHT_MONATE), ...(tausch ? { tausch } : {}) };
 }
 
 /**
@@ -258,7 +271,7 @@ export function createSnapshot({ speicher = standardSpeicher(), jetzt = () => ne
         fenster: state.fenster ?? null,
         einkauf: state.einkauf ?? null,
         konto: state.konto ?? null,
-        schicht: state.schicht ? { katalog: state.schicht.katalog ?? null, monate: naechsteMonate(state.schicht.monate, heute, MAX_SNAPSHOT_SCHICHT_MONATE) } : null,
+        schicht: state.schicht ? { katalog: state.schicht.katalog ?? null, monate: naechsteMonate(state.schicht.monate, heute, MAX_SNAPSHOT_SCHICHT_MONATE), ...(state.schicht.tausch ? { tausch: state.schicht.tausch } : {}) } : null,
         // im Zustandsformat (lange Schlüssel): etwa 1,5-mal der Kalendertext, also höchstens rund 4 × 9000 Zeichen
         fixkosten: state.fixkosten?.shards ? { shards: state.fixkosten.shards, unlesbar: state.fixkosten.unlesbar ?? [] } : null,
         ziele: zieleFuerSnapshot(state.ziele) ?? (state.ziele?.status === 'fehler' ? letzteZiele() : null), // höchstens ~6000 Zeichen (Kalendertext)
