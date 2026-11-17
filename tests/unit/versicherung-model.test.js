@@ -305,7 +305,8 @@ describe('Formulare der Versicherung (Modell)', () => {
     assert.deepEqual(e, { id: 'rech0001', kategorie: 'medi', datum: '2026-10-25', betrag: '15,20', eingereichtAm: '2026-10-26', stelle: 'Apotheke', notiz: '' });
     assert.equal(rechnungEntwurf(state, HEUTE, 'gibtsnicht'), null);
     const { rechnung } = entwurfZuRechnung(state, HEUTE, { ...e, betrag: '16,40' });
-    assert.deepEqual(rechnung, { kategorie: 'medi', datum: '2026-10-25', betragCent: 1640, eingereichtAm: '2026-10-26', id: 'rech0001', erstattetCent: 1216, erstattetAm: '2026-11-05', stelle: 'Apotheke' });
+    assert.deepEqual(rechnung, { kategorie: 'medi', datum: '2026-10-25', betragCent: 1640, eingereichtAm: '2026-10-26', polizze: P.id, id: 'rech0001', erstattetCent: 1216, erstattetAm: '2026-11-05', stelle: 'Apotheke' }, 'ohne p gehört sie der Stamm-Polizze (C2: polizze ist Pflicht)');
+    assert.equal(entwurfZuRechnung(state, HEUTE, { ...rechnungEntwurf(state, HEUTE), betrag: '5' }).rechnung.polizze, P.id, 'neu: die gezeigte Polizze');
     assert.match(entwurfZuRechnung(state, HEUTE, { ...e, betrag: 'abc' }).fehler, /Betrag/);
     assert.match(entwurfZuRechnung(state, HEUTE, { ...e, betrag: '0' }).fehler, /mehr als 0/);
     assert.equal(entwurfZuRechnung(state, HEUTE, { ...rechnungEntwurf(state, HEUTE), betrag: '5', datum: '2026-12-24', eingereichtAm: '2026-12-24' }).fehler, 'Das Rechnungsdatum liegt in der Zukunft.');

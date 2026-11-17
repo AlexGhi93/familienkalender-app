@@ -12,8 +12,8 @@ import { sicherungAnzahlText, sicherungErstellen } from '../../src/app/sicherung
 import { seedDemo } from '../../src/app/seed.js';
 import { addDays } from '../../src/domain/dates.js';
 import { fassungJetzt, rechnungPruefen } from '../../src/domain/versicherung.js';
-import { TEXT_RECHNUNG_WEG, TEXT_POLIZZE_WEG, TEXT_VERSICHERUNG_GESPERRT, TEXT_VERSICHERUNG_TEIL_GESPERRT, leererVersicherungTeil, leereVersicherung, polizzeAnlegen, polizzeAusVorlage, rechnungSetzen, versicherungJahrEintragen, versicherungTeilText, versicherungText } from '../../src/domain/versicherung.js';
-import { alleRechnungen, rechnungenDesJahres, rechnungFinden } from '../../src/domain/versicherung-rechnung.js';
+import { TEXT_POLIZZE_HAT_RECHNUNGEN, TEXT_RECHNUNG_WEG, TEXT_POLIZZE_WEG, TEXT_VERSICHERUNG_GESPERRT, TEXT_VERSICHERUNG_TEIL_GESPERRT, leererVersicherungTeil, leereVersicherung, polizzeAnlegen, polizzeAusVorlage, rechnungSetzen, versicherungJahrEintragen, versicherungTeilText, versicherungText } from '../../src/domain/versicherung.js';
+import { alleRechnungen, jahresStand, rechnungenDerPolizze, rechnungenDesJahres, rechnungFinden } from '../../src/domain/versicherung-rechnung.js';
 import { KALENDER, apiAttrappe, googleStore, kennungen, speicherAttrappe } from './hilfen.js';
 
 const JETZT = new Date('2026-11-08T08:00:00+01:00');
@@ -24,7 +24,8 @@ const TEXT_NICHT_GELESEN = 'Die Versicherung konnte nicht gelesen werden. Bitte 
 
 const P = polizzeAusVorlage('medplusBasic', { person: 'Mia', beginn: '2026-09-01' }, { zufall: () => 0 });
 const haupt = (...jahre) => versicherungText(jahre.reduce((d, j) => versicherungJahrEintragen(d, j), polizzeAnlegen(leereVersicherung(), P)));
-const rechnung = (mehr = {}) => ({ id: 'rech0001', kategorie: 'physio', datum: '2026-10-28', betragCent: 9000, eingereichtAm: '2026-10-30', ...mehr });
+/** Eine Rechnung der Polizze P (1.5.0: `polizze` ist Pflicht beim Speichern und steht als `p` im Teil). */
+const rechnung = (mehr = {}) => ({ id: 'rech0001', kategorie: 'physio', datum: '2026-10-28', betragCent: 9000, eingereichtAm: '2026-10-30', polizze: P.id, ...mehr });
 /** Text eines Quartal-Teils mit diesen Rechnungen (richtig abgelegt). */
 const teilText = (jahr, quartal, ...rechnungen) => versicherungTeilText(rechnungen.reduce((t, r) => rechnungSetzen(t, r, { heute: HEUTE }), leererVersicherungTeil(jahr, quartal)));
 const FREMD_RECHNUNG = { i: 'neu00001', k: 'physio', d: 20261101, b: 100, e: 20261102, zz: 1 };
@@ -140,16 +141,17 @@ describe('Polizze', () => {
     assert.match(falsch.fehler, /Name/);
   });
 
-  test('zwei Telefone legen gleichzeitig eine Polizze an: die zuerst gespeicherte gilt, das zweite bekommt eine Meldung und zeigt sie', async () => {
+  test('gleichzeitiges Anlegen auf beiden Telefonen → beide Polizzen bleiben', async () => {
     const a = await google({ ids: ['aaaa0001'] });
     const b = await google({ api: a, ids: ['bbbb0001'] });
     await Promise.all([a.store.versicherungLaden(), b.store.versicherungLaden()]);
     const [ra, rb] = await Promise.all([a.store.polizzeSpeichern({ ...P, id: undefined }), b.store.polizzeSpeichern({ ...P, id: undefined, person: 'Kind' })]);
-    const gilt = JSON.parse(a.text('fkversicherung')).l[0].i;
-    const [sieger, verlierer] = gilt === 'aaaa0001' ? [ra, rb] : [rb, ra];
-    assert.equal(sieger.ok, true);
-    assert.deepEqual([verlierer.ok, /schon eine Polizze/.test(verlierer.fehler)], [false, true]);
-    for (const s of [a.store, b.store]) assert.equal(vers(s).daten.polizzen[0].id, gilt, 'beide zeigen die gespeicherte');
+    assert.deepEqual([ra, rb], [{ ok: true, id: 'aaaa0001' }, { ok: true, id: 'bbbb0001' }]);
+    assert.deepEqual(JSON.parse(a.text('fkversicherung')).l.map((p) => p.i).sort(), ['aaaa0001', 'bbbb0001']);
+    for (const s of [a.store, b.store]) {
+      await s.versicherungLaden();
+      assert.deepEqual(vers(s).daten.polizzen.map((p) => p.id).sort(), ['aaaa0001', 'bbbb0001'], 'beide sehen beide');
+    }
   });
 
   test('C4: eine Kategorie mit Rechnungen lässt sich nicht entfernen (nichts geschrieben); ohne Rechnungen schon', async () => {
@@ -373,8 +375,8 @@ describe('Zwei Telefone (Review Focus 4)', () => {
       await s.laden();
       await s.versicherungLaden();
     }
-    await a.rechnungSpeichern(rechnung({ id: undefined, datum: HEUTE, eingereichtAm: HEUTE }));
-    await b.rechnungSpeichern(rechnung({ id: undefined, datum: HEUTE, eingereichtAm: HEUTE }));
+    await a.rechnungSpeichern(rechnung({ id: undefined, datum: HEUTE, eingereichtAm: HEUTE, polizze: vers(a).daten.stamm }));
+    await b.rechnungSpeichern(rechnung({ id: undefined, datum: HEUTE, eingereichtAm: HEUTE, polizze: vers(a).daten.stamm }));
     const ids = alleRechnungen((await adapter.leseVersicherung()).teile).map((x) => x.id);
     assert.ok(ids.includes('aaaa0001') && ids.includes('bbbb0001'), ids.join());
   });
@@ -470,6 +472,155 @@ describe('Zeitstempel (Re-Review Task 1): Google mit echtem `updated` und zwei F
   });
 });
 
+describe('Mehrere Polizzen (1.5.0, C2)', () => {
+  const B = { ...P, id: 'polb0001', name: 'Zweite' };
+  const zwei = () => versicherungText(versicherungJahrEintragen(polizzeAnlegen(polizzeAnlegen(leereVersicherung(), P), B), 2026));
+  /** Der v:1-Hauptteil (1.4.x) mit derselben Polizze P und erstem Jahr `jahr`. */
+  const v1 = (jahr) => {
+    const roh = JSON.parse(haupt(jahr));
+    return JSON.stringify({ v: 1, p: roh.l[0], j: roh.j });
+  };
+
+  test('zweite Versicherung anlegen, beide bleiben nach Neuladen', async () => {
+    const t = await google({ vorhanden: { fkversicherung: haupt(2026) }, ids: ['polb0001'] });
+    await t.store.versicherungLaden();
+    const { id: _id, ...ohneId } = P;
+    assert.deepEqual(await t.store.polizzeSpeichern({ ...ohneId, name: 'Zweite' }), { ok: true, id: 'polb0001' });
+    assert.deepEqual(vers(t.store).daten.polizzen.map((p) => p.id), [P.id, 'polb0001']);
+    const neu = await google({ api: t });
+    await neu.store.versicherungLaden();
+    assert.deepEqual(vers(neu.store).daten.polizzen.map((p) => [p.id, p.name]), [[P.id, P.name], ['polb0001', 'Zweite']]);
+    assert.equal(vers(neu.store).daten.stamm, P.id, 'die erste bleibt Stamm');
+    // ändern trifft nur die gemeinte Polizze
+    assert.deepEqual(await t.store.polizzeSpeichern({ ...vers(t.store).daten.polizzen[1], person: 'Kind' }), { ok: true, id: 'polb0001' });
+    assert.deepEqual(JSON.parse(t.text('fkversicherung')).l.map((p) => [p.i, p.w]), [[P.id, 'Mia'], ['polb0001', 'Kind']]);
+  });
+
+  test('Rechnung einer zweiten Polizze trägt deren Kennung; ohne, unbekannte oder beendete Polizze → Meldung, nichts geschrieben', async () => {
+    const t = await google({ vorhanden: { fkversicherung: zwei() }, ids: ['neu00001', 'neu00002'] });
+    await t.store.versicherungLaden();
+    assert.deepEqual(await t.store.rechnungSpeichern(rechnung({ id: undefined, polizze: 'polb0001' })), { ok: true, id: 'neu00001', warnung: null });
+    assert.deepEqual(imText(t.text('fkvr20264')).map((x) => [x.i, x.p]), [['neu00001', 'polb0001']]);
+    t.merken();
+    assert.equal((await t.store.rechnungSpeichern(rechnung({ id: undefined, polizze: undefined }))).ok, false);
+    assert.deepEqual(await t.store.rechnungSpeichern(rechnung({ id: undefined, polizze: 'gibtsnix' })), { ok: false, fehler: TEXT_POLIZZE_WEG });
+    const anders = await t.store.rechnungSpeichern(rechnung({ id: 'neu00001', polizze: P.id }));
+    assert.deepEqual([anders.ok, /anderen Polizze/.test(anders.fehler)], [false, true], 'eine Rechnung wechselt nicht still die Polizze');
+    assert.deepEqual(t.neu(), []);
+    assert.deepEqual(await t.store.polizzeBeenden('polb0001', true), { ok: true });
+    t.merken();
+    assert.equal((await t.store.rechnungSpeichern(rechnung({ id: undefined, polizze: 'polb0001' }))).ok, false, 'beendet: keine neue Rechnung');
+    assert.deepEqual(t.neu(), []);
+    // die schon vorhandene Rechnung der beendeten Polizze lässt sich weiter ändern (z. B. Erstattung nach der Erinnerung)
+    assert.equal((await t.store.rechnungSpeichern(rechnung({ id: 'neu00001', polizze: 'polb0001', notiz: 'nachgetragen' }))).ok, true);
+    assert.equal((await t.store.erstattungSpeichern('neu00001', { erstattetCent: 7200, erstattetAm: HEUTE })).ok, true);
+    assert.deepEqual(imText(t.text('fkvr20264')).map((x) => [x.i, x.p, x.n, x.r]), [['neu00001', 'polb0001', 'nachgetragen', 7200]]);
+  });
+
+  test('erste Rechnung auf einem v:1-Hauptteil schreibt zuerst den Hauptteil als v:2 (ohne Verlust); danach nur noch der Teil', async () => {
+    const t = await google({ vorhanden: { fkversicherung: v1(2026) }, ids: ['neu00001', 'neu00002'] });
+    await t.store.versicherungLaden();
+    t.merken();
+    assert.equal((await t.store.rechnungSpeichern(rechnung({ id: undefined }))).ok, true);
+    const schreibIds = t.neu().map((x) => x.split(' ')[1]);
+    assert.deepEqual(schreibIds.slice(0, 2), ['fkversicherung', 'fkvr20264']);
+    const roh = JSON.parse(t.text('fkversicherung'));
+    assert.deepEqual([roh.v, roh.l, roh.h, roh.j], [2, JSON.parse(haupt(2026)).l, P.id, 2026], 'Polizze und erstes Jahr unverändert');
+    assert.equal(imText(t.text('fkvr20264'))[0].p, P.id);
+    t.merken();
+    assert.equal((await t.store.rechnungSpeichern(rechnung({ id: undefined, datum: '2026-11-01', eingereichtAm: '2026-11-02' }))).ok, true);
+    assert.deepEqual(t.neu(), ['PATCH fkvr20264']);
+  });
+
+  test('v:1 erst nach meinem Lesen (der angezeigte Stand weiß nichts davon): vor dem Teil wird frisch gelesen und der Hauptteil zuerst v:2', async () => {
+    const t = await google({ vorhanden: { fkversicherung: haupt(2026) }, ids: ['neu00001'] });
+    await t.store.versicherungLaden();
+    await t.api.ereignisse.schreibe('kan', { id: 'fkversicherung', description: v1(2026) });
+    t.merken();
+    assert.equal((await t.store.rechnungSpeichern(rechnung({ id: undefined }))).ok, true);
+    assert.deepEqual(t.neu().map((x) => x.split(' ')[1]), ['fkversicherung', 'fkvr20264']);
+    assert.equal(JSON.parse(t.text('fkversicherung')).v, 2);
+  });
+
+  test('v:1 mit mehreren Rechnungen ohne p: Jahressummen vor und nach der Umstellung und nach dem ersten v:2-Schreiben gleich', async () => {
+    const alt = (mehr) => rechnung({ polizze: undefined, ...mehr });
+    const vorhanden = {
+      fkversicherung: v1(2025),
+      fkvr20251: teilText(2025, 1, alt({ id: 'alt00001', datum: '2025-03-10', eingereichtAm: '2025-03-12', betragCent: 30000 }), alt({ id: 'alt00002', kategorie: 'arzt', datum: '2025-03-20', eingereichtAm: '2025-03-21', betragCent: 50000 })),
+      fkvr20254: teilText(2025, 4, alt({ id: 'alt00003', datum: '2025-11-02', eingereichtAm: '2025-11-03', betragCent: 20000, erstattetCent: 16000, erstattetAm: '2025-12-01' })),
+      fkvr20264: teilText(2026, 4, alt({ id: 'alt00004', kategorie: 'medi', datum: '2026-10-05', eingereichtAm: '2026-10-06', betragCent: 4500 })),
+    };
+    for (const id of ['fkvr20251', 'fkvr20254', 'fkvr20264']) assert.ok(imText(vorhanden[id]).every((x) => !('p' in x)), 'Rechnungen wie aus 1.4.x');
+    const t = await google({ vorhanden, ids: ['neu00001', 'polc0001', 'neu00002'] });
+    await t.store.versicherungLaden();
+    /** Wie 1.4.x rechnete: die eine Polizze mit ALLEN Rechnungen des Jahres. */
+    const wie141 = (v, jahr) => jahresStand(v.daten.polizzen[0], rechnungenDesJahres(v.teile, jahr, { geschrieben: v.geschrieben }), jahr).gesamt;
+    /** Wie 1.5.0 rechnet: die Stamm-Polizze mit ihren Rechnungen. */
+    const stamm = (v, jahr) => jahresStand(v.daten.polizzen.find((p) => p.id === v.daten.stamm), rechnungenDerPolizze(rechnungenDesJahres(v.teile, jahr, { geschrieben: v.geschrieben }), v.daten, v.daten.stamm), jahr).gesamt;
+    const vorher = { 2025: wie141(vers(t.store), 2025), 2026: wie141(vers(t.store), 2026) };
+    assert.deepEqual([vorher[2025].verbrauchtCent, vorher[2026].verbrauchtCent], [96000, 4500], 'erstattet zählt mit dem erstatteten Betrag');
+    assert.deepEqual({ 2025: stamm(vers(t.store), 2025), 2026: stamm(vers(t.store), 2026) }, vorher, 'nach der Umstellung');
+    // erstes Schreiben mit 1.5.0: eine Rechnung der Stamm-Polizze im Teil, in dem schon eine alte steht
+    assert.equal((await t.store.rechnungSpeichern(rechnung({ id: undefined, kategorie: 'medi', datum: '2026-11-03', eingereichtAm: '2026-11-04', betragCent: 1000 }))).ok, true);
+    assert.equal(JSON.parse(t.text('fkversicherung')).v, 2);
+    // dann eine zweite Polizze mit eigener Rechnung – zählt nicht bei der Stamm-Polizze
+    const { id: _id, ...ohneId } = B;
+    assert.deepEqual(await t.store.polizzeSpeichern(ohneId), { ok: true, id: 'polc0001' });
+    assert.equal((await t.store.rechnungSpeichern(rechnung({ id: undefined, polizze: 'polc0001', datum: '2026-11-05', eingereichtAm: '2026-11-05', betragCent: 777 }))).ok, true);
+    const frisch = await google({ api: t });
+    await frisch.store.versicherungLaden();
+    const v = vers(frisch.store);
+    assert.deepEqual(stamm(v, 2025), vorher[2025]);
+    assert.equal(stamm(v, 2026).verbrauchtCent, vorher[2026].verbrauchtCent + 1000, 'nur die neue Rechnung der Stamm-Polizze kommt dazu');
+    assert.equal(jahresStand(v.daten.polizzen[1], rechnungenDerPolizze(rechnungenDesJahres(v.teile, 2026, { geschrieben: v.geschrieben }), v.daten, 'polc0001'), 2026).gesamt.verbrauchtCent, 777);
+    const q4 = imText(t.text('fkvr20264'));
+    assert.deepEqual(q4.map((x) => [x.i, x.p]), [['alt00004', undefined], ['neu00001', P.id], ['neu00002', 'polc0001']], 'die alte Rechnung bleibt ohne p (gehört dem Stamm)');
+  });
+
+  test('Löschen mit Rechnungen abgelehnt, Beenden geht, Zurückholen geht; ohne Rechnungen löschen', async () => {
+    const t = await google({ vorhanden: { fkversicherung: zwei(), fkvr20264: teilText(2026, 4, rechnung({ polizze: undefined })) } });
+    await t.store.versicherungLaden();
+    t.merken();
+    assert.deepEqual(await t.store.polizzeLoeschen(P.id), { ok: false, fehler: TEXT_POLIZZE_HAT_RECHNUNGEN }, 'die Rechnung ohne p gehört der Stamm-Polizze');
+    assert.deepEqual(t.neu(), []);
+    assert.deepEqual(await t.store.polizzeBeenden(P.id, true), { ok: true });
+    assert.equal(JSON.parse(t.text('fkversicherung')).l[0].x, 1);
+    assert.deepEqual(vers(t.store).daten.polizzen.map((p) => p.beendet === true), [true, false]);
+    assert.deepEqual(await t.store.polizzeBeenden(P.id, false), { ok: true });
+    assert.equal('x' in JSON.parse(t.text('fkversicherung')).l[0], false);
+    assert.deepEqual(await t.store.polizzeBeenden('gibtsnix', true), { ok: false, fehler: TEXT_POLIZZE_WEG });
+    assert.deepEqual(await t.store.polizzeLoeschen('polb0001'), { ok: true });
+    assert.deepEqual([JSON.parse(t.text('fkversicherung')).l.map((p) => p.i), vers(t.store).daten.stamm], [[P.id], P.id]);
+  });
+
+  test('Löschen: eine fremde Rechnung (neuere Version) mit p zählt; ein unlesbarer Teil → unprüfbar, nichts geschrieben', async () => {
+    const fremdTeil = JSON.stringify({ v: 1, j: 2026, q: 4, r: [{ ...FREMD_RECHNUNG, p: 'polb0001' }] });
+    const t = await google({ vorhanden: { fkversicherung: zwei(), fkvr20264: fremdTeil } });
+    await t.store.versicherungLaden();
+    t.merken();
+    assert.deepEqual(await t.store.polizzeLoeschen('polb0001'), { ok: false, fehler: TEXT_POLIZZE_HAT_RECHNUNGEN });
+    const u = await google({ vorhanden: { fkversicherung: zwei(), fkvr20263: '{kaputt' } });
+    await u.store.versicherungLaden();
+    u.merken();
+    const r = await u.store.polizzeLoeschen('polb0001');
+    assert.deepEqual([r.ok, /unlesbar/.test(r.fehler)], [false, true]);
+    assert.deepEqual([t.neu(), u.neu()], [[], []]);
+    assert.deepEqual(await u.store.polizzeBeenden('polb0001', true), { ok: true }, 'beenden geht trotzdem');
+  });
+
+  test('unlesbarer Hauptteil sperrt Anlegen, Beenden, Löschen und Rechnungen', async () => {
+    const kaputt = JSON.stringify({ v: 3, l: [] });
+    const t = await google({ vorhanden: { fkversicherung: kaputt } });
+    await t.store.versicherungLaden();
+    t.merken();
+    const { id: _id, ...ohneId } = P;
+    for (const r of [await t.store.polizzeSpeichern(ohneId), await t.store.polizzeBeenden(P.id, true), await t.store.polizzeLoeschen(P.id), await t.store.rechnungSpeichern(rechnung({ id: undefined }))]) {
+      assert.deepEqual(r, { ok: false, fehler: TEXT_VERSICHERUNG_GESPERRT });
+    }
+    assert.deepEqual([t.neu(), t.text('fkversicherung')], [[], kaputt]);
+  });
+});
+
 describe('Schnappschuss, Sicherung, Demo', () => {
   test('Schnappschuss enthält die Versicherung; ein neuer Start zeigt sie (gespeichert, nicht frisch); ein Lesefehler danach behält die alte', async () => {
     const speicher = speicherAttrappe();
@@ -554,7 +705,7 @@ describe('Schnappschuss, Sicherung, Demo', () => {
   test('Sicherung: zwei Polizzen und ihre Rechnungen (Stamm für Rechnungen ohne Polizze); aus v:1 geht nichts verloren', async () => {
     const B = { ...P, id: 'polb0001', name: 'Zweite' };
     const zwei = versicherungText(versicherungJahrEintragen(polizzeAnlegen(polizzeAnlegen(leereVersicherung(), P), B), 2026));
-    const vonB = versicherungTeilText(rechnungSetzen(rechnungSetzen(leererVersicherungTeil(2026, 4), rechnung(), { heute: HEUTE }), rechnung({ id: 'rech0002', datum: '2026-10-05' }), { heute: HEUTE, polizze: B }));
+    const vonB = versicherungTeilText(rechnungSetzen(rechnungSetzen(leererVersicherungTeil(2026, 4), rechnung({ polizze: undefined }), { heute: HEUTE }), rechnung({ id: 'rech0002', datum: '2026-10-05', polizze: undefined }), { heute: HEUTE, polizze: B }));
     const t = await google({ vorhanden: { fkversicherung: zwei, fkvr20264: vonB } });
     await t.store.versicherungLaden();
     const s = sicherungErstellen({ state: await t.store.sicherungsDaten(), appVersion: '1.5.0', jetzt: JETZT });
@@ -652,7 +803,7 @@ describe('Fix-Runde 1 (Review Task 2)', () => {
     kaputt = true;
     assert.equal((await t.store.rechnungSpeichern(rechnung({ datum: '2026-09-30', betragCent: 7777 }))).ok, false);
     kaputt = false;
-    assert.equal((await t.store.rechnungSpeichern({ kategorie: 'physio', datum: '2026-10-29', betragCent: 100, eingereichtAm: '2026-10-30' })).ok, true);
+    assert.equal((await t.store.rechnungSpeichern({ kategorie: 'physio', datum: '2026-10-29', betragCent: 100, eingereichtAm: '2026-10-30', polizze: P.id })).ok, true);
     const zeige = () => rechnungen(t.store, 2026).filter((x) => x.id === 'rech0001').map((x) => [x.datum, x.betragCent]);
     assert.deepEqual(zeige(), [['2026-09-30', 7777]], 'nach dem Schreiben in den alten Teil');
     await t.store.versicherungLaden();

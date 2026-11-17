@@ -1493,7 +1493,7 @@ const METHODEN_1_4_0 = [
   'einstellungen', 'erinnerungenPruefen', 'erinnerungenReparieren', 'erinnerungenTestBeenden', 'erinnerungenTestStarten', 'erstattungSpeichern',
   'extraEntfernen', 'extraHinzufuegen', 'fixFrischLesen', 'fixLaden', 'fixPostenArchivieren', 'fixPostenLoeschen', 'fixPostenSpeichern',
   'fixPostenWiederanlegen', 'fixPostenWiederherstellen', 'freiVerschieben', 'getState', 'heute', 'jetzt', 'kmLoeschen', 'kmSpeichern',
-  'kontoLeeren', 'kontoLoeschen', 'kontoNachtragen', 'kontoSpeichern', 'laden', 'loescheTag', 'polizzeSpeichern', 'pyjamasWechselSpeichern',
+  'kontoLeeren', 'kontoLoeschen', 'kontoNachtragen', 'kontoSpeichern', 'laden', 'loescheTag', 'polizzeBeenden', 'polizzeLoeschen', 'polizzeSpeichern', 'pyjamasWechselSpeichern',
   'rechnungLoeschen', 'rechnungSpeichern', 'regelLoeschen', 'regelSpeichern', 'sachenSpeichern', 'satzLoeschen', 'satzSpeichern',
   'schichtAktualisieren', 'schichtArtArchivieren', 'schichtArtSpeichern', 'schichtArtVerschieben', 'schichtFrischLesen', 'schichtLaden',
   'schichtNotiz', 'schichtPinsel', 'schichtSetzen', 'schichtVorladen', 'schichtZusatzEntfernen', 'schichtZusatzHinzufuegen',

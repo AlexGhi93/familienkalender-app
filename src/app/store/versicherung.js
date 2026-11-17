@@ -1,6 +1,6 @@
 import { todayVienna } from '../../domain/dates.js';
 import { istObjekt } from '../../domain/gemeinsam.js';
-import { TEXT_POLIZZE_WEG, aktivePolizzen, TEXT_RECHNUNG_WEG, TEXT_VERSICHERUNG_GESPERRT, TEXT_VERSICHERUNG_TEIL_GESPERRT, erstattungSetzen, fassungJetzt, leererVersicherungTeil, leereVersicherung, polizzeAendern, polizzeAnlegen, rechnungJahr, rechnungLoeschen as rechnungLoeschenRein, rechnungPruefen, rechnungQuartal, rechnungSetzen, rechnungSpur, rechnungTeilWechseln, rechnungWiederherstellen, versicherungJahrBekannt, versicherungJahrEintragen, versicherungTeilWarnungen, versicherungWarnungen } from '../../domain/versicherung.js';
+import { TEXT_ANDERE_POLIZZE, TEXT_POLIZZE_WEG, TEXT_RECHNUNG_WEG, TEXT_VERSICHERUNG_GESPERRT, TEXT_VERSICHERUNG_TEIL_GESPERRT, erstattungSetzen, fassungJetzt, leererVersicherungTeil, leereVersicherung, polizzeAendern, polizzeAnlegen, polizzeBeenden as polizzeBeendenRein, polizzeEntfernen, polizzeVonRechnung, rechnungJahr, rechnungLoeschen as rechnungLoeschenRein, rechnungPruefen, rechnungQuartal, rechnungSetzen, rechnungSpur, rechnungTeilWechseln, rechnungWiederherstellen, versicherungJahrBekannt, versicherungJahrEintragen, versicherungTeilWarnungen, versicherungWarnungen } from '../../domain/versicherung.js';
 import { rechnungFinden } from '../../domain/versicherung-rechnung.js';
 import { FACHLICH, TEXT_FEHLER, gleichOder } from './kern.js';
 import { createGeteilt, eintragVorhanden, neueKennung } from './geteilt.js';
@@ -8,10 +8,9 @@ import { createGeteilt, eintragVorhanden, neueKennung } from './geteilt.js';
 const TEXT_VERSICHERUNG_NICHT_GELESEN = 'Die Versicherung konnte nicht gelesen werden. Bitte noch einmal versuchen.';
 const TEXT_VERSICHERUNG_ANMELDEN = 'Bitte zuerst neu anmelden; danach lässt sich die Versicherung ändern.';
 const TEXT_KEINE_POLIZZE = 'Bitte zuerst die Polizze anlegen.';
-const TEXT_POLIZZE_SCHON_DA = 'Auf dem anderen Telefon wurde inzwischen schon eine Polizze angelegt – sie wird jetzt gezeigt. Bitte dort ändern, was nicht passt.';
+const TEXT_POLIZZE_FEHLT = 'Bitte die Polizze der Rechnung wählen.';
+const TEXT_POLIZZE_BEENDET = 'Diese Versicherung ist beendet – bitte zuerst wieder aktivieren.';
 const TEXT_KOPIE_GEAENDERT = 'Gespeichert. Die Rechnung wurde inzwischen auf dem anderen Telefon geändert – bitte noch einmal ansehen.';
-/** Die Polizze, mit der der Store bis zu mehreren Polizzen (C2) arbeitet: die erste aktive. */
-const gezeigtePolizze = (daten) => aktivePolizzen(daten)[0] ?? null;
 const TEXT_KATEGORIE_UNPRUEFBAR = 'Ein Teil der Rechnungen ist unlesbar – ob die Kategorie dort noch vorkommt, lässt sich nicht prüfen. Bitte die App auf beiden Telefonen aktualisieren.';
 
 /**
@@ -83,16 +82,37 @@ export function createVersicherungSlice(kern, { store, versicherungId, versicher
   const versHauptBasis = () => versOffen.get('haupt')?.basis ?? kern.state.versicherung.daten;
 
   /**
-   * Vor dem Schreiben eines Quartal-Teils: kennt der zuletzt GESPEICHERTE Hauptteil sein Jahr? Sonst zuerst dort eintragen – in DEMSELBEN
-   * Schreibvorgang wie der Teil (auch beim Nachholen nach der Anmeldung): scheitert das, wird der Teil nicht geschrieben; es entsteht nie
-   * ein Teil vor dem ersten Jahr (er würde nie gelesen).
+   * In dieser Sitzung bestätigt: der Hauptteil im Kalender ist v:2 (gelesen oder selbst so geschrieben). Bis dahin liest der erste
+   * Schreibvorgang eines Teils den Hauptteil frisch – der Merker `ausV1` der angezeigten Daten geht über den Schnappschuss verloren.
+   */
+  let hauptV2 = false;
+  /** Daten ohne den Merker „aus v:1 gelesen“ (geschrieben wird ohnehin v:2; so ist es eine echte Änderung). */
+  const ohneV1 = (d) => {
+    if (d?.ausV1 !== true) return d;
+    const { ausV1: _v1, ...rest } = d;
+    return rest;
+  };
+
+  /**
+   * Vor dem Schreiben eines Quartal-Teils: ist der Hauptteil im Kalender noch v:1 (1.4.x), wird er zuerst als v:2 geschrieben – ein
+   * Telefon mit 1.4.x sperrt dann die Versicherung, statt neue Rechnungen (mit `p`) still unter `fremd` zu verstecken. Kennt der zuletzt
+   * GESPEICHERTE Hauptteil das Jahr nicht, wird es dabei eingetragen. Beides in DEMSELBEN Schreibvorgang wie der Teil (auch beim
+   * Nachholen nach der Anmeldung): scheitert es, wird der Teil nicht geschrieben; es entsteht nie ein Teil vor dem ersten Jahr (er würde
+   * nie gelesen). Ist nichts zu tun, wird nur gelesen.
    */
   async function versJahrSichern(jahr) {
     const e = versOffen.get('haupt');
-    if (versicherungJahrBekannt(e?.basis ?? kern.state.versicherung.daten, jahr)) return;
+    const basis = e?.basis ?? kern.state.versicherung.daten;
+    if (basis?.ausV1 === true) hauptV2 = false;
+    if (hauptV2 && versicherungJahrBekannt(basis, jahr)) return;
     let gespeichert;
     try {
-      gespeichert = await adapter.aendereVersicherung(fachlich((d) => versicherungJahrEintragen(d, jahr)));
+      gespeichert = await adapter.aendereVersicherung(
+        fachlich((d) => {
+          const neu = versicherungJahrEintragen(ohneV1(d), jahr);
+          return neu === d ? null : neu; // schon v:2 und das Jahr bekannt: nichts schreiben
+        }),
+      );
     } catch (fehler) {
       if (fehler?.name === 'VersicherungGesperrt') {
         FACHLICH.add(fehler);
@@ -100,6 +120,7 @@ export function createVersicherungSlice(kern, { store, versicherungId, versicher
       }
       throw fehler;
     }
+    hauptV2 = true;
     if (!gespeichert) return;
     if (e) e.basis = gespeichert;
     else kern.state = { ...kern.state, versicherung: { ...kern.state.versicherung, daten: gleichOder(kern.state.versicherung.daten, gespeichert) } };
@@ -138,13 +159,17 @@ export function createVersicherungSlice(kern, { store, versicherungId, versicher
     return ids;
   }
 
-  /** Kennungen der Kategorien, auf die eine Rechnung in einem angezeigten Teil zeigt (auch fremde Rechnungen, roh mit `k`). */
-  function benutzteKategorien() {
+  /**
+   * Kennungen der Kategorien, auf die eine Rechnung der Polizze `polizzeId` in einem angezeigten Teil zeigt (alle Fassungen, auch fremde
+   * Rechnungen, roh mit `k` und `p`; ohne Polizze gehört eine Rechnung der Stamm-Polizze, siehe polizzeVonRechnung).
+   */
+  function benutzteKategorien(polizzeId) {
+    const { daten, teile } = kern.state.versicherung;
     const ids = new Set();
-    for (const quartale of Object.values(kern.state.versicherung.teile)) {
+    for (const quartale of Object.values(teile)) {
       for (const teil of Object.values(quartale ?? {})) {
-        for (const r of teil?.rechnungen ?? []) ids.add(r.kategorie);
-        for (const k of teil?.fremd?.r ?? []) ids.add(k?.k);
+        for (const r of teil?.rechnungen ?? []) if (polizzeVonRechnung(daten, r) === polizzeId) ids.add(r.kategorie);
+        for (const k of teil?.fremd?.r ?? []) if (polizzeVonRechnung(daten, { polizze: k?.p }) === polizzeId) ids.add(k?.k);
       }
     }
     return ids;
@@ -270,31 +295,29 @@ export function createVersicherungSlice(kern, { store, versicherungId, versicher
     },
 
     /**
-     * Polizze anlegen oder ändern. Gibt es noch keine (angezeigt): anlegen – fehlt `id`, vergibt sie der Store (z. B. für das Ergebnis
-     * von polizzeAusVorlage ohne Kennung oder eine „Eigene Polizze“). Hat das andere Telefon inzwischen schon eine angelegt, gilt die
-     * zuerst gespeicherte (sie wird gezeigt) und das Ergebnis ist { ok: false, fehler }. Gibt es eine: ändern (gleiche `id`, sonst
-     * TEXT_POLIZZE_WEG). Eine Kategorie, auf die noch Rechnungen zeigen, lässt sich nicht entfernen (C4).
+     * Polizze anlegen oder ändern. Ohne `id`: eine neue Polizze (aus einer Vorlage oder „Eigene Polizze“), die Kennung vergibt der Store;
+     * legen beide Telefone gleichzeitig eine an, bleiben beide (höchstens MAX_POLIZZEN). Mit `id`: diese Polizze ändern (unbekannt →
+     * TEXT_POLIZZE_WEG); eine ihrer Kategorien, auf die noch Rechnungen dieser Polizze zeigen, lässt sich nicht entfernen (C4).
      * → { ok: true, id } | { ok: false, fehler, gemeldet? } | { ok: false, wartet: true, fehler }. Wirft nie.
      */
     async polizzeSpeichern(eingabe) {
       const x = istObjekt(eingabe) ? eingabe : {};
       const nichtBereit = await versBereit();
       if (nichtBereit) return { ok: false, fehler: nichtBereit };
-      const alt = gezeigtePolizze(kern.state.versicherung.daten);
-      if (!alt) {
-        const id = x.id ?? neueVersKennung(new Set());
+      const polizzen = kern.state.versicherung.daten.polizzen ?? [];
+      if (x.id == null) {
+        const id = neueVersKennung(new Set(polizzen.map((p) => p.id)));
         if (!id) return { ok: false, fehler: TEXT_FEHLER };
-        // bis zur Seite mit mehreren Polizzen (C2/C3): gibt es inzwischen eine, gilt die zuerst gespeicherte
-        const r = await versHauptSicher((d) => (aktivePolizzen(d).length > 0 ? d : polizzeAnlegen(d, { ...x, id })));
-        if (!r.ok) return r;
-        return gezeigtePolizze(kern.state.versicherung.daten)?.id === id ? { ok: true, id } : { ok: false, fehler: TEXT_POLIZZE_SCHON_DA };
+        const r = await versHauptSicher((d) => polizzeAnlegen(d, { ...x, id }));
+        return r.ok ? { ok: true, id } : r;
       }
-      if (x.id !== alt.id) return { ok: false, fehler: TEXT_POLIZZE_WEG };
+      const alt = polizzen.find((p) => p.id === x.id);
+      if (!alt) return { ok: false, fehler: TEXT_POLIZZE_WEG };
       const bleiben = new Set((Array.isArray(x.kategorien) ? x.kategorien : []).map((k) => k?.id));
       const entfernt = alt.kategorien.filter((k) => !bleiben.has(k.id));
       if (entfernt.length > 0) {
         if (kern.state.versicherung.unlesbar.teile.length > 0) return { ok: false, fehler: TEXT_KATEGORIE_UNPRUEFBAR };
-        const benutzt = benutzteKategorien();
+        const benutzt = benutzteKategorien(alt.id);
         const k = entfernt.find((e) => benutzt.has(e.id));
         if (k) return { ok: false, fehler: `Die Kategorie „${k.name}“ hat noch Rechnungen – bitte diese zuerst einer anderen Kategorie zuordnen oder löschen.` };
       }
@@ -303,8 +326,34 @@ export function createVersicherungSlice(kern, { store, versicherungId, versicher
     },
 
     /**
+     * Polizze `id` beenden (`beendet` true; sie bleibt mit ihren Rechnungen erhalten, neue Rechnungen nimmt sie nicht mehr) oder wieder
+     * aktivieren (false). Unbekannt → TEXT_POLIZZE_WEG. → { ok: true } | wie polizzeSpeichern. Wirft nie.
+     */
+    async polizzeBeenden(id, beendet) {
+      const r = await versHauptSicher((d) => polizzeBeendenRein(d, id, Boolean(beendet)));
+      return r.ok ? { ok: true } : r;
+    },
+
+    /**
+     * Polizze `id` löschen – nur ohne Rechnungen: geprüft über alle Teile, frisch gelesen (auch fremde Rechnungen; ohne Polizze gehört
+     * eine Rechnung der Stamm-Polizze). Hat sie welche → TEXT_POLIZZE_HAT_RECHNUNGEN (nur beenden); ist ein Teil unlesbar, lässt sich das
+     * nicht prüfen → TEXT_KATEGORIE_UNPRUEFBAR. War sie Stamm, wird die erste verbliebene Stamm. → { ok: true } | wie polizzeSpeichern.
+     */
+    async polizzeLoeschen(id) {
+      const nichtBereit = await versBereit();
+      if (nichtBereit) return { ok: false, fehler: nichtBereit };
+      if (!(await versHolen())) return { ok: false, fehler: kern.state.anmeldungNoetig ? TEXT_VERSICHERUNG_ANMELDEN : TEXT_VERSICHERUNG_NICHT_GELESEN };
+      if (kern.state.versicherung.unlesbar.main) return { ok: false, fehler: TEXT_VERSICHERUNG_GESPERRT };
+      if (kern.state.versicherung.unlesbar.teile.length > 0) return { ok: false, fehler: TEXT_KATEGORIE_UNPRUEFBAR };
+      const hatRechnungen = benutzteKategorien(id).size > 0;
+      const r = await versHauptSicher((d) => polizzeEntfernen(d, id, { hatRechnungen }));
+      return r.ok ? { ok: true } : r;
+    },
+
+    /**
      * Rechnung einreichen (ohne `id`: neue Kennung) oder ändern (mit `id`). `entwurf` = { kategorie, datum, betragCent, eingereichtAm,
-     * erstattetCent?, erstattetAm?, stelle?, notiz? }; „heute“ (Wiener Datum) bestimmt der Store; die Kategorie muss zur Polizze gehören.
+     * erstattetCent?, erstattetAm?, stelle?, notiz?, polizze } – `polizze` (Kennung) ist Pflicht: eine neue Rechnung nur bei einer aktiven
+     * Polizze, eine vorhandene bleibt bei ihrer (auch beendeten); „heute“ (Wiener Datum) bestimmt der Store; die Kategorie muss zur Polizze gehören.
      * Geschrieben wird NUR der Quartal-Teil des Rechnungsdatums (und, ist das Jahr neu, vorher das erste Jahr im Hauptteil), als reine
      * Änderung auf der neuesten Fassung: zwei Telefone behalten beide Rechnungen. Liegt das neue Datum in einem anderen Quartal (oder
      * Jahr) als die Rechnung steht: rechnungTeilWechseln – 1) Jahr im Hauptteil, 2) im neuen Teil eintragen (nur, wenn sie im alten noch
@@ -318,10 +367,17 @@ export function createVersicherungSlice(kern, { store, versicherungId, versicher
       const x = istObjekt(entwurf) ? entwurf : {};
       const nichtBereit = await versBereit();
       if (nichtBereit) return { ok: false, fehler: nichtBereit };
-      const polizze = gezeigtePolizze(kern.state.versicherung.daten);
-      if (!polizze) return { ok: false, fehler: TEXT_KEINE_POLIZZE };
+      const daten = kern.state.versicherung.daten;
+      const polizzen = daten.polizzen ?? [];
+      if (polizzen.length === 0) return { ok: false, fehler: TEXT_KEINE_POLIZZE };
       const f = x.id == null ? null : versRechnungFinden(x.id);
       if (x.id != null && !f) return { ok: false, fehler: TEXT_RECHNUNG_WEG };
+      if (x.polizze == null) return { ok: false, fehler: TEXT_POLIZZE_FEHLT };
+      const polizze = polizzen.find((p) => p.id === x.polizze);
+      if (!polizze) return { ok: false, fehler: TEXT_POLIZZE_WEG };
+      // eine Rechnung bleibt bei ihrer Polizze; die einer beendeten lässt sich noch ändern, eine neue nimmt sie nicht
+      if (f && polizzeVonRechnung(daten, f.rechnung) !== polizze.id) return { ok: false, fehler: TEXT_ANDERE_POLIZZE };
+      if (!f && polizze.beendet) return { ok: false, fehler: TEXT_POLIZZE_BEENDET };
       const id = x.id ?? neueVersKennung(rechnungKennungen());
       if (!id) return { ok: false, fehler: TEXT_FEHLER };
       // Fassung: die der gültigen Fassung (rechnungSetzen macht daraus die nächste, mindestens „jetzt“), nie die aus dem Entwurf
@@ -403,7 +459,7 @@ export function createVersicherungSlice(kern, { store, versicherungId, versicher
       const e = erstattung === null ? null : { erstattetCent: erstattung?.erstattetCent, erstattetAm: erstattung?.erstattetAm };
       const neu = e ? { ...ohne, ...e } : ohne;
       if (!f.richtig) {
-        const r = await store.rechnungSpeichern(neu);
+        const r = await store.rechnungSpeichern({ ...neu, polizze: polizzeVonRechnung(kern.state.versicherung.daten, f.rechnung) });
         return r.ok ? { ok: true, warnung: r.warnung } : r;
       }
       const { fehler, warnung } = rechnungPruefen(neu, { heute });
@@ -456,6 +512,7 @@ export function createVersicherungSlice(kern, { store, versicherungId, versicher
       },
       set versGelesen(wert) {
         maschine.gelesen = wert;
+        if (!wert) hauptV2 = false; // z. B. nach dem Zurücksetzen: vor dem nächsten Teil wieder frisch prüfen
       },
     },
   };

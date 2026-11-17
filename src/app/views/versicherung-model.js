@@ -12,6 +12,7 @@ import {
   TEXT_VERSICHERUNG_GESPERRT,
   aktivePolizzen,
   polizzePruefen,
+  polizzeVonRechnung,
   polizzeVorlage,
   rechnungPruefen,
 } from '../../domain/versicherung.js';
@@ -218,7 +219,9 @@ export function entwurfZuRechnung(state, heute, e) {
   if (betragCent === 0) return { fehler: 'Bitte den Betrag der Rechnung eingeben (mehr als 0 €).' };
   const alt = e.id ? versicherungRechnung(state, e.id) : null;
   if (e.id && !alt) return { fehler: 'Diese Rechnung gibt es nicht mehr.' };
-  const rechnung = { kategorie: e.kategorie, datum: e.datum, betragCent, eingereichtAm: e.eingereichtAm };
+  const daten = state?.versicherung?.daten;
+  // die Polizze der Rechnung (Pflicht beim Speichern, C2): eine vorhandene bleibt bei ihrer, eine neue gehört der gezeigten
+  const rechnung = { kategorie: e.kategorie, datum: e.datum, betragCent, eingereichtAm: e.eingereichtAm, polizze: alt ? polizzeVonRechnung(daten, alt) : gezeigtePolizze(daten)?.id ?? null };
   if (e.id) rechnung.id = e.id;
   if (hatErstattung(alt)) {
     rechnung.erstattetCent = alt.erstattetCent;

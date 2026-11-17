@@ -103,7 +103,7 @@ export const TEXT_POLIZZE_HAT_RECHNUNGEN = 'Diese Polizze hat Rechnungen – sie
 export const TEXT_RECHNUNG_WEG = 'Diese Rechnung gibt es nicht mehr.';
 const TEXT_KENNUNG_NEUER = 'Diese Kennung gehört einem Eintrag einer neueren App-Version – bitte die App aktualisieren.';
 const TEXT_POLIZZE_UNGUELTIG = 'Ungültige Polizze.';
-const TEXT_ANDERE_POLIZZE = 'Diese Rechnung gehört zu einer anderen Polizze.';
+export const TEXT_ANDERE_POLIZZE = 'Diese Rechnung gehört zu einer anderen Polizze.';
 const TEXT_BETRAG = 'Bitte einen Betrag von 0 € bis 99.999,99 € eingeben.';
 
 /** Fehler „Versicherung gesperrt“ (Name 'VersicherungGesperrt'): ein Adapter wirft ihn, statt einen unlesbaren Hauptteil zu überschreiben. */
