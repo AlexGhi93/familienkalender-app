@@ -2,6 +2,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { nurHintergrundGeaendert } from '../../src/app/hintergrund.js';
+import { leererMonat, setzeSchicht, setzeTagZeiten, standardKatalog } from '../../src/domain/schicht.js';
 
 const basis = { geladen: true, schicht: { a: 1 }, fixkosten: { status: 'geladen' }, konto: { v: 1 } };
 const mitFix = { ...basis, fixkosten: { status: 'laedt' } };
@@ -36,6 +37,19 @@ describe('nurHintergrundGeaendert', () => {
     assert.equal(nurHintergrundGeaendert(vorher, nachher, { seite: 'mehr', kontoAnsicht: 'kontostand', heute: '2026-11-17' }), true);
     // auf der Seite Autos dagegen neu zeichnen
     assert.equal(nurHintergrundGeaendert(vorher, nachher, { seite: 'autos', kontoAnsicht: 'kontostand', heute: '2026-11-17' }), false);
+  });
+
+  test('Schichtplan vorgeladen, während Heute offen ist: neu zeichnen nur, wenn sich die Karte „Dienst heute“ ändert (kalte Heute-Seite)', () => {
+    const katalog = standardKatalog();
+    const s = katalog.arten.papa.find((a) => a.kuerzel === 'S').k;
+    const monat = setzeTagZeiten(setzeSchicht(leererMonat('2026-11'), { person: 'papa', tag: 17, k: s }), { person: 'papa', tag: 17, von: '08:00', bis: '16:00' }, katalog);
+    const leer = { ...basis, schicht: { katalog, monate: {}, status: {} } };
+    const geladen = { ...basis, schicht: { katalog, monate: { '2026-11': monat }, status: { '2026-11': 'geladen' } } };
+    const ansicht = { seite: 'heute', kontoAnsicht: 'kontostand', heute: '2026-11-17' };
+    assert.equal(nurHintergrundGeaendert(leer, geladen, ansicht), false);
+    // ein anderer Tag mit Zeiten oder nur der Status: die Karte bleibt gleich → kein Neuzeichnen (Tastatur, Animationen)
+    assert.equal(nurHintergrundGeaendert(leer, geladen, { ...ansicht, heute: '2026-11-18' }), true);
+    assert.equal(nurHintergrundGeaendert(geladen, { ...geladen, schicht: { ...geladen.schicht, vorgeladen: '2026-11' } }, ansicht), true);
   });
 
   test('etwas anderes geändert (z. B. der Kontostand) oder gar nichts: neu zeichnen wie immer', () => {

@@ -3,16 +3,20 @@
 // fertig ist (Neuzeichnen nimmt den Fokus).
 import { todayVienna } from '../domain/dates.js';
 import { autoKarteModel } from '../domain/autos-faellig.js';
+import { schichtHeuteZeilen } from './views/schicht-model.js';
 
 /** Inhalt der Karte „🚗 Auto“ auf Heute als Text (zum Vergleichen). */
 const autoKarte = (state, heute) => JSON.stringify(autoKarteModel(state?.autos, heute ?? todayVienna()));
+/** Inhalt der Karte „🗓️ Dienst heute“ auf Heute als Text (zum Vergleichen). */
+const schichtKarte = (state, heute) => JSON.stringify(schichtHeuteZeilen(state, heute ?? todayVienna()));
 
 /**
  * Teile des Zustands, die im Hintergrund vorgeladen werden, und wann sie sichtbar sind (`seite`, `kontoAnsicht`, `heute` wie in der
  * Shell; `a`, `b` = alter und neuer Zustand).
  */
 const SICHTBAR = {
-  schicht: ({ seite }) => seite === 'schicht',
+  // Schichtplan: auf seiner Seite immer; auf Heute nur, wenn sich die Karte „🗓️ Dienst heute“ ändert (das Vorladen beim Start bringt den Monat)
+  schicht: ({ seite, heute }, a, b) => seite === 'schicht' || (seite === 'heute' && schichtKarte(a, heute) !== schichtKarte(b, heute)),
   fixkosten: ({ seite, kontoAnsicht }) => seite === 'konto' && kontoAnsicht === 'fixkosten',
   ziele: ({ seite, kontoAnsicht }) => seite === 'konto' && kontoAnsicht === 'sparziele',
   // Autos: auf ihrer Seite immer; auf Heute nur, wenn sich die Karte „🚗 Auto“ ändert (Laden, gleiche Daten, Nicht-Fälliges → nicht)

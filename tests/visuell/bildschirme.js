@@ -9,6 +9,16 @@ const ABEND = '2026-10-14T19:00:00+02:00';
 const AUTO_DEZEMBER = '2026-12-20T08:00:00+01:00'; // Tesla: Winterreifen überfällig, Vignette bald
 const ansichtKonto = (page, name) => page.getByRole('group', { name: 'Ansicht im Konto' }).getByRole('button', { name });
 
+/** Demo, in der Papa heute (14.10.) Schulung mit eigenen Zeiten hat: Karte „🗓️ Dienst heute“ auf Heute. */
+function dienstHeuteDemo() {
+  const demo = seedDemo(WERKTAG_DATUM);
+  const s = demo.schicht.katalog.arten.papa.find((a) => a.kuerzel === 'S').k;
+  const monat = demo.schicht.monate['2026-10'];
+  monat.t.papa = monat.t.papa.slice(0, 13) + s + monat.t.papa.slice(14);
+  monat.zt = { papa: { 14: [s, '08:00', '16:00'] } };
+  return demo;
+}
+
 function konfliktDemo() {
   const demo = seedDemo(WERKTAG_DATUM);
   demo.tage = { ...demo.tage, '2026-10-20': { typ: 'krank', konflikt: true, andere: ['kita_essen'] } };
@@ -18,6 +28,14 @@ function konfliktDemo() {
 export const BILDSCHIRME = [
   { name: 'heute', titel: 'Heute', oeffne: (p) => starteDemo(p) },
   { name: 'morgen', titel: 'Heute am Abend (Morgen)', oeffne: (p) => starteDemo(p, { zeit: ABEND }) },
+  {
+    name: 'heute-dienst',
+    titel: 'Heute: Dienst mit eigenen Zeiten',
+    oeffne: async (p) => {
+      await starteDemo(p, { speicher: { 'fk.demo.v1': dienstHeuteDemo() } });
+      await p.locator('.sp-heute').waitFor();
+    },
+  },
   {
     name: 'monat',
     titel: 'Monat',

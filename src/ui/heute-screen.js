@@ -9,6 +9,7 @@ import { eingetragenMelden } from './fortschritt.js';
 import { EINKAUF_FARBE } from '../app/views/einkauf-model.js';
 import { oeffneNachricht } from './nachricht-blatt.js';
 import { dienstKarte } from './bringen-holen.js';
+import { schichtHeuteKarte } from './schicht-heute.js';
 
 /** Nach „Krank“ bzw. „Abwesend“ bietet die Meldung an, der Einrichtung gleich Bescheid zu geben (mit dieser Situation vorausgewählt). */
 const BENACHRICHTIGEN = { krank: 'unwohl', abwesend: 'familie' };
@@ -280,7 +281,7 @@ export function heuteScreen({ store, ui }) {
     h('p', { class: 'datum' }, datumTeile(m.datumText)),
     m.termineHeute.length > 0 ? abschnitt(`📌 Heute steht an · ${m.termineHeute.length}`, m.termineHeute.map(terminHeuteKarte)) : null,
     m.termineMorgen.length > 0 ? abschnitt(`📅 Morgen steht an · ${m.termineMorgen.length}`, m.termineMorgen.map(terminHeuteKarte)) : null,
-    abschnitt('Heute', statusKarte(m, store, ui), dienstKarte({ store, zeilen: m.dienst }), nachrichtKnopf(m, store, ui), offeneTageKarte(m, store, ui)),
+    abschnitt('Heute', statusKarte(m, store, ui), dienstKarte({ store, zeilen: m.dienst }), schichtHeuteKarte({ store }), nachrichtKnopf(m, store, ui), offeneTageKarte(m, store, ui)),
     abschnitt(`Sachen für ${m.einrichtung}`, sachenKarte(m, store, ui)),
     abschnitt(m.einkauf.anzahlOffen > 0 ? `🛒 Einkauf · ${m.einkauf.anzahlOffen}` : '🛒 Einkauf', einkaufKarte(m, ui)),
     m.konto.faellig ? abschnitt(`💶 Kontostand für ${m.konto.monatText} eintragen`, kontoHeuteKarte(m, ui)) : null,

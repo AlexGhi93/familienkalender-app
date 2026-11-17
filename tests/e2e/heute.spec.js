@@ -156,3 +156,23 @@ test('Rückkehr am selben Tag: Heute zeichnet neu – die Zeittexte („in 3 Std
   await zurueckInDieApp(page);
   await expect(marke).toHaveText('läuft gerade');
 });
+
+test('Heute zeigt Dienst mit eigenen Zeiten', async ({ page }) => {
+  // kalte Heute-Seite (P16): der Schichtplan wurde nie geöffnet; der Monat kommt aus dem Vorladen beim Start
+  await starteDemo(page);
+  await expect(page.locator('.sp-heute')).toHaveCount(0); // ohne eigene Zeiten keine Karte
+  await page.evaluate(() => {
+    const daten = JSON.parse(localStorage.getItem('fk.demo.v1'));
+    const s = daten.schicht.katalog.arten.papa.find((a) => a.kuerzel === 'S');
+    const monat = daten.schicht.monate['2026-10'];
+    monat.t.papa = monat.t.papa.slice(0, 13) + s.k + monat.t.papa.slice(14); // 14.10. Papa: Schulung
+    monat.zt = { papa: { 14: [s.k, '08:00', '16:00'] } };
+    localStorage.setItem('fk.demo.v1', JSON.stringify(daten));
+  });
+  await page.reload();
+  await expect(page).toHaveURL(/#\/heute$/);
+  const karte = abschnitt(page, 'Heute').locator('.sp-heute');
+  await expect(karte).toBeVisible();
+  await expect(karte.locator('.sp-heute-kopf')).toHaveText('🗓️ Dienst heute');
+  await expect(karte.locator('li')).toHaveText(['👨 Papa Schulung 08:00–16:00']);
+});
