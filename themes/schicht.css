@@ -1467,3 +1467,23 @@
 :root[data-aussehen='bento'] .sp-tausch-tag {
   font-size: 1rem;
 }
+
+/* Karte „Offene Diensttausche“ (die Grundregeln stehen in klassisch/schicht.css) */
+:root[data-aussehen='glas'] .sp-offen-zeile {
+  border-top-color: var(--glas-kante);
+}
+
+:root[data-aussehen='glas'] .sp-offen-text,
+:root[data-aussehen='bento'] .sp-offen-text {
+  font-size: 0.9375rem;
+  line-height: 1.4;
+}
+
+:root[data-aussehen='bento'] .sp-offen-zeile {
+  border-top-color: color-mix(in srgb, var(--ink-2) 25%, transparent);
+}
+
+:root[data-aussehen='glas'] .sp-offen-person > b,
+:root[data-aussehen='bento'] .sp-offen-person > b {
+  font-size: 1rem;
+}

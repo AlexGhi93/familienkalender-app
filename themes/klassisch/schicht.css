@@ -830,3 +830,54 @@
 .sp-tausch-form .sp-tag-erinnerung {
   font-size: 0.875rem; /* Text ≥ 13 px (die Hinweise unter den Formularen sind kleiner) */
 }
+
+/* ---------- Schichtplan: Karte „Offene Diensttausche“ (Rückgabe steht noch aus) ---------- */
+
+.sp-offen {
+  gap: 10px;
+}
+
+.sp-offen-titel {
+  margin: 0;
+}
+
+.sp-offen-person {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sp-offen-zeile {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: var(--rand) solid var(--linie);
+}
+
+.sp-offen-text {
+  margin: 0;
+  font-size: 0.875rem; /* Text ≥ 13 px */
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+/* nach der Frist: ⚠ im Text, dazu die Farbe der Warnung (nie nur Farbe) */
+.sp-offen-zeile.ueberfaellig .sp-offen-text {
+  color: var(--gefahr);
+}
+
+.sp-offen-zeile .sp-tag-erinnerung {
+  font-size: 0.875rem;
+}
+
+.sp-offen-knoepfe {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* „Dienst“ im Blatt Diensttausch ist ohne Rückgabetag nicht gefragt */
+.sp-tausch-form .fk-auswahl:disabled {
+  color: var(--ink-2);
+}

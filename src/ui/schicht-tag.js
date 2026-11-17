@@ -6,11 +6,12 @@
 // Knopf „＋ <Name>“ (z. B. „＋ Dienstbesprechung“), der gleich Von/Bis öffnet, darunter der Hinweis auf die Erinnerung – oder eine
 // Warnung, wenn laut Geräte-Register (ui.push) kein Telefon der Person gehört bzw. dieses Telefon das nicht sehen kann.
 import { fuelle, h } from './dom.js';
-import { bestaetigen, blatt, toast } from './components.js';
+import { blatt, toast } from './components.js';
 import { erledigt, sicher } from './formular.js';
 import { oeffneDiensttausch } from './schicht-tausch.js';
+import { oeffneRueckgabe, rueckgaengigFragen } from './schicht-offen.js';
 import { zeitFeld } from './eingabefelder.js';
-import { TAUSCH_RUECKGAENGIG_TEXT, erinnerungHinweis, schichtTagModel } from '../app/views/schicht-model.js';
+import { erinnerungHinweis, schichtTagModel } from '../app/views/schicht-model.js';
 import { MAX_NOTIZ } from '../domain/schicht.js';
 import { mitZeiten, musterKlassen } from './schicht-pinsel.js';
 import { geloeschtMelden, sicherLoeschen } from './fortschritt.js';
@@ -345,16 +346,8 @@ export function oeffneSchichtTag({ store, ui = null }, datum) {
             if (!erledigt(await sicher(store.diensttauschAbschliessen(id)), 'Diensttausch abgeschlossen ✓')) k.disabled = false;
           })
         : null,
-      knopf('Tausch rückgängig', () =>
-        bestaetigen({
-          titel: 'Diensttausch rückgängig machen?',
-          text: TAUSCH_RUECKGAENGIG_TEXT,
-          ja: 'Rückgängig machen',
-          beiJa: async () => {
-            erledigt(await sicher(store.diensttauschRueckgaengig(id)), 'Diensttausch rückgängig gemacht ✓');
-          },
-        }),
-      ),
+      p.tausch.offen ? knopf('Rückgabe eintragen', () => oeffneRueckgabe({ store }, { id })) : null,
+      knopf('Tausch rückgängig', () => rueckgaengigFragen({ store }, { id, offen: p.tausch.offen === true })),
     );
   }
 

@@ -6,6 +6,7 @@ import { datumLang } from '../app/format-de.js';
 import { FEIERTAG_EMOJI } from '../app/views/gemeinsam.js';
 import { rasterFilter, schichtMonatModel } from '../app/views/schicht-model.js';
 import { stempelt } from './schicht-bewegung.js';
+import { offeneTauscheKarte } from './schicht-offen.js';
 import { gemaltJetzt, mitZeiten, musterKlassen, pinselLeiste, pinselTippen, pinselUmschalten } from './schicht-pinsel.js';
 import { gesperrtHinweis } from './formular.js';
 import { UNLESBAR_TEXT } from '../domain/unlesbar.js';
@@ -123,6 +124,7 @@ export function schichtScreen({ store, ui }) {
           h('article', { class: 'karte sp-zaehlung' }, m.personen.map((p) => personZeile(p, h('span', {}, m.zaehlung[p])))),
         ]
       : h('article', { class: 'karte hinweis sp-nicht-geladen' }, h('p', {}, m.laedt ? 'Schichtplan wird geladen …' : 'Noch nicht geladen – bitte verbinden.')),
+    offeneTauscheKarte({ store, ui }), // unter der Zählung; ohne offene Tausche (der gezeigten Personen) gibt es sie nicht
     h(
       'article',
       { class: 'karte sp-legende' },

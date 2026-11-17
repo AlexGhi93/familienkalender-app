@@ -1,7 +1,7 @@
 // Ansicht des Schichtplans ohne DOM: Monatsraster mit zwei Streifen je Tag, Filter, Zählung, Legende, gemerkter Filter.
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { SCHICHT_FILTER_SCHLUESSEL, schichtHeuteZeilen, artEntwurf, artEntwurfFehler, erinnerungHinweis, fehlendeErinnerungsTelefone, pinselAktion, pinselModel, pinselStart, rasterFilter, schichtFilterLesen, schichtFilterSpeichern, schichtArtenModel, schichtMonatModel, schichtTagModel, tauschFormModel } from '../../src/app/views/schicht-model.js';
+import { SCHICHT_FILTER_SCHLUESSEL, schichtHeuteZeilen, artEntwurf, artEntwurfFehler, erinnerungHinweis, fehlendeErinnerungsTelefone, pinselAktion, pinselModel, pinselStart, rasterFilter, schichtFilterLesen, schichtFilterSpeichern, schichtArtenModel, schichtMonatModel, schichtTagModel, tauschFormModel, offeneTauscheModel, rueckgabeFormModel } from '../../src/app/views/schicht-model.js';
 import { artAendern, artArchivieren, artHinzufuegen, artVerschieben, leererMonat, setzeNotiz, setzeSchicht, setzeTagZeiten, standardKatalog, zusatzHinzufuegen } from '../../src/domain/schicht.js';
 import { speicherAttrappe, zustand } from './hilfen.js';
 
@@ -581,7 +581,7 @@ describe('Diensttausch im Tagesblatt und im Raster', () => {
     assert.equal(papa(mitTausch('gebrochen'), '2026-10-12').tauschMoeglich, true); // gebrochen hält den Tag nicht fest
     assert.equal(papa(stateMit(), '2026-10-05').tauschMoeglich, false); // Urlaub
     assert.equal(papa(stateMit(), '2026-10-01').tauschMoeglich, true); // F
-    assert.equal(papa(stateMit(), '2026-10-20').tauschMoeglich, false); // frei
+    assert.equal(papa(stateMit(), '2026-10-20').tauschMoeglich, true); // frei: nur „Dienst übernehmen“ (R10)
     assert.equal(papa(mitTausch('ganz', EINTRAG, ['schichttausch']), '2026-10-12').tauschMoeglich, false);
     assert.equal(papa(mitTausch('offen', EINTRAG, ['schichttausch']), '2026-10-12').tauschMoeglich, false);
   });
@@ -598,16 +598,166 @@ describe('Diensttausch im Tagesblatt und im Raster', () => {
 
   test('Formular: Dienste ohne Urlaub, „Ersetzt am TT.MM.: …“, Meldung der Prüfung', () => {
     const state = mitTausch('offen', { ...EINTRAG, a: '2026-10-06', b: '2026-10-13' });
-    const m = (b, kb = F) => tauschFormModel(state, { person: 'papa', a: '2026-10-05', b, kb, mitWem: '' }, HEUTE);
+    const m = (rueckgabe, kb = F) => tauschFormModel(state, { person: 'papa', tag: '2026-10-05', richtung: 'abgegeben', rueckgabe, kb, mitWem: '' }, HEUTE);
     assert.deepEqual(m('2026-10-12').dienste.map(([, t]) => t.split(' ')[0]), ['F', 'M', 'NM', 'N', '2T', 'Ü', 'S', 'E']); // ohne U
     assert.equal(m('2026-10-12').ersetzt, 'Ersetzt am 12.10.: Schulung');
     assert.equal(m('2026-10-12').fehler, null);
     assert.equal(m('2026-10-20').ersetzt, 'Am 20.10. ist kein Dienst eingetragen – nichts wird ersetzt.');
     assert.equal(m('2026-10-12', S).kb, S);
     assert.equal(m('2026-10-12', 'zzz').kb, F); // unpassend → der erste
-    assert.equal(m('').fehler, 'Bitte den übernommenen Tag wählen.');
-    assert.equal(m('2026-11-03').bGeladen, false); // Monat noch nicht da
+    assert.equal(m('').fehler, null); // ohne Rückgabetag: offen
+    assert.equal(m('2026-11-03').rGeladen, false); // Monat noch nicht da
     assert.equal(m('2026-11-03').ersetzt, null);
     assert.equal(m('2026-10-05').fehler, 'Bitte zwei verschiedene Tage wählen.');
+  });
+});
+
+describe('offener Diensttausch', () => {
+  const F = k('papa', 'F');
+  const S = k('papa', 'S');
+  const KOLLEGIN = { id: 'offen01', person: 'papa', richtung: 'uebernommen', frist: '2027-10-20', b: '2026-10-20', kb: S, vb: null, mitWem: 'Kollegin', am: HEUTE };
+  const ABGEGEBEN = { id: 'offen02', person: 'papa', richtung: 'abgegeben', frist: '2027-10-05', a: '2026-10-05', ka: F, am: HEUTE };
+  const GESCHLOSSEN = { id: 'zu01', person: 'papa', a: '2026-10-01', b: '2026-10-26', ka: F, kb: F, vb: null, mitWem: 'Kollege', am: HEUTE };
+  /** Oktober: Papa F am 1. und 5., S am 12.; `angewendet` schreibt die Seite der offenen Einträge (20. = S, 5. = frei). */
+  const zu = (eintraege, { angewendet = true, unlesbar = [] } = {}) => {
+    let m = leererMonat(JM);
+    for (const tag of [1, 5]) m = setzeSchicht(m, { person: 'papa', tag, k: F });
+    m = setzeSchicht(m, { person: 'papa', tag: 12, k: S });
+    m = setzeSchicht(m, { person: 'mama', tag: 3, k: k('mama', 'T') });
+    if (angewendet) {
+      for (const e of eintraege) {
+        if (e.richtung === 'uebernommen') m = setzeSchicht(m, { person: e.person, tag: Number(e.b.slice(8)), k: e.kb });
+        if (e.richtung === 'abgegeben') m = setzeSchicht(m, { person: e.person, tag: Number(e.a.slice(8)), k: null });
+      }
+    }
+    return { ...zustand({ schicht: { katalog, monate: { [JM]: m }, status: { [JM]: 'geladen' }, tausch: { v: 1, eintraege } } }), unlesbar };
+  };
+  const papa = (state, datum) => schichtTagModel(state, datum).personen.find((p) => p.person === 'papa');
+  /** Derselbe Stand, aber mit anderen Einträgen (der Monat bleibt, wie er war). */
+  const mitEintraegen = (state, eintraege) => ({ ...state, schicht: { ...state.schicht, tausch: { v: 1, eintraege } } });
+  const form = (state, e, heute = HEUTE) => tauschFormModel(state, { person: 'papa', tag: '2026-10-20', richtung: 'uebernommen', kb: S, rueckgabe: '', mitWem: '', ...e }, heute);
+
+  test('Formular: Richtungen nach Tag (frei → nur übernehmen)', () => {
+    const frei = form(zu([]), { richtung: 'abgegeben' });
+    assert.deepEqual(frei.richtungen, [['uebernommen', 'Dienst übernehmen']]);
+    assert.equal(frei.richtung, 'uebernommen'); // „abgegeben“ wird an einem freien Tag nicht gewählt
+    const dienst = form(zu([]), { tag: '2026-10-01', richtung: undefined });
+    assert.deepEqual(dienst.richtungen, [['abgegeben', 'Dienst abgeben'], ['uebernommen', 'Dienst übernehmen']]);
+    assert.equal(dienst.richtung, 'abgegeben');
+    assert.equal(form(zu([]), { tag: '2026-10-01', richtung: 'uebernommen' }).richtung, 'uebernommen');
+  });
+
+  test('Formular: mit Rückgabe → verknuepft mit R3-Zuordnung, ohne → offen', () => {
+    const state = zu([]);
+    const abg = form(state, { tag: '2026-10-01', richtung: 'abgegeben', rueckgabe: '2026-10-12', kb: F, mitWem: 'X' });
+    assert.equal(abg.brauchtDienst, true);
+    assert.equal(abg.fehler, null);
+    assert.deepEqual(abg.speichern, { art: 'verknuepft', entwurf: { person: 'papa', a: '2026-10-01', b: '2026-10-12', kb: F, mitWem: 'X' } });
+    assert.equal(abg.ersetzt, 'Ersetzt am 12.10.: Schulung');
+    const abgOffen = form(state, { tag: '2026-10-01', richtung: 'abgegeben', mitWem: 'X' });
+    assert.equal(abgOffen.brauchtDienst, false);
+    assert.equal(abgOffen.rueckgabe, '');
+    assert.deepEqual(abgOffen.speichern, { art: 'offen', entwurf: { person: 'papa', richtung: 'abgegeben', tag: '2026-10-01', mitWem: 'X' } });
+    const ueb = form(state, { rueckgabe: '2026-10-01' }); // übernehmen am 20., dafür am 1. abgeben
+    assert.equal(ueb.brauchtDienst, true);
+    assert.equal(ueb.fehler, null);
+    assert.deepEqual(ueb.speichern, { art: 'verknuepft', entwurf: { person: 'papa', a: '2026-10-01', b: '2026-10-20', kb: S, mitWem: '' } });
+    const uebOffen = form(state, {});
+    assert.equal(uebOffen.brauchtDienst, true);
+    assert.equal(uebOffen.fehler, null);
+    assert.deepEqual(uebOffen.speichern, { art: 'offen', entwurf: { person: 'papa', richtung: 'uebernommen', tag: '2026-10-20', kb: S, mitWem: '' } });
+    const ungeladen = form(state, { tag: '2026-10-01', richtung: 'abgegeben', rueckgabe: '2026-11-03' });
+    assert.match(ungeladen.fehler, /Monat/);
+    assert.equal(ungeladen.rGeladen, false);
+    assert.equal(form(state, { rueckgabe: '2026-10-20' }).fehler, 'Bitte zwei verschiedene Tage wählen.');
+  });
+
+  test('Liste: Texte genau (beide Richtungen, mit/ohne Mit wem), sortiert nach Frist, ⚠ nach der Frist', () => {
+    const state = zu([KOLLEGIN, ABGEGEBEN]);
+    const m = offeneTauscheModel(state, { filter: 'beide', heute: HEUTE });
+    assert.equal(m.personen.length, 1);
+    assert.equal(m.personen[0].person, 'papa');
+    assert.equal(m.personen[0].kopf, '👨 Papa');
+    assert.deepEqual(m.personen[0].zeilen.map((z) => z.text), [
+      'Frühdienst abgegeben am 05.10. – noch eine Schicht übernehmen bis 05.10.2027',
+      'Schulung übernommen am 20.10. (von Kollegin) – Rückgabe offen bis 20.10.2027',
+    ]);
+    const an = offeneTauscheModel(zu([{ ...ABGEGEBEN, mitWem: 'Kollege' }]), { filter: 'beide', heute: HEUTE });
+    assert.equal(an.personen[0].zeilen[0].text, 'Frühdienst abgegeben am 05.10. (an Kollege) – noch eine Schicht übernehmen bis 05.10.2027');
+    const spaet = offeneTauscheModel(state, { filter: 'beide', heute: '2027-10-06' });
+    assert.deepEqual(spaet.personen[0].zeilen.map((z) => [z.ueberfaellig, z.text.startsWith('⚠ ')]), [[true, true], [false, false]]);
+    assert.equal(offeneTauscheModel(state, { filter: 'beide', heute: '2027-10-05' }).personen[0].zeilen[0].ueberfaellig, false); // am Tag der Frist noch nicht
+    const unbekannt = offeneTauscheModel(mitEintraegen(zu([]), [{ ...KOLLEGIN, kb: 'zzz' }]), { filter: 'beide', heute: HEUTE });
+    assert.match(unbekannt.personen[0].zeilen[0].text, /^Unbekannte Art übernommen am 20\.10\./);
+  });
+
+  test('Liste: hinweis und Knöpfe je Zustand', () => {
+    const zeile = (state) => offeneTauscheModel(state, { filter: 'beide', heute: HEUTE }).personen[0].zeilen[0];
+    const ganz = zeile(zu([KOLLEGIN]));
+    assert.deepEqual([ganz.id, ganz.hinweis, ganz.kannRueckgabe, ganz.kannAbschliessen, ganz.kannVerwerfen], ['offen01', null, true, false, false]);
+    const offen = zeile(zu([KOLLEGIN], { angewendet: false }));
+    assert.deepEqual([offen.hinweis, offen.kannRueckgabe, offen.kannAbschliessen, offen.kannVerwerfen], ['⚠ Tausch unvollständig', false, true, false]);
+    const gebrochen = zeile(mitEintraegen(zu([KOLLEGIN]), [{ ...KOLLEGIN, kb: F }])); // am 20. steht S, erwartet wäre F (vorher: frei) → von Hand geändert
+    assert.deepEqual([gebrochen.hinweis, gebrochen.kannRueckgabe, gebrochen.kannAbschliessen, gebrochen.kannVerwerfen], ['⚠ Von Hand geändert', false, false, true]);
+    const unb = zeile(zu([{ ...KOLLEGIN, b: '2026-11-03' }]));
+    assert.deepEqual([unb.hinweis, unb.kannRueckgabe, unb.kannAbschliessen, unb.kannVerwerfen], [null, true, false, false]);
+  });
+
+  test('Liste folgt dem Filter; ohne offene → null', () => {
+    const state = zu([KOLLEGIN, GESCHLOSSEN]);
+    assert.equal(offeneTauscheModel(state, { filter: 'mama', heute: HEUTE }), null);
+    assert.equal(offeneTauscheModel(state, { filter: 'papa', heute: HEUTE }).personen.length, 1);
+    assert.equal(offeneTauscheModel(zu([GESCHLOSSEN]), { filter: 'beide', heute: HEUTE }), null);
+    assert.equal(offeneTauscheModel(zu([]), { filter: 'beide', heute: HEUTE }), null);
+    const mamaE = { ...KOLLEGIN, id: 'offen09', person: 'mama', kb: k('mama', 'T'), mitWem: undefined };
+    const beide = offeneTauscheModel(zu([KOLLEGIN, mamaE]), { filter: 'beide', heute: HEUTE });
+    assert.deepEqual(beide.personen.map((p) => p.kopf), ['👨 Papa', '👩 Mama']);
+  });
+
+  test('Tag: Text „⇄ übernommen von Kollegin · Rückgabe offen“; verknüpfte Texte unverändert', () => {
+    const t = (e, datum) => papa(zu([e]), datum).tausch;
+    assert.deepEqual(t(KOLLEGIN, '2026-10-20'), { zustand: 'ganz', text: '⇄ übernommen von Kollegin · Rückgabe offen', id: 'offen01', offen: true });
+    assert.equal(t({ ...KOLLEGIN, mitWem: undefined }, '2026-10-20').text, '⇄ übernommen · Rückgabe offen');
+    assert.equal(t({ ...ABGEGEBEN, mitWem: 'Kollege' }, '2026-10-05').text, '⇄ abgegeben an Kollege · Rückgabe offen');
+    assert.equal(t(ABGEGEBEN, '2026-10-05').text, '⇄ abgegeben · Rückgabe offen');
+    // offen, nicht angekommen: sichtbar zum Abschließen, ohne Rückgabeknopf; von Hand geändert: kein Absturz
+    assert.deepEqual(papa(zu([KOLLEGIN], { angewendet: false }), '2026-10-20').tausch, { zustand: 'offen', text: '⚠ Tausch unvollständig', id: 'offen01' });
+    assert.equal(papa(mitEintraegen(zu([KOLLEGIN]), [{ ...KOLLEGIN, kb: F }]), '2026-10-20').tausch, null);
+    // das Raster zeigt ⇄ am Tag
+    const raster = schichtMonatModel(zu([KOLLEGIN]), JM, { heute: HEUTE, filter: 'beide' });
+    assert.equal(raster.zellen.find((z) => z.imMonat && z.tag === 20).tausch, true);
+  });
+
+  test('tauschMoeglich: freier Tag ja, Urlaub nein, getauschter Tag nein', () => {
+    assert.equal(papa(zu([]), '2026-10-20').tauschMoeglich, true); // frei
+    assert.equal(papa(zu([]), '2026-10-01').tauschMoeglich, true); // Dienst
+    const m = setzeSchicht(leererMonat(JM), { person: 'papa', tag: 4, k: k('papa', 'U') });
+    const urlaub = zustand({ schicht: { katalog, monate: { [JM]: m }, status: { [JM]: 'geladen' }, tausch: { v: 1, eintraege: [] } } });
+    assert.equal(papa(urlaub, '2026-10-04').tauschMoeglich, false);
+    assert.equal(papa(zu([KOLLEGIN]), '2026-10-20').tauschMoeglich, false); // hält schon einen offenen Tausch
+    assert.equal(papa(zu([ABGEGEBEN]), '2026-10-05').tauschMoeglich, false);
+    assert.equal(papa(zu([], { unlesbar: ['schichttausch'] }), '2026-10-20').tauschMoeglich, false);
+    const ohneKatalog = zu([]);
+    assert.equal(papa({ ...ohneKatalog, schicht: { ...ohneKatalog.schicht, katalog: null } }, '2026-10-20').tauschMoeglich, false); // Schichtarten nicht gelesen
+    assert.equal(schichtTagModel(zustand({ schicht: { katalog, monate: {}, status: {}, tausch: { v: 1, eintraege: [] } } }), '2026-11-03').personen[0].tauschMoeglich, false); // Monat nicht geladen
+  });
+
+  test('Rückgabe-Formular: Kopf, Dienste, Meldungen; fehlt oder geschlossen → null', () => {
+    const state = zu([KOLLEGIN, ABGEGEBEN, GESCHLOSSEN]);
+    assert.equal(rueckgabeFormModel(state, { id: 'nix', tag: '', kb: '' }, HEUTE), null);
+    assert.equal(rueckgabeFormModel(state, { id: 'zu01', tag: '', kb: '' }, HEUTE), null);
+    const u = rueckgabeFormModel(state, { id: 'offen01', tag: '', kb: '' }, HEUTE); // übernommen: zurück gibt man einen eigenen Dienst ab
+    assert.equal(u.richtung, 'uebernommen');
+    assert.equal(u.brauchtDienst, false);
+    assert.match(u.kopf.text, /^Schulung übernommen am 20\.10\./);
+    assert.equal(u.fehler, 'Bitte den Rückgabetag wählen.');
+    assert.equal(rueckgabeFormModel(state, { id: 'offen01', tag: '2026-10-12', kb: '' }, HEUTE).fehler, null);
+    assert.equal(rueckgabeFormModel(state, { id: 'offen01', tag: '2026-10-20', kb: '' }, HEUTE).fehler, 'Bitte zwei verschiedene Tage wählen.');
+    assert.equal(rueckgabeFormModel(state, { id: 'offen01', tag: '2026-11-03', kb: '' }, HEUTE).tGeladen, false);
+    const a = rueckgabeFormModel(state, { id: 'offen02', tag: '2026-10-12', kb: 'zzz' }, HEUTE); // abgegeben: am Rückgabetag übernimmt man einen Dienst
+    assert.equal(a.richtung, 'abgegeben');
+    assert.equal(a.brauchtDienst, true);
+    assert.equal(a.kb, a.dienste[0][0]);
+    assert.equal(a.ersetzt, 'Ersetzt am 12.10.: Schulung');
   });
 });

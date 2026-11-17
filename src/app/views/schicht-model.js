@@ -5,7 +5,7 @@ import { addDays, eachDay, pad2, weekday } from '../../domain/dates.js';
 import { feiertagName } from '../../domain/feiertage.js';
 import { monatVor } from '../../domain/konto.js';
 import { PALETTE, SCHICHT_PERSONEN, aktiveArten, artAendern, artFuer, artHinzufuegen, istNacht, monatZaehlung, schichtAm, standardKatalog, tageImMonat, tagZeitenAm, zeitenFuer } from '../../domain/schicht.js';
-import { tauschAm, tauschErsetzt, tauschPruefen, tauschZustand } from '../../domain/schicht-tausch.js';
+import { tauschAm, tauschErsetzt, tauschIstOffen, tauschOffenPruefen, tauschOffenTag, tauschPruefen, tauschRueckgabePruefen, tauschZustand } from '../../domain/schicht-tausch.js';
 import { standardSpeicher } from '../speicher.js';
 import { WOCHENTAGE_KURZ, datumLang, monatTitel } from '../format-de.js';
 
@@ -68,10 +68,19 @@ function tauschQuelle(state) {
   return { daten: state.schicht?.tausch ?? null, monate: (jm) => monate[jm] ?? null };
 }
 
+/** Monat des Tages `tag` aus dem Nachschlag (ein offener Tausch hat nur einen Tag: der andere fehlt → null). */
+const monatVonTag = (q, tag) => (tag === undefined ? null : q.monate(tag.slice(0, 7)));
+/** Zustand eines Eintrags (geschlossen oder offen) nach den Monaten seiner Tage. */
+const zustandVon = (q, e) => tauschZustand(e, monatVonTag(q, e.a), monatVonTag(q, e.b));
+
 /** Text eines sichtbaren Tauschs am Tag: „⇄ getauscht mit <wer> / gegen TT.MM.“ bzw. „⚠ Tausch unvollständig“. */
 const tauschText = (t) => {
   if (t.zustand !== 'ganz') return '⚠ Tausch unvollständig';
   const e = t.eintrag;
+  if (t.offen) {
+    const verb = e.richtung === 'abgegeben' ? `abgegeben${e.mitWem ? ` an ${e.mitWem}` : ''}` : `übernommen${e.mitWem ? ` von ${e.mitWem}` : ''}`;
+    return `⇄ ${verb} · Rückgabe offen`;
+  }
   return `⇄ getauscht${e.mitWem ? ` mit ${e.mitWem}` : ''} / gegen ${kurzDatumTT(t.rolle === 'a' ? e.b : e.a)}`;
 };
 
@@ -82,11 +91,11 @@ const tauschText = (t) => {
  */
 function tauschFuerTag(q, person, datum) {
   const sichtbar = tauschAm(q.daten, q.monate, person, datum);
-  if (sichtbar) return { tausch: { zustand: sichtbar.zustand, text: tauschText(sichtbar), id: sichtbar.eintrag.id }, aktiv: true };
+  if (sichtbar) return { tausch: { zustand: sichtbar.zustand, text: tauschText(sichtbar), id: sichtbar.eintrag.id, ...(sichtbar.offen ? { offen: true } : {}) }, aktiv: true };
   let aktiv = false;
   for (const e of [...(q.daten?.eintraege ?? [])].reverse()) {
     if (e.person !== person || (e.a !== datum && e.b !== datum)) continue;
-    const zustand = tauschZustand(e, q.monate(e.a.slice(0, 7)), q.monate(e.b.slice(0, 7)));
+    const zustand = zustandVon(q, e);
     if (zustand === 'offen') return { tausch: { zustand, text: '⚠ Tausch unvollständig', id: e.id }, aktiv: true };
     if (zustand === 'unbekannt') aktiv = true;
   }
@@ -305,8 +314,10 @@ function tagPerson(katalog, monat, person, tag, katalogGelesen = true, tq = null
     erinnern: a.erinnern !== false,
   }));
   const { tausch, aktiv } = tq ? tauschFuerTag(tq.quelle, person, tq.datum) : { tausch: null, aktiv: false };
-  // „⇄ Diensttausch“ nur mit gelesenen Schichtarten und lesbaren Tauschen, an einem Dienst (nicht Urlaub), wenn der Tag nicht schon getauscht ist
-  const tauschMoeglich = Boolean(tq) && !tq.gesperrt && katalogGelesen && Boolean(art) && art.muster !== 'urlaub' && art.gruppe === 'dienst' && !aktiv;
+  // „⇄ Diensttausch“ nur mit gelesenen Schichtarten, geladenem Monat und lesbaren Tauschen, an einem Dienst oder freien Tag (nicht Urlaub),
+  // wenn der Tag nicht schon getauscht ist (R10)
+  const tagOk = k === null || (Boolean(art) && art.muster !== 'urlaub' && art.gruppe === 'dienst');
+  const tauschMoeglich = Boolean(tq) && !tq.gesperrt && katalogGelesen && monat !== null && tagOk && !aktiv;
   return { person, ...personKopf(person), schicht, zeiten, zeitenMoeglich, arten, frei: k === null, nichtWaehlbar, notiz: monat?.n?.[person]?.[tag] ?? '', zusaetze, zusatzArten, tausch, tauschMoeglich };
 }
 
@@ -405,31 +416,143 @@ export function artEntwurfFehler(state, person, k, entwurf) {
 
 // ---------- Diensttausch (Formular) ----------
 
+const DATUM = /^\d{4}-\d{2}-\d{2}$/;
+const RICHTUNG_TEXT = { abgegeben: 'Dienst abgeben', uebernommen: 'Dienst übernehmen' };
+const nichtsErsetzt = (datum) => `Am ${kurzDatumTT(datum)} ist kein Dienst eingetragen – nichts wird ersetzt.`;
+
+/** Aktive Dienste der Person ohne Urlaub als [[k, „F Frühdienst“], …] und die gewählte Art `kb` (leer oder unpassend → die erste). */
+function dienstWahl(katalog, person, gewuenscht) {
+  const dienste = aktiveArten(katalog, person, 'dienst').filter((x) => x.muster !== 'urlaub');
+  const kb = dienste.some((x) => x.k === gewuenscht) ? gewuenscht : (dienste[0]?.k ?? '');
+  return { kb, dienste: dienste.map((x) => [x.k, `${x.kuerzel} ${x.name}`]) };
+}
+
 /**
- * Formular „Diensttausch“: `entwurf` = { person, a, b, kb, mitWem } (`b` und `kb` dürfen leer sein). → `dienste` = [[k, „F Frühdienst“], …]
- * (aktive Dienste der Person ohne Urlaub), `kb` = die gewählte Art (leer oder unpassend → die erste), `bGeladen` = der Monat von Tag B ist da,
- * `ersetzt` = was am übernommenen Tag ersetzt wird (null = Tag B noch unklar), `fehler` = die Meldung, mit der Speichern abgelehnt würde
- * (null = passt). `heute` nur für das Alter offener Tausche.
+ * Formular „Diensttausch“ am Tag `tag`: `entwurf` = { person, tag, richtung, kb, rueckgabe, mitWem } (`kb` und `rueckgabe` dürfen leer sein;
+ * `rueckgabe` leer = die Rückgabe bleibt offen). → `richtungen` (Dienst abgeben nur, wenn der Tag einen Dienst hat), `richtung` (die gewählte,
+ * sonst abgeben am Dienst, übernehmen am freien Tag), `dienste`/`kb` (der Dienst, der übernommen wird), `brauchtDienst` (übernehmen oder abgeben
+ * mit Rückgabe: dann wird ein Dienst gewählt), `rueckgabe`, `rGeladen` (der Monat des Rückgabetags ist da), `ersetzt` (was ersetzt wird, null =
+ * unklar oder nichts zu sagen), `fehler` (die Meldung, mit der Speichern abgelehnt würde, null = passt) und `speichern` = was der Store bekommt:
+ * `{ art: 'offen', entwurf }` (diensttauschOffenSpeichern) oder `{ art: 'verknuepft', entwurf }` (diensttauschSpeichern; abgegeben: a = Tag,
+ * b = Rückgabe; übernommen: a = Rückgabe, b = Tag – R3). `heute` nur für das Alter offener Tausche.
  */
 export function tauschFormModel(state, entwurf, heute) {
   const katalog = katalogVon(state);
-  const { person, a, b } = entwurf;
-  const dienste = aktiveArten(katalog, person, 'dienst').filter((x) => x.muster !== 'urlaub');
-  const kb = dienste.some((x) => x.k === entwurf.kb) ? entwurf.kb : (dienste[0]?.k ?? '');
+  const { person, tag, mitWem } = entwurf;
   const q = tauschQuelle(state);
-  const bFertig = /^\d{4}-\d{2}-\d{2}$/.test(b ?? '');
-  const bGeladen = bFertig && q.monate(b.slice(0, 7)) !== null;
-  let ersetzt = null;
+  const monatTag = monatVonTag(q, tag);
+  const k = schichtAm(monatTag, person, Number(tag.slice(8)));
+  const hatDienst = k !== null && artFuer(katalog, person, k)?.muster !== 'urlaub';
+  const richtungen = (hatDienst ? ['abgegeben', 'uebernommen'] : ['uebernommen']).map((r) => [r, RICHTUNG_TEXT[r]]);
+  const richtung = richtungen.some(([r]) => r === entwurf.richtung) ? entwurf.richtung : richtungen[0][0];
+  const rFertig = DATUM.test(entwurf.rueckgabe ?? '');
+  const rueckgabe = rFertig ? entwurf.rueckgabe : '';
+  const brauchtDienst = richtung === 'uebernommen' || rFertig;
+  const { kb, dienste } = dienstWahl(katalog, person, entwurf.kb);
+  const rGeladen = !rFertig || q.monate(rueckgabe.slice(0, 7)) !== null;
+  const optionen = { ...q, katalog, heute };
   let fehler = null;
-  if (!bFertig) fehler = 'Bitte den übernommenen Tag wählen.';
-  else if (!bGeladen) fehler = 'Der Monat des übernommenen Tags wird noch geladen.';
-  else {
-    const voll = { ...entwurf, kb };
-    fehler = tauschPruefen(voll, { ...q, katalog, heute });
-    ersetzt = tauschErsetzt(voll, q.monate(b.slice(0, 7)), katalog) ?? `Am ${kurzDatumTT(b)} ist kein Dienst eingetragen – nichts wird ersetzt.`;
+  let ersetzt = null;
+  let speichern;
+  if (rFertig) {
+    const [a, b] = richtung === 'abgegeben' ? [tag, rueckgabe] : [rueckgabe, tag];
+    const voll = { person, a, b, kb, mitWem };
+    speichern = { art: 'verknuepft', entwurf: voll };
+    if (!rGeladen) fehler = 'Der Monat des Rückgabetags wird noch geladen.';
+    else if (monatTag === null) fehler = 'Der Monat des Tages wird noch geladen.';
+    else fehler = tauschPruefen(voll, optionen);
+    if (rGeladen && monatTag !== null) ersetzt = tauschErsetzt(voll, q.monate(b.slice(0, 7)), katalog) ?? nichtsErsetzt(b);
+  } else {
+    const offen = { person, richtung, tag, ...(richtung === 'uebernommen' ? { kb } : {}), mitWem };
+    speichern = { art: 'offen', entwurf: offen };
+    if (monatTag === null) fehler = 'Der Monat des Tages wird noch geladen.';
+    else {
+      fehler = tauschOffenPruefen(offen, optionen);
+      if (richtung === 'uebernommen') ersetzt = tauschErsetzt({ person, b: tag }, monatTag, katalog) ?? nichtsErsetzt(tag);
+    }
   }
-  return { person, a, b: bFertig ? b : '', kb, dienste: dienste.map((x) => [x.k, `${x.kuerzel} ${x.name}`]), bGeladen, ersetzt, fehler };
+  return { person, tag, richtungen, richtung, dienste, kb, brauchtDienst, rueckgabe, rGeladen, ersetzt, fehler, speichern };
 }
 
+/** Text der Rückfrage „Eintrag entfernen“ (nur ein von Hand geänderter offener Tausch). */
+export const TAUSCH_EINTRAG_ENTFERNEN_TEXT = 'Nur der Eintrag wird entfernt – der Tag bleibt, wie er jetzt ist.';
+/** Text der Rückfrage „Tausch rückgängig“ für einen offenen Tausch (nur sein einer Tag wird zurückgesetzt). */
+export const TAUSCH_OFFEN_RUECKGAENGIG_TEXT = 'Der Tag kommt genau so zurück, wie er vor dem Tausch war – mit seinem Dienst und den Uhrzeiten, die an dem Tag eingetragen waren.';
+
+// ---------- Offene Diensttausche (Karte, Rückgabe) ----------
+
+const langDatum = (datum) => `${kurzDatumTT(datum)}${datum.slice(0, 4)}`;
+
+/** Eine Zeile der Liste „Offene Diensttausche“ zu einem offenen Eintrag. */
+function offeneZeile(q, katalog, e, heute) {
+  const tag = tauschOffenTag(e);
+  const abgegeben = e.richtung === 'abgegeben';
+  const name = artFuer(katalog, e.person, abgegeben ? e.ka : e.kb)?.name ?? 'Unbekannte Art';
+  const mit = e.mitWem ? ` (${abgegeben ? 'an' : 'von'} ${e.mitWem})` : '';
+  const text = abgegeben
+    ? `${name} abgegeben am ${kurzDatumTT(tag)}${mit} – noch eine Schicht übernehmen bis ${langDatum(e.frist)}`
+    : `${name} übernommen am ${kurzDatumTT(tag)}${mit} – Rückgabe offen bis ${langDatum(e.frist)}`;
+  const zustand = zustandVon(q, e);
+  const ueberfaellig = heute > e.frist;
+  let hinweis = null;
+  if (zustand === 'offen') hinweis = '⚠ Tausch unvollständig';
+  else if (zustand === 'gebrochen') hinweis = '⚠ Von Hand geändert';
+  return {
+    id: e.id,
+    text: ueberfaellig ? `⚠ ${text}` : text,
+    ueberfaellig,
+    hinweis,
+    kannRueckgabe: zustand === 'ganz' || zustand === 'unbekannt',
+    kannAbschliessen: zustand === 'offen',
+    kannVerwerfen: zustand === 'gebrochen',
+  };
+}
+
+/**
+ * Karte „Offene Diensttausche“: je angezeigter Person (Filter der Seite) ihre offenen Tausche, nach Frist sortiert; null, wenn es keine gibt.
+ * `kannRueckgabe` = Zustand ganz (oder noch unbekannt), `kannAbschliessen` = offen, `kannVerwerfen` = von Hand geändert („Eintrag entfernen“).
+ */
+export function offeneTauscheModel(state, { filter = 'beide', heute } = {}) {
+  const q = tauschQuelle(state);
+  const katalog = katalogVon(state);
+  const alle = (q.daten?.eintraege ?? []).filter(tauschIstOffen);
+  const personen = personenFuer(filter)
+    .map((person) => {
+      const eigene = alle.filter((e) => e.person === person).sort((x, y) => (x.frist < y.frist ? -1 : x.frist > y.frist ? 1 : 0));
+      return { person, kopf: `${PERSONEN_TAG[person].emoji} ${PERSONEN_TAG[person].name}`, zeilen: eigene.map((e) => offeneZeile(q, katalog, e, heute)) };
+    })
+    .filter((p) => p.zeilen.length > 0);
+  return personen.length > 0 ? { personen } : null;
+}
+
+/**
+ * Blatt „Rückgabe eintragen“ zum offenen Tausch `id`: `entwurf` = { id, tag, kb } (Rückgabetag, bei „abgegeben“ der übernommene Dienst). null =
+ * den Tausch gibt es nicht (mehr) oder er ist schon geschlossen. → `richtung`, `kopf` (die Zeile der Liste), `dienste`/`kb`, `brauchtDienst`
+ * (nur bei „abgegeben“: am Rückgabetag wird ein Dienst übernommen), `tGeladen` (Monat des Rückgabetags da), `ersetzt`, `fehler` (null = passt).
+ */
+export function rueckgabeFormModel(state, { id, tag, kb }, heute) {
+  const q = tauschQuelle(state);
+  const e = (q.daten?.eintraege ?? []).find((x) => x.id === id);
+  if (!e || !tauschIstOffen(e)) return null;
+  const katalog = katalogVon(state);
+  const abgegeben = e.richtung === 'abgegeben';
+  const gewaehlt = dienstWahl(katalog, e.person, kb);
+  const tFertig = DATUM.test(tag ?? '');
+  const monatT = tFertig ? q.monate(tag.slice(0, 7)) : null;
+  const tGeladen = !tFertig || monatT !== null;
+  let fehler = null;
+  let ersetzt = null;
+  if (!tFertig) fehler = 'Bitte den Rückgabetag wählen.';
+  else if (!tGeladen) fehler = 'Der Monat des Rückgabetags wird noch geladen.';
+  else {
+    fehler = tauschRueckgabePruefen(e, { tag, kb: gewaehlt.kb }, { ...q, katalog, heute });
+    if (abgegeben) ersetzt = tauschErsetzt({ person: e.person, b: tag }, monatT, katalog) ?? nichtsErsetzt(tag);
+    else {
+      const frei = schichtAm(monatT, e.person, Number(tag.slice(8)));
+      if (frei !== null) ersetzt = `Am ${kurzDatumTT(tag)} wird frei: ${artFuer(katalog, e.person, frei)?.name ?? 'Unbekannte Art'}`;
+    }
+  }
+  return { richtung: e.richtung, kopf: offeneZeile(q, katalog, e, heute), dienste: gewaehlt.dienste, kb: gewaehlt.kb, brauchtDienst: abgegeben, tGeladen, ersetzt, fehler };
+}
 /** Text der Rückfrage „Tausch rückgängig“: beide Tage kommen genau so zurück, wie sie waren (Dienst und eigene Uhrzeiten je Tag). */
 export const TAUSCH_RUECKGAENGIG_TEXT = 'Beide Tage kommen genau so zurück, wie sie vor dem Tausch waren – mit ihrem Dienst und den Uhrzeiten, die an dem Tag eingetragen waren.';
