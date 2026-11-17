@@ -15,7 +15,7 @@ concurrency:
 jobs:
   unit:
     name: Unit-Tests (node:test)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
@@ -38,7 +38,7 @@ jobs:
 
   e2e:
     name: End-to-End-Tests (Playwright, Chromium)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # die Suite läuft dreimal (Klassisch, Glas, Bento; siehe playwright.config.js). Der Name bleibt, falls ein Pflicht-Check daran hängt.
     timeout-minutes: 45
     steps:
