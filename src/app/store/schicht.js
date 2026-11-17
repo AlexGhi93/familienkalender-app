@@ -1,7 +1,7 @@
 import { todayVienna } from '../../domain/dates.js';
 import { monatVor } from '../../domain/konto.js';
 import { artAendern, artArchivieren, artHinzufuegen, artVerschieben, katalogErgaenzen, leererMonat, normalisiereKatalog, normalisiereMonat, schaltePinsel, schichtAm, setzeNotiz, setzeSchicht, setzeTagZeiten, standardKatalog, tageImMonat, vorladeMonate, zusatzEntfernen, zusatzHinzufuegen, zusatzWiederherstellen } from '../../domain/schicht.js';
-import { leererTausch, tauschAnwenden, tauschAusText, tauschEintrag, tauschEntfernen, tauschHinzufuegen, tauschPartnerMonate, tauschPruefen, tauschText, tauschZuruecknehmen, tauschZustand } from '../../domain/schicht-tausch.js';
+import { TEXT_TAUSCH_WEG, leererTausch, tauschAnwenden, tauschAusText, tauschEintrag, tauschEntfernen, tauschHinzufuegen, tauschPartnerMonate, tauschPruefen, tauschText, tauschZuruecknehmen, tauschZustand } from '../../domain/schicht-tausch.js';
 import { UNLESBAR_TEXT } from '../../domain/unlesbar.js';
 import { eintragVorhanden, neueKennung } from './geteilt.js';
 import { TEXT_FEHLER, gleichOder, istAuthFehler } from './kern.js';
@@ -10,7 +10,6 @@ const SCHICHT_SICHERUNG_AB = '2026-01'; // erster Monat, den die Sicherung nach 
 const SCHICHT_SICHERUNG_VORAUS = 12; // … bis zwölf Monate nach dem laufenden
 const SCHICHT_SICHERUNG_PARALLEL = 6; // so viele Monate werden gleichzeitig gefragt
 const TEXT_TAUSCH_NICHT_GELESEN = 'Der Schichtplan konnte gerade nicht gelesen werden. Bitte noch einmal versuchen.';
-const TEXT_TAUSCH_WEG = 'Diesen Diensttausch gibt es nicht mehr.';
 const TEXT_TAUSCH_GEBROCHEN = 'Dieser Tausch wurde inzwischen von Hand geändert – bitte die beiden Tage selbst richtigstellen.';
 const TEXT_TAGE = 'Bitte zwei Tage wählen.';
 const DATUM = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
