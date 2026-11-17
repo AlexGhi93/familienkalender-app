@@ -342,4 +342,131 @@ test.describe('Versicherung im Konto-Tab (Demo)', () => {
     await page.getByRole('button', { name: 'MedPLUS Privatarzt Basic anlegen' }).click();
     await pruefe('MedPLUS Privatarzt Basic anlegen');
   });
+  // ------------------------------------------------------------ mehrere Versicherungen (1.5.0, C3)
+
+  /** Legt über „Polizze bearbeiten › ＋ Weitere Versicherung › Eigene Polizze“ eine zweite Versicherung mit einer Kategorie an. */
+  async function zweiteAnlegen(page, name = 'Zahnzusatz') {
+    await page.getByRole('button', { name: 'Polizze bearbeiten' }).click();
+    await blatt(page, 'Polizze bearbeiten').getByRole('button', { name: '＋ Weitere Versicherung' }).click();
+    await blatt(page, '＋ Weitere Versicherung').getByRole('button', { name: 'Eigene Polizze' }).click();
+    const b = blatt(page, 'Eigene Polizze');
+    await b.getByRole('textbox', { name: 'Name der Polizze' }).fill(name);
+    await b.getByRole('textbox', { name: 'Name der Kategorie 1' }).fill('Zahnspange');
+    await b.getByRole('textbox', { name: 'Limit der Kategorie 1 in Euro' }).fill('500');
+    await b.getByRole('textbox', { name: 'Maximum pro Jahr in Euro' }).fill('1000');
+    await b.getByRole('button', { name: 'Anlegen' }).click();
+    await erwarteToast(page, 'Polizze angelegt ✓');
+    await expect(blatt(page, 'Eigene Polizze')).toHaveCount(0);
+  }
+  const chips = (page) => page.locator('.vs-umschalter .chip');
+
+  test('eine Polizze: Seite wie bisher (kein Umschalter, keine weiteren Knöpfe, Rechnungsblatt ohne Polizzenzeile)', async ({ page }) => {
+    await oeffne(page);
+    await expect(page.locator('.vs-umschalter')).toHaveCount(0);
+    await expect(page.locator('.vs-weitere')).toHaveCount(0);
+    await expect(page.locator('.vs-beendete')).toHaveCount(0);
+    await expect(page.locator('.vs-polizze-knoepfe button')).toHaveText(['Polizze bearbeiten']);
+    await page.getByRole('button', { name: '＋ Rechnung einreichen' }).click();
+    await expect(blatt(page, '＋ Rechnung einreichen')).toBeVisible();
+    await expect(page.locator('.vs-polizze-zeile')).toHaveCount(0);
+  });
+
+  test('Weitere Versicherung anlegen, umschalten, Wahl bleibt nach Neuladen', async ({ page }) => {
+    await oeffne(page);
+    await zweiteAnlegen(page);
+    await expect(chips(page)).toHaveText(['MedPLUS Privatarzt Basic', 'Zahnzusatz']);
+    await expect(chips(page).nth(1)).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('.vs-gesamt')).toHaveText('Noch 1.000 € von 1.000 €');
+    await expect(page.locator('.vs-kat')).toHaveCount(1);
+    await expect(zeilen(page)).toHaveCount(0);
+    // die Rechnung gehört der gezeigten Polizze; deren Kategorien, keine Wahl der Polizze
+    await page.getByRole('button', { name: '＋ Rechnung einreichen' }).click();
+    const b = blatt(page, '＋ Rechnung einreichen');
+    await expect(b.locator('.vs-polizze-zeile')).toHaveText('Versicherung: Zahnzusatz');
+    await expect(b.getByRole('combobox', { name: 'Kategorie' }).locator('option')).toHaveText(['Zahnspange']);
+    await b.getByRole('textbox', { name: 'Betrag in Euro' }).fill('50');
+    await b.getByRole('button', { name: 'Einreichen' }).click();
+    await erwarteToast(page, 'Eingereicht ✓');
+    await expect(page.locator('.vs-gesamt')).toHaveText('Noch 950 € von 1.000 €');
+    await expect(zeilen(page)).toHaveCount(1);
+    // zurück zur ersten: ihre Zahlen unverändert, die Rechnung der anderen zählt nicht
+    await chips(page).first().click();
+    await expect(chips(page).first()).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('.vs-gesamt')).toHaveText(`Noch ${betragText(STAND.gesamt.restCent)} von 3.144 €`);
+    await expect(zeilen(page)).toHaveCount(2);
+    await chips(page).nth(1).click();
+    const id = await page.evaluate(() => localStorage.getItem('fk.versicherung.polizze.v1'));
+    expect(id).toMatch(/^[0-9a-v]+$/);
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Versicherung 🩺' })).toBeVisible();
+    await expect(chips(page).nth(1)).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('.vs-gesamt')).toHaveText('Noch 950 € von 1.000 €');
+  });
+
+  test('Umschalter bei 360 px: der längste Name passt (sonst „…“), Ziele ≥ 44 px, Schrift ≥ 13 px, nichts läuft über', async ({ page }) => {
+    await oeffne(page);
+    await zweiteAnlegen(page, 'Eine sehr lange Zusatzversicherung für Zähne, Brille und vieles mehr');
+    await page.setViewportSize({ width: 360, height: 780 });
+    await expect(chips(page)).toHaveCount(2);
+    const masse = await chips(page).evaluateAll((l) =>
+      l.map((c) => {
+        const r = c.getBoundingClientRect();
+        const t = c.querySelector('.vs-umschalter-text');
+        return { hoehe: r.height, breite: r.width, rechts: r.right, links: r.left, schrift: parseFloat(getComputedStyle(c).fontSize), gekuerzt: t.scrollWidth > t.clientWidth };
+      }),
+    );
+    for (const m of masse) {
+      expect(m.hoehe).toBeGreaterThanOrEqual(44);
+      expect(m.breite).toBeGreaterThanOrEqual(44);
+      expect(m.schrift).toBeGreaterThanOrEqual(13);
+      expect(m.links).toBeGreaterThanOrEqual(0);
+      expect(m.rechts).toBeLessThanOrEqual(360);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    const voll = (await chips(page).nth(1).locator('.vs-umschalter-text').textContent()) ?? '';
+    expect(voll.length).toBeGreaterThan(20); // so lang, wie ein Name sein darf (die Polizze kürzt ihn)
+    await expect(chips(page).nth(1)).toHaveAttribute('title', voll);
+  });
+
+  test('Polizze mit Rechnungen lässt sich nur beenden; beendete wieder aktivieren; ohne Rechnungen löschen', async ({ page }) => {
+    await oeffne(page);
+    await zweiteAnlegen(page);
+    // ohne Rechnungen: Löschen (kein Beenden)
+    await page.getByRole('button', { name: 'Polizze bearbeiten' }).click();
+    let b = blatt(page, 'Polizze bearbeiten');
+    await expect(b.getByRole('button', { name: 'Beenden', exact: true })).toHaveCount(0);
+    await b.getByRole('button', { name: 'Löschen', exact: true }).click();
+    await blatt(page, 'Versicherung löschen?').getByRole('button', { name: 'Löschen', exact: true }).click();
+    await erwarteToast(page, 'Versicherung gelöscht ✓');
+    await expect(page.locator('.vs-umschalter')).toHaveCount(0);
+    await expect(page.locator('.vs-polizze')).toContainText('MedPLUS Privatarzt Basic');
+    await expect(page.locator('.vs-beendete')).toHaveCount(0);
+    // neu anlegen, Rechnung einreichen → nur noch Beenden
+    await zweiteAnlegen(page);
+    await page.getByRole('button', { name: '＋ Rechnung einreichen' }).click();
+    b = blatt(page, '＋ Rechnung einreichen');
+    await b.getByRole('textbox', { name: 'Betrag in Euro' }).fill('50');
+    await b.getByRole('button', { name: 'Einreichen' }).click();
+    await erwarteToast(page, 'Eingereicht ✓');
+    await page.getByRole('button', { name: 'Polizze bearbeiten' }).click();
+    b = blatt(page, 'Polizze bearbeiten');
+    await expect(b.getByRole('button', { name: 'Löschen', exact: true })).toHaveCount(0);
+    await expect(b).toContainText('lässt sich nur beenden, nicht löschen');
+    await b.getByRole('button', { name: 'Beenden', exact: true }).click();
+    await blatt(page, 'Versicherung beenden?').getByRole('button', { name: 'Beenden', exact: true }).click();
+    await erwarteToast(page, 'Versicherung beendet ✓');
+    // die beendete ist weg aus dem Umschalter, die erste wird gezeigt
+    await expect(page.locator('.vs-umschalter')).toHaveCount(0);
+    await expect(page.locator('.vs-polizze')).toContainText('MedPLUS Privatarzt Basic');
+    await page.getByRole('button', { name: 'Beendete Versicherungen (1)' }).click();
+    const liste = blatt(page, 'Beendete Versicherungen');
+    await expect(liste.locator('.vs-beendet-zeile b')).toHaveText(['Zahnzusatz']);
+    await liste.getByRole('button', { name: 'Wieder aktivieren' }).click();
+    await erwarteToast(page, 'Versicherung wieder aktiv ✓');
+    await expect(chips(page)).toHaveText(['MedPLUS Privatarzt Basic', 'Zahnzusatz']);
+    await expect(chips(page).nth(1)).toHaveAttribute('aria-pressed', 'true');
+    await expect(zeilen(page)).toHaveCount(1);
+    await expect(page.locator('.vs-gesamt')).toHaveText('Noch 950 € von 1.000 €');
+    await expect(page.locator('.vs-beendete')).toHaveCount(0);
+  });
 });

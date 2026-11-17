@@ -172,3 +172,50 @@
   min-height: 46px;
 }
 
+
+/* Mehrere Versicherungen: der Umschalter steht nur ab zwei aktiven Polizzen da (Chips der App, jeder ≥ 44 px hoch); ein langer Name
+   wird mit „…“ gekürzt, nie breiter als die Zeile. */
+.vs-umschalter {
+  margin: 4px 0 10px;
+}
+
+.vs-umschalter-chip {
+  max-width: 100%;
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.vs-umschalter-text {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vs-beendete {
+  margin-top: 6px;
+}
+
+.vs-beendet-zeile {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 0;
+}
+
+.vs-beendet-zeile b {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.vs-polizze-ende {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.vs-polizze-zeile {
+  margin: 0;
+  font-weight: 700;
+}

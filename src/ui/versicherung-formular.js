@@ -6,12 +6,12 @@
 // Eingabe offen. Rechnen und Prüfen in app/views/versicherung-model.js; alle Texte kommen als Text in die Seite.
 import { fuelle, h } from './dom.js';
 import { bestaetigen, blatt, toast } from './components.js';
-import { auswahl, erledigt, feld, gesperrtHinweis, gruppe, sicher, textFeld } from './formular.js';
+import { auswahl, einmalSpeichern, erledigt, feld, gesperrtHinweis, gruppe, sicher, textFeld } from './formular.js';
 import { datumFeld } from './eingabefelder.js';
 import { geloeschtMelden, sicherLoeschen } from './fortschritt.js';
 import { betragText } from '../domain/konto.js';
 import { datumAnzeige } from '../domain/eingabe.js';
-import { MAX_KATEGORIE_INFO, MAX_KATEGORIE_NAME, MAX_PERSON, MAX_POLIZZE_NAME, MAX_RECHNUNG_NOTIZ, MAX_STELLE } from '../domain/versicherung.js';
+import { MAX_KATEGORIE_INFO, POLIZZE_VORLAGEN, MAX_KATEGORIE_NAME, MAX_PERSON, MAX_POLIZZE_NAME, MAX_RECHNUNG_NOTIZ, MAX_STELLE } from '../domain/versicherung.js';
 import {
   ERINNERUNG_NACH_TAGEN,
   benutzteKategorien,
@@ -23,8 +23,10 @@ import {
   kategorieWahl,
   neueKategorieId,
   gezeigtePolizze,
+  beendeteVersicherungen,
   polizzeEntwurf,
   rechnungEntwurf,
+  rechnungPolizzeText,
   rechnungVorschau,
   versicherungRechnung,
   versicherungSperre,
@@ -32,10 +34,13 @@ import {
 
 // ---------------------------------------------------------------- Rechnung einreichen / ändern
 
-/** Formular für eine neue (`id` = null) oder vorhandene Rechnung. */
-export function oeffneRechnungFormular({ store, ui }, id) {
+/**
+ * Formular für eine neue (`id` = null; sie gehört der gezeigten Polizze `polizzeId`) oder vorhandene Rechnung (sie bleibt bei ihrer
+ * Polizze). Eine Wahl der Polizze gibt es hier nicht: so kann keine Rechnung ohne oder bei einer beendeten Polizze entstehen.
+ */
+export function oeffneRechnungFormular({ store, ui, polizzeId = null }, id) {
   const heute = store.heute();
-  const e = rechnungEntwurf(store.getState(), heute, id);
+  const e = rechnungEntwurf(store.getState(), heute, id, polizzeId);
   if (!e) {
     toast('Diese Rechnung gibt es nicht mehr.', { art: 'fehler' });
     return null;
@@ -58,6 +63,7 @@ export function oeffneRechnungFormular({ store, ui }, id) {
       vorschau.hidden = !text;
     };
     const original = bearbeiten ? versicherungRechnung(state, e.id) : null;
+    const polizzeText = rechnungPolizzeText(state, e);
 
     const felder = [
       feld('Kategorie', auswahl('Kategorie', kategorieWahl(state, e), e.kategorie, (w) => ((e.kategorie = w), vorschauZeigen()))),
@@ -109,6 +115,7 @@ export function oeffneRechnungFormular({ store, ui }, id) {
     const loeschenKnopf = bearbeiten ? h('button', { class: 'knopf klein gefahr', type: 'button', disabled: aus, onClick: loeschen }, 'Löschen') : null;
     return [
       gesperrt ? gesperrtHinweis(gesperrt) : null,
+      polizzeText ? h('p', { class: 'blatt-text vs-polizze-zeile' }, polizzeText) : null,
       erstattung,
       h('fieldset', { class: 'fk-felder vs-felder', disabled: aus }, felder),
       h('div', { class: 'knopfzeile' }, speichernKnopf),
@@ -187,17 +194,19 @@ function oeffneErstattung({ store }, id, { danach = () => {} } = {}) {
  * Polizze anlegen (aus der Vorlage `vorlageId` oder leer: „Eigene Polizze“) oder bearbeiten (`bearbeiten`). Kategorien mit Rechnungen
  * (auch aus anderen Jahren) lassen sich nicht entfernen (C4: der Knopf ist aus und sagt warum); der Store prüft es noch einmal.
  */
-export function oeffnePolizzeFormular({ store }, { vorlageId = null, bearbeiten = false } = {}) {
+export function oeffnePolizzeFormular(ctx, { vorlageId = null, bearbeiten = false } = {}) {
+  const { store, polizzeId = null, waehle = () => {} } = ctx;
   const heute = store.heute();
-  const e = polizzeEntwurf(store.getState(), heute, { vorlageId, bearbeiten });
+  const e = polizzeEntwurf(store.getState(), heute, { vorlageId, bearbeiten, polizzeId });
+  const halter = { speichert: false };
   let speichert = false;
   const titel = bearbeiten ? 'Polizze bearbeiten' : vorlageId ? `${e.name} anlegen` : 'Eigene Polizze';
   return blatt({ titel, render: ({ schliessen, neuZeichnen }) => {
     const state = store.getState();
     const gesperrt = versicherungSperre(state.versicherung);
     const aus = Boolean(gesperrt) || speichert;
-    const benutzt = bearbeiten ? benutzteKategorien(state) : new Set();
-    const bisherige = new Set(bearbeiten ? (gezeigtePolizze(state.versicherung?.daten)?.kategorien ?? []).map((k) => k.id) : []);
+    const benutzt = bearbeiten ? benutzteKategorien(state, polizzeId) : new Set();
+    const bisherige = new Set(bearbeiten ? (gezeigtePolizze(state.versicherung?.daten, polizzeId)?.kategorien ?? []).map((k) => k.id) : []);
 
     const kategorieZeile = (k, i) => {
       const gesperrtWeg = bisherige.has(k.id) && benutzt.has(k.id);
@@ -251,11 +260,13 @@ export function oeffnePolizzeFormular({ store }, { vorlageId = null, bearbeiten 
       const r = await sicher(store.polizzeSpeichern(polizze));
       speichert = false;
       if (erledigt(r, bearbeiten ? 'Polizze gespeichert ✓' : 'Polizze angelegt ✓')) {
+        if (!bearbeiten && r.id) waehle(r.id); // die neue Versicherung wird gleich gezeigt
         schliessen();
         return;
       }
       neuZeichnen();
     };
+    const ende = bearbeiten ? polizzeEnde({ ctx, e, schliessen, aus, halter }) : null;
 
     return [
       gesperrt ? gesperrtHinweis(gesperrt) : null,
@@ -271,6 +282,91 @@ export function oeffnePolizzeFormular({ store }, { vorlageId = null, bearbeiten 
         h('p', { class: 'leise fk-tipp' }, 'Keine Polizzennummer nötig – die App speichert sie nicht.'),
       ),
       h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein primaer vs-polizze-speichern', type: 'button', disabled: aus, onClick: speichern }, speichert ? 'Speichert …' : bearbeiten ? 'Speichern' : 'Anlegen')),
+      ende,
+    ];
+  } });
+}
+
+/** Am Ende von „Polizze bearbeiten“: „＋ Weitere Versicherung“ (so geht es auch mit einer einzigen Polizze, ohne dass die Seite sich ändert); mit Rechnungen nur „Beenden“ (sie bleiben erhalten), ohne Rechnungen „Löschen“. Der Store prüft es noch einmal. */
+function polizzeEnde({ ctx, e, schliessen, aus, halter }) {
+  const store = ctx.store;
+  const hatRechnungen = benutzteKategorien(store.getState(), e.id).size > 0;
+  const los = async (lauf, erfolg) => {
+    const r = await einmalSpeichern(halter, lauf);
+    if (r !== undefined && erledigt(r, erfolg)) schliessen();
+  };
+  const frage = hatRechnungen
+    ? () =>
+        bestaetigen({
+          titel: 'Versicherung beenden?',
+          text: `${e.name} wird beendet: sie lässt sich dann nicht mehr wählen und bekommt keine neuen Rechnungen. Die Rechnungen bleiben erhalten; unter „Beendete Versicherungen“ lässt sie sich wieder aktivieren.`,
+          ja: 'Beenden',
+          gefahr: true,
+          beiJa: () => los(() => store.polizzeBeenden(e.id, true), 'Versicherung beendet ✓'),
+        })
+    : () =>
+        bestaetigen({
+          titel: 'Versicherung löschen?',
+          text: `${e.name} wird gelöscht. Das lässt sich nicht rückgängig machen.`,
+          ja: 'Löschen',
+          gefahr: true,
+          beiJa: () => los(() => store.polizzeLoeschen(e.id), 'Versicherung gelöscht ✓'),
+        });
+  return h(
+    'div',
+    { class: 'knopfzeile loeschen-zeile vs-polizze-ende' },
+    h('button', { class: 'knopf klein vs-weitere', type: 'button', disabled: aus, onClick: () => oeffneWeitereVersicherung(ctx, { darunter: schliessen }) }, '＋ Weitere Versicherung'),
+    h('button', { class: 'knopf klein gefahr', type: 'button', disabled: aus, onClick: frage }, hatRechnungen ? 'Beenden' : 'Löschen'),
+    hatRechnungen ? h('small', { class: 'leise' }, 'Eine Versicherung mit Rechnungen lässt sich nur beenden, nicht löschen.') : null,
+  );
+}
+
+// ---------------------------------------------------------------- Weitere Versicherung, beendete Versicherungen
+
+/** „＋ Weitere Versicherung“: die Vorlage (MedPLUS) oder „Eigene Polizze“ – beides öffnet das Formular „Polizze“ (neu); `darunter` schließt ein Blatt darunter. */
+export function oeffneWeitereVersicherung(ctx, { darunter = () => {} } = {}) {
+  const vorlage = Object.values(POLIZZE_VORLAGEN)[0];
+  return blatt({ titel: '＋ Weitere Versicherung', render: ({ schliessen }) => {
+    const gesperrt = versicherungSperre(ctx.store.getState().versicherung);
+    const weiter = (vorlageId) => {
+      schliessen();
+      darunter(); // ein Blatt darunter (Polizze bearbeiten) geht mit zu, sonst bliebe es nach dem Anlegen offen
+      oeffnePolizzeFormular(ctx, { vorlageId });
+    };
+    return [
+      gesperrt ? gesperrtHinweis(gesperrt) : null,
+      h('p', { class: 'blatt-text' }, 'Jede Versicherung hat ihre eigenen Leistungen, Limits und Rechnungen.'),
+      h(
+        'div',
+        { class: 'knopfzeile vs-anlegen' },
+        h('button', { class: 'knopf primaer', type: 'button', disabled: Boolean(gesperrt), onClick: () => weiter(vorlage.id) }, `${vorlage.name} anlegen`),
+        h('button', { class: 'knopf', type: 'button', disabled: Boolean(gesperrt), onClick: () => weiter(null) }, 'Eigene Polizze'),
+      ),
+    ];
+  } });
+}
+
+/** „Beendete Versicherungen (n)“: jede lässt sich wieder aktivieren (danach wird sie gezeigt). */
+export function oeffneBeendete(ctx) {
+  const halter = { speichert: false };
+  return blatt({ titel: 'Beendete Versicherungen', render: ({ schliessen, neuZeichnen }) => {
+    const state = ctx.store.getState();
+    const gesperrt = versicherungSperre(state.versicherung);
+    const liste = beendeteVersicherungen(state);
+    const aktivieren = async (p) => {
+      const r = await einmalSpeichern(halter, () => ctx.store.polizzeBeenden(p.id, false));
+      neuZeichnen();
+      if (r !== undefined && erledigt(r, 'Versicherung wieder aktiv ✓')) {
+        ctx.waehle?.(p.id);
+        schliessen();
+      }
+    };
+    return [
+      gesperrt ? gesperrtHinweis(gesperrt) : null,
+      liste.length === 0 ? h('p', { class: 'leise' }, 'Keine beendeten Versicherungen.') : h('p', { class: 'blatt-text' }, 'Ihre Rechnungen bleiben erhalten.'),
+      liste.map((p) =>
+        h('div', { class: 'vs-beendet-zeile', 'data-polizze': p.id }, h('b', {}, p.name), h('button', { class: 'knopf klein', type: 'button', disabled: Boolean(gesperrt) || halter.speichert, 'aria-label': `${p.name}: Wieder aktivieren`, onClick: () => aktivieren(p) }, 'Wieder aktivieren')),
+      ),
     ];
   } });
 }

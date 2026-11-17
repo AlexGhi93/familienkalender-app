@@ -8,7 +8,7 @@ import { planeErinnerungen, planQuellen, quellenGeaendert } from '../../src/push
 import { createStore } from '../../src/app/store.js';
 import { createGoogleAdapter } from '../../src/calendar/google-adapter.js';
 import { nurHintergrundGeaendert } from '../../src/app/hintergrund.js';
-import { TEXT_VERSICHERUNG_GESPERRT, leererVersicherungTeil, leereVersicherung, polizzeAnlegen, polizzeAusVorlage, quartalVon, rechnungSetzen, versicherungJahrEintragen, versicherungTeilText, versicherungText } from '../../src/domain/versicherung.js';
+import { TEXT_VERSICHERUNG_GESPERRT, leererVersicherungTeil, leereVersicherung, polizzeAnlegen, polizzeAusVorlage, polizzeBeenden as polizzeBeendenRein, quartalVon, rechnungSetzen, versicherungJahrEintragen, versicherungTeilText, versicherungText } from '../../src/domain/versicherung.js';
 import {
   benutzteKategorien,
   entwurfZuErstattung,
@@ -18,21 +18,26 @@ import {
   kategorieKurz,
   kategorieWahl,
   neueKategorieId,
+  POLIZZE_WAHL_SCHLUESSEL,
   polizzeEntwurf,
+  polizzeWahlLesen,
+  polizzeWahlSpeichern,
   rechnungEntwurf,
+  rechnungPolizzeText,
   rechnungVorschau,
   versicherungModel,
 } from '../../src/app/views/versicherung-model.js';
 import { VERSICHERUNG_ZIEL, jahresStand, jahresendeText, versicherungTermine } from '../../src/domain/versicherung-rechnung.js';
-import { apiAttrappe, zustand } from './hilfen.js';
+import { apiAttrappe, speicherAttrappe, zustand } from './hilfen.js';
 
 const HEUTE = '2026-11-08';
 const P = polizzeAusVorlage('medplusBasic', { person: 'Mia', beginn: '2026-09-01' }, { zufall: () => 0 });
 const r = (id, mehr = {}) => ({ id, kategorie: 'medi', datum: '2026-10-25', betragCent: 1520, eingereichtAm: '2026-10-26', ...mehr });
 
 /** state.versicherung wie im Store: Polizze `polizze`, Rechnungen richtig je Quartal abgelegt, frisch gelesen (Standard). */
-function versTeil({ polizze = P, rechnungen = [], frisch = true, ...mehr } = {}) {
-  let daten = polizze ? polizzeAnlegen(leereVersicherung(), polizze) : leereVersicherung();
+function versTeil({ polizze = P, weitere = [], beendet = [], rechnungen = [], frisch = true, ...mehr } = {}) {
+  let daten = [polizze, ...weitere].filter(Boolean).reduce((d, x) => polizzeAnlegen(d, x), leereVersicherung());
+  for (const id of beendet) daten = polizzeBeendenRein(daten, id, true);
   const teile = {};
   for (const x of rechnungen) {
     const jahr = Number(x.datum.slice(0, 4));
@@ -300,9 +305,9 @@ describe('Formulare der Versicherung (Modell)', () => {
   const state = mitVers(versTeil({ rechnungen: [r('rech0001', { erstattetCent: 1216, erstattetAm: '2026-11-05', stelle: 'Apotheke' })] }));
 
   test('Rechnung: neu mit heute; Ändern behält die Erstattung; Fehler auf Deutsch', () => {
-    assert.deepEqual(rechnungEntwurf(state, HEUTE), { kategorie: 'arzt', datum: HEUTE, betrag: '', eingereichtAm: HEUTE, stelle: '', notiz: '' });
+    assert.deepEqual(rechnungEntwurf(state, HEUTE), { polizze: P.id, kategorie: 'arzt', datum: HEUTE, betrag: '', eingereichtAm: HEUTE, stelle: '', notiz: '' });
     const e = rechnungEntwurf(state, HEUTE, 'rech0001');
-    assert.deepEqual(e, { id: 'rech0001', kategorie: 'medi', datum: '2026-10-25', betrag: '15,20', eingereichtAm: '2026-10-26', stelle: 'Apotheke', notiz: '' });
+    assert.deepEqual(e, { id: 'rech0001', polizze: P.id, kategorie: 'medi', datum: '2026-10-25', betrag: '15,20', eingereichtAm: '2026-10-26', stelle: 'Apotheke', notiz: '' });
     assert.equal(rechnungEntwurf(state, HEUTE, 'gibtsnicht'), null);
     const { rechnung } = entwurfZuRechnung(state, HEUTE, { ...e, betrag: '16,40' });
     assert.deepEqual(rechnung, { kategorie: 'medi', datum: '2026-10-25', betragCent: 1640, eingereichtAm: '2026-10-26', polizze: P.id, id: 'rech0001', erstattetCent: 1216, erstattetAm: '2026-11-05', stelle: 'Apotheke' }, 'ohne p gehört sie der Stamm-Polizze (C2: polizze ist Pflicht)');
@@ -351,6 +356,95 @@ describe('Formulare der Versicherung (Modell)', () => {
     assert.equal(bearbeiten.id, P.id);
     assert.deepEqual([...benutzteKategorien(state)], ['medi']);
     assert.equal(neueKategorieId(['k1', 'k2', 'arzt']), 'k3');
+  });
+});
+
+describe('Mehrere Versicherungen (1.5.0, C3)', () => {
+  const B = { id: 'polb0001', name: 'Zahnzusatz', person: 'Mia', beginn: '2026-09-01', maximumCent: 100000, kategorien: [{ id: 'zz', name: 'Zahnspange', limitCent: 50000 }, { id: 'arzt', name: 'Kontrolle', limitCent: 20000 }] };
+  /** Polizzen P (Stamm) und B; die Rechnungen tragen `polizze` (ohne = Stamm). */
+  const zwei = ({ rechnungen = [], beendet = [], nur = null } = {}) => mitVers(versTeil({ polizze: P, weitere: nur ? [] : [B], rechnungen, beendet }));
+
+  test('Umschalter erst ab zwei aktiven Polizzen', () => {
+    const eine = versicherungModel(zwei({ nur: [P.id] }), HEUTE);
+    assert.equal(eine.umschalter, false);
+    assert.deepEqual(eine.polizzen, [{ id: P.id, kurz: 'MedPLUS Privatarzt Basic' }]);
+    assert.equal(eine.gewaehlt, P.id);
+    const beideAktiv = versicherungModel(zwei(), HEUTE);
+    assert.equal(beideAktiv.umschalter, true);
+    assert.deepEqual(beideAktiv.polizzen, [{ id: P.id, kurz: 'MedPLUS Privatarzt Basic' }, { id: B.id, kurz: 'Zahnzusatz' }]);
+    const eineBeendet = versicherungModel(zwei({ beendet: [B.id] }), HEUTE);
+    assert.equal(eineBeendet.umschalter, false, 'eine beendete zählt nicht');
+    assert.deepEqual(eineBeendet.beendete, [{ id: B.id, name: 'Zahnzusatz' }]);
+    assert.deepEqual(eine.beendete, []);
+  });
+
+  test('gemerkte Wahl gelöscht oder beendet → erste aktive (Review Focus 5)', () => {
+    assert.equal(versicherungModel(zwei(), HEUTE, { polizzeId: B.id }).gewaehlt, B.id);
+    assert.equal(versicherungModel(zwei(), HEUTE, { polizzeId: B.id }).titel, 'Zahnzusatz');
+    assert.equal(versicherungModel(zwei(), HEUTE, { polizzeId: 'gibtsnicht' }).gewaehlt, P.id, 'unbekannt (gelöscht)');
+    const beendet = versicherungModel(zwei({ beendet: [B.id] }), HEUTE, { polizzeId: B.id });
+    assert.equal(beendet.gewaehlt, P.id, 'beendet');
+    assert.equal(beendet.titel, 'MedPLUS Privatarzt Basic');
+    assert.equal(versicherungModel(zwei(), HEUTE, { polizzeId: null }).gewaehlt, P.id);
+    const keine = versicherungModel(zwei({ beendet: [P.id, B.id] }), HEUTE, { polizzeId: B.id });
+    assert.equal(keine.zustand, 'leer', 'alle beendet: wie ohne Polizze, mit den beendeten zum Zurückholen');
+    assert.equal(keine.beendete.length, 2);
+  });
+
+  test('Zahlen nur aus den Rechnungen der gewählten Polizze', () => {
+    const state = zwei({ rechnungen: [r('rech0001', { betragCent: 1000 }), r('rech0002', { polizze: P.id, betragCent: 500, datum: '2026-11-01', eingereichtAm: '2026-11-02' }), r('rechb001', { polizze: B.id, kategorie: 'zz', betragCent: 30000 }), r('rechb002', { polizze: B.id, kategorie: 'arzt', betragCent: 700, datum: '2026-11-02', eingereichtAm: '2026-11-03' })] });
+    const a = versicherungModel(state, HEUTE, { polizzeId: P.id });
+    assert.deepEqual(a.rechnungen.map((x) => x.id), ['rech0002', 'rech0001'], 'ohne p = Stamm');
+    assert.equal(a.gesamt.verbraucht, '15 €');
+    assert.equal(a.karten.find((k) => k.id === 'arzt').verbraucht, '0 €', 'dieselbe Kennung „arzt“ zählt je Polizze getrennt');
+    const b = versicherungModel(state, HEUTE, { polizzeId: B.id });
+    assert.deepEqual(b.rechnungen.map((x) => x.id), ['rechb002', 'rechb001']);
+    assert.equal(b.gesamt.verbraucht, '307 €');
+    assert.equal(b.gesamt.text, 'Noch 693 € von 1.000 €');
+    assert.deepEqual(b.karten.map((k) => k.id), ['zz', 'arzt']);
+    assert.equal(b.karten.find((k) => k.id === 'arzt').verbraucht, '7 €');
+  });
+
+  test('Kategorien der Rechnung aus ihrer Polizze', () => {
+    const state = zwei({ rechnungen: [r('rechb001', { polizze: B.id, kategorie: 'zz', betragCent: 3000 }), r('rech0001')] });
+    const e = rechnungEntwurf(state, HEUTE, 'rechb001', P.id);
+    assert.equal(e.polizze, B.id, 'die Polizze der vorhandenen Rechnung gilt, nicht die gezeigte');
+    assert.deepEqual(kategorieWahl(state, e).map(([id]) => id), ['zz', 'arzt']);
+    assert.equal(entwurfZuRechnung(state, HEUTE, e).rechnung.polizze, B.id);
+    assert.equal(rechnungPolizzeText(state, e), 'Versicherung: Zahnzusatz');
+    assert.equal(rechnungPolizzeText(zwei({ nur: [P.id] }), rechnungEntwurf(zwei({ nur: [P.id] }), HEUTE)), null, 'mit einer Polizze bleibt das Blatt wie bisher');
+    const neu = rechnungEntwurf(state, HEUTE, null, B.id);
+    assert.equal(neu.polizze, B.id, 'neu: die gezeigte');
+    assert.equal(neu.kategorie, 'zz', 'erste Kategorie der gezeigten Polizze');
+    assert.deepEqual(kategorieWahl(state, neu).map(([id]) => id), ['zz', 'arzt']);
+    assert.equal(entwurfZuRechnung(state, HEUTE, { ...neu, betrag: '5', kategorie: 'physio' }).fehler, 'Bitte eine Kategorie aus der Polizze wählen.', 'physio gibt es nur in der anderen Polizze');
+    assert.equal(entwurfZuRechnung(state, HEUTE, { ...neu, betrag: '5' }).rechnung.polizze, B.id);
+    const alt = rechnungEntwurf(state, HEUTE, 'rech0001', B.id);
+    assert.equal(alt.polizze, P.id, 'ohne p gehört sie dem Stamm');
+    assert.equal(rechnungVorschau(state, HEUTE, { ...neu, betrag: '600' }), '⚠ Limit überschritten – ca. 130 € werden nicht erstattet', 'Vorschau rechnet mit den Limits der Polizze B');
+  });
+
+  test('Kategorien mit Rechnungen zählen je Polizze (C4); Polizze-Formular und Erstattung gelten der richtigen', () => {
+    const state = zwei({ rechnungen: [r('rechb001', { polizze: B.id, kategorie: 'zz', betragCent: 3000 })] });
+    assert.deepEqual([...benutzteKategorien(state, B.id)], ['zz']);
+    assert.deepEqual([...benutzteKategorien(state, P.id)], []);
+    assert.equal(polizzeEntwurf(state, HEUTE, { bearbeiten: true, polizzeId: B.id }).name, 'Zahnzusatz');
+    assert.equal(polizzeEntwurf(state, HEUTE, { bearbeiten: true }).id, P.id);
+    assert.equal(erstattungEntwurf(state, HEUTE, 'rechb001').titel, 'Zahnspange, Rechnung vom 25.10.2026 (30 €)');
+  });
+
+  test('gemerkte Wahl dieses Telefons: lesen, speichern, kaputter Speicher stört nicht', () => {
+    assert.equal(POLIZZE_WAHL_SCHLUESSEL, 'fk.versicherung.polizze.v1');
+    const speicher = speicherAttrappe();
+    assert.equal(polizzeWahlLesen(speicher), null);
+    assert.equal(polizzeWahlSpeichern('polb0001', speicher), 'polb0001');
+    assert.equal(speicher.getItem(POLIZZE_WAHL_SCHLUESSEL), 'polb0001');
+    assert.equal(polizzeWahlLesen(speicher), 'polb0001');
+    assert.equal(polizzeWahlLesen(speicherAttrappe({ [POLIZZE_WAHL_SCHLUESSEL]: '<unsinn>' })), null, 'keine gültige Kennung');
+    const kaputt = speicherAttrappe({}, { kaputt: true });
+    assert.equal(polizzeWahlLesen(kaputt), null);
+    assert.equal(polizzeWahlSpeichern('polb0001', kaputt), 'polb0001', 'wirft nicht');
+    assert.equal(polizzeWahlLesen(null), null);
   });
 });
 

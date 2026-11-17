@@ -7,12 +7,13 @@ import { h } from './dom.js';
 import { abschnitt } from './components.js';
 import { fortschritt, hochzaehlen } from './bewegung.js';
 import { betragText } from '../domain/konto.js';
-import { TEXT_VERSICHERUNG_NICHT_GELADEN, VERSICHERUNG_FARBE, versicherungModel } from '../app/views/versicherung-model.js';
+import { TEXT_VERSICHERUNG_NICHT_GELADEN, VERSICHERUNG_FARBE, polizzeWahlLesen, polizzeWahlSpeichern, versicherungModel } from '../app/views/versicherung-model.js';
 import { nochmalKnopf } from './formular.js';
 import { wischbar } from './wischen.js';
-import { oeffnePolizzeFormular, oeffneRechnungFormular, rechnungWischLoeschen } from './versicherung-formular.js';
+import { oeffneBeendete, oeffnePolizzeFormular, oeffneRechnungFormular, oeffneWeitereVersicherung, rechnungWischLoeschen } from './versicherung-formular.js';
 
 let gewaehltesJahr = null; // angezeigtes Jahr (null = laufendes); bleibt beim Neuzeichnen und Umschalten im Konto-Tab
+let gewaehltePolizze; // gewählte Polizze (Kennung); undefined = noch nicht vom Telefon gelesen, null = keine gemerkt
 
 function meldungen(m, store) {
   const x = m.meldungen;
@@ -29,6 +30,17 @@ function balken(breite, farbe, beschriftung, wert, schluessel) {
   const bahn = h('div', { class: 'sz-balken vs-balken', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': String(breite), 'aria-valuetext': wert, 'aria-label': beschriftung }, fuellung);
   fortschritt(fuellung, breite / 100);
   return bahn;
+}
+
+/** Umschalter der Polizzen: nur ab zwei aktiven; lange Namen werden mit „…“ gekürzt (der volle Name steht im title). */
+function polizzenUmschalter(m, waehle) {
+  return h(
+    'div',
+    { class: 'chips vs-umschalter', role: 'group', 'aria-label': 'Versicherung wählen' },
+    m.polizzen.map((p) =>
+      h('button', { class: `chip vs-umschalter-chip${p.id === m.gewaehlt ? ' aktiv' : ''}`, type: 'button', title: p.kurz, 'aria-pressed': p.id === m.gewaehlt ? 'true' : 'false', 'data-polizze': p.id, onClick: () => p.id !== m.gewaehlt && waehle(p.id) }, h('span', { class: 'vs-umschalter-text' }, p.kurz)),
+    ),
+  );
 }
 
 function jahrWahl(m, ui) {
@@ -142,23 +154,40 @@ function leerKarte(m, ctx) {
   );
 }
 
+/** Die beendeten Versicherungen: nur wenn es welche gibt (mit einer einzigen Polizze bleibt die Seite wie in 1.4). */
+const beendeteKnopf = (m, ctx) =>
+  m.beendete.length > 0 ? h('div', { class: 'knopfzeile vs-beendete' }, h('button', { class: 'knopf klein', type: 'button', onClick: () => oeffneBeendete(ctx) }, `Beendete Versicherungen (${m.beendete.length})`)) : null;
+
 /** Inhalt der Ansicht „Versicherung“ (ohne Überschrift und Umschalter). */
 export function versicherungInhalt({ store, ui }) {
-  const ctx = { store, ui };
-  const m = versicherungModel(store.getState(), store.heute(), { jahr: gewaehltesJahr });
+  gewaehltePolizze = gewaehltePolizze === undefined ? polizzeWahlLesen() : gewaehltePolizze;
+  const m = versicherungModel(store.getState(), store.heute(), { jahr: gewaehltesJahr, polizzeId: gewaehltePolizze });
+  const waehle = (id) => {
+    gewaehltePolizze = polizzeWahlSpeichern(id);
+    gewaehltesJahr = null;
+    ui.rendern();
+  };
+  const ctx = { store, ui, polizzeId: m.gewaehlt, waehle };
   if (m.zustand === 'laedt') return [h('article', { class: 'karte hinweis vs-laedt' }, h('p', {}, 'Die Versicherung wird geladen …'))];
   if (m.zustand === 'nichtGeladen') return [h('article', { class: 'karte hinweis vs-nicht-geladen' }, h('p', {}, TEXT_VERSICHERUNG_NICHT_GELADEN), h('div', { class: 'knopfzeile' }, nochmalKnopf(() => store.versicherungLaden?.())))];
   if (m.zustand === 'gesperrt') return meldungen(m, store);
-  if (m.zustand === 'leer') return [...meldungen(m, store), leerKarte(m, ctx)];
+  if (m.zustand === 'leer') return [...meldungen(m, store), leerKarte(m, ctx), beendeteKnopf(m, ctx)];
   gewaehltesJahr = m.istAktuell ? null : m.jahr;
   return [
     ...meldungen(m, store),
+    m.umschalter ? polizzenUmschalter(m, waehle) : null,
     jahrWahl(m, ui),
     kopfKarte(m),
     h('button', { class: 'knopf primaer fk-neu vs-neu', type: 'button', disabled: Boolean(m.gesperrt), onClick: () => oeffneRechnungFormular(ctx, null) }, '＋ Rechnung einreichen'),
     h('p', { class: 'fk-box vs-hinweis', role: 'note' }, `ℹ️ ${m.hinweis}`),
     abschnitt(`Leistungen ${m.jahrText}`, m.karten.map((k) => kategorieKarte(k, m))),
     rechnungenAbschnitt(m, ctx),
-    h('div', { class: 'knopfzeile vs-polizze-knoepfe' }, h('button', { class: 'knopf klein', type: 'button', disabled: Boolean(m.gesperrt), onClick: () => oeffnePolizzeFormular(ctx, { bearbeiten: true }) }, 'Polizze bearbeiten')),
+    h(
+      'div',
+      { class: 'knopfzeile vs-polizze-knoepfe' },
+      h('button', { class: 'knopf klein', type: 'button', disabled: Boolean(m.gesperrt), onClick: () => oeffnePolizzeFormular(ctx, { bearbeiten: true }) }, 'Polizze bearbeiten'),
+      m.umschalter || m.beendete.length > 0 ? h('button', { class: 'knopf klein vs-weitere', type: 'button', disabled: Boolean(m.gesperrt), onClick: () => oeffneWeitereVersicherung(ctx) }, '＋ Weitere Versicherung') : null,
+    ),
+    beendeteKnopf(m, ctx),
   ];
 }
