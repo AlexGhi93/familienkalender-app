@@ -1,5 +1,5 @@
 // „Neu“: jede Kachel öffnet ihr Formular; Arzttermin (Mutter-Kind-Pass) speichern und in Heute/Monat/Verlauf wiederfinden.
-import { test, expect, starteDemo, starteGoogleVerbunden, tab, erwarteToast, NETZFEHLER } from './hilfen.js';
+import { test, expect, starteDemo, starteGoogleVerbunden, tab, erwarteToast, zurueckInDieApp, NETZFEHLER } from './hilfen.js';
 
 const KACHELN = ['Krabbelstube · Mittagessen', 'Krabbelstube · ohne Essen', 'Abwesend', 'Krank', 'Schließtag', 'Urlaub', 'Arzttermin', 'Termin', 'Sachen für Krabbelstube', 'Einkauf'];
 
@@ -95,6 +95,37 @@ test('Termin: Titel Pflicht, Symbol, Für wen, Betrag, zu lange Vorschau', async
   }
   await expect(vorschau).toHaveClass(/zu-lang/);
   await expect(vorschau).toContainText('von 60 Zeichen: etwas kürzen');
+});
+
+test('Zurück in die App behält das Getippte (B15)', async ({ page }) => {
+  await starteDemo(page, { route: '#/neu' });
+  await page.locator('.kachel').filter({ hasText: /^📌Termin$/ }).click();
+  const feld = page.getByRole('textbox', { name: 'Weiteres zum Mitnehmen' });
+  await feld.fill('Sonnenhut');
+  await zurueckInDieApp(page);
+  await expect(feld).toHaveValue('Sonnenhut');
+  // am nächsten Tag zeichnet die Rückkehr neu („heute“ stimmt wieder) – das Getippte bleibt trotzdem
+  await page.clock.setFixedTime(new Date('2026-10-15T08:00:00+02:00'));
+  await zurueckInDieApp(page);
+  await expect(feld).toHaveValue('Sonnenhut');
+
+  await page.getByRole('button', { name: '‹ Zurück' }).click();
+  await page.locator('.kacheln .kachel').filter({ has: page.locator('b', { hasText: /^Sachen für Krabbelstube$/ }) }).click();
+  const eigene = page.getByRole('textbox', { name: 'Eigene Sache' });
+  await eigene.fill('Sonnenhut');
+  await page.getByRole('button', { name: /Pyjamas-Wechsel einrichten/ }).click();
+  const pyjamas = page.locator('.pyjamas');
+  const heimholen = () => pyjamas.locator('.feld').filter({ hasText: 'Heimholen am' });
+  await heimholen().getByRole('button', { name: 'Mi' }).click();
+  await pyjamas.getByRole('button', { name: 'Wochen mehr' }).click();
+  for (const zeit of ['2026-10-15T09:00:00+02:00', '2026-10-16T08:00:00+02:00']) {
+    await page.clock.setFixedTime(new Date(zeit)); // erst derselbe Tag (kein Neuzeichnen), dann der nächste (Neuzeichnen)
+    await zurueckInDieApp(page);
+    await expect(eigene).toHaveValue('Sonnenhut');
+    await expect(pyjamas).toBeVisible();
+    await expect(heimholen().locator('.chip.aktiv')).toHaveText('Mi');
+    await expect(pyjamas.locator('.stepper-wert')).toHaveText('9 Wochen');
+  }
 });
 
 test('ungültiger Betrag: Meldung statt Speichern', async ({ page }) => {

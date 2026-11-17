@@ -19,7 +19,7 @@ const googleHinweis = () =>
 /** Erstes Elternteil: Anmelden, Kalender anlegen, Code zum Weitergeben, Freigabe. */
 export function einrichtenBesitzer({ wurzel, google, konfiguration, jetzt, beiFertig, zurueck }) {
   const { auth, api } = google.erzeuge();
-  const z = { schritt: 'start', fehler: null, beschaeftigt: false, kalender: null, code: null, vorschau: null, freigabeText: null };
+  const z = { schritt: 'start', fehler: null, beschaeftigt: false, kalender: null, code: null, vorschau: null, freigabeText: null, email: '' }; // email: das Getippte, übersteht das Neuzeichnen
   auth.vorbereiten();
 
   function los() {
@@ -92,7 +92,7 @@ export function einrichtenBesitzer({ wurzel, google, konfiguration, jetzt, beiFe
     } else if (z.schritt === 'laeuft') {
       fuelle(wurzel, seite(null, h('h1', { class: 'gruss' }, 'Ich richte alles ein … ✨'), h('article', { class: 'karte' }, h('p', {}, 'Die drei Familienkalender werden angelegt und eingestellt. Das dauert nur einen Moment.'))));
     } else if (z.schritt === 'einladen') {
-      const emailFeld = h('input', { type: 'email', autocomplete: 'off', placeholder: 'adresse@beispiel.at', 'aria-label': 'E-Mail-Adresse des anderen Elternteils' });
+      const emailFeld = h('input', { type: 'email', autocomplete: 'off', placeholder: 'adresse@beispiel.at', value: z.email || null, 'aria-label': 'E-Mail-Adresse des anderen Elternteils', onInput: (e) => { z.email = e.target.value; } });
       fuelle(
         wurzel,
         seite(
@@ -102,7 +102,7 @@ export function einrichtenBesitzer({ wurzel, google, konfiguration, jetzt, beiFe
           h('article', { class: 'karte' }, h('h3', {}, 'Kalender teilen'), freigabeAnleitung(), z.freigabeText ? h('p', { class: 'hinweis-text' }, z.freigabeText) : null, z.fehler ? h('p', { class: 'fehlertext' }, z.fehler) : null,
             z.vorschau
               ? h('div', { class: 'vorschau' }, h('small', {}, 'Bitte genau prüfen:'), h('b', { class: 'adresse' }, z.vorschau.anzeige), h('small', {}, z.vorschau.zeilen[0]), h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein', type: 'button', onClick: () => { z.vorschau = null; zeichne(); } }, 'Ändern'), h('button', { class: 'knopf klein primaer', type: 'button', onClick: freigabeSenden }, 'Adresse stimmt')))
-              : h('div', { class: 'feld' }, h('span', {}, 'Adresse des anderen Elternteils (optional: wir versuchen die Freigabe automatisch)'), emailFeld, h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein', type: 'button', onClick: () => freigabePruefen(emailFeld.value) }, 'Prüfen'))),
+              : h('div', { class: 'feld' }, h('span', {}, 'Adresse des anderen Elternteils (optional: wir versuchen die Freigabe automatisch)'), emailFeld, h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf klein', type: 'button', onClick: () => freigabePruefen(z.email) }, 'Prüfen'))),
           ),
           h('div', { class: 'knopfzeile' }, h('button', { class: 'knopf primaer', type: 'button', onClick: beiFertig }, 'Fertig, los geht’s')),
         ),
@@ -130,6 +130,15 @@ export function codeEingeben({ wurzel, google, konfiguration, beiFertig, zurueck
       z.beschaeftigt = false;
       zeichne();
     }
+  }
+
+  /** „Noch einmal versuchen“ (Freigabe fehlte): ein Versuch zur Zeit, der Knopf ist solange aus. */
+  function nochEinmal() {
+    if (z.beschaeftigt) return;
+    z.beschaeftigt = true;
+    z.fehler = null;
+    zeichne();
+    abonnieren();
   }
 
   function weiter(text) {
@@ -170,7 +179,7 @@ export function codeEingeben({ wurzel, google, konfiguration, beiFertig, zurueck
             'div',
             { class: 'knopfzeile' },
             z.fehlt
-              ? h('button', { class: 'knopf primaer', type: 'button', onClick: () => { z.beschaeftigt = true; z.fehler = null; zeichne(); abonnieren(); } }, 'Noch einmal versuchen')
+              ? h('button', { class: 'knopf primaer', type: 'button', disabled: z.beschaeftigt, onClick: nochEinmal }, z.beschaeftigt ? 'Einen Moment …' : 'Noch einmal versuchen')
               : h('button', { class: 'knopf primaer', type: 'button', disabled: z.beschaeftigt, onClick: () => weiter(z.text) }, z.beschaeftigt ? 'Einen Moment …' : 'Weiter mit Google'),
           ),
         ),

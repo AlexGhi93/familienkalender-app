@@ -2,7 +2,7 @@
 // die dadurch erwarteten Netzwerkmeldungen in der Konsole sind erlaubt, alles andere nicht.
 // Dazu der Login-Dienst (src/calendar/auth.js, login-dienst.js): er ist an. Erste Anmeldung über den Code-Weg, danach bleibt das
 // Telefon angemeldet (stille Anmeldung beim Start); ist der Dienst nicht erreichbar, gilt der bisherige Token-Weg (eine Stunde).
-import { test, expect, starteGoogleAusSnapshot, starteGoogleVerbunden, googleAttrappe, erwarteToast, NETZFEHLER, KONFIG_GOOGLE, WERKTAG, ATTRAPPE_SITZUNG } from './hilfen.js';
+import { test, expect, starteGoogleAusSnapshot, starteGoogleVerbunden, googleAttrappe, erwarteToast, zurueckInDieApp, NETZFEHLER, KONFIG_GOOGLE, WERKTAG, ATTRAPPE_SITZUNG } from './hilfen.js';
 import { CONFIG } from '../../src/calendar/config.js';
 
 test.use({ erlaubteFehler: NETZFEHLER });
@@ -187,4 +187,22 @@ test.describe('Unlesbarer Text in den älteren versteckten Ereignissen (B2)', ()
       await expect(hinweis(page)).toHaveCount(0);
     }
   });
+});
+
+test('Rückkehr in eine im Speicher gehaltene App stößt den Push-Abgleich an (B9-Rest); die 6-Stunden-Regel entscheidet', async ({ page }) => {
+  // Jeder Abgleich fragt zuerst die Erlaubnis ab; „denied“ beendet ihn danach still (nichts wird gesendet).
+  await page.addInitScript(() => {
+    window.pushAbgleiche = 0;
+    Object.defineProperty(Notification, 'permission', { configurable: true, get: () => ((window.pushAbgleiche += 1), 'denied') });
+  });
+  await starteGoogleVerbunden(page, { uhrLaeuft: true, speicher: { 'fk.push.aktiv.v1': '1' } });
+  const abgleiche = () => page.evaluate(() => window.pushAbgleiche);
+  await expect.poll(abgleiche, { timeout: 10_000 }).toBeGreaterThan(0); // nach dem Laden: einmal
+  await page.clock.runFor(5000);
+  const vorher = await abgleiche();
+  await zurueckInDieApp(page);
+  await page.clock.runFor(5000);
+  await expect.poll(abgleiche).toBe(vorher + 1);
+  await page.clock.runFor(10_000);
+  expect(await abgleiche()).toBe(vorher + 1); // kein weiterer Anstoß von selbst (keine Schleife)
 });

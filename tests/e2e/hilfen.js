@@ -249,6 +249,16 @@ export async function starteGoogleVerbunden(page, { route = '#/heute', zeit = WE
   return google;
 }
 
+/** Spielt das Verlassen und Zurückkehren in die App (visibilitychange: erst „hidden“, dann „visible“). */
+export async function zurueckInDieApp(page) {
+  await page.evaluate(() => {
+    for (const zustand of ['hidden', 'visible']) {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => zustand });
+      document.dispatchEvent(new Event('visibilitychange'));
+    }
+  });
+}
+
 /** Geht über die Tab-Leiste auf eine Seite. */
 export async function tab(page, name) {
   await page.locator('nav.tabs').getByRole('link', { name }).click();

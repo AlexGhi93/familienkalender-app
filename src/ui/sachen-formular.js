@@ -8,7 +8,7 @@ import { addDays } from '../domain/dates.js';
 import { MAX_MITNEHMEN, mitRichtung, terminAusEntwurf, terminVorschau } from '../app/termin.js';
 import { MAX_SERIEN_WOCHEN, serieZusammenfassung, wochenSerie } from '../app/serie.js';
 import { datumKurz } from '../app/format-de.js';
-import { pyjamasWechsel } from './pyjamas-wechsel.js';
+import { pyjamasEntwurf, pyjamasWechsel } from './pyjamas-wechsel.js';
 
 const RICHTUNG_EMOJI = { hin: '🎒', heim: '🏠' };
 
@@ -93,6 +93,10 @@ export function sachenFormular({ store, ui }, kachel) {
     beiAenderung: (liste) => {
       n.mitnehmen = liste;
       zeichneVorschau();
+    },
+    weiteres: n.weiteres, // „Eigene Sache“, getippt, aber noch nicht hinzugefügt
+    beiWeiteres: (text) => {
+      n.weiteres = text;
     },
     leerText: 'Noch nichts gewählt: unten antippen oder selbst eintragen.',
     platzhalter: 'Etwas anderes, z. B. Lieblingsbuch',
@@ -180,12 +184,9 @@ export function sachenFormular({ store, ui }, kachel) {
           class: 'knopf schnellstart',
           type: 'button',
           onClick: () => {
-            if (pyjamasBox.hidden) {
-              if (!pyjamasBox.firstChild) pyjamasBox.append(pyjamasWechsel({ store, ui }));
-              pyjamasBox.hidden = false;
-            } else {
-              pyjamasBox.hidden = true;
-            }
+            const p = pyjamasEntwurf(ui);
+            p.offen = pyjamasBox.hidden;
+            zeichnePyjamas();
           },
         },
         h('span', { class: 'e' }, '🛏️'),
@@ -193,6 +194,14 @@ export function sachenFormular({ store, ui }, kachel) {
         h('small', {}, 'jede Woche hinbringen und zum Waschen mit nach Hause nehmen'),
       );
 
+  /** Der Schnellstart „Pyjamas-Wechsel“ auf oder zu, wie im Entwurf (`ui.neu.pyjamas.offen`): übersteht so das Neuzeichnen. */
+  function zeichnePyjamas() {
+    const offen = !n.bearbeiten && Boolean(n.pyjamas?.offen);
+    if (offen && !pyjamasBox.firstChild) pyjamasBox.append(pyjamasWechsel({ store, ui }));
+    pyjamasBox.hidden = !offen;
+  }
+
+  zeichnePyjamas();
   zeichneRichtung();
   zeichneWiederholen();
   zeichnePlan();

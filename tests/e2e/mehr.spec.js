@@ -1,7 +1,7 @@
 // „Mehr“: Menü mit zwölf Zeilen und animierten Symbolen, Akkordeon (immer nur eine Zeile offen), Speichern ohne Zuklappen und ohne
 // neues Intro, reduzierte Bewegung, Wege zu „Konto & App“, „Verlauf“ und „Kontostand“; getippte Uhrzeit und getipptes Datum
 // werden mit Enter bzw. beim Verlassen des Feldes gespeichert.
-import { test, expect, starteDemo, tab, erwarteToast } from './hilfen.js';
+import { test, expect, starteDemo, tab, erwarteToast, zurueckInDieApp } from './hilfen.js';
 
 const IDS = ['app', 'betreuung', 'familie', 'nachrichten', 'zeiten', 'bringen', 'urlaub', 'mitnehmen', 'sachen', 'kontostand', 'autos', 'verlauf'];
 const TITEL = ['Konto & App', 'Betreuung', 'Familie', 'Nachrichten', 'Zeiten für Sachen', 'Bringen & Abholen', 'Urlaub', 'Mitnehmen beim Arzt', 'Eigene Sachen', 'Kontostand', 'Autos', 'Verlauf'];
@@ -181,6 +181,15 @@ test('Familie: Name des Kindes erscheint bei „Für wen“; ungültige Zeichen 
   await erwarteToast(page, 'Termin gespeichert ✓');
   await page.goto('/#/verlauf');
   await expect(page.getByRole('button', { name: 'Kinderarzt (Mia), Mi 14. Okt. · 09:00' })).toBeVisible();
+});
+
+test('Familie: der getippte Name des Kindes übersteht die Rückkehr in die App (B15)', async ({ page }) => {
+  await starteDemo(page, { route: '#/mehr' });
+  await zeile(page, 'familie').click();
+  const name = tafel(page, 'familie').getByRole('textbox', { name: 'Name des Kindes' });
+  await name.fill('Mia');
+  await zurueckInDieApp(page);
+  await expect(name).toHaveValue('Mia');
 });
 
 test('Vorschau im Arzttermin nennt den Namen des Kindes aus den Einstellungen', async ({ page }) => {

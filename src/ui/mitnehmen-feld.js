@@ -10,8 +10,10 @@ import { MAX_MITNEHMEN, MAX_MITNEHMEN_EINTRAG } from '../app/termin.js';
  * und zeichnet seine Vorschau neu), danach zeichnet sich das Feld selbst neu. Ändert das Formular die Liste von außen, ruft es
  * `neuZeichnen()`. `vorschlaege` = { zuletzt: [Text], gruppen: { Name: [Text] }, farbeHex } oder null.
  * Texte: `leerText` (nichts gewählt), `platzhalter` und `beschriftung` der Eingabe, `maxText` (Liste voll).
+ * `weiteres` = was in „Weiteres“ schon getippt war (aus dem Entwurf des Formulars); jede Änderung des Getippten geht an
+ * `beiWeiteres(text)`, damit sie ein Neuzeichnen übersteht.
  */
-export function mitnehmenFeld({ vorschlaege = null, gewaehlt, beiAenderung, leerText, platzhalter, beschriftung, maxText }) {
+export function mitnehmenFeld({ vorschlaege = null, gewaehlt, beiAenderung, weiteres = '', beiWeiteres = () => {}, leerText, platzhalter, beschriftung, maxText }) {
   const chips = h('div', { class: 'chip-reihe' });
   const vorschlagChips = new Map(); // Text -> alle Buttons dazu (Gruppen und „Zuletzt benutzt“)
 
@@ -40,7 +42,11 @@ export function mitnehmenFeld({ vorschlaege = null, gewaehlt, beiAenderung, leer
       )
     : null;
 
-  const eingabe = h('input', { type: 'text', maxlength: String(MAX_MITNEHMEN_EINTRAG), autocomplete: 'off', placeholder: platzhalter, 'aria-label': beschriftung });
+  const eingabe = h('input', { type: 'text', maxlength: String(MAX_MITNEHMEN_EINTRAG), autocomplete: 'off', placeholder: platzhalter, value: weiteres || null, 'aria-label': beschriftung, onInput: (e) => beiWeiteres(e.target.value) });
+  const leeren = () => {
+    eingabe.value = '';
+    beiWeiteres('');
+  };
   const hinzufuegen = () => {
     const text = eingabe.value.trim();
     if (text === '') return;
@@ -50,11 +56,11 @@ export function mitnehmenFeld({ vorschlaege = null, gewaehlt, beiAenderung, leer
         toast(maxText);
         return;
       }
-      eingabe.value = '';
+      leeren();
       aendern([...liste, text]);
       return;
     }
-    eingabe.value = '';
+    leeren(); // schon in der Liste: still leeren, die Liste bleibt gleich (beiAenderung wäre ein leeres Neuzeichnen)
   };
   eingabe.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {

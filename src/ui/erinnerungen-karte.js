@@ -17,6 +17,12 @@ export function erinnerungenKarte({ store, ui = null }) {
     fuelle(box, h('p', { class: 'fehlertext' }, fehlerText(fehler, KURZER_FEHLER)));
   }
 
+  /** Ergebnis von „Prüfen“/„Reparieren“ zeigen und in `ui.erinnerungenPruefung` merken (null = keines): es übersteht das Neuzeichnen. */
+  function merkePruefung(r) {
+    if (ui) ui.erinnerungenPruefung = r;
+    if (r) zeigePruefung(r);
+  }
+
   function zeigePruefung(r) {
     const zeilen = r.punkte.map((p) => h('li', { class: p.ok ? 'ok' : 'warn' }, p.ok ? `✅ ${p.name}` : `⚠️ ${p.name}: ${p.probleme.join(' ')}`));
     fuelle(
@@ -33,8 +39,9 @@ export function erinnerungenKarte({ store, ui = null }) {
   async function pruefen() {
     fuelle(ergebnis, h('p', { class: 'leise' }, 'Ich prüfe …'));
     try {
-      zeigePruefung(await store.erinnerungenPruefen());
+      merkePruefung(await store.erinnerungenPruefen());
     } catch (fehler) {
+      merkePruefung(null);
       zeigeFehler(ergebnis, fehler);
     }
   }
@@ -43,9 +50,10 @@ export function erinnerungenKarte({ store, ui = null }) {
     fuelle(ergebnis, h('p', { class: 'leise' }, 'Ich repariere …'));
     try {
       const r = await store.erinnerungenReparieren();
-      zeigePruefung(r);
+      merkePruefung(r);
       toast(r.ok ? 'Repariert ✓' : 'Noch nicht alles in Ordnung');
     } catch (fehler) {
+      merkePruefung(null);
       zeigeFehler(ergebnis, fehler);
     }
   }
@@ -86,6 +94,7 @@ export function erinnerungenKarte({ store, ui = null }) {
   }
 
   zeigeTest();
+  if (ui?.erinnerungenPruefung) zeigePruefung(ui.erinnerungenPruefung);
   return h(
     'article',
     { class: 'karte' },

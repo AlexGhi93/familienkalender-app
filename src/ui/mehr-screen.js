@@ -118,13 +118,17 @@ export function mehrScreen({ store, ui }) {
       maxlength: '20',
       autocomplete: 'off',
       placeholder: 'Vorname eingeben',
-      value: settings.kindname,
+      value: ui.mehr.kindName ?? settings.kindname, // das Getippte (noch nicht gespeichert) übersteht das Neuzeichnen
+      onInput: (e) => {
+        ui.mehr.kindName = e.target.value;
+      },
       onChange: (e) => {
         const name = e.target.value.trim();
         if (/[(),]| · /.test(name)) {
           toast('Bitte ohne Klammern, Kommas und „ · “.');
           return;
         }
+        ui.mehr.kindName = null; // ab jetzt gilt der gespeicherte Name
         speichern({ kindname: name });
       },
     }),

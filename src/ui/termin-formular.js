@@ -111,6 +111,10 @@ export function terminFormular({ store, ui }, kachel) {
       n.mitnehmenGeaendert = true;
       zeichneVorschau();
     },
+    weiteres: n.weiteres, // „Weiteres zum Mitnehmen“, getippt, aber noch nicht hinzugefügt
+    beiWeiteres: (text) => {
+      n.weiteres = text;
+    },
     leerText: 'Nichts zum Mitnehmen eingetragen.',
     platzhalter: 'z. B. Trinkflasche',
     beschriftung: 'Weiteres zum Mitnehmen',

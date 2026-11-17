@@ -75,10 +75,11 @@ test.describe('Glas und Bento mit Bewegung', () => {
     test.skip(aussehen !== 'glas', 'das Licht gibt es nur in Glas');
     const licht = () => page.evaluate(() => document.getAnimations().filter((a) => /^glas-licht-/.test(a.animationName) && a.playState === 'running').map((a) => a.animationName));
     await starteDemo(page);
-    for (const route of ['#/heute', '#/schicht', '#/app', '#/verlauf']) {
+    for (const [i, route] of ['#/heute', '#/schicht', '#/app', '#/verlauf'].entries()) {
       await page.evaluate((r) => (location.hash = r), route);
       await expect.poll(licht, { message: `${route}: das Licht hat sich gesetzt`, timeout: 6000 }).toEqual([]);
       const vorher = await page.locator('#inhalt > *').first().elementHandle();
+      await page.clock.setFixedTime(new Date(`2026-10-${15 + i}T08:00:00+02:00`)); // Rückkehr an einem neuen Tag: nur dann zeichnet sie neu (B15)
       await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
       await expect.poll(() => vorher.evaluate((el) => el.isConnected), `${route}: wirklich neu gezeichnet`).toBe(false);
       expect(await licht(), `${route}: kein neues Licht`).toEqual([]);

@@ -5,9 +5,18 @@ import { TYPES } from '../domain/types.js';
 import { WOCHENTAGE_KURZ } from '../app/format-de.js';
 import { MAX_SERIEN_WOCHEN, naechsterWochentag, serieZusammenfassung, wochenSerie } from '../app/serie.js';
 
+/**
+ * Der Entwurf des Schnellstarts im Entwurf von „Neu“: `ui.neu.pyjamas` = { offen, hinTag, heimTag, wochen } (und `speichert`, siehe
+ * app/einmal.js). Er übersteht das Neuzeichnen der Seite; `ui.neuZuruecksetzen()` verwirft ihn mit dem ganzen Entwurf.
+ */
+export function pyjamasEntwurf(ui) {
+  ui.neu.pyjamas ??= { offen: false, hinTag: 0, heimTag: 4, wochen: 8 };
+  return ui.neu.pyjamas;
+}
+
 /** Schnellstart: jede Woche „Pyjamas hinbringen“ (sauber) und „Pyjamas heimholen“ (zum Waschen). */
 export function pyjamasWechsel({ store, ui }) {
-  const p = { hinTag: 0, heimTag: 4, wochen: 8 };
+  const p = pyjamasEntwurf(ui); // derselbe Gegenstand wie ui.neu.pyjamas: `einmal` sperrt das Speichern auch über ein Neuzeichnen hinweg
   const wurzel = h('div', { class: 'karte tint pyjamas', style: farbe(TYPES.kita_sache.farbe) });
 
   function plaene() {

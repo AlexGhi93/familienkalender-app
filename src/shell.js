@@ -56,6 +56,7 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
 
   let neueVersion = false;
   const angefragt = new Map(); // Seite → Schlüssel des Besuchs, für den sie zuletzt gelesen hat (siehe app/seiten-besuch.js)
+  let gezeichnetAm = null; // „heute“ beim letzten Zeichnen: die Rückkehr in die App zeichnet nur an einem neuen Tag neu
   let schichtRueckkehr = null; // Zeitpunkt (ms) des letzten Neu-Holens beim Zurückkehren in die App
   let letzteSeite = null; // zuletzt gezeichnete Seite (für `ui.seiteBetreten`)
   let zumAnfang = false; // nach dem Wechsel auf eine Seite der Autos oben beginnen
@@ -106,7 +107,9 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
     verbindung: { laeuft: false, fehler: null }, // letzter Verbindungsversuch (Banner, „Mehr“ und „Konto & App“)
     seiteBetreten: true, // true, wenn die Seite gerade neu betreten wurde (nicht nur neu gezeichnet): „Mehr“ spielt dann seine Animationen
     monat: jetztMonat(),
-    neu: { auswahl: null },
+    neu: { auswahl: null }, // Entwurf in „Neu“ (samt `weiteres` und `pyjamas`): alles Getippte steht hier, nicht nur im Feld
+    mehr: { kindName: null }, // in „Mehr“ getippter, noch nicht gespeicherter Name des Kindes (null = der gespeicherte)
+    erinnerungenPruefung: null, // Ergebnis von „Prüfen“ in „Konto & App“ (bleibt beim Neuzeichnen stehen)
     urlaubJahr: 0, // gewähltes Kindergartenjahr auf der Urlaub-Seite (0 = aktuelles)
     schicht: { jm: store.heute().slice(0, 7), filter: schichtFilterLesen(), pinsel: null }, // angezeigter Monat, Filter (je Telefon gemerkt), Pinsel
     kontoAnsicht: kontoAnsichtLesen(), // „Kontostand“, „Fixkosten“, „Sparziele“ oder „Versicherung“ im Konto-Tab (je Telefon gemerkt)
@@ -131,6 +134,7 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
       kontoUnterseiteUebernehmen();
       const seite = ui.seite();
       const state = store.getState();
+      gezeichnetAm = store.heute();
       const alt = inhalt.scrollTop;
       const scrollY = fenster.scrollY;
       ui.bannerAktualisieren();
@@ -404,11 +408,16 @@ export function startShell({ wurzel, store, auth = null, snapshot = null, konto 
     ui.rendern();
   }
 
-  // Rückkehr in die App (z. B. am nächsten Tag): neu zeichnen, damit „heute“ stimmt, und – mit gültiger Anmeldung – höchstens einmal pro Minute neu laden.
+  // Rückkehr in die App: am nächsten Tag neu zeichnen, damit „heute“ stimmt (sonst nicht: Getipptes und offene Felder bleiben, wie sie
+  // sind), und – mit gültiger Anmeldung – höchstens einmal pro Minute neu laden.
   document.addEventListener('visibilitychange', () => {
     einkaufAbgleich.pruefen(); // im Hintergrund ruht der Zeitgeber der Einkaufsliste
     if (document.visibilityState !== 'visible') return;
-    ui.rendern();
+    if (store.heute() !== gezeichnetAm) ui.rendern();
+    else ui.bannerAktualisieren(); // nur Hinweisleiste und Verbindung (z. B. „läuft bald ab“): ihr Zeitgeber ruhte im Hintergrund
+    // eine im Speicher gehaltene App lädt nicht neu: den Push-Plan hier anstoßen (gebündelt wie jeder Anstoß); ob wirklich gesendet
+    // wird, entscheidet push/client.js (unverändert und jünger als 6 Stunden: nichts)
+    if (push && planQuellen(store.getState(), store.jetzt())) push.anstossen();
     if (auth?.dauerAnmeldung?.()?.dauerhaft) stillVerbinden().catch(() => {});
     else if (auth) store.aktualisieren();
     einkaufAbgleich.sofort(); // zurück auf der Einkaufsliste: gleich einmal nachsehen

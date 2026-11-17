@@ -231,14 +231,28 @@ test.describe('Öffnen von Fixkosten und Sparziele: alles spielt einmal – auch
       const bilder = await page.evaluate(([i]) => window.__umschalten(i, 75), [index]);
       await pruefeOeffnen(page, bilder, { balken });
 
-      // ein späteres Neuzeichnen im Hintergrund (Rückkehr in die App): nichts zählt, gleitet, wächst oder blendet erneut ein
+      // ein späteres Neuzeichnen im Hintergrund (Rückkehr in die App an einem anderen Tag – nur dann zeichnet sie neu, B15): nichts
+      // zählt, gleitet, wächst oder blendet erneut ein. Die Uhr der Seite springt einen Tag weiter (am Monatsletzten zurück: derselbe Monat).
       await ausklingen(page);
       const zielText = await page.locator('.fk-kopf .fk-gross').textContent();
+      const vorher = await page.locator('#inhalt > *').first().elementHandle();
       const danach = await page.evaluate(() => {
+        const Echt = Date;
+        const morgen = new Echt(Echt.now() + 86_400_000);
+        const versatz = morgen.getDate() === 1 ? -86_400_000 : 86_400_000;
+        window.Date = class extends Echt {
+          constructor(...a) {
+            super(...(a.length > 0 ? a : [Echt.now() + versatz]));
+          }
+          static now() {
+            return Echt.now() + versatz;
+          }
+        };
         const bilder = window.__messen(30);
         document.dispatchEvent(new Event('visibilitychange'));
         return bilder;
       });
+      expect(await vorher.evaluate((el) => el.isConnected), 'wirklich neu gezeichnet').toBe(false);
       expect(danach.every((b) => b.text === zielText), 'kein Zählen').toBe(true);
       expect(danach.every((b) => !b.einblenden), 'kein Einblenden').toBe(true);
       expect(danach.every((b) => b.von === null), 'kein Gleiten').toBe(true);

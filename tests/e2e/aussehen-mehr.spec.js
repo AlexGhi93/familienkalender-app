@@ -133,6 +133,7 @@ test.describe('Neuzeichnen im Hintergrund', () => {
     await expect(page.getByRole('group', { name: 'Hell oder Dunkel' })).toBeVisible();
     await expect.poll(() => page.evaluate(() => document.getAnimations().filter((a) => a.playState === 'running').length), { timeout: 5000 }).toBe(0);
     const vorher = await page.locator('.darstellung-karte').elementHandle();
+    await page.clock.setFixedTime(new Date('2026-10-15T08:00:00+02:00')); // Rückkehr am nächsten Tag: nur dann zeichnet sie neu (B15)
     await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
     await expect.poll(() => vorher.evaluate((el) => el.isConnected)).toBe(false); // wirklich neu gezeichnet
     // auch das Licht der Seite (glas-licht-*) läuft nicht neu (bewegung.spec.js). Es bleibt als beendete Animation (fill: both) in
