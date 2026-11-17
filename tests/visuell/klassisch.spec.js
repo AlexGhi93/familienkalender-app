@@ -39,6 +39,21 @@ async function foto(page, name, { ganz = true } = {}) {
   await expect(page).toHaveScreenshot(`${name}.png`, { fullPage: ganz });
 }
 
+/** Zweite Versicherung über „Polizze bearbeiten › ＋ Weitere Versicherung › Eigene Polizze“ (eine Kategorie). */
+async function zweitePolizze(page) {
+  await page.getByRole('button', { name: 'Polizze bearbeiten' }).click();
+  await page.getByRole('dialog', { name: 'Polizze bearbeiten' }).getByRole('button', { name: '＋ Weitere Versicherung' }).click();
+  await page.getByRole('dialog', { name: '＋ Weitere Versicherung' }).getByRole('button', { name: 'Eigene Polizze' }).click();
+  const b = page.getByRole('dialog', { name: 'Eigene Polizze' });
+  await b.getByRole('textbox', { name: 'Name der Polizze' }).fill('Zahnzusatz');
+  await b.getByRole('textbox', { name: 'Name der Kategorie 1' }).fill('Zahnspange');
+  await b.getByRole('textbox', { name: 'Limit der Kategorie 1 in Euro' }).fill('500');
+  await b.getByRole('textbox', { name: 'Maximum pro Jahr in Euro' }).fill('1000');
+  await b.getByRole('button', { name: 'Anlegen' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.locator('.vs-umschalter .chip')).toHaveCount(2);
+}
+
 const ansichtKonto = (page, name) => page.getByRole('group', { name: 'Ansicht im Konto' }).getByRole('button', { name });
 
 test('Heute', async ({ page }) => {
@@ -214,6 +229,34 @@ test('Schicht: Ersatzdienst E gestreift (Pinsel und Raster)', async ({ page }) =
   await foto(page, 'schicht-ersatzdienst', { ganz: false });
 });
 
+// 1.5.0: neue Bildschirme (Diensttausch, zwei Versicherungen) – ihre Basis entstand mit dem Stand von Task I1 (vorher gab es sie nicht)
+/** Tagesblatt 01.10. (Papa Nacht) → „⇄ Diensttausch“ → übernommener Tag 07.10.2026, mit „Kollege“. */
+async function diensttauschFormular(page) {
+  await starteDemo(page, { route: '#/schicht' });
+  await page.locator('.sp-zelle[data-datum="2026-10-01"]').click();
+  await page.getByRole('dialog', { name: 'Donnerstag, 1. Oktober' }).waitFor();
+  await page.locator('.sp-tag-karte[data-person="papa"]').getByRole('button', { name: '⇄ Diensttausch', exact: true }).click();
+  const f = page.getByRole('dialog', { name: 'Diensttausch', exact: true });
+  await f.getByRole('textbox', { name: 'Übernommener Tag', exact: true }).fill('07.10.2026');
+  await f.getByRole('textbox', { name: 'Mit wem (optional)' }).fill('Kollege');
+  await expect(f.getByRole('status')).toBeVisible();
+  return f;
+}
+
+test('Schicht: Diensttausch (Formular)', async ({ page }) => {
+  await diensttauschFormular(page);
+  await foto(page, 'schicht-tausch-form', { ganz: false });
+});
+
+test('Schicht: Blatt eines Tages mit Diensttausch', async ({ page }) => {
+  const f = await diensttauschFormular(page);
+  await f.getByRole('button', { name: 'Speichern' }).click();
+  await expect(f).toHaveCount(0);
+  await expect(page.locator('.sp-tag-karte[data-person="papa"] .sp-tag-tausch')).toContainText('⇄ getauscht mit Kollege');
+  await page.evaluate(() => document.querySelectorAll('.toast').forEach((t) => t.remove()));
+  await foto(page, 'schicht-tausch-tag', { ganz: false });
+});
+
 test('Fixkosten: Formular', async ({ page }) => {
   await starteDemo(page, { route: '#/konto/fixkosten' });
   await page.getByRole('button', { name: '＋ Fixkosten eintragen' }).click();
@@ -241,6 +284,15 @@ test('Versicherung: Rechnung ändern (Blatt)', async ({ page }) => {
   await page.locator('.vs-liste .au-eintrag').first().click();
   await expect(page.getByRole('dialog', { name: '🧾 Rechnung ändern' })).toBeVisible();
   await foto(page, 'versicherung-rechnung', { ganz: false });
+});
+
+test('Versicherung: zwei Polizzen (Umschalter)', async ({ page }) => {
+  await starteDemo(page, { route: '#/konto/versicherung' });
+  await zweitePolizze(page);
+  await page.locator('.vs-umschalter .chip').first().click();
+  await expect(page.locator('.vs-umschalter .chip').first()).toHaveAttribute('aria-pressed', 'true');
+  await page.evaluate(() => document.querySelectorAll('.toast').forEach((t) => t.remove()));
+  await foto(page, 'versicherung-zwei');
 });
 
 test('Versicherung: ohne Polizze', async ({ page }) => {

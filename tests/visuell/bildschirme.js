@@ -25,6 +25,36 @@ function konfliktDemo() {
   return demo;
 }
 
+/** Tagesblatt 01.10. (Papa Nacht) → „⇄ Diensttausch“ → übernommener Tag 07.10.2026, mit „Kollege“. */
+async function diensttauschFormular(p) {
+  await starteDemo(p, { route: '#/schicht' });
+  await p.locator('.sp-zelle[data-datum="2026-10-01"]').click();
+  await p.getByRole('dialog', { name: 'Donnerstag, 1. Oktober' }).waitFor();
+  await p.locator('.sp-tag-karte[data-person="papa"]').getByRole('button', { name: '⇄ Diensttausch', exact: true }).click();
+  const f = p.getByRole('dialog', { name: 'Diensttausch', exact: true });
+  await f.getByRole('textbox', { name: 'Übernommener Tag', exact: true }).fill('07.10.2026');
+  await f.getByRole('textbox', { name: 'Mit wem (optional)' }).fill('Kollege');
+  await f.getByRole('status').waitFor();
+  return f;
+}
+
+/** Zweite Versicherung über „Polizze bearbeiten › ＋ Weitere Versicherung › Eigene Polizze“; danach ist die erste gewählt. */
+async function zweiVersicherungen(p) {
+  await starteDemo(p, { route: '#/konto/versicherung' });
+  await p.getByRole('button', { name: 'Polizze bearbeiten' }).click();
+  await p.getByRole('dialog', { name: 'Polizze bearbeiten' }).getByRole('button', { name: '＋ Weitere Versicherung' }).click();
+  await p.getByRole('dialog', { name: '＋ Weitere Versicherung' }).getByRole('button', { name: 'Eigene Polizze' }).click();
+  const b = p.getByRole('dialog', { name: 'Eigene Polizze' });
+  await b.getByRole('textbox', { name: 'Name der Polizze' }).fill('Zahnzusatz');
+  await b.getByRole('textbox', { name: 'Name der Kategorie 1' }).fill('Zahnspange');
+  await b.getByRole('textbox', { name: 'Limit der Kategorie 1 in Euro' }).fill('500');
+  await b.getByRole('textbox', { name: 'Maximum pro Jahr in Euro' }).fill('1000');
+  await b.getByRole('button', { name: 'Anlegen' }).click();
+  await b.waitFor({ state: 'detached' });
+  await p.locator('.vs-umschalter .chip').first().click();
+  await p.evaluate(() => document.querySelectorAll('.toast').forEach((t) => t.remove()));
+}
+
 export const BILDSCHIRME = [
   { name: 'heute', titel: 'Heute', oeffne: (p) => starteDemo(p) },
   { name: 'morgen', titel: 'Heute am Abend (Morgen)', oeffne: (p) => starteDemo(p, { zeit: ABEND }) },
@@ -94,6 +124,23 @@ export const BILDSCHIRME = [
     },
   },
   {
+    name: 'schicht-tausch-form',
+    titel: 'Schicht: Diensttausch (Formular)',
+    blatt: true,
+    oeffne: (p) => diensttauschFormular(p),
+  },
+  {
+    name: 'schicht-tausch-tag',
+    titel: 'Schicht: Blatt eines Tages mit Diensttausch',
+    blatt: true,
+    oeffne: async (p) => {
+      const f = await diensttauschFormular(p);
+      await f.getByRole('button', { name: 'Speichern' }).click();
+      await p.locator('.sp-tag-karte[data-person="papa"] .sp-tag-tausch').waitFor();
+      await p.evaluate(() => document.querySelectorAll('.toast').forEach((t) => t.remove()));
+    },
+  },
+  {
     name: 'schichtarten',
     titel: 'Schicht: Schichtarten',
     blatt: true,
@@ -145,6 +192,11 @@ export const BILDSCHIRME = [
       await starteDemo(p, { route: '#/konto/versicherung' });
       await p.getByRole('button', { name: '＋ Rechnung einreichen' }).waitFor();
     },
+  },
+  {
+    name: 'versicherung-zwei',
+    titel: 'Versicherung: zwei Polizzen (Umschalter)',
+    oeffne: (p) => zweiVersicherungen(p),
   },
   {
     name: 'versicherung-rechnung',
