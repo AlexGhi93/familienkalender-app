@@ -80,6 +80,11 @@ small.notiz {
   border-color: var(--abwesend);
 }
 
+/* Urlaub-Zeitraum: ein Datum bricht nie mitten durch („Fr 25. / Sep.“), nur am Strich dazwischen. */
+.zeitraum > span {
+  white-space: nowrap;
+}
+
 .knopfspalte {
   display: flex;
   flex-direction: column;

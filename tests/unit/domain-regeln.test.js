@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { dominanterTyp, hatKonflikt, verdraengteTypen } from '../../src/domain/konflikt.js';
-import { dayEventId, istUrlaubCheckId, urlaubCheckEventId } from '../../src/domain/ids.js';
+import { dayEventId, einzelnWiederherstellbar, istUrlaubCheckId, urlaubCheckEventId } from '../../src/domain/ids.js';
 import { jahrFuerId, kindergartenjahr, naechsterUrlaub, planUrlaubChecks, urlaubCheckDaten, urlaubStatus } from '../../src/domain/urlaub.js';
 import { offeneTage } from '../../src/domain/offen.js';
 import { planUmwandlung } from '../../src/domain/umwandlung.js';
@@ -316,4 +316,11 @@ describe('Darstellung (Hell/Dunkel), Aussehen und Bewegung', () => {
     assert.deepEqual(themeInitAusfuehren(werte, { speicherKaputt: DARSTELLUNG_SCHLUESSEL }), erwartet({ ...werte, darstellung: null }));
     assert.deepEqual(themeInitAusfuehren(werte, { speicherKaputt: BEWEGUNG_SCHLUESSEL }), erwartet({ ...werte, bewegung: null }));
   });
+});
+
+test('einzelnWiederherstellbar: nur eigene Kennungen, nicht Serien-Instanzen', () => {
+  assert.equal(einzelnWiederherstellbar('abc123'), true);
+  assert.equal(einzelnWiederherstellbar('serie_20261001T080000Z'), false);
+  assert.equal(einzelnWiederherstellbar(''), false);
+  assert.equal(einzelnWiederherstellbar(null), false);
 });

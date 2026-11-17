@@ -17,3 +17,9 @@ export function istUrlaubCheckId(id) {
   const m = /^fkc(\d{4})(\d{2})(\d{2})$/.exec(String(id));
   return m !== null && isValidDate(`${m[1]}-${m[2]}-${m[3]}`);
 }
+
+/**
+ * Lässt sich ein gelöschter oder geänderter Termin (oder Urlaub) genau so wieder herstellen? Nicht, wenn er ein Termin einer in Google
+ * Kalender wiederkehrenden Serie ist (Kennung „<Serie>_<Zeitpunkt>“): neu geschrieben würde daraus ein anderes, einzelnes Ereignis.
+ */
+export const einzelnWiederherstellbar = (id) => typeof id === 'string' && id !== '' && !id.includes('_');

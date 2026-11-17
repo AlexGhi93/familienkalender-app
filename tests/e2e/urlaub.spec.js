@@ -103,6 +103,23 @@ test.describe('Urlaub', () => {
     await expect(page.locator('.liste .zeile b')).toHaveText(['Mo 21. Sep. – Fr 25. Sep.', 'Mo 2. Nov. – Do 12. Nov.']);
   });
 
+  test('Datum bricht bei 360 px nie mitten durch (Urlaub-Seite)', async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 800 });
+    await starteDemo(page, { route: '#/urlaub' });
+    const einzeilig = async (spans) => {
+      expect(await spans.count()).toBeGreaterThan(0);
+      for (const span of await spans.all()) {
+        const hoehe = await span.evaluate((el) => {
+          const r = document.createRange();
+          r.selectNodeContents(el);
+          return { zeilen: new Set([...r.getClientRects()].map((q) => Math.round(q.top))).size };
+        });
+        expect(hoehe.zeilen, await span.textContent()).toBe(1);
+      }
+    };
+    await einzeilig(page.locator('.liste .zeile .zeitraum > span'));
+  });
+
   test('Rückgängig nach dem Bearbeiten', async ({ page }) => {
     await starteDemo(page, { route: '#/urlaub' });
     const zeile = page.locator('.liste .zeile').filter({ hasText: '2. Nov.' });

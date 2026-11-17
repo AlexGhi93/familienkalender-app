@@ -128,3 +128,15 @@ test('Hinzufügen nach einem abgebrochenen Bearbeiten legt einen NEUEN Urlaub an
   assert.deepEqual(aufrufe, ['speichereUrlaub']);
   assert.deepEqual(urlaubsListe(store, id), [['2026-12-07', '2026-12-10']]);
 });
+
+test('Urlaub nicht im Zustand → Meldung genau einmal (ohne gemeldet: die Oberfläche zeigt sie), kein Adapteraufruf', async () => {
+  const { store, aufrufe } = aufbau();
+  await store.laden?.();
+  aufrufe.length = 0;
+  const r = await store.urlaubAendern('gibtesnicht', { start: '2026-12-14', end: '2026-12-17' });
+  assert.equal(r.ok, false);
+  assert.equal(r.fehler, TEXT_URLAUB_WEG);
+  assert.equal(r.gemeldet, false); // nicht in state.fehler: sonst sähe man die Meldung zweimal (Shell und Formular)
+  assert.equal(store.getState().fehler ?? null, null);
+  assert.deepEqual(aufrufe, []);
+});

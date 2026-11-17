@@ -9,16 +9,13 @@ import { werktageText } from '../domain/format.js';
 import { TYPES } from '../domain/types.js';
 
 /**
- * „Mo 21. Sep. – Fr 25. Sep.“: in Glas/Bento (data-aussehen an <html>) jedes Datum als eigener Span, damit eine Zeile nur am
- * Strich umbricht, nie mitten im Datum („Fr 25. / Sep.“). Klassisch bleibt ein einziger Text (schon eine Span-Grenze verschiebt
- * dort Subpixel). Derselbe Text in beiden Fällen.
+ * „Mo 21. Sep. – Fr 25. Sep.“: jedes Datum als eigener Span, damit eine Zeile nur am Strich umbricht, nie mitten im Datum
+ * („Fr 25. / Sep.“); die Regel dazu steht je Aussehen im Stylesheet. Derselbe Text wie ohne Spans.
  */
 function zeitraumText(u) {
   const von = datumKurz(u.start);
-  const bis = datumKurz(u.end);
-  if (!globalThis.document?.documentElement?.hasAttribute('data-aussehen')) return h('b', {}, u.start === u.end ? von : `${von} – ${bis}`);
   if (u.start === u.end) return h('b', { class: 'zeitraum' }, h('span', {}, von));
-  return h('b', { class: 'zeitraum' }, h('span', {}, von), ' – ', h('span', {}, bis));
+  return h('b', { class: 'zeitraum' }, h('span', {}, von), ' – ', h('span', {}, datumKurz(u.end)));
 }
 
 function zeitraumZeile(u, heute, { store, ui }) {

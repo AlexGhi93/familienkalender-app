@@ -2,7 +2,7 @@ import { todayVienna } from '../../domain/dates.js';
 import { normalizeSettings } from '../../domain/settings.js';
 import { spanDays } from '../../domain/span.js';
 import { planUmwandlung } from '../../domain/umwandlung.js';
-import { urlaubCheckEventId } from '../../domain/ids.js';
+import { einzelnWiederherstellbar, urlaubCheckEventId } from '../../domain/ids.js';
 import { normalisiereTermin } from '../termin.js';
 import { urlaubChecksAbgleich, urlaubChecksWunsch } from '../../domain/urlaub-check.js';
 import { MAX_SERIEN_WOCHEN, naechsterWochentag, wochenSerie } from '../serie.js';
@@ -10,12 +10,6 @@ import { TEXT_URLAUB_WEG } from '../../domain/urlaub.js';
 import { FACHLICH, istAuthFehler } from './kern.js';
 
 const KITA_TYPEN = ['kita_essen', 'kita_ohne'];
-
-/**
- * Lässt sich ein gelöschter Termin (oder Urlaub) genau so wieder anlegen? Nicht, wenn er ein Termin einer in Google Kalender
- * wiederkehrenden Serie ist (Kennung „<Serie>_<Zeitpunkt>“): neu geschrieben würde daraus ein anderes, einzelnes Ereignis.
- */
-const einzelnWiederherstellbar = (id) => typeof id === 'string' && id !== '' && !id.includes('_');
 
 /** Ergebnis eines Eintragens mit `rueckgaengig` – auch, wenn es nur auf die Anmeldung wartet (es bleibt sichtbar); nicht nach einem Fehlschlag. */
 const mitZuruecknehmen = (r, rueckgaengig) => (r.ok || r.wartet ? { ...r, rueckgaengig } : r);
@@ -244,7 +238,7 @@ export function createKalenderSlice(kern, { store }) {
     async urlaubAendern(id, { start, end }) {
       if (!(start <= end)) throw new Error('Ungültiger Zeitraum');
       const alt = kern.state.urlaub.find((u) => u.id === id);
-      if (!alt) return { ok: false, fehler: TEXT_URLAUB_WEG };
+      if (!alt) return { ok: false, fehler: TEXT_URLAUB_WEG, gemeldet: false }; // nicht in state.fehler: die Oberfläche zeigt die Meldung (einmal)
       const { tage, loeschen, entfernt } = betreuungUmwandeln(start, end);
       const zeitraum = (z) => kern.state.urlaub.map((u) => (u.id === id ? { ...u, ...z } : u));
       let weg = false;

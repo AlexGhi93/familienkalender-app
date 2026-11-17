@@ -3,6 +3,7 @@ import { isFeiertag } from '../../domain/feiertage.js';
 import { FAMILIE_SYMBOLE, TYPES } from '../../domain/types.js';
 import { kindergartenjahr, urlaubStatus } from '../../domain/urlaub.js';
 import { einrichtungFor } from '../../domain/modus.js';
+import { einzelnWiederherstellbar } from '../../domain/ids.js';
 import { EINKAUF_FARBE } from './einkauf-model.js';
 import { BETREUUNG, TAGES_TYPEN_REIHENFOLGE } from '../../domain/types.js';
 import { schliessTageListe } from '../../domain/urlaub-check.js';
@@ -50,7 +51,7 @@ export function urlaubVorschau(state, { start, end }, heute, { ohneId = null } =
 }
 
 /** Kann der Urlaub bearbeitet werden? Nicht ein Ereignis einer wiederkehrenden Google-Serie (Kennung „<Serie>_<Zeitpunkt>“): wie beim Rückgängig des Löschens. */
-export const urlaubBearbeitbar = (id) => typeof id === 'string' && id !== '' && !id.includes('_');
+export const urlaubBearbeitbar = einzelnWiederherstellbar;
 
 /** Werktage (Mo–Fr, ohne Feiertage) eines Zeitraums: darauf wirkt ein Tageseintrag. Leer bei umgekehrtem Zeitraum. */
 export function werktageImBereich(von, bis) {
